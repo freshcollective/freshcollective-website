@@ -113,7 +113,7 @@ class TestSuccessfulPayment:
         db.refresh(txn)
         assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
         assert txn.provider_transfer_id == "tr_done"
-        assert txn.transfer_amount_cents == 9000
+        assert txn.transfer_amount_cents == 9200
         assert len(fake.calls) == 1
 
     def test_a_manual_row_is_left_alone(self, db):
@@ -226,39 +226,44 @@ class TestPaymentIntentGate:
 
 
 class TestUnknownFee:
-    def test_an_unknown_fee_sends_nothing_but_records_the_debt(self, db):
-        """No estimate and no partial transfer — but the row becomes ``pending``.
+    def test_an_unknown_fee_no_longer_delays_the_transfer(self, db):
+        """The fee is Fresh Collective's cost, not the creator's.
 
-        Owed and computable are separate questions. The payment succeeded, so a
-        transfer is owed; only ``pending`` rows are visible to the sweeper,
-        which resolves the fee from the PaymentIntent before sending anything.
-        Leaving it ``awaiting_payment`` stranded a paid purchase.
+        The amount owed to the creator is ``net_creator_amount_cents``, which
+        does not reference the processing fee at all. So a fee the webhook
+        could not read is a gap in Fresh Collective's own bookkeeping, not a
+        reason to hold a creator's money: the transfer goes out in full on the
+        first attempt, and the gap is left honestly empty rather than guessed.
         """
         txn = _txn(db, processing_fee_cents=None)
-        fake = _FakeStripe()
+        fake = _FakeStripe(result={"id": "tr_unpriced"})
         with patch(TRANSFER_TARGET, return_value=fake):
             _attempt_connect_transfer(
                 db, payment_transaction_id=txn.id,
                 payment_intent_status="succeeded", source="test",
             )
-        assert fake.calls == []
+        assert [c["amount"] for c in fake.calls] == [9200]
         db.refresh(txn)
-        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
+        assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
+        assert txn.transfer_amount_cents == 9200
+        assert txn.provider_transfer_id == "tr_unpriced"
+        # Nothing was invented to fill the gap.
         assert txn.processing_fee_cents is None
-        assert txn.transfer_amount_cents is None
-        assert txn.provider_transfer_id is None
 
-    def test_a_fee_less_row_is_picked_up_by_the_sweeper(self, db):
-        """The other half: the row the webhook could not price is resolved and
-        sent by the sweeper, rather than sitting unseen."""
+    def test_a_fee_less_row_is_not_sent_twice_by_the_sweeper(self, db):
+        """The other half: now that the webhook sends an unpriced row straight
+        away, the sweeper must find nothing left to do. The missing fee must
+        not make the row look unfinished and earn it a second transfer."""
         from app.services import connect_transfer_sweeper as sweeper
 
         txn = _txn(db, processing_fee_cents=None)
-        with patch(TRANSFER_TARGET, return_value=_FakeStripe()):
+        with patch(TRANSFER_TARGET, return_value=_FakeStripe(result={"id": "tr_1st"})):
             _attempt_connect_transfer(
                 db, payment_transaction_id=txn.id,
                 payment_intent_status="succeeded", source="test",
             )
+        db.refresh(txn)
+        assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
 
         class _Bt:
             fee = 210
@@ -280,12 +285,15 @@ class TestUnknownFee:
         ), patch(TRANSFER_TARGET, return_value=fake):
             report = sweeper.sweep_pending_transfers(db)
 
-        assert report.fee_resolved == 1
-        assert report.sent == 1
+        assert report.considered == 0
+        assert report.sent == 0
+        assert fake.calls == []
         db.refresh(txn)
-        assert txn.processing_fee_cents == 210
-        assert txn.transfer_amount_cents == 9200 - 210
-        assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
+        assert txn.provider_transfer_id == "tr_1st"
+        # A sent row is out of the sweeper's reach, so the fee stays unread.
+        # That is a known reporting gap in FC's own cost of sale, accepted
+        # deliberately: Stripe's own records remain authoritative for it.
+        assert txn.processing_fee_cents is None
 
 
 # ---------------------------------------------------------------------------

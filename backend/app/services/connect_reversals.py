@@ -10,16 +10,11 @@ The existing refund machinery already computes the authoritative cumulative
 figure for the creator side of the gross split:
 ``refunded_creator_amount_cents``, derived by
 ``refund_reversal.compute_cumulative_reversal_targets`` from Stripe's
-cumulative ``amount_refunded``. That number is in *gross-split* terms and is
-larger than what was actually transferred, because FC retained the Stripe
-processing fee before transferring:
-
-    transfer_amount_cents = net_creator_amount_cents - processing_fee_cents
-
-Reversing ``refunded_creator_amount_cents`` would therefore try to take back
-more than the creator ever received, and Stripe would refuse. So the
-cumulative reversal target is that same authoritative figure scaled onto the
-amount actually sent:
+cumulative ``amount_refunded``. That number is in *gross-split* terms, so it
+can be larger than what was actually transferred, and reversing it would try
+to take back more than the creator ever received. So the cumulative reversal
+target is that same authoritative figure scaled onto the amount actually
+sent:
 
     full refund   → transfer_amount_cents                       (exact)
     partial       → transfer_amount_cents
@@ -29,14 +24,26 @@ amount actually sent:
 The full-refund case is coerced rather than computed, mirroring the existing
 machinery's short-circuit, so no rounding drift can leave a cent stranded.
 
+Why the scaling stays, even though it is now usually the identity
+-----------------------------------------------------------------
+Since Fresh Collective began absorbing Stripe's processing fee,
+``transfer_amount_cents == net_creator_amount_cents`` for a new sale, so the
+scaling above multiplies and divides by the same number and the target simply
+*is* ``refunded_creator_amount_cents``. It is tempting to delete it.
+
+Do not. The transfers sent before that change were computed as
+``net_creator_amount_cents - processing_fee_cents`` and really are smaller
+than the gross-split figure. For those rows the scaling is what keeps a
+refund from clawing back more than the creator ever received — which Stripe
+would refuse, leaving the refund stuck. The scaling reads each row's own
+history instead of assuming today's formula applied to it.
+
 Who absorbs the processing fee
 ------------------------------
-FC does. Stripe does not return its processing fee on a refund, so that money
-is gone; the creator never received it, so it is not theirs to give back.
-Scaling onto the transfer keeps the creator returning exactly what they got
-and leaves the fee where it fell. This is why the reversal target is *not*
-``refunded_creator_amount_cents`` and why ``net_creator_amount_cents`` is
-still not redefined.
+FC does, on the sale and on the refund alike: Stripe does not return its
+processing fee when a charge is refunded, so that money is simply gone. The
+creator never had it deducted from them in the first place, so there is
+nothing of theirs to give back on that account.
 
 Cumulative, never incremental
 -----------------------------

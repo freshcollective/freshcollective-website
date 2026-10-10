@@ -183,6 +183,9 @@ class TestThePaymentsApiExposesConnect:
         ) == detail.sale_amount_cents
 
     def test_an_unmeasured_processing_fee_is_none_not_zero(self, db, make_user):
+        """Zero would misstate a real cost of Fresh Collective's. But it is
+        Fresh Collective's cost, so not knowing it withholds nothing from the
+        creator: their own figure is still stated exactly."""
         from app.creator.routes import _connect_detail
 
         creator = make_user(role="creator")
@@ -193,7 +196,7 @@ class TestThePaymentsApiExposesConnect:
         detail = _connect_detail(row)
 
         assert detail.processing_fee_cents is None
-        assert detail.creator_amount_cents is None
+        assert detail.creator_amount_cents == 184      # net_creator, unreduced
 
     def test_a_manual_row_carries_no_connect_block(self, db, make_user):
         from app.creator.routes import _connect_detail

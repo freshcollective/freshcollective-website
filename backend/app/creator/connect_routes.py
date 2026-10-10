@@ -352,6 +352,14 @@ def create_or_get_account(
         return _to_status(row)
 
     try:
+        # ``entity_type`` stays at its ``individual`` default. Fresh
+        # Collective records nothing about a creator's legal entity, so
+        # there is nothing here to derive it from, and guessing would send
+        # a sole trader down a company verification path or vice versa.
+        # Supporting companies needs one question asked once — before the
+        # account is created, because Stripe fixes the entity at creation
+        # and it cannot be changed afterwards. That is a product decision,
+        # not a default this code should invent.
         account = connect.create_recipient_account(
             display_name=creator.name or creator.email,
             contact_email=creator.email,
@@ -379,6 +387,11 @@ def create_or_get_account(
     # losing the id is not.
     row.stripe_account_id = str(account_id)
     db.commit()
+
+    # Weekly rather than Stripe's daily default, before the first sync so
+    # the projection records the schedule the account will actually use.
+    # Non-fatal by design — see ``set_weekly_payout_schedule``.
+    connect.set_weekly_payout_schedule(str(account_id))
 
     try:
         _sync(db, row, source=SyncSource.manual, v2=account)

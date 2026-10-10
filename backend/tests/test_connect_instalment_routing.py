@@ -383,8 +383,12 @@ class TestInstalmentRowFields:
         assert "payout_status" not in routing
         assert routing["payout_model"] == PayoutModel.connect.value
 
-    def test_the_per_invoice_processing_fee_is_used(self, db, make_user, make_space):
-        """Each instalment has its own fee — never reused from a sibling."""
+    def test_the_per_invoice_processing_fee_does_not_alter_the_amount(
+        self, db, make_user, make_space,
+    ):
+        """Each instalment still carries its own fee — never reused from a
+        sibling — but Fresh Collective absorbs it, so two instalments with
+        different processing costs send the creator the same share."""
         creator = make_user(role="creator")
         plan = _connect_plan(
             db, creator.id, make_space(creator=creator).id, make_user().id,
@@ -396,9 +400,12 @@ class TestInstalmentRowFields:
             db, plan, installment_number=2, processing_fee_cents=235,
         )
 
+        # The fees are genuinely different and genuinely recorded …
+        assert (first.processing_fee_cents, second.processing_fee_cents) == (200, 235)
+        # … and neither is taken out of the creator's share.
         from app.services import connect_transfers as ct
-        assert ct.compute_transfer_amount(first) == 9000    # 9200 − 200
-        assert ct.compute_transfer_amount(second) == 8965   # 9200 − 235
+        assert ct.compute_transfer_amount(first) == 9200
+        assert ct.compute_transfer_amount(second) == 9200
 
 
 # ---------------------------------------------------------------------------
@@ -428,11 +435,11 @@ class TestOwedAndSent:
 
         assert outcome.sent is True
         assert len(fake.calls) == 1
-        assert fake.calls[0]["amount"] == 9000
+        assert fake.calls[0]["amount"] == 9200
         assert fake.calls[0]["destination"] == ACCT
         db.refresh(txn)
         assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
-        assert txn.transfer_amount_cents == 9000
+        assert txn.transfer_amount_cents == 9200
 
     def test_each_paid_instalment_produces_exactly_one_transfer(
         self, db, make_user, make_space,
@@ -523,7 +530,7 @@ class TestOwedAndSent:
         assert report.sent == 1
         db.refresh(txn)
         assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
-        assert txn.transfer_amount_cents == 9000
+        assert txn.transfer_amount_cents == 9200
 
     def test_an_unpaid_instalment_row_is_never_swept(self, db, make_user, make_space):
         """A failed instalment carries the plan's routing but owes nothing."""
@@ -603,7 +610,7 @@ class TestInstalmentRefunds:
         ):
             outcome = cr.reverse_to_target(db, payment_transaction_id=second.id)
 
-        assert outcome.reversed_now == 9000
+        assert outcome.reversed_now == 9200
         assert len(rev.reversals) == 1
         assert rev.reversals[0]["transfer"] == second.provider_transfer_id
 
@@ -613,7 +620,7 @@ class TestInstalmentRefunds:
         assert first.connect_transfer_status == ConnectTransferStatus.sent.value
         assert first.reversed_transfer_amount_cents == 0
         assert second.connect_transfer_status == ConnectTransferStatus.reversed.value
-        assert second.reversed_transfer_amount_cents == 9000
+        assert second.reversed_transfer_amount_cents == 9200
 
     def test_a_partial_instalment_refund_reverses_proportionally(
         self, db, make_user, make_space,

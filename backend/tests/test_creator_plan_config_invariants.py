@@ -74,7 +74,10 @@ def test_creator_price_and_fee():
 
 def test_pro_price_and_fee():
     assert PRO.monthly_price_cents == 7900
-    assert PRO.transaction_fee_basis_points == 300
+    # 4% from the 2026-10 pricing review. This is the fallback constant;
+    # the live figure lives in the ``creator_plans`` row that checkout
+    # reads, and the two are expected to agree.
+    assert PRO.transaction_fee_basis_points == 400
 
 
 def test_pro_fee_is_lower_than_creator_fee():

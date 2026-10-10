@@ -28,9 +28,15 @@ is the one outcome worth engineering against.
 Missing fees
 ------------
 A row can be ``pending`` with no processing fee — the webhook could not read
-it, or a delayed payment settled after fulfilment. The sweeper resolves that
-from Stripe before attempting, because the transfer amount depends on it and
-guessing is not an option.
+it, or a delayed payment settled after fulfilment. The sweeper still tries to
+resolve it from Stripe, because it is Fresh Collective's cost of sale and
+belongs on the row, but an unreadable fee no longer stops the transfer: the
+creator is sent ``net_creator_amount_cents``, which does not depend on it.
+Fresh Collective absorbs the processing cost out of its own commission.
+
+What does stop a transfer is the payment itself not having succeeded. That is
+checked against the ledger on every pass, and believed over the ledger when
+Stripe is reached and disagrees.
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ from app.checkout.stripe_client import get_stripe
 from app.models.payment import (
     ConnectTransferStatus,
     PaymentTransaction,
+    PaymentTransactionStatus,
     PayoutModel,
 )
 from app.services import connect_transfers
@@ -72,6 +79,10 @@ class SweepReport:
     failed: int = 0
     skipped: int = 0
     fee_resolved: int = 0
+    #: Rows whose Stripe processing fee could not be read. Bookkeeping only:
+    #: the fee is Fresh Collective's cost of sale, not a deduction from the
+    #: creator, so it no longer gates the transfer. A row counted here has
+    #: still been sent.
     fee_unavailable: int = 0
     #: Owed, but held out of the queue while their charge is contested.
     held_by_dispute: int = 0
@@ -124,11 +135,26 @@ def _claim_ids(db: Session, *, limit: int) -> list[str]:
     return [row[0] for row in rows]
 
 
-def _resolve_missing_fee(db: Session, txn: PaymentTransaction) -> bool:
+#: ``_resolve_missing_fee`` returns this instead of a bool when Stripe says
+#: the payment has not succeeded. That is not a bookkeeping problem like an
+#: unreadable fee — it means the money is not in, and nothing may be sent.
+#: Kept as a distinct value because the two used to be the same ``False``,
+#: and collapsing them again would transfer against an unsucceeded payment.
+PAYMENT_NOT_SUCCEEDED = "payment_not_succeeded"
+
+
+def _resolve_missing_fee(
+    db: Session, txn: PaymentTransaction,
+) -> bool | str:
     """Fetch the actual processing fee for a row that lacks one.
 
-    Returns True when the row now has a fee. Never estimates: a failure to
-    read leaves the row alone, still owed, for the next run.
+    Returns True when the row now has a fee, False when the fee could not
+    be read — which no longer blocks the transfer, because Fresh Collective
+    absorbs that cost and the creator's share does not depend on it — and
+    :data:`PAYMENT_NOT_SUCCEEDED` when Stripe says the payment is not in,
+    which does block.
+
+    Never estimates the fee.
     """
     if txn.processing_fee_cents is not None:
         return True
@@ -158,7 +184,7 @@ def _resolve_missing_fee(db: Session, txn: PaymentTransaction) -> bool:
             "connect sweeper: txn=%s is owed a transfer but its payment status "
             "is %r — not sending", txn.id, getattr(pi, "status", None),
         )
-        return False
+        return PAYMENT_NOT_SUCCEEDED
 
     charge = getattr(pi, "latest_charge", None)
     fee: int | None = None
@@ -235,12 +261,40 @@ def sweep_pending_transfers(
             report.skipped += 1
             continue
 
+        # Nothing is sent for a payment the ledger does not call succeeded.
+        # ``mark_transfer_owed`` already requires it before a row becomes
+        # ``pending``, so this is the second lock on the same door — and it
+        # is the one that does not depend on reading Stripe.
+        if txn.status != PaymentTransactionStatus.succeeded:
+            logger.error(
+                "connect sweep: txn=%s is pending a transfer but its ledger "
+                "status is %r — not sending",
+                txn_id, getattr(txn.status, "value", txn.status),
+            )
+            report.still_pending += 1
+            continue
+
         if txn.processing_fee_cents is None:
-            if not _resolve_missing_fee(db, txn):
-                report.fee_unavailable += 1
+            # Worth one attempt — the fee is FC's cost of sale and belongs on
+            # the row — but an unreadable fee must not gate the payment. The
+            # creator's share is ``net_creator_amount_cents``, which does not
+            # depend on it, so refusing here would strand a transfer that was
+            # always sendable.
+            fee_outcome = _resolve_missing_fee(db, txn)
+            if fee_outcome == PAYMENT_NOT_SUCCEEDED:
+                # Stripe disagrees with the ledger. Believe Stripe.
                 report.still_pending += 1
                 continue
-            report.fee_resolved += 1
+            if fee_outcome:
+                report.fee_resolved += 1
+            else:
+                report.fee_unavailable += 1
+                logger.warning(
+                    "connect sweep: txn=%s processing fee unreadable; "
+                    "transferring anyway — the creator's share does not "
+                    "depend on it",
+                    txn_id,
+                )
 
         outcome = connect_transfers.execute_transfer(
             db, payment_transaction_id=txn_id, now=now,

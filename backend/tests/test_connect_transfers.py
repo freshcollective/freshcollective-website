@@ -5,8 +5,10 @@ The arithmetic and the state machine are checked directly; Stripe's
 that would otherwise move money.
 
 Two groups matter more than the rest. The **amount** tests pin the reason FC
-chose separate charges and transfers — the figure is exact, derived from the
-fee Stripe actually charged, and ``net_creator_amount_cents`` never moves.
+chose separate charges and transfers — the creator is sent
+``net_creator_amount_cents`` exactly, with Stripe's processing fee absorbed by
+Fresh Collective rather than deducted, so the figure a creator was promised at
+checkout is the figure that leaves.
 The **race** tests use real concurrent database sessions rather than
 sequential calls, because the property under test is that a row lock
 serialises two workers, and sequential calls cannot demonstrate that.
@@ -112,24 +114,42 @@ def _patched(fake):
 
 
 class TestAmount:
+    """The creator receives gross minus Fresh Collective's commission.
+
+    Stripe's processing fee is not subtracted — FC absorbs it. These
+    expectations changed in October 2026 when that policy was adopted; the
+    figures below are deliberately the same sales as before so the
+    difference is legible in a diff.
+    """
+
     def test_the_exact_eight_percent_example(self, db):
-        """A$100 sale, 8% plan, A$2.00 Stripe fee → A$90.00 to the creator."""
+        """A$100 sale, 8% plan → A$92.00 to the creator.
+
+        Stripe's A$2.00 is still recorded on the row, as FC's cost of sale.
+        It used to come out of this figure, making it A$90.00.
+        """
         txn = _txn(
             db, gross_amount_cents=10000, platform_fee_basis_points=800,
             platform_fee_cents=800, net_creator_amount_cents=9200,
             processing_fee_cents=200,
         )
-        assert ct.compute_transfer_amount(txn) == 9000
+        assert ct.compute_transfer_amount(txn) == 9200
 
-    def test_a_founding_creator_on_zero_percent(self, db):
-        """0% is FC's share, not Stripe's. The creator gets the gross less the
-        actual processing fee — A$98.00 on a A$100 sale."""
+    def test_a_founding_creator_on_zero_percent_receives_the_whole_sale(self, db):
+        """0% commission means the full gross, not gross less Stripe's fee.
+
+        This is the case that moved most: A$98.00 before, A$100.00 now. It
+        also sits exactly on Stripe's ``source_transaction`` cap — a
+        transfer may equal the source charge, which the documentation
+        permits ("must not exceed").
+        """
         txn = _txn(
             db, gross_amount_cents=10000, platform_fee_basis_points=0,
             platform_fee_cents=0, net_creator_amount_cents=10000,
             processing_fee_cents=200,
         )
-        assert ct.compute_transfer_amount(txn) == 9800
+        assert ct.compute_transfer_amount(txn) == 10000
+        assert ct.compute_transfer_amount(txn) == txn.gross_amount_cents
 
     def test_a_discounted_purchase_uses_the_discounted_gross(self, db):
         """The ledger's gross is already what was charged, so the creator's
@@ -139,41 +159,76 @@ class TestAmount:
             platform_fee_cents=400, net_creator_amount_cents=4600,
             processing_fee_cents=150,
         )
-        assert ct.compute_transfer_amount(txn) == 4450
+        assert ct.compute_transfer_amount(txn) == 4600
+
+    def test_the_transfer_can_never_exceed_the_source_charge(self, db):
+        """Stripe caps a ``source_transaction`` transfer at the charge
+        amount. ``gross - platform_fee`` cannot exceed ``gross`` because a
+        commission is never negative, so the cap is unreachable by
+        construction — asserted across the whole fee range."""
+        for bps in (0, 300, 400, 800, 10000):
+            gross = 10000
+            fee = round(gross * bps / 10000)
+            txn = _txn(
+                db, gross_amount_cents=gross, platform_fee_basis_points=bps,
+                platform_fee_cents=fee,
+                net_creator_amount_cents=gross - fee,
+                processing_fee_cents=200,
+            )
+            if gross - fee <= 0:
+                with pytest.raises(ct.TransferTerminal):
+                    ct.compute_transfer_amount(txn)
+            else:
+                assert ct.compute_transfer_amount(txn) <= gross, bps
 
     def test_net_creator_amount_is_never_modified(self, db):
-        """The Connect figure lives in ``transfer_amount_cents``. Moving it
-        into ``net_creator_amount_cents`` would break the payout-batch sums
-        and the refund invariant."""
+        """``net_creator_amount_cents`` is the payout-batch and refund
+        anchor. The Connect figure is written to ``transfer_amount_cents``,
+        which now equals it rather than being smaller."""
         txn = _txn(db)
         with _patched(_FakeStripe(result={"id": "tr_1"})):
             ct.execute_transfer(db, payment_transaction_id=txn.id)
         db.refresh(txn)
         assert txn.net_creator_amount_cents == 9200
-        assert txn.processing_fee_cents == 200
-        assert txn.transfer_amount_cents == 9000
+        assert txn.processing_fee_cents == 200, "still recorded as FC's cost"
+        assert txn.transfer_amount_cents == 9200
 
-    def test_a_missing_fee_is_retryable_not_terminal(self, db):
+    def test_a_missing_fee_no_longer_prevents_a_transfer(self, db):
+        """The amount does not depend on the fee, so an unreadable fee must
+        not strand a payment. This used to raise ``TransferRetryable``."""
         txn = _txn(db, processing_fee_cents=None)
-        with pytest.raises(ct.TransferRetryable):
-            ct.compute_transfer_amount(txn)
+        assert ct.compute_transfer_amount(txn) == 9200
 
     def test_a_missing_creator_share_is_terminal(self, db):
         txn = _txn(db, net_creator_amount_cents=None)
         with pytest.raises(ct.TransferTerminal):
             ct.compute_transfer_amount(txn)
 
-    @pytest.mark.parametrize("net_creator, fee", [(200, 200), (150, 200), (0, 0)])
-    def test_a_zero_or_negative_amount_is_terminal(self, db, net_creator, fee):
-        """Stripe's fee met or exceeded the creator's share. Nothing is sent,
-        and the row says why rather than looking sent."""
-        txn = _txn(db, net_creator_amount_cents=net_creator, processing_fee_cents=fee)
+    @pytest.mark.parametrize("net_creator", [0, -1])
+    def test_a_zero_or_negative_share_is_terminal(self, db, net_creator):
+        """Nothing to send, and the row says why rather than looking sent.
+
+        Reachable only through a fully-refunded or malformed row now that
+        Stripe's fee is not subtracted — a 100% commission would also do it.
+        """
+        txn = _txn(db, net_creator_amount_cents=net_creator, processing_fee_cents=200)
         with pytest.raises(ct.TransferTerminal) as excinfo:
             ct.compute_transfer_amount(txn)
         assert "nothing to send" in str(excinfo.value)
 
+    def test_a_fee_larger_than_the_commission_still_transfers(self, db):
+        """The case the old formula refused outright: a A$2.00 sale whose
+        processing fee exceeds the 8% commission. FC absorbs the
+        difference, so the creator is still paid."""
+        txn = _txn(
+            db, gross_amount_cents=200, platform_fee_basis_points=800,
+            platform_fee_cents=16, net_creator_amount_cents=184,
+            processing_fee_cents=33,
+        )
+        assert ct.compute_transfer_amount(txn) == 184
+
     def test_a_zero_amount_row_is_marked_failed_not_sent(self, db):
-        txn = _txn(db, net_creator_amount_cents=200, processing_fee_cents=200)
+        txn = _txn(db, net_creator_amount_cents=0, processing_fee_cents=200)
         fake = _FakeStripe()
         with _patched(fake):
             outcome = ct.execute_transfer(db, payment_transaction_id=txn.id)
@@ -225,20 +280,22 @@ class TestMarkOwed:
         db.refresh(txn)
         assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
 
-    def test_a_pending_row_with_no_fee_is_never_sent(self, db):
-        """The fee gate applies to sending, not to owing. Nothing is estimated."""
+    def test_a_pending_row_with_no_fee_is_still_sent(self, db):
+        """There is no fee gate any more. The creator's share does not
+        depend on Stripe's fee, so an unreadable fee must not hold up a
+        payment — this used to send nothing and stay pending."""
         txn = _txn(
             db, processing_fee_cents=None,
             connect_transfer_status=ConnectTransferStatus.pending.value,
         )
-        fake = _FakeStripe()
+        fake = _FakeStripe(result={"id": "tr_nofee"})
         with _patched(fake):
             outcome = ct.execute_transfer(db, payment_transaction_id=txn.id)
-        assert fake.calls == []
-        assert outcome.status == ConnectTransferStatus.pending.value
+        assert outcome.sent is True
         db.refresh(txn)
-        assert txn.provider_transfer_id is None
-        assert txn.transfer_amount_cents is None
+        assert txn.provider_transfer_id == "tr_nofee"
+        assert txn.transfer_amount_cents == 9200
+        assert txn.processing_fee_cents is None, "still unknown, and that is fine"
 
     def test_a_manual_row_is_never_marked_owed(self, db):
         txn = _txn(
@@ -267,12 +324,12 @@ class TestExecute:
 
         assert outcome.sent is True
         assert outcome.transfer_id == "tr_success"
-        assert outcome.amount_cents == 9000
+        assert outcome.amount_cents == 9200
 
         db.refresh(txn)
         assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
         assert txn.provider_transfer_id == "tr_success"
-        assert txn.transfer_amount_cents == 9000
+        assert txn.transfer_amount_cents == 9200
         assert txn.transfer_sent_at is not None
         assert txn.transfer_attempted_at is not None
         assert txn.transfer_attempt_count == 1
@@ -285,7 +342,7 @@ class TestExecute:
             ct.execute_transfer(db, payment_transaction_id=txn.id)
 
         call = fake.calls[0]
-        assert call["amount"] == 9000
+        assert call["amount"] == 9200  # net_creator, with no fee subtracted
         assert call["currency"] == "aud"
         assert call["destination"] == ACCT
         assert call["source_transaction"] == CHARGE
@@ -689,7 +746,9 @@ class TestSweeper:
             assert sweeper.sweep_pending_transfers(db).considered == 0
         assert fake.calls == []
 
-    def test_it_resolves_a_missing_fee_before_transferring(self, db):
+    def test_it_records_a_resolved_fee_without_changing_the_amount(self, db):
+        """The fee is still worth fetching — it is Fresh Collective's cost of
+        sale and belongs on the row — but it no longer moves the amount."""
         # No charge id either — the sweeper learns both from the PaymentIntent,
         # and it never overwrites one it already has.
         txn = _txn(db, processing_fee_cents=None, provider_charge_id=None)
@@ -717,9 +776,14 @@ class TestSweeper:
         db.refresh(txn)
         assert txn.processing_fee_cents == 250
         assert txn.provider_charge_id == "ch_resolved"
-        assert txn.transfer_amount_cents == 9200 - 250
+        # 9200, not 9200 - 250: the A$2.50 of card processing is Fresh
+        # Collective's to absorb, so it never comes out of the creator's share.
+        assert txn.transfer_amount_cents == 9200
 
-    def test_an_unresolvable_fee_leaves_the_row_owed_and_sends_nothing(self, db):
+    def test_an_unresolvable_fee_no_longer_strands_the_transfer(self, db):
+        """The old behaviour left the row owed forever when Stripe would not
+        report a fee. The creator's share never depended on that fee, so a
+        bookkeeping gap must not hold their money."""
         txn = _txn(db, processing_fee_cents=None)
 
         class _Boom:
@@ -735,10 +799,11 @@ class TestSweeper:
             report = sweeper.sweep_pending_transfers(db)
 
         assert report.fee_unavailable == 1
-        assert report.sent == 0
-        assert fake.calls == []
+        assert report.sent == 1
+        assert [c["amount"] for c in fake.calls] == [9200]
         db.refresh(txn)
-        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
+        assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
+        # The gap is still a gap: nothing was invented to paper over it.
         assert txn.processing_fee_cents is None
 
     def test_an_unsucceeded_payment_is_not_transferred(self, db):
@@ -785,7 +850,9 @@ class TestSweeper:
         assert len(fake.calls) == 2
 
     def test_a_terminal_failure_is_counted_and_not_retried(self, db):
-        txn = _txn(db, net_creator_amount_cents=100, processing_fee_cents=200)
+        # Terminal now means there is no creator share to send at all. A fee
+        # larger than the commission is no longer terminal — it is absorbed.
+        txn = _txn(db, net_creator_amount_cents=0, processing_fee_cents=200)
         fake = _FakeStripe()
         with _patched(fake):
             first = sweeper.sweep_pending_transfers(db)
@@ -796,3 +863,115 @@ class TestSweeper:
         with _patched(fake):
             second = sweeper.sweep_pending_transfers(db)
         assert second.considered == 0
+
+
+# ---------------------------------------------------------------------------
+# What absorbing the processing fee must not break
+# ---------------------------------------------------------------------------
+
+
+class TestAbsorbedFeePolicy:
+    """The guarantees that made absorbing Stripe's processing fee safe."""
+
+    def test_a_founding_creator_receives_the_entire_gross(self, db):
+        """0% commission, end to end — not the arithmetic this time, but the
+        figure actually handed to Stripe. A Founding Creator was promised the
+        whole sale price, so the whole sale price has to leave."""
+        txn = _txn(
+            db, gross_amount_cents=10000, platform_fee_basis_points=0,
+            platform_fee_cents=0, net_creator_amount_cents=10000,
+            net_platform_amount_cents=0, processing_fee_cents=195,
+        )
+        fake = _FakeStripe(result={"id": "tr_founding"})
+        with _patched(fake):
+            outcome = ct.execute_transfer(db, payment_transaction_id=txn.id)
+
+        assert outcome.sent is True
+        # Exactly the gross: Stripe's A$1.95 came out of Fresh Collective's own
+        # balance, and FC took no commission to cover it. This is the case
+        # Stripe permits exactly — a transfer may equal, but not exceed, its
+        # source charge.
+        assert fake.calls[0]["amount"] == 10000
+        assert fake.calls[0]["amount"] == txn.gross_amount_cents
+        assert fake.calls[0]["source_transaction"] == CHARGE
+        db.refresh(txn)
+        assert txn.transfer_amount_cents == 10000
+
+    def test_a_historical_transfer_is_never_recomputed(self, db):
+        """Rows sent under the old formula keep the figure that actually left.
+
+        The amount on a finished row records what Stripe did; it is not a value
+        to re-derive. Recomputing it would rewrite history and make every
+        reversal target wrong.
+        """
+        historical = _txn(
+            db,
+            connect_transfer_status=ConnectTransferStatus.sent.value,
+            transfer_amount_cents=9000,          # 9200 - 200, the old formula
+            provider_transfer_id="tr_historical",
+            transfer_sent_at=datetime(2026, 9, 30, 10, 0, 0),
+        )
+        fake = _FakeStripe()
+        with _patched(fake):
+            report = sweeper.sweep_pending_transfers(db)
+            outcome = ct.execute_transfer(db, payment_transaction_id=historical.id)
+
+        assert report.considered == 0            # invisible to the sweeper
+        assert fake.calls == []                  # and no second transfer
+        # The call reports the transfer that already exists rather than
+        # making another, and reports it at its original amount.
+        assert outcome.transfer_id == "tr_historical"
+        assert outcome.amount_cents == 9000
+        db.refresh(historical)
+        assert historical.transfer_amount_cents == 9000
+        assert historical.provider_transfer_id == "tr_historical"
+        assert historical.connect_transfer_status == ConnectTransferStatus.sent.value
+
+    def test_a_row_the_ledger_does_not_call_succeeded_is_never_sent(self, db):
+        """The money has to be in before any of it goes out.
+
+        This is the gate that does not depend on reaching Stripe, and it
+        matters more than it used to: an unreadable processing fee once stopped
+        the sweeper by accident, and that accident was also the only thing
+        standing between an unpaid row and a transfer.
+        """
+        txn = _txn(
+            db,
+            status=PaymentTransactionStatus.pending,
+            connect_transfer_status=ConnectTransferStatus.pending.value,
+        )
+        fake = _FakeStripe()
+        with _patched(fake):
+            report = sweeper.sweep_pending_transfers(db)
+
+        assert report.sent == 0
+        assert report.still_pending == 1
+        assert fake.calls == []
+        db.refresh(txn)
+        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
+        assert txn.provider_transfer_id is None
+
+    def test_stripe_is_believed_over_the_ledger_about_payment(self, db):
+        """Ledger says succeeded, Stripe says otherwise: nothing is sent. The
+        ledger can be stale; Stripe holds the money."""
+        txn = _txn(db, processing_fee_cents=None)      # forces the Stripe read
+
+        class _Pi:
+            status = "requires_payment_method"
+            latest_charge = None
+
+        fake = _FakeStripe()
+        fake.PaymentIntent = type(
+            "PI", (), {"retrieve": staticmethod(lambda *a, **k: _Pi())},
+        )
+        with patch(
+            "app.services.connect_transfer_sweeper.get_stripe", return_value=fake,
+        ), _patched(fake):
+            report = sweeper.sweep_pending_transfers(db)
+
+        assert report.sent == 0
+        assert report.still_pending == 1
+        assert report.fee_unavailable == 0       # not a fee problem
+        assert fake.calls == []
+        db.refresh(txn)
+        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value

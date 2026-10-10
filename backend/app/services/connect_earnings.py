@@ -79,7 +79,10 @@ class ConnectEarningRow:
 
     status: str
     status_label: str
-    #: True while the amount cannot be stated exactly yet.
+    #: Always False since Fresh Collective began absorbing the processing
+    #: fee: the creator's share stopped depending on anything Stripe had yet
+    #: to report, so there is no longer a state in which it can only be
+    #: approximated. Retained so the response shape is unchanged.
     amount_is_estimate: bool
     #: Set when part or all of the sale came back.
     refunded_amount_cents: int
@@ -102,17 +105,28 @@ class ConnectEarningsSummary:
 
 
 def creator_amount_for(txn: PaymentTransaction) -> int | None:
-    """What the creator gets from this sale, net of both fees.
+    """What the creator gets from this sale.
 
-    Prefers the figure actually transferred. Falls back to the arithmetic when
-    a transfer has not happened yet, and returns ``None`` when the processing
-    fee is still unknown rather than implying a precision we do not have.
+    Prefers the figure actually transferred, so a row that has already paid
+    out keeps reporting what really moved. That matters for the handful of
+    transfers sent before Fresh Collective began absorbing Stripe's
+    processing fee: those were smaller, and rewriting them as the new
+    formula would tell the creator they received money they did not.
+
+    Otherwise it is ``net_creator_amount_cents`` — gross minus FC's
+    commission, with no processing-fee deduction, because FC absorbs that
+    cost. ``None`` only when no creator share was ever recorded, which is
+    the case for creator-billing rows rather than sales.
+
+    The old "fee not yet known, so we cannot say" state is gone: the figure
+    no longer depends on Stripe reporting anything, so Creator Studio can
+    show it the moment a payment succeeds.
     """
     if txn.transfer_amount_cents is not None:
         return txn.transfer_amount_cents
-    if txn.net_creator_amount_cents is None or txn.processing_fee_cents is None:
+    if txn.net_creator_amount_cents is None:
         return None
-    return max(0, txn.net_creator_amount_cents - txn.processing_fee_cents)
+    return max(0, txn.net_creator_amount_cents)
 
 
 def status_label_for(txn: PaymentTransaction) -> str:
@@ -139,7 +153,14 @@ def to_row(txn: PaymentTransaction) -> ConnectEarningRow:
         creator_amount_cents=creator_amount,
         status=txn.connect_transfer_status,
         status_label=status_label_for(txn),
-        amount_is_estimate=txn.transfer_amount_cents is None,
+        # Nothing is an estimate any more. A sent row reports what actually
+        # moved; an unsent one reports ``net_creator_amount_cents``, which is
+        # exactly what will move — it no longer waits on Stripe reporting a
+        # processing fee, because that fee is Fresh Collective's to absorb.
+        # Kept in the response, always False, so the creator API shape does
+        # not change under a client mid-deploy. A candidate for removal once
+        # nothing reads it.
+        amount_is_estimate=False,
         refunded_amount_cents=txn.refunded_amount_cents or 0,
         installment_number=txn.installment_number,
     )

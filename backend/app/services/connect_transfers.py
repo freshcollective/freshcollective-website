@@ -2,15 +2,25 @@
 
 Separate charges and transfers: the charge already happened on Fresh
 Collective's platform account, and this module moves the creator's share
-afterwards as a ``/v1/transfers`` transfer. The amount is exact rather than
-estimated, which is the whole reason FC is not using destination charges —
+afterwards as a ``/v1/transfers`` transfer.
 
-    transfer_amount_cents = net_creator_amount_cents - processing_fee_cents
+    transfer_amount_cents = net_creator_amount_cents
 
-Stripe bills the processing fee to FC as the platform merchant, so FC
-accounts for that cost by retaining it before transferring. That is why the
-deduction lives here and not in the gross split: ``net_creator_amount_cents``
-still means ``gross - platform_fee`` and never moves.
+which is ``gross - platform_fee``. Stripe's processing fee is deliberately
+NOT subtracted. Fresh Collective is the platform merchant, Stripe bills the
+fee to FC, and FC absorbs it out of its own commission rather than passing
+it on. A creator therefore receives the same amount whether they are paid
+by Stripe transfer or by a manual payout batch, which is the point: moving
+someone onto automated payouts must never quietly reduce what they earn.
+
+``processing_fee_cents`` is still recorded on every row. It is FC's cost of
+sale, not a deduction from the creator, and the Payments page labels it as
+such.
+
+Because the amount no longer depends on the charge's balance transaction,
+a transfer can be computed the moment the payment succeeds. The module used
+to refuse to send until Stripe reported the fee; there is nothing left to
+wait for.
 
 Two invariants this module exists to protect
 -------------------------------------------
@@ -21,10 +31,12 @@ itself return the original transfer if a duplicate request ever escapes, and
 a partial unique index on ``provider_transfer_id`` makes a second distinct
 transfer unrecordable. The lock is what makes the other two rarely matter.
 
-**Never guess.** If the processing fee is not known, nothing is sent — no
-estimate, no partial. The row stays owed and the sweeper tries again. A
-transfer computed from a guessed fee would pay the creator the wrong amount
-and there is no clean way to correct it afterwards.
+**Never send the wrong amount.** The figure comes from one place —
+``net_creator_amount_cents``, written when the transaction was created and
+never recomputed — so a transfer cannot drift from the creator's agreed
+share. The old formula depended on Stripe reporting the processing fee, and
+this invariant was about refusing to estimate it; absorbing the fee removed
+the dependency rather than relaxing the rule.
 
 Retry classification
 --------------------
@@ -123,35 +135,36 @@ SKIPPED = "skipped"
 
 
 def compute_transfer_amount(txn: PaymentTransaction) -> int:
-    """The creator's share, net of both fees.
+    """The creator's share: gross minus Fresh Collective's commission.
+
+    Stripe's processing fee is not subtracted — FC absorbs it. See the
+    module docstring for why, and note the consequence: this no longer
+    depends on the charge's balance transaction, so it can be answered as
+    soon as the payment succeeds.
 
     Raises :class:`TransferTerminal` when the result is not a sendable
     amount. Stripe would refuse a zero or negative transfer anyway; refusing
     here means the row records *why* rather than carrying an opaque Stripe
     error, and it can never be mistaken for a transfer that was sent.
+
+    Stripe caps a ``source_transaction`` transfer at the source charge's
+    amount, and ``net_creator = gross - platform_fee`` can never exceed
+    ``gross`` because the commission is never negative. A 0% creator sits
+    exactly at that cap, which Stripe permits — the documented rule is
+    "must not exceed".
     """
     net_creator = txn.net_creator_amount_cents
-    processing_fee = txn.processing_fee_cents
 
     if net_creator is None:
         raise TransferTerminal(
             f"txn {txn.id} has no net_creator_amount_cents; nothing to transfer"
         )
-    if processing_fee is None:
-        # Not terminal — the fee is retrievable, we just do not have it yet.
-        raise TransferRetryable(
-            f"txn {txn.id} has no processing_fee_cents yet; refusing to estimate"
-        )
-
-    amount = net_creator - processing_fee
-    if amount <= 0:
+    if net_creator <= 0:
         raise TransferTerminal(
-            f"txn {txn.id} transfer amount is {amount} "
-            f"(net_creator={net_creator}, processing_fee={processing_fee}); "
-            "Stripe's fee met or exceeded the creator's share, so there is "
-            "nothing to send"
+            f"txn {txn.id} transfer amount is {net_creator}; the creator's "
+            "share is not a sendable amount, so there is nothing to send"
         )
-    return amount
+    return net_creator
 
 
 def idempotency_key(payment_transaction_id: str) -> str:
@@ -213,10 +226,10 @@ def mark_transfer_owed(db: Session, txn: PaymentTransaction) -> bool:
     changed nothing, whenever that does not hold — including for rows that are
     not Connect-routed at all.
 
-    A missing processing fee does *not* prevent this. The row is owed either
-    way, and ``execute_transfer`` refuses to send without the fee rather than
-    estimating, so a ``pending`` row with no fee is safe: the sweeper resolves
-    the fee first and only then transfers.
+    The transfer amount is ``net_creator_amount_cents``, known at creation,
+    so a row that becomes owed is immediately sendable. This used to have to
+    tolerate an unknown processing fee and leave the amount for the sweeper
+    to resolve; FC now absorbs that fee, so there is nothing to resolve.
 
     Does not commit; the caller decides the transaction boundary.
     """
@@ -226,20 +239,6 @@ def mark_transfer_owed(db: Session, txn: PaymentTransaction) -> bool:
         return False
     if txn.status != PaymentTransactionStatus.succeeded:
         return False
-
-    if txn.processing_fee_cents is None:
-        # Owed, but not yet computable. The row still becomes ``pending``,
-        # because whether a transfer is owed and whether its amount is known
-        # are different questions — and only ``pending`` is visible to the
-        # sweeper, which resolves the fee from the PaymentIntent before it
-        # will send anything. Leaving it ``awaiting_payment`` would strand a
-        # paid purchase no process ever looked at again.
-        logger.warning(
-            "connect transfer: txn=%s payment succeeded but the Stripe "
-            "processing fee is not known yet; marking the transfer owed for "
-            "the sweeper to resolve",
-            txn.id,
-        )
 
     txn.connect_transfer_status = ConnectTransferStatus.pending.value
     logger.info("connect transfer: txn=%s is now owed a transfer", txn.id)

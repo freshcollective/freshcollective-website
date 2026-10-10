@@ -107,6 +107,51 @@ class TestCreateAccount:
         assert len(rows) == 1
         assert rows[0].stripe_account_id == ACCT
 
+    def test_a_failed_payout_schedule_does_not_block_onboarding(
+        self, client, as_creator, db,
+    ):
+        """The account is created, persisted and usable even when Stripe
+        refuses the weekly payout schedule.
+
+        The interval can be re-applied at any time; a creator left without a
+        connected account cannot be paid at all.
+        """
+        with patch(f"{ADAPTER}.create_recipient_account", return_value=_created_account()), \
+             patch(f"{ADAPTER}.retrieve_legacy_account", return_value=V1_BEFORE), \
+             patch(f"{ADAPTER}.set_weekly_payout_schedule", return_value=None) as sched:
+            r = client.post("/api/creator/stripe-connect/account")
+
+        assert r.status_code == 200
+        assert r.json()["connected"] is True
+        assert r.json()["stripe_account_id"] == ACCT
+        assert sched.call_count == 1
+        rows = db.query(CreatorStripeAccount).filter_by(
+            creator_user_id=as_creator.id,
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].stripe_account_id == ACCT
+
+    def test_the_payout_schedule_is_set_before_the_projection_syncs(
+        self, client, as_creator, db,
+    ):
+        """Order matters: the sync reads the real schedule from Stripe, so
+        setting it afterwards would record an interval the account has since
+        moved off."""
+        order: list[str] = []
+        with patch(f"{ADAPTER}.create_recipient_account", return_value=_created_account()), \
+             patch(
+                 f"{ADAPTER}.set_weekly_payout_schedule",
+                 side_effect=lambda *a, **k: order.append("schedule"),
+             ), \
+             patch(
+                 f"{ADAPTER}.retrieve_legacy_account",
+                 side_effect=lambda *a, **k: (order.append("sync"), V1_BEFORE)[1],
+             ):
+            r = client.post("/api/creator/stripe-connect/account")
+
+        assert r.status_code == 200
+        assert order == ["schedule", "sync"]
+
     def test_second_call_returns_the_same_account_without_calling_stripe(
         self, client, as_creator, db,
     ):
