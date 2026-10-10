@@ -68,6 +68,7 @@ from app.services.discount_pricing import (
     normalise_code,
 )
 from app.services import pathway_payment_options as pathway_options
+from app.services import checkout_supersession as _supersession
 from app.services.checkout_orchestration import (
     _resolve_fee_bps_for_creator,
     check_option_fulfillable_or_raise,
@@ -348,6 +349,44 @@ def create_unified_checkout_session(
             detail="Payment schedule not found or not available for this option.",
         )
     is_recurring = (schedule_type_row[0] == "recurring_installments")
+
+    # ── Let a member change their payment preference ──────────────
+    # A plan row is written before Stripe is contacted, so an
+    # abandoned weekly checkout leaves a ``pending_setup`` plan that
+    # ``check_same_option_not_active`` reads as an agreement in
+    # progress — sealing every payment method on the option, pay in
+    # full included. This releases a genuinely abandoned setup first,
+    # so the guard below then sees a clean slate and needs no change.
+    # Plans that are ``active`` or ``payment_problem``, or that carry
+    # a paid instalment or a Stripe arrangement, are left alone and
+    # still refused by that guard.
+    #
+    # The lock is taken before the read so two requests arriving
+    # together cannot both decide there is nothing in progress and
+    # both create a plan.
+    _supersession.lock_member_option(
+        db, user_id=current_user.id, payment_option_id=body.payment_option_id,
+    )
+    _pending = _supersession.resolve_pending_setup(
+        db,
+        user=current_user,
+        payment_option_id=body.payment_option_id,
+        requested_schedule_id=body.payment_option_schedule_id,
+        now=now,
+    )
+    if _pending.kind == "reused" and _pending.checkout_url:
+        # Same payment method, and their Stripe page is still live.
+        # Opening a second one would be a second way to pay once.
+        logger.info(
+            "Unified checkout: reusing live plan setup=%s plan=%s user=%s",
+            _pending.plan.provider_setup_session_id if _pending.plan else "-",
+            _pending.plan.id if _pending.plan else "-", current_user.id,
+        )
+        return UnifiedCheckoutResponse(
+            checkout_url=_pending.checkout_url,
+            transaction_id=_pending.plan.id if _pending.plan else "",
+            free=False,
+        )
 
     if is_recurring:
         if body.discount_code:
@@ -672,6 +711,29 @@ def create_pathway_checkout_session(
                 detail="Payment schedule not found or not available for this option.",
             )
         is_recurring = (schedule_type_row[0] == "recurring_installments")
+
+        # Same payment-preference release as the unified endpoint. This
+        # wrapper is still live — ``PaymentOptionSelector`` drives it
+        # through ``CheckoutButton``, including for recurring schedules —
+        # so an abandoned plan would otherwise still seal this route even
+        # though /api/checkout had been fixed.
+        _supersession.lock_member_option(
+            db, user_id=current_user.id,
+            payment_option_id=body.payment_option_id,
+        )
+        _pending = _supersession.resolve_pending_setup(
+            db,
+            user=current_user,
+            payment_option_id=body.payment_option_id,
+            requested_schedule_id=body.payment_option_schedule_id,
+            now=now,
+        )
+        if _pending.kind == "reused" and _pending.checkout_url:
+            logger.info(
+                "FIP4A pathway: reusing live plan setup plan=%s user=%s",
+                _pending.plan.id if _pending.plan else "-", current_user.id,
+            )
+            return PathwayCheckoutResponse(checkout_url=_pending.checkout_url)
 
         if is_recurring:
             # Verify eligibility using the SAME helper that decides

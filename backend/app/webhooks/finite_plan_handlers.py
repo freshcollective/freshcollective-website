@@ -189,6 +189,122 @@ def handle_finite_plan_setup_completed(
     )
 
 
+def handle_finite_plan_setup_expired(
+    session: dict, db: Session, metadata: dict,
+) -> None:
+    """``checkout.session.expired`` handler for finite-plan setup Sessions.
+
+    Stripe has told us the member never completed this setup page. The
+    plan behind it was written before the Session was opened, so without
+    this it stays ``pending_setup`` for good — and Rule D in
+    ``checkout_orchestration`` then refuses every payment method on that
+    Payment Option, pay in full included. That is the production defect
+    this handler closes: an abandoned checkout now releases itself,
+    rather than waiting for someone to notice and cancel it by hand.
+
+    Deliberately narrow. It releases one plan through
+    :mod:`app.services.finite_plan_release`, which writes four columns
+    and cannot reach access, bookings or grant records. Nothing else
+    about the member changes, and no email is sent — they abandoned a
+    payment page, which is not an event worth writing to them about.
+
+    Idempotent three times over: keyed in ``process_webhook_event`` on
+    the Session id, so a redelivery is skipped outright; guarded on the
+    plan still being ``pending_setup``, so an event arriving after the
+    member already superseded the plan themselves is a no-op; and
+    guarded on the Session id still being the one recorded on the plan,
+    so a late event for a replaced Session cannot touch its successor.
+    """
+    session_id: str = session.get("id", "")
+    plan_id: str = metadata.get("purchase_plan_id", "")
+
+    def _handler() -> None:
+        _do_setup_expired(db, session_id=session_id, plan_id=plan_id)
+
+    process_webhook_event(
+        db,
+        provider="stripe",
+        provider_event_id=f"setup_session_expired:{session_id}",
+        event_type="checkout.session.expired:finite_plan_setup",
+        handler=_handler,
+    )
+
+
+def _do_setup_expired(db: Session, *, session_id: str, plan_id: str) -> None:
+    from app.services import finite_plan_release as _release
+
+    if not plan_id:
+        logger.warning(
+            "finite plan expiry: missing purchase_plan_id in metadata "
+            "(session=%s)", session_id,
+        )
+        raise SkipWebhookEvent("missing purchase_plan_id")
+
+    plan = (
+        db.query(PurchasePlan)
+        .filter(PurchasePlan.id == plan_id)
+        .with_for_update()
+        .first()
+    )
+    if plan is None:
+        logger.warning(
+            "finite plan expiry: plan %s not found (session=%s)",
+            plan_id, session_id,
+        )
+        raise SkipWebhookEvent(f"plan {plan_id} not found")
+
+    # The plan may have moved on to a newer Session — the member
+    # superseded it by starting a different payment method. Releasing on
+    # a stale Session's expiry would then cancel a live checkout.
+    #
+    # A plan holding NO Session id is the opposite case and must fall
+    # through: Stripe created the Session but the id never reached us,
+    # so this event is the first and only word we will ever get about
+    # it. Skipping here would leave that plan blocking the option until
+    # the member happened to try again.
+    if (
+        session_id
+        and plan.provider_setup_session_id
+        and plan.provider_setup_session_id != session_id
+    ):
+        logger.info(
+            "finite plan expiry: plan %s now points at session %s, not %s "
+            "— ignoring the stale event.",
+            plan.id, plan.provider_setup_session_id or "(none)", session_id,
+        )
+        return
+
+    if plan.status is not PurchasePlanStatus.pending_setup:
+        logger.info(
+            "finite plan expiry: plan %s is %s — nothing to release.",
+            plan.id, plan.status.value,
+        )
+        return
+
+    blocked = _release.releasable(plan)
+    if blocked is not None:
+        # Stripe says the page expired, but the plan looks like it
+        # carries something real. Leave it alone and say so loudly;
+        # this is an operator question, not a webhook's decision.
+        logger.error(
+            "finite plan expiry: refusing to release plan %s — %s",
+            plan.id, blocked,
+        )
+        return
+
+    released = _release.release_abandoned_setup(
+        db, plan=plan, reason=_release.RELEASE_SESSION_EXPIRED,
+        now=datetime.utcnow(), actor_user_id=None,
+    )
+    if released:
+        db.commit()
+        logger.info(
+            "finite plan expiry: released plan %s (session=%s) — the member "
+            "can purchase this Payment Option again.",
+            plan.id, session_id,
+        )
+
+
 def _do_setup_completed(
     db: Session, *, session: dict, plan_id: str, event_livemode: bool,
 ) -> None:

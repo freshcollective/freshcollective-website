@@ -12,7 +12,8 @@ Idempotency strategy:
 
 Handled events:
   checkout.session.completed    → grant access, update PaymentTransaction
-  checkout.session.expired      → mark PaymentTransaction cancelled
+  checkout.session.expired      → mark PaymentTransaction cancelled,
+                                  or release an abandoned finite-plan setup
   payment_intent.payment_failed → mark PaymentTransaction failed
 
 TODO (Phase 2+):
@@ -1243,6 +1244,24 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
     which handles both txn + booking atomically and is idempotent.
     """
     session_id: str = session.get("id", "")
+
+    # ---------------------------------------------------------------
+    # FIP2 — a finite payment plan's setup Session. These carry no
+    # PaymentTransaction (nothing is charged until the first invoice),
+    # so the lookup below would find nothing and this handler would
+    # return having done nothing — which is exactly how an abandoned
+    # weekly checkout came to block its Payment Option permanently.
+    # Routed first, and returns, so every other checkout type keeps
+    # the behaviour it has always had.
+    # ---------------------------------------------------------------
+    metadata: dict = session.get("metadata") or {}
+    if metadata.get("purchase_type") == "finite_plan_setup":
+        from app.webhooks.finite_plan_handlers import (
+            handle_finite_plan_setup_expired,
+        )
+        handle_finite_plan_setup_expired(session, db, metadata)
+        return
+
     txn = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.provider_checkout_session_id == session_id)
