@@ -486,3 +486,182 @@ class TestItRunsInsideTheExistingCron:
         ), patch.object(cron, "capture_job_summary") as cap:
             assert cron.reconcile_processing_fees(db) is None
         assert cap.call_args_list == []
+
+
+# ---------------------------------------------------------------------------
+# The production failure of 2026-10-11
+# ---------------------------------------------------------------------------
+
+
+class TestItWorksInACronEnvironment:
+    """A cron has ``STRIPE_SECRET_KEY`` and deliberately no webhook secret.
+
+    The reconciler shipped reusing ``retrieve_processing_fee_for_charge``,
+    which gated on ``settings.stripe_enabled`` — secret key *and* webhook
+    secret. Every run therefore raised::
+
+        RuntimeError: Stripe is not configured —
+                      cannot create finite payment plan.
+
+    straight after a PaymentIntent read had succeeded with HTTP 200, which
+    is the tell: the job could reach Stripe perfectly well, and only the
+    helper's own check refused.
+
+    ``STRIPE_WEBHOOK_SECRET`` is absent from every cron environment by
+    design — a job receives no webhooks — so this was not a misconfigured
+    service. It is the same mistake ``ensure_api_configured`` was written
+    to end for the Connect sweepers, reintroduced through a helper that had
+    not been brought into line.
+    """
+
+    @staticmethod
+    def _cron_env(monkeypatch):
+        """Exactly what the sweeper has in production: a key, no webhook."""
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_cron", raising=False)
+        monkeypatch.setattr(settings, "stripe_webhook_secret", None, raising=False)
+        # The precondition that makes this test meaningful.
+        assert settings.stripe_api_enabled is True
+        assert settings.stripe_enabled is False
+        return settings
+
+    def test_the_fee_reader_does_not_raise_without_a_webhook_secret(
+        self, monkeypatch,
+    ):
+        """The regression itself. Before the fix this raised RuntimeError."""
+        from app.services import stripe_finite_plan as sfp
+        self._cron_env(monkeypatch)
+
+        class _Bt:
+            fee = 46
+
+        class _Charge:
+            balance_transaction = _Bt()
+
+        monkeypatch.setattr(
+            sfp, "get_stripe",
+            lambda: type("S", (), {"Charge": type(
+                "C", (), {"retrieve": staticmethod(lambda *a, **k: _Charge())},
+            )})(),
+        )
+        assert sfp.retrieve_processing_fee_for_charge("ch_x") == 46
+
+    def test_the_whole_reconciliation_pass_succeeds_in_a_cron(
+        self, db, monkeypatch,
+    ):
+        """End to end through the real helper, in the real cron environment.
+
+        This is the shape of the production failure: a succeeded row with no
+        fee, a reachable Stripe, and no webhook secret.
+        """
+        txn = _txn(db)
+        self._cron_env(monkeypatch)
+
+        from app.services import stripe_finite_plan as sfp
+
+        class _Bt:
+            fee = 46
+
+        class _Charge:
+            balance_transaction = _Bt()
+
+        monkeypatch.setattr(
+            sfp, "get_stripe",
+            lambda: type("S", (), {"Charge": type(
+                "C", (), {"retrieve": staticmethod(lambda *a, **k: _Charge())},
+            )})(),
+        )
+        report = recon.reconcile_missing_fees(db)       # must not raise
+
+        assert report.resolved == 1
+        db.refresh(txn)
+        assert txn.processing_fee_cents == 46
+
+    def test_a_configuration_problem_returns_none_rather_than_raising(
+        self, monkeypatch,
+    ):
+        """The contract the function always documented but did not keep.
+
+        ``_bind_key()`` sat *outside* the ``try``, so a configuration failure
+        escaped as an exception while every other failure returned ``None``.
+        An informational read must never be able to fail its caller.
+        """
+        from app.checkout.stripe_client import StripeNotConfiguredError
+        from app.services import stripe_finite_plan as sfp
+
+        def _unconfigured():
+            raise StripeNotConfiguredError("no key")
+
+        monkeypatch.setattr(sfp, "get_stripe", _unconfigured)
+        assert sfp.retrieve_processing_fee_for_charge("ch_x") is None
+
+    def test_an_unreadable_fee_is_still_never_estimated(self, db, monkeypatch):
+        """The rule the fix must not trade away: the figure comes from
+        Stripe's balance transaction or it stays NULL."""
+        txn = _txn(db)
+        self._cron_env(monkeypatch)
+
+        from app.services import stripe_finite_plan as sfp
+
+        class _Charge:
+            balance_transaction = None          # Stripe will not price it
+
+        monkeypatch.setattr(
+            sfp, "get_stripe",
+            lambda: type("S", (), {"Charge": type(
+                "C", (), {"retrieve": staticmethod(lambda *a, **k: _Charge())},
+            )})(),
+        )
+        report = recon.reconcile_missing_fees(db)
+
+        assert report.resolved == 0
+        assert report.unreadable == [txn.id]
+        db.refresh(txn)
+        assert txn.processing_fee_cents is None     # not 0, not a guess
+
+    def test_a_balance_transaction_with_no_fee_is_not_read_as_zero(
+        self, db, monkeypatch,
+    ):
+        """The other way Stripe can decline to price a charge: the balance
+        transaction exists but carries no ``fee``. Zero is a number a person
+        would believe, and believing it would understate Fresh Collective's
+        cost of sale. ``None`` keeps the row in the queue instead."""
+        txn = _txn(db)
+        self._cron_env(monkeypatch)
+
+        from app.services import stripe_finite_plan as sfp
+
+        class _Bt:
+            pass                                # present, but no .fee
+
+        class _Charge:
+            balance_transaction = _Bt()
+
+        monkeypatch.setattr(
+            sfp, "get_stripe",
+            lambda: type("S", (), {"Charge": type(
+                "C", (), {"retrieve": staticmethod(lambda *a, **k: _Charge())},
+            )})(),
+        )
+        assert sfp.retrieve_processing_fee_for_charge("ch_x") is None
+
+        report = recon.reconcile_missing_fees(db)
+        assert report.resolved == 0
+        assert report.unreadable == [txn.id]
+        db.refresh(txn)
+        assert txn.processing_fee_cents is None
+
+    def test_taking_money_still_requires_the_webhook_secret(self, monkeypatch):
+        """The protection this fix must not weaken.
+
+        Reading a fee needs the key alone. *Creating* a payment plan still
+        needs the webhook secret, because charging a member with no
+        verifiable completion webhook would strand them. ``_bind_key``
+        keeps that stricter gate.
+        """
+        import pytest as _pytest
+
+        from app.services.stripe_finite_plan import _bind_key
+        self._cron_env(monkeypatch)
+        with _pytest.raises(RuntimeError, match="Stripe is not configured"):
+            _bind_key()

@@ -30,6 +30,7 @@ from typing import Any
 
 import stripe
 
+from app.checkout.stripe_client import get_stripe
 from app.core.config import settings
 from app.models.purchase_plan import PurchasePlan
 from app.services.finite_plan_disclosure import compose_setup_disclosure
@@ -644,15 +645,29 @@ def retrieve_processing_fee_for_charge(charge_id: str) -> int | None:
     error so the caller can proceed without blocking on informational
     data.
 
-    Fresh Collective absorbs Stripe processing costs for MVP; this
-    value is stored as ``PaymentTransaction.processing_fee_cents`` for
-    reporting only. It is NOT deducted from ``net_creator_amount_cents``.
+    Fresh Collective absorbs Stripe processing costs; this value is
+    stored as ``PaymentTransaction.processing_fee_cents`` for reporting
+    only. It is NOT deducted from ``net_creator_amount_cents``.
+
+    Uses ``get_stripe()`` rather than this module's ``_bind_key()``, and
+    the difference is the whole point. ``_bind_key`` gates on
+    ``settings.stripe_enabled``, which requires the webhook secret as
+    well as the key — the right gate for *creating* a payment plan,
+    because taking money with no verifiable completion webhook would
+    strand a member. Reading a balance transaction takes no money and
+    needs no webhook, and ``STRIPE_WEBHOOK_SECRET`` is deliberately
+    absent from every cron environment, so asking for it here made this
+    function raise in exactly the background jobs that wanted it.
+
+    Inside the ``try`` as well, so a configuration problem returns
+    ``None`` like every other failure instead of raising — which is what
+    the contract above has always promised.
     """
     if not charge_id:
         return None
-    _bind_key()
     try:
-        charge = stripe.Charge.retrieve(
+        api = get_stripe()
+        charge = api.Charge.retrieve(
             charge_id, expand=["balance_transaction"],
         )
         bt = getattr(charge, "balance_transaction", None)
