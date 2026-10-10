@@ -516,7 +516,7 @@ class TestTheCronSurfacesStragglers:
         assert event == "evt_1"
         assert cap.call_args.kwargs["level"] == "warning"
         assert cap.call_args.kwargs["accounts"] == 1
-        assert cap.call_args.kwargs["intervals"] == ["daily"]
+        assert cap.call_args.kwargs["on_daily"] == 1
 
     def test_account_ids_stay_out_of_the_sentry_summary(self, db, make_user):
         """Ids go to the Render log, like the needs-attention list. Acting on
@@ -531,6 +531,28 @@ class TestTheCronSurfacesStragglers:
         assert creator.id not in summary
         # But they are recoverable by an operator who needs them.
         assert ids.warning.call_count == 1
+
+    def test_the_summary_carries_only_counts(self, db, make_user):
+        """``capture_job_summary`` accepts ints and replaces anything else
+        with DROPPED_NOT_A_COUNT, logging as it goes. This first shipped
+        passing a list of interval names, so the field never reached Sentry
+        and every run logged a warning about it. Counts instead."""
+        from app.core.observability import DROPPED_NOT_A_COUNT
+
+        _csa(db, make_user(role="creator").id, payout_interval="daily")
+        _csa(db, make_user(role="creator").id, payout_interval=None)
+        _csa(db, make_user(role="creator").id, payout_interval="monthly")
+        _, cap, _ = self._run(db)
+
+        kwargs = {k: v for k, v in cap.call_args.kwargs.items() if k != "level"}
+        assert all(isinstance(v, int) for v in kwargs.values()), kwargs
+        assert DROPPED_NOT_A_COUNT not in kwargs.values()
+        assert kwargs == {
+            "accounts": 3,
+            "on_daily": 1,
+            "interval_unknown": 1,
+            "other_interval": 1,
+        }
 
     def test_a_broken_listing_does_not_fail_the_cron(self, db):
         from scripts import fc_connect_transfer_sweeper as cron

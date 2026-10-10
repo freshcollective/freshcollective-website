@@ -229,11 +229,21 @@ def report_payout_schedule_stragglers(db) -> str | None:
             "payout schedule check: creator=%s account=%s interval=%r "
             "(expected weekly)", creator_id, account_id, interval,
         )
+    # Counts, not values. ``capture_job_summary`` accepts ints only and
+    # replaces anything else with DROPPED_NOT_A_COUNT, logging as it goes —
+    # so the list of interval names this used to pass never reached Sentry
+    # and produced a warning on every run. The aggregate is what tells
+    # somebody to go and look; the per-account detail is already in the
+    # Render log above, which is where acting on it belongs.
+    daily = sum(1 for _, _, i in stragglers if i == "daily")
+    unknown = sum(1 for _, _, i in stragglers if i is None)
     return capture_job_summary(
         "connected accounts are not on weekly payouts",
         level="warning",
         accounts=len(stragglers),
-        intervals=sorted({str(i) for _, _, i in stragglers}),
+        on_daily=daily,
+        interval_unknown=unknown,
+        other_interval=len(stragglers) - daily - unknown,
     )
 
 
