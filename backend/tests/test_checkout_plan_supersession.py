@@ -556,3 +556,42 @@ class TestWiring:
             "emit_access_suspended", "schedule_routing_if_needed",
         ):
             assert forbidden not in src, f"{forbidden} must not be reachable here"
+
+
+# ═══ the legacy /api/checkout/pathway wrapper ════════════════════════
+
+class TestLegacyPathwayRoute:
+    """Still live: ``PaymentOptionSelector`` renders ``CheckoutButton``,
+    which posts to ``/api/checkout/pathway``, and does so for recurring
+    schedules too. Its recurring branch calls Rule D, so the abandoned
+    plan reached that route as well — fixing only ``/api/checkout``
+    would have left the defect accessible through a real journey.
+    """
+
+    @staticmethod
+    def _src(path: str) -> str:
+        from pathlib import Path
+        return (Path(__file__).resolve().parents[1] / path).read_text()
+
+    def test_it_takes_the_lock_and_resolves_before_rule_d(self):
+        src = self._src("app/checkout/routes.py")
+        body = src[src.index("def create_pathway_checkout_session"):]
+        lock = body.index("_supersession.lock_member_option")
+        resolve_at = body.index("_supersession.resolve_pending_setup")
+        guard = body.index("check_same_option_not_active(")
+        assert lock < resolve_at < guard
+
+    def test_it_returns_a_pathway_response_on_reuse(self):
+        src = self._src("app/checkout/routes.py")
+        body = src[src.index("def create_pathway_checkout_session"):]
+        block = body[body.index('if _pending.kind == "reused"'):]
+        head = block[: block.index("if is_recurring:")]
+        assert "return PathwayCheckoutResponse(checkout_url=_pending.checkout_url)" in head
+        assert "start_finite_plan_setup" not in head
+
+    def test_both_live_routes_are_covered(self):
+        src = self._src("app/checkout/routes.py")
+        assert src.count("_supersession.resolve_pending_setup") == 2, (
+            "the unified endpoint and the legacy pathway wrapper are the two "
+            "live member checkout entry points; both must release"
+        )

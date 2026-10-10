@@ -712,6 +712,29 @@ def create_pathway_checkout_session(
             )
         is_recurring = (schedule_type_row[0] == "recurring_installments")
 
+        # Same payment-preference release as the unified endpoint. This
+        # wrapper is still live — ``PaymentOptionSelector`` drives it
+        # through ``CheckoutButton``, including for recurring schedules —
+        # so an abandoned plan would otherwise still seal this route even
+        # though /api/checkout had been fixed.
+        _supersession.lock_member_option(
+            db, user_id=current_user.id,
+            payment_option_id=body.payment_option_id,
+        )
+        _pending = _supersession.resolve_pending_setup(
+            db,
+            user=current_user,
+            payment_option_id=body.payment_option_id,
+            requested_schedule_id=body.payment_option_schedule_id,
+            now=now,
+        )
+        if _pending.kind == "reused" and _pending.checkout_url:
+            logger.info(
+                "FIP4A pathway: reusing live plan setup plan=%s user=%s",
+                _pending.plan.id if _pending.plan else "-", current_user.id,
+            )
+            return PathwayCheckoutResponse(checkout_url=_pending.checkout_url)
+
         if is_recurring:
             # Verify eligibility using the SAME helper that decides
             # what the member surface advertises. If the flag is OFF,

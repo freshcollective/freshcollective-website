@@ -256,7 +256,17 @@ def _do_setup_expired(db: Session, *, session_id: str, plan_id: str) -> None:
     # The plan may have moved on to a newer Session — the member
     # superseded it by starting a different payment method. Releasing on
     # a stale Session's expiry would then cancel a live checkout.
-    if session_id and plan.provider_setup_session_id != session_id:
+    #
+    # A plan holding NO Session id is the opposite case and must fall
+    # through: Stripe created the Session but the id never reached us,
+    # so this event is the first and only word we will ever get about
+    # it. Skipping here would leave that plan blocking the option until
+    # the member happened to try again.
+    if (
+        session_id
+        and plan.provider_setup_session_id
+        and plan.provider_setup_session_id != session_id
+    ):
         logger.info(
             "finite plan expiry: plan %s now points at session %s, not %s "
             "— ignoring the stale event.",

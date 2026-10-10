@@ -400,3 +400,69 @@ class TestReleasePrimitive:
         db.rollback()
         db.expire_all()
         assert db.get(PurchasePlan, plan.id).status is PurchasePlanStatus.pending_setup
+
+
+# ═══ the orphaned plan: Stripe failed before we stored a Session id ══
+
+class TestOrphanedPlanRelease:
+    """``start_finite_plan_setup`` commits the plan and *then* calls
+    Stripe. A definite failure and an uncertain timeout look identical
+    from here — both raise ``stripe.StripeError`` and both leave a plan
+    with no Session id — so both are handled the same way.
+
+    Two independent routes out, because neither alone is enough:
+    the member's next attempt supersedes it, and Stripe's expiry event
+    releases it even if they never come back.
+    """
+
+    def test_the_expiry_event_releases_a_plan_with_no_session_id(self, db, world):
+        """Stripe made the Session, the id never reached us. This event
+        is the only word we will ever get about it."""
+        plan = make_plan(db, world, session_id=None)
+        fire(db, plan.id, session_id="cs_stripe_made_but_we_never_saw")
+        db.refresh(plan)
+        assert plan.status is PurchasePlanStatus.cancelled
+        assert plan.cancelled_reason == rel.RELEASE_SESSION_EXPIRED
+
+    def test_a_different_recorded_session_is_still_treated_as_stale(self, db, world):
+        """The guard must stay narrow: only a NULL id falls through."""
+        plan = make_plan(db, world, session_id="cs_current")
+        fire(db, plan.id, session_id="cs_previous")
+        db.refresh(plan)
+        assert plan.status is PurchasePlanStatus.pending_setup
+
+    def test_the_member_is_never_permanently_blocked(self, db, world):
+        """The property that matters: whichever happens first — a retry
+        or the expiry event — the option is purchasable again."""
+        # Route A: they come back and try the other method.
+        orphan = make_plan(db, world, session_id=None)
+        with patch("app.services.checkout_supersession.inspect_setup_session"):
+            out = sup.resolve_pending_setup(
+                db, user=world.member, payment_option_id=world.option.id,
+                requested_schedule_id=world.upfront.id, now=datetime.utcnow(),
+            )
+        db.commit()
+        assert out.kind == "superseded"
+        db.refresh(orphan)
+        assert orphan.status is PurchasePlanStatus.cancelled
+
+        # Route B: they never come back; Stripe's event arrives instead.
+        orphan2 = make_plan(db, world, session_id=None)
+        fire(db, orphan2.id, session_id="cs_whatever")
+        db.refresh(orphan2)
+        assert orphan2.status is PurchasePlanStatus.cancelled
+
+        # Either way nothing is left in the way.
+        remaining = db.execute(text("""
+            SELECT count(*) FROM purchase_plans
+            WHERE member_user_id = :u AND payment_option_id = :o
+              AND status::text IN ('pending_setup','active','payment_problem')
+        """), {"u": world.member.id, "o": world.option.id}).scalar()
+        assert remaining == 0
+
+    def test_an_orphan_carrying_something_real_is_still_refused(self, db, world):
+        """Falling through on a NULL id must not weaken the invariants."""
+        plan = make_plan(db, world, session_id=None, paid=1)
+        fire(db, plan.id, session_id="cs_x")
+        db.refresh(plan)
+        assert plan.status is PurchasePlanStatus.pending_setup
