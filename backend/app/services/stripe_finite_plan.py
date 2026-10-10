@@ -25,6 +25,7 @@ function returns the Stripe object; callers persist provider ids on
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import stripe
@@ -154,6 +155,88 @@ def create_setup_session(
     return stripe.checkout.Session.create(
         idempotency_key=_idem(plan.id, "setup_session"),
         **kwargs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Inspecting a setup Session we may be about to supersede
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SetupSessionState:
+    """What Stripe currently says about a plan's setup Session.
+
+    Read before superseding an abandoned checkout. ``usable`` is the
+    question that matters: did the member get far enough that a payment
+    arrangement might exist? If so the plan is not abandoned and must
+    not be released, whatever its local status says.
+    """
+    session_id: str
+    status: str                       # 'open' | 'complete' | 'expired'
+    setup_intent_id: str | None
+    setup_intent_status: str | None
+    payment_method_id: str | None
+    subscription_id: str | None
+
+    @property
+    def usable(self) -> bool:
+        return (
+            self.status == "complete"
+            or self.setup_intent_status == "succeeded"
+            or bool(self.payment_method_id)
+            or bool(self.subscription_id)
+        )
+
+
+def inspect_setup_session(session_id: str) -> SetupSessionState:
+    """Read a setup Session and its SetupIntent.
+
+    Raises :class:`app.services.discount_stripe_sessions.StripeUnavailable`
+    when Stripe cannot be read or returns a status we do not recognise —
+    the caller must refuse the supersession rather than guess.
+
+    Note the accessor style: stripe-python 15.x ``StripeObject`` has no
+    ``.get()``, so every field is read with ``getattr``.
+    """
+    from app.services.discount_stripe_sessions import (
+        StripeUnavailable, session_status,
+    )
+
+    status = session_status(session_id)      # validates + raises for us
+    _bind_key()
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except stripe.StripeError as exc:        # pragma: no cover - network
+        raise StripeUnavailable(
+            f"session {session_id} retrieve failed: {exc}"
+        ) from exc
+
+    si_ref = getattr(session, "setup_intent", None)
+    si_id = si_ref if isinstance(si_ref, str) else getattr(si_ref, "id", None)
+    si_status: str | None = None
+    pm_id: str | None = None
+    if si_id:
+        try:
+            si = stripe.SetupIntent.retrieve(si_id)
+        except stripe.StripeError as exc:    # pragma: no cover - network
+            raise StripeUnavailable(
+                f"setup_intent {si_id} retrieve failed: {exc}"
+            ) from exc
+        si_status = getattr(si, "status", None)
+        pm_ref = getattr(si, "payment_method", None)
+        pm_id = pm_ref if isinstance(pm_ref, str) else getattr(pm_ref, "id", None)
+
+    sub_ref = getattr(session, "subscription", None)
+    sub_id = sub_ref if isinstance(sub_ref, str) else getattr(sub_ref, "id", None)
+
+    return SetupSessionState(
+        session_id=session_id,
+        status=status,
+        setup_intent_id=si_id,
+        setup_intent_status=si_status,
+        payment_method_id=pm_id,
+        subscription_id=sub_id,
     )
 
 
