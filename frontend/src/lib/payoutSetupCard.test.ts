@@ -433,7 +433,15 @@ describe('the Platform Owner can reach their own payout page', () => {
   const payouts = codeOnly('../app/creator-studio/bank-payouts/page.tsx')
 
   test('the panel is rendered, not withheld by role', () => {
-    assert.match(payouts, /<StripeConnectPanel/)
+    // The panel now sits in BankPayoutsSections, which holds one status for
+    // it and the bank-account section — they drifted apart when each kept
+    // its own copy. What matters here is unchanged: no role branch decides
+    // whether the Platform Owner sees it.
+    assert.match(payouts, /<BankPayoutsSections/)
+    assert.match(
+      codeOnly('../app/creator-studio/bank-payouts/BankPayoutsSections.tsx'),
+      /<StripeConnectPanel/,
+    )
     assert.ok(
       !/is_platform_owner \?/.test(payouts),
       'the panel must not sit in a role ternary',

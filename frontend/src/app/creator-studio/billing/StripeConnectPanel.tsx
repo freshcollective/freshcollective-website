@@ -16,7 +16,7 @@
  * next, not what Stripe's JSON looks like.
  */
 
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import type { CreatorStripeConnectStatus } from '@/types/platform'
 import {
@@ -68,6 +68,7 @@ const TONE_STYLES: Record<ConnectPanelTone, { background: string; color: string 
 export default function StripeConnectPanel({
   initialStatus,
   planFeeBasisPoints,
+  onStatusChange,
 }: {
   /**
    * Server-rendered so the panel arrives with its state rather than
@@ -77,8 +78,28 @@ export default function StripeConnectPanel({
   initialStatus: CreatorStripeConnectStatus | null
   /** Drives the fee disclosure's 0%-plan wording. */
   planFeeBasisPoints: number | null
+  /**
+   * Told whenever this panel learns a newer status, so sibling sections
+   * showing the same account cannot drift from it.
+   *
+   * Added because they did: the bank-account section held a status from
+   * page load and had no way to hear about a refresh, so pressing "Refresh
+   * status" updated this panel and left that one claiming no bank account
+   * existed. One status, one source.
+   */
+  onStatusChange?: (status: CreatorStripeConnectStatus) => void
 }) {
-  const [status, setStatus] = useState<CreatorStripeConnectStatus | null>(initialStatus)
+  const [status, setStatusInternal] = useState<CreatorStripeConnectStatus | null>(initialStatus)
+
+  // Every path that learns a status goes through here, so none can forget
+  // to tell the parent.
+  const setStatus = useCallback(
+    (next: CreatorStripeConnectStatus) => {
+      setStatusInternal(next)
+      onStatusChange?.(next)
+    },
+    [onStatusChange],
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

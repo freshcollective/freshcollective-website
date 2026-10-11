@@ -135,7 +135,11 @@ export default function BankAccountPanel({
         </h2>
         <p
           className={`mt-2 text-[13px] ${
-            bank.present ? 'font-medium text-navy-900' : 'text-black'
+            // Emphasised only when it names the actual account. The
+            // "confirming the details" state is a statement, not a figure.
+            bank.present && !bank.detailsPending
+              ? 'font-medium text-navy-900'
+              : 'text-black'
           }`}
         >
           {bank.label}
@@ -151,9 +155,7 @@ export default function BankAccountPanel({
             className="mt-3 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
             style={{ background: '#38A09E' }}
           >
-            {busy
-              ? 'Opening…'
-              : bank.present ? 'Update bank details' : 'Add bank details'}
+            {busy ? 'Opening…' : bank.actionLabel}
           </button>
         )}
         {error && (

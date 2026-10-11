@@ -36,39 +36,74 @@ export function formatPayoutDate(iso: string | null): string | null {
 export interface BankAccountView {
   /** True once Stripe has told us a bank account is attached. */
   present: boolean
-  /** "Commonwealth Bank ···· 4321", or a plain absence. */
+  /** "Commonwealth Bank •••• 4321", or a plain statement of the state. */
   label: string
   /** The reassurance that Fresh Collective never sees the full number. */
   note: string
+  /** "Update bank details" once one exists, "Add bank details" before. */
+  actionLabel: string
+  /**
+   * True when a bank account exists but its masked details have not been
+   * read yet. The page says so rather than guessing either way.
+   */
+  detailsPending: boolean
 }
 
 /**
- * The creator's nominated bank account, masked.
+ * The creator's nominated bank account.
  *
- * Absence is stated plainly rather than dressed up. An account can have
- * transfers enabled with nowhere to pay out to, and a creator in that state
- * needs to be told, not reassured.
+ * Existence and masked details are two separate facts, and conflating them
+ * caused a live defect: a creator whose account Stripe had confirmed — with
+ * payouts active and a payout already paid — was told "No bank account added
+ * yet" and invited to add one, purely because Fresh Collective had not yet
+ * read the last four digits.
+ *
+ * So existence is keyed on ``external_account_count``, which Stripe reports
+ * on every sync and which was correct throughout that incident. The masked
+ * details only decide how precisely the account can be *described*.
  */
 export function bankAccountView(
   status: CreatorStripeConnectStatus | null,
 ): BankAccountView {
+  const exists = (status?.external_account_count ?? 0) > 0
   const last4 = status?.bank_last4 ?? null
-  if (!last4) {
+
+  if (!exists) {
     return {
       present: false,
+      detailsPending: false,
       label: 'No bank account added yet',
       note:
         'Add your bank details to receive your earnings. Stripe collects '
         + 'them directly — Fresh Collective never sees your account number.',
+      actionLabel: 'Add bank details',
     }
   }
+
+  const heldSecurely =
+    'Your bank details are held securely by Stripe. Fresh Collective never '
+    + 'sees your full account number.'
+
+  if (!last4) {
+    // The account is there; we simply have not read its details yet. Saying
+    // "no bank account" here would be false, and inviting them to add one
+    // would send them to change something that is already correct.
+    return {
+      present: true,
+      detailsPending: true,
+      label: 'Your bank account is set up. We’re confirming the details with Stripe.',
+      note: heldSecurely,
+      actionLabel: 'Update bank details',
+    }
+  }
+
   const name = status?.bank_name?.trim()
   return {
     present: true,
+    detailsPending: false,
     label: `${name ? `${name} ` : ''}•••• ${last4}`,
-    note:
-      'Your bank details are held securely by Stripe. Fresh Collective '
-      + 'never sees your full account number.',
+    note: heldSecurely,
+    actionLabel: 'Update bank details',
   }
 }
 

@@ -6,6 +6,7 @@
  * has reached the bank.
  */
 
+import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -25,6 +26,9 @@ const status = (o = {}) => ({
   state: 'ready',
   connected: true,
   stripe_account_id: 'acct_x',
+  // Stripe reports this on every sync, and it was correct throughout the
+  // production incident. It is what decides whether an account exists.
+  external_account_count: 1,
   bank_name: 'Commonwealth Bank',
   bank_last4: '4321',
   bank_currency: 'AUD',
@@ -43,11 +47,80 @@ const payout = (o = {}) => ({
   ...o,
 })
 
-describe('the bank account, masked', () => {
-  test('it shows the bank and the last four only', () => {
+describe('the bank account — three states, not two', () => {
+  /**
+   * The live defect this replaces: existence was keyed on ``bank_last4``,
+   * so a creator whose account Stripe had confirmed — payouts active, a
+   * payout already paid — was told "No bank account added yet" and invited
+   * to add one, purely because the masked details had not been read.
+   */
+
+  test('no account: say so, and offer to add one', () => {
+    const view = bankAccountView(status({
+      external_account_count: 0, bank_last4: null, bank_name: null,
+    }))
+    assert.equal(view.present, false)
+    assert.equal(view.detailsPending, false)
+    assert.match(view.label, /No bank account added yet/)
+    assert.equal(view.actionLabel, 'Add bank details')
+  })
+
+  test('account with details: name it precisely', () => {
     const view = bankAccountView(status())
     assert.equal(view.present, true)
+    assert.equal(view.detailsPending, false)
     assert.equal(view.label, 'Commonwealth Bank •••• 4321')
+    assert.equal(view.actionLabel, 'Update bank details')
+  })
+
+  test('a short bank name renders cleanly', () => {
+    // The production account that exposed this defect had a three-letter
+    // bank name, which is the shape worth pinning. Fictional digits: there
+    // is no reason for a real account's details to live in a test file.
+    const view = bankAccountView(status({
+      external_account_count: 1, bank_name: 'ABC', bank_last4: '1234',
+      bank_currency: 'AUD',
+    }))
+    assert.equal(view.label, 'ABC •••• 1234')
+    assert.equal(view.actionLabel, 'Update bank details')
+  })
+
+  test('account without details: confirming, never "none"', () => {
+    // The state that was missing. Stripe says one account exists; we have
+    // not read its digits yet.
+    const view = bankAccountView(status({
+      external_account_count: 1, bank_last4: null, bank_name: null,
+    }))
+    assert.equal(view.present, true)
+    assert.equal(view.detailsPending, true)
+    assert.match(view.label, /Your bank account is set up/)
+    assert.match(view.label, /confirming the details with Stripe/)
+    // Must not claim there is none, and must not invite adding one.
+    assert.ok(!/No bank account/i.test(view.label))
+    assert.equal(view.actionLabel, 'Update bank details')
+  })
+
+  test('existence follows the count, never the masked details', () => {
+    // The invariant. Any count above zero means an account exists,
+    // whatever we happen to know about it.
+    for (const last4 of [null, '1234']) {
+      assert.equal(
+        bankAccountView(status({ external_account_count: 1, bank_last4: last4 })).present,
+        true, `last4=${last4}`,
+      )
+    }
+    // And masked details without a count cannot conjure one into being.
+    assert.equal(
+      bankAccountView(status({ external_account_count: 0, bank_last4: '1234' })).present,
+      false,
+    )
+  })
+
+  test('"Add" is only ever offered when there is nothing there', () => {
+    const adding = [0, 1, 2]
+      .filter((n) => bankAccountView(status({ external_account_count: n }))
+        .actionLabel === 'Add bank details')
+    assert.deepEqual(adding, [0])
   })
 
   test('it never shows anything that could be a full number', () => {
@@ -57,16 +130,12 @@ describe('the bank account, masked', () => {
   })
 
   test('it says Fresh Collective never sees the account number', () => {
-    assert.match(bankAccountView(status()).note, /never sees your full account number/)
-  })
-
-  test('a missing bank account is stated, not dressed up', () => {
-    // A creator can have transfers enabled with nowhere to pay out to.
-    // Reassuring them in that state would be the wrong thing.
-    const view = bankAccountView(status({ bank_last4: null, bank_name: null }))
-    assert.equal(view.present, false)
-    assert.match(view.label, /No bank account added yet/)
-    assert.match(view.note, /Add your bank details/)
+    for (const count of [1, 0]) {
+      assert.match(
+        bankAccountView(status({ external_account_count: count })).note,
+        /never sees/,
+      )
+    }
   })
 
   test('a bank with no name still shows the last four', () => {
@@ -75,7 +144,9 @@ describe('the bank account, masked', () => {
   })
 
   test('no status at all is handled', () => {
-    assert.equal(bankAccountView(null).present, false)
+    const view = bankAccountView(null)
+    assert.equal(view.present, false)
+    assert.equal(view.actionLabel, 'Add bank details')
   })
 })
 
@@ -151,8 +222,21 @@ describe('the payouts headline', () => {
   })
 
   test('with no bank account, it says to add one', () => {
-    const { body } = payoutsHeadline([], status({ bank_last4: null }))
+    // No account at all — count zero, not merely missing digits.
+    const { body } = payoutsHeadline(
+      [], status({ external_account_count: 0, bank_last4: null }),
+    )
     assert.match(body, /Once your bank details are added/)
+  })
+
+  test('an account whose details are still confirming is not "no account"', () => {
+    // The headline keys off existence too, so a creator mid-confirmation is
+    // not told to add bank details they already have.
+    const { body } = payoutsHeadline(
+      [], status({ external_account_count: 1, bank_last4: null }),
+    )
+    assert.match(body, /Your bank details are set up/)
+    assert.ok(!/Once your bank details are added/.test(body))
   })
 
   test('with a bank account but no payouts, it says why', () => {
@@ -166,7 +250,7 @@ describe('the payouts headline', () => {
     for (const args of [
       [[payout()], status()],
       [[], status()],
-      [[], status({ bank_last4: null })],
+      [[], status({ external_account_count: 0, bank_last4: null })],
     ] as const) {
       const { headline, body } = payoutsHeadline(...(args as [never, never]))
       const text = `${headline} ${body}`
@@ -243,5 +327,79 @@ describe('a partial history is never presented as complete', () => {
       const note = historyNote(false, count)
       assert.ok(!/all your payouts|complete history|everything/i.test(note!), note!)
     }
+  })
+})
+
+describe('refreshing the connection also refreshes the bank section', () => {
+  /**
+   * The live defect: the readiness panel held its own status and the bank
+   * section held a prop frozen at page load, so "Refresh status" updated
+   * one and left the other claiming no bank account existed. No amount of
+   * refreshing — or reloading, since the database was never updated —
+   * changed it.
+   *
+   * These read the source, because what matters is the wiring: one status,
+   * one source, and the refresh that actually re-reads Stripe.
+   */
+  const read = (rel: string) =>
+    readFileSync(new URL(rel, import.meta.url), 'utf8')
+  const code = (rel: string) =>
+    read(rel)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+
+  const PAGE = '../app/creator-studio/bank-payouts/page.tsx'
+  const SECTIONS = '../app/creator-studio/bank-payouts/BankPayoutsSections.tsx'
+  const PANEL = '../app/creator-studio/billing/StripeConnectPanel.tsx'
+  const BANK = '../app/creator-studio/bank-payouts/BankAccountPanel.tsx'
+
+  test('the page renders one wrapper, not two independent sections', () => {
+    const src = code(PAGE)
+    assert.match(src, /<BankPayoutsSections/)
+    // Neither may be mounted directly any more, or they would each hold
+    // their own copy of the status again.
+    assert.ok(!/<StripeConnectPanel/.test(src))
+    assert.ok(!/<BankAccountPanel/.test(src))
+  })
+
+  test('the wrapper holds the status and passes it to the bank section', () => {
+    const src = code(SECTIONS)
+    assert.match(src, /useState<CreatorStripeConnectStatus \| null>/)
+    assert.match(src, /onStatusChange=\{setStatus\}/)
+    assert.match(src, /<BankAccountPanel status=\{status\}/)
+  })
+
+  test('the panel reports every status it learns', () => {
+    const src = code(PANEL)
+    // A single setter that notifies, so no code path can learn a status
+    // without telling the parent.
+    assert.match(src, /onStatusChange\?\.\(next\)/)
+    assert.match(src, /onStatusChange\?: \(status: CreatorStripeConnectStatus\) => void/)
+  })
+
+  test('the refresh action re-reads Stripe, not our stored copy', () => {
+    // POST /refresh re-reads Stripe and persists the masked details.
+    // GET /status returns the stored projection and would never populate
+    // them — which is why the earnings "Refresh" button could not help.
+    const src = code(PANEL)
+    assert.match(src, /setStatus\(await refreshStatus\(transport\)\)/)
+    const onRefresh = src.slice(src.indexOf('function onRefresh'))
+      .slice(0, 160)
+    assert.ok(!/loadStatus/.test(onRefresh), 'onRefresh must not use loadStatus')
+  })
+
+  test('the bank section takes its status as a prop, never a stale copy', () => {
+    const src = code(BANK)
+    // It must not hold its own status state: that is how the two drifted.
+    assert.ok(!/useState<CreatorStripeConnectStatus/.test(src))
+    assert.match(src, /status: CreatorStripeConnectStatus \| null/)
+  })
+
+  test('the bank section makes no duplicate status request', () => {
+    // It receives the status; only the payouts are its own to fetch.
+    const src = code(BANK)
+    assert.ok(!/stripe-connect\/status/.test(src))
+    assert.match(src, /stripe-connect\/payouts/)
   })
 })
