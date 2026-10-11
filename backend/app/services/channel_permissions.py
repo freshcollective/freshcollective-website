@@ -70,7 +70,10 @@ from app.models.platform import (
     SpaceRole,
 )
 from app.models.user import User
-from app.services.pathway_access import compute_pathway_access
+from app.services.pathway_access import (
+    compute_pathway_access,
+    users_with_included_with_offer_access,
+)
 from app.services.series_access import compute_series_access
 
 
@@ -467,34 +470,14 @@ def accessible_user_ids_for_channel(
         if access_type in ("free", "included"):
             return active_member_ids | caretaker_ids
         if access_type == "included_with_offer":
-            # Unlock set derived from PaymentOptionGrant — the single
-            # source of truth. Filter out draft Options; keep
-            # published (currently sold) and archived (historical
-            # buyers still hold valid passes).
-            from app.models.payment_option import (
-                PaymentOption as _PO,
-                PaymentOptionStatus as _POS,
+            # Unlock-holders come from the canonical helper so this set
+            # cannot drift from the per-user predicate
+            # ``can_view_channel`` applies via ``compute_pathway_access``.
+            # Holding an AccessPass on an including Option OR an active
+            # PathwayEntitlement for the Pathway both count.
+            candidates = users_with_included_with_offer_access(
+                db, space_id=space.id, pathway_id=pathway.id,
             )
-            from app.models.payment_option_grant import (
-                PaymentOptionGrant as _POG,
-            )
-            unlock_option_ids_q = (
-                db.query(_POG.payment_option_id)
-                .join(_PO, _PO.id == _POG.payment_option_id)
-                .filter(
-                    _POG.grant_kind == "pathway",
-                    _POG.pathway_id == pathway.id,
-                    _PO.status.in_([_POS.published, _POS.archived]),
-                )
-            )
-            now = datetime.utcnow()
-            rows = db.query(AccessPass.user_id).filter(
-                AccessPass.space_id == space.id,
-                AccessPass.status == AccessPassStatus.active,
-                AccessPass.payment_option_id.in_(unlock_option_ids_q),
-                (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
-            ).all()
-            candidates = {r.user_id for r in rows}
             return (candidates & active_member_ids) | caretaker_ids
         # one_time / subscription — active, non-expired PathwayEntitlement.
         now = datetime.utcnow()

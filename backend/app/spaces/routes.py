@@ -725,6 +725,10 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
 # preserves the private ``_compute_pathway_access`` name for
 # backward compatibility with in-module callers.
 from app.services.pathway_access import compute_pathway_access as _compute_pathway_access  # noqa: E402
+from app.services.pathway_access import (  # noqa: E402
+    has_active_pathway_entitlement as _has_active_pathway_entitlement,
+    included_with_offer_unlocked as _included_with_offer_unlocked,
+)
 
 
 def _check_pathway_access(
@@ -802,8 +806,11 @@ def _check_pathway_access(
         # Mirror of ``services.pathway_access.compute_pathway_access``
         # for the ``included_with_offer`` branch — kept in lockstep so
         # the HTTP-raising and bool-returning helpers can never
-        # diverge. Source of truth for unlock relationship:
-        # ``PaymentOptionGrant``, filtered by Option status.
+        # diverge. Both now call the same helpers, so "in lockstep" is
+        # enforced by sharing the query rather than by matching it by
+        # hand. Either an AccessPass on an including Option or an
+        # active PathwayEntitlement for this Pathway unlocks it; active
+        # membership is still required here, at the call site.
         member_row = (
             db.query(SpaceMembership.id)
             .filter(
@@ -813,48 +820,16 @@ def _check_pathway_access(
             )
             .first()
         )
-        if member_row is not None:
-            from app.models.payment_option import PaymentOption as _PO
-            from app.models.payment_option import PaymentOptionStatus as _POS
-            from app.models.payment_option_grant import PaymentOptionGrant as _POG
-            unlock_option_ids_q = (
-                db.query(_POG.payment_option_id)
-                .join(_PO, _PO.id == _POG.payment_option_id)
-                .filter(
-                    _POG.grant_kind == "pathway",
-                    _POG.pathway_id == pathway.id,
-                    _PO.status.in_([_POS.published, _POS.archived]),
-                )
-            )
-            now = datetime.utcnow()
-            pass_row = (
-                db.query(AccessPass.id)
-                .filter(
-                    AccessPass.user_id == user.id,
-                    AccessPass.space_id == space.id,
-                    AccessPass.status == AccessPassStatus.active,
-                    AccessPass.payment_option_id.in_(unlock_option_ids_q),
-                    (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
-                )
-                .first()
-            )
-            if pass_row:
-                return
+        if member_row is not None and _included_with_offer_unlocked(
+            db, user_id=user.id, space_id=space.id, pathway_id=pathway.id,
+        ):
+            return
         raise HTTPException(status_code=403, detail="Access to this pathway is included with a paid offer.")
 
     # one_time / subscription — require an active entitlement that hasn't expired
-    now = datetime.utcnow()
-    entitlement = (
-        db.query(PathwayEntitlement.id)
-        .filter(
-            PathwayEntitlement.user_id == user.id,
-            PathwayEntitlement.pathway_id == pathway.id,
-            PathwayEntitlement.status == EntitlementStatus.active,
-            (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
-        )
-        .first()
-    )
-    if entitlement:
+    if _has_active_pathway_entitlement(
+        db, user_id=user.id, pathway_id=pathway.id,
+    ):
         return
 
     raise HTTPException(
