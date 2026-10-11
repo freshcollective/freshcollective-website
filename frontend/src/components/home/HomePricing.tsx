@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import Container from '@/components/layout/Container'
-import { PUBLIC_PLANS } from '@/lib/plans'
+import {
+  PROCESSING_COVERED_LINE,
+  PUBLIC_PLANS,
+  commissionBulletShort,
+} from '@/lib/plans'
 
 const NAVY = '#0C1826'
 const INK_BODY = 'rgba(12, 24, 38, 0.80)'
@@ -49,12 +53,13 @@ const HOMEPAGE_PLAN_CARDS: readonly HomePlanCard[] = [
   {
     displayName: PUBLIC_PLANS.creator.displayName,   // 'Creator'
     tagline: PUBLIC_PLANS.creator.tagline,           // 'Build your business.'
-    priceLabel: PUBLIC_PLANS.creator.priceLabel,     // '$19 / month'
+    priceLabel: PUBLIC_PLANS.creator.priceLabel,
     positioning: 'Build your business — paid memberships, sessions and resources.',
     bullets: [
       'One commercial Collective',
       'Up to 500 members',
-      '8% on paid transactions',
+      commissionBulletShort(PUBLIC_PLANS.creator)!,
+      PROCESSING_COVERED_LINE,
     ],
     artworkKey: PUBLIC_PLANS.creator.artworkKey,
     artworkAlt: PUBLIC_PLANS.creator.artworkAlt,
@@ -63,12 +68,13 @@ const HOMEPAGE_PLAN_CARDS: readonly HomePlanCard[] = [
   {
     displayName: PUBLIC_PLANS.pro.displayName,       // 'Creator Portfolio'
     tagline: 'Multiple Collectives.',
-    priceLabel: PUBLIC_PLANS.pro.priceLabel,         // '$79 / month'
+    priceLabel: PUBLIC_PLANS.pro.priceLabel,
     positioning: 'Grow multiple Collectives under one Creator account.',
     bullets: [
       'Up to 5 Collectives',
       'Advanced options',
-      '3% on paid transactions',
+      commissionBulletShort(PUBLIC_PLANS.pro)!,
+      PROCESSING_COVERED_LINE,
     ],
     artworkKey: PUBLIC_PLANS.pro.artworkKey,
     artworkAlt: PUBLIC_PLANS.pro.artworkAlt,

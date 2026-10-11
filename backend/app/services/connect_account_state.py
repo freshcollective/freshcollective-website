@@ -89,6 +89,10 @@ class ProjectedState:
 
     external_account_count: int = 0
     payout_interval: str | None = None
+    #: The payout bank account, masked. See :func:`bank_account_summary`.
+    bank_name: str | None = None
+    bank_last4: str | None = None
+    bank_currency: str | None = None
     payout_delay_days: int | None = None
     debit_negative_balances: bool | None = None
 
@@ -109,6 +113,7 @@ class ProjectedState:
             "transfers_enabled", "payouts_enabled",
             "details_submitted", "currently_due_json", "requirements_deadline",
             "external_account_count", "payout_interval", "payout_delay_days",
+            "bank_name", "bank_last4", "bank_currency",
             "debit_negative_balances",
             "dashboard", "fees_collector", "losses_collector",
             "requirements_collector",
@@ -231,6 +236,46 @@ def _external_account_count(v1: dict[str, Any]) -> int:
     return len(_d_list(external.get("data")))
 
 
+def bank_account_summary(v1: dict[str, Any]) -> dict[str, Any] | None:
+    """The creator's payout bank account, masked, from the account we already
+    hold.
+
+    Read off the v1 account object that every sync already fetches, so this
+    costs no extra Stripe call. Returns only what is safe to store and show:
+    the bank's name, the last four digits, and the currency. Never the account
+    number and never the routing number — Fresh Collective has no reason to
+    hold either, and the whole point of hosted onboarding is that it never
+    sees them.
+
+    Returns ``None`` when no bank account is attached, which is a real and
+    common state: an account can have transfers enabled with nowhere to pay
+    out to.
+    """
+    external = _d(v1.get("external_accounts"))
+    accounts = _d_list(external.get("data"))
+    if not accounts:
+        return None
+
+    # Prefer the account Stripe would actually pay out to.
+    preferred = next(
+        (a for a in accounts if _d(a).get("default_for_currency") is True),
+        accounts[0],
+    )
+    entry = _d(preferred)
+    if entry.get("object") != "bank_account":
+        # A debit card can also be an external account. FC pays out to banks;
+        # saying "card" plainly beats mislabelling it as a bank account.
+        return None
+
+    last4 = entry.get("last4")
+    return {
+        "bank_name": entry.get("bank_name") or None,
+        "last4": str(last4) if last4 else None,
+        "currency": (entry.get("currency") or "").upper() or None,
+        "status": entry.get("status") or None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # The state rules
 # ---------------------------------------------------------------------------
@@ -350,6 +395,8 @@ def project(
 
     payout_settings = _d(_d(legacy.get("settings")).get("payouts"))
     schedule = _d(payout_settings.get("schedule"))
+    # Masked, from the account object already in hand — no extra Stripe call.
+    bank = bank_account_summary(legacy) or {}
     responsibilities = _d(_d(account.get("defaults")).get("responsibilities"))
 
     return ProjectedState(
@@ -369,6 +416,9 @@ def project(
         requirements_deadline=_requirements_deadline(account),
         external_account_count=_external_account_count(legacy),
         payout_interval=schedule.get("interval"),
+        bank_name=bank.get("bank_name"),
+        bank_last4=bank.get("last4"),
+        bank_currency=bank.get("currency"),
         payout_delay_days=schedule.get("delay_days"),
         debit_negative_balances=payout_settings.get("debit_negative_balances"),
         dashboard=account.get("dashboard"),

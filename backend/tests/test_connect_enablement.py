@@ -468,6 +468,9 @@ class TestConnectEarnings:
         assert summary.creator_total_cents == 18200
         assert summary.sent_total_cents == 9000
         assert summary.awaiting_total_cents == 9200
+        # The pending row is collected and queued for transfer.
+        assert summary.owed_total_cents == 9200
+        assert summary.awaiting_payment_total_cents == 0
 
     def test_an_unpriced_row_still_counts_towards_what_the_creator_is_owed(
         self, db, make_user,
@@ -487,6 +490,139 @@ class TestConnectEarnings:
         assert summary.creator_total_cents == 9200
         # FC's own unknown cost is still not invented as zero.
         assert summary.processing_fee_total_cents == 0
+
+
+class TestCollectedVersusAwaitingTransfer:
+    """What Fresh Collective holds, and what it has already sent.
+
+    The requirement behind this was "never present an uncollected instalment
+    as earnings". That turns out to be guaranteed upstream rather than here:
+    ``list_connect_earnings`` only returns rows whose *payment* succeeded, so
+    a future instalment never enters the dataset. The first test pins that
+    guarantee, because it is load-bearing and not obvious from the summary.
+
+    What is left to distinguish is transfer readiness: ``pending`` (collected
+    and queued) from ``awaiting_payment`` (collected but never queued, which
+    should not happen and means a stuck row).
+
+    Reporting only — nothing here writes.
+    """
+
+    def test_an_unsucceeded_payment_never_reaches_the_earnings_list(
+        self, db, make_user,
+    ):
+        """The guarantee that keeps uncollected money out of earnings.
+
+        A payment plan's future instalment has a transaction row long before
+        the customer pays it. If those rows appeared here, a creator would
+        read money they may never receive as theirs.
+        """
+        creator = make_user(role="creator")
+        _connect_txn(
+            db, creator.id,
+            status=PaymentTransactionStatus.pending,
+            connect_transfer_status=ConnectTransferStatus.awaiting_payment.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        rows = earnings.list_connect_earnings(db, creator_user_id=creator.id)
+        assert rows == []
+        s = earnings.summarise(rows, currency="AUD")
+        assert s.creator_total_cents == 0
+        assert s.owed_total_cents == 0
+        assert s.awaiting_payment_total_cents == 0
+
+    def test_a_paid_but_unsent_sale_is_owed(self, db, make_user):
+        creator = make_user(role="creator")
+        _connect_txn(
+            db, creator.id,
+            connect_transfer_status=ConnectTransferStatus.pending.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        s = earnings.summarise(
+            earnings.list_connect_earnings(db, creator_user_id=creator.id),
+            currency="AUD",
+        )
+        assert s.owed_total_cents == 9200
+        assert s.awaiting_payment_total_cents == 0
+
+    def test_a_sent_sale_is_in_neither(self, db, make_user):
+        creator = make_user(role="creator")
+        _connect_txn(db, creator.id)
+        s = earnings.summarise(
+            earnings.list_connect_earnings(db, creator_user_id=creator.id),
+            currency="AUD",
+        )
+        assert s.sent_total_cents == 9000
+        assert (s.owed_total_cents, s.awaiting_payment_total_cents) == (0, 0)
+
+    def test_a_collected_sale_never_queued_is_reported_apart(self, db, make_user):
+        """The stuck row. Its payment succeeded, so the money is collected,
+        but nothing will transfer it: the sweeper claims ``pending`` only.
+        Folding it into "owed to you" would hide that."""
+        creator = make_user(role="creator")
+        _connect_txn(
+            db, creator.id,
+            connect_transfer_status=ConnectTransferStatus.awaiting_payment.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        s = earnings.summarise(
+            earnings.list_connect_earnings(db, creator_user_id=creator.id),
+            currency="AUD",
+        )
+        assert s.awaiting_payment_total_cents == 9200
+        assert s.owed_total_cents == 0
+
+    def test_the_two_parts_always_account_for_the_whole(self, db, make_user):
+        """``awaiting_total_cents`` is retained for older clients, so it has
+        to stay exactly the sum of the two — otherwise a client reading the
+        old field and one reading the new fields would disagree."""
+        creator = make_user(role="creator")
+        _connect_txn(
+            db, creator.id,
+            connect_transfer_status=ConnectTransferStatus.pending.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        _connect_txn(
+            db, creator.id,
+            connect_transfer_status=ConnectTransferStatus.awaiting_payment.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        _connect_txn(db, creator.id)
+        s = earnings.summarise(
+            earnings.list_connect_earnings(db, creator_user_id=creator.id),
+            currency="AUD",
+        )
+        assert (
+            s.owed_total_cents + s.awaiting_payment_total_cents
+            == s.awaiting_total_cents
+        )
+        assert s.owed_total_cents == 9200
+        assert s.awaiting_payment_total_cents == 9200
+
+    def test_an_empty_list_totals_zero(self, db, make_user):
+        s = earnings.summarise([], currency="AUD")
+        assert (s.owed_total_cents, s.awaiting_payment_total_cents) == (0, 0)
+
+    def test_the_split_writes_nothing(self, db, make_user):
+        """Reporting only. A row must come out of a summarise call exactly as
+        it went in — no status, fee or transfer figure touched."""
+        creator = make_user(role="creator")
+        txn = _connect_txn(
+            db, creator.id,
+            connect_transfer_status=ConnectTransferStatus.pending.value,
+            transfer_amount_cents=None, provider_transfer_id=None,
+        )
+        snapshot = lambda: {
+            c.name: getattr(txn, c.name)
+            for c in PaymentTransaction.__table__.columns
+        }
+        before = snapshot()
+        earnings.summarise(
+            earnings.list_connect_earnings(db, creator_user_id=creator.id),
+            currency="AUD",
+        )
+        db.refresh(txn)
+        assert before == snapshot()
 
 
 class TestManualEarningsUnchanged:

@@ -590,3 +590,143 @@ class TestAdministratorsCanSeeTheInterval:
 
         creator = make_user(role="creator")
         assert _readiness(db, creator.id).payout_interval is None
+
+
+# ---------------------------------------------------------------------------
+# Changing bank details
+# ---------------------------------------------------------------------------
+
+
+class TestBankDetailsManagement:
+    """Stripe decides how a creator changes their bank account, not us.
+
+    Fresh Collective's accounts are ``dashboard: "express"`` with
+    ``requirements_collector: "stripe"``. Stripe documents that an
+    ``account_update`` account link — the route that would let FC host an
+    edit form — is available "only for connected accounts where your
+    platform is responsible for collecting requirements" and "can't be
+    created for accounts that have access to a Stripe-hosted Dashboard".
+    Both halves exclude us, and writing ``external_account`` directly is
+    refused for the same reason.
+
+    The Express Dashboard is what Stripe leaves: it documents that there a
+    connected account "can change their bank account". FC already creates
+    every account with that dashboard; it was simply never linked to.
+    """
+
+    def test_a_login_link_is_minted_for_the_account(self):
+        fake = type("S", (), {"Account": type("A", (), {
+            "create_login_link": staticmethod(
+                lambda acct: {"url": f"https://connect.stripe.com/express/{acct}"},
+            ),
+        })})()
+        with patch(f"{ACCOUNTS}.get_stripe", return_value=fake):
+            url = accounts.create_express_dashboard_link("acct_123")
+        assert url == "https://connect.stripe.com/express/acct_123"
+
+    def test_a_refusal_is_raised_not_swallowed(self):
+        """Unlike the payout schedule, this is a button a creator just
+        pressed — a failure has to be something the page can tell them."""
+        fake = type("S", (), {"Account": type("A", (), {
+            "create_login_link": staticmethod(
+                lambda acct: (_ for _ in ()).throw(
+                    stripe.InvalidRequestError("not eligible", param=None),
+                ),
+            ),
+        })})()
+        with patch(f"{ACCOUNTS}.get_stripe", return_value=fake), \
+             pytest.raises(accounts.ConnectError):
+            accounts.create_express_dashboard_link("acct_123")
+
+    def test_a_link_with_no_url_is_an_error_not_an_empty_string(self):
+        fake = type("S", (), {"Account": type("A", (), {
+            "create_login_link": staticmethod(lambda acct: {"object": "login_link"}),
+        })})()
+        with patch(f"{ACCOUNTS}.get_stripe", return_value=fake), \
+             pytest.raises(accounts.ConnectUnavailable):
+            accounts.create_express_dashboard_link("acct_123")
+
+    def test_no_bank_number_is_ever_sent_to_stripe_by_us(self):
+        """The guarantee behind using a hosted surface: Fresh Collective
+        never transmits an account or routing number, so it cannot leak one.
+        """
+        import inspect
+        src = inspect.getsource(accounts)
+        for forbidden in ("account_number", "routing_number", "bsb"):
+            assert forbidden not in src.lower(), forbidden
+
+
+class TestMaskedBankDetails:
+    """Shown from the account object every sync already fetches."""
+
+    @staticmethod
+    def _v1(**bank):
+        entry = {
+            "object": "bank_account",
+            "bank_name": "Commonwealth Bank",
+            "last4": "4321",
+            "currency": "aud",
+            "status": "new",
+            "default_for_currency": True,
+        }
+        entry.update(bank)
+        return {"external_accounts": {"data": [entry]}}
+
+    def test_only_safe_fields_are_returned(self):
+        from app.services.connect_account_state import bank_account_summary
+
+        summary = bank_account_summary(self._v1(
+            account_number="000123456", routing_number="062-000",
+        ))
+        assert summary == {
+            "bank_name": "Commonwealth Bank",
+            "last4": "4321",
+            "currency": "AUD",
+            "status": "new",
+        }
+        # The things Fresh Collective must never hold.
+        assert "account_number" not in summary
+        assert "routing_number" not in summary
+
+    def test_no_bank_account_is_a_real_state_not_an_error(self):
+        """An account can have transfers enabled with nowhere to pay out to.
+        Saying so beats inventing a placeholder."""
+        from app.services.connect_account_state import bank_account_summary
+
+        assert bank_account_summary({}) is None
+        assert bank_account_summary({"external_accounts": {"data": []}}) is None
+
+    def test_the_default_payout_account_is_preferred(self):
+        from app.services.connect_account_state import bank_account_summary
+
+        v1 = {"external_accounts": {"data": [
+            {"object": "bank_account", "last4": "1111",
+             "default_for_currency": False, "currency": "aud"},
+            {"object": "bank_account", "last4": "2222",
+             "default_for_currency": True, "currency": "aud"},
+        ]}}
+        assert bank_account_summary(v1)["last4"] == "2222"
+
+    def test_a_card_is_not_called_a_bank_account(self):
+        from app.services.connect_account_state import bank_account_summary
+
+        v1 = {"external_accounts": {"data": [
+            {"object": "card", "last4": "9999"},
+        ]}}
+        assert bank_account_summary(v1) is None
+
+    def test_the_projection_carries_them_onto_the_row(self, db, make_user):
+        """Projected, so the page needs no Stripe call to show them."""
+        from app.services.connect_account_state import ProjectedState
+
+        creator = make_user(role="creator")
+        row = _csa(db, creator.id, bank_name=None, bank_last4=None)
+        ProjectedState(
+            onboarding_state=row.onboarding_state,
+            bank_name="Up Bank", bank_last4="7788", bank_currency="AUD",
+        ).apply_to(row)
+        db.commit()
+        db.refresh(row)
+        assert (row.bank_name, row.bank_last4, row.bank_currency) == (
+            "Up Bank", "7788", "AUD",
+        )

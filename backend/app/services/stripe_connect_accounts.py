@@ -451,6 +451,51 @@ def accounts_not_on_weekly_payouts(db: Any) -> list[tuple[str, str, str | None]]
     return [(c, a, i) for c, a, i in rows]
 
 
+def create_express_dashboard_link(account_id: str) -> str:
+    """A single-use URL into this account's Stripe Express Dashboard.
+
+    **This is how a creator changes their bank details.** Not a choice of
+    convenience — Stripe leaves no alternative for accounts shaped like Fresh
+    Collective's:
+
+    * ``account_update`` account links, which would let Fresh Collective host
+      an edit form, are documented as available "only for connected accounts
+      where your platform is responsible for collecting requirements" and
+      explicitly "can't be created for accounts that have access to a
+      Stripe-hosted Dashboard". FC's accounts are ``dashboard: "express"``
+      *and* ``requirements_collector: "stripe"``, so they fail both halves.
+    * Writing ``external_account`` directly is refused for the same reason —
+      ``requirements_collector: "stripe"`` means Stripe, not FC, collects
+      bank details.
+    * Connect embedded components would work but need an AccountSession and a
+      client-side integration Fresh Collective does not have.
+
+    The Express Dashboard is the sanctioned surface: Stripe documents that in
+    it a connected account "can change their bank account" and can "view and
+    edit … the bank accounts used for payouts". FC already creates every
+    account with ``dashboard: "express"`` precisely so creators get that view
+    — it was simply never linked to.
+
+    Raises :class:`ConnectError` rather than returning None: unlike the payout
+    schedule, this is a button a creator just pressed, so a failure has to be
+    something the page can tell them about.
+    """
+    api = get_stripe()
+    try:
+        link = api.Account.create_login_link(account_id)
+    except stripe.StripeError as exc:
+        raise _translate(
+            exc, what=f"creating an Express Dashboard link for {account_id}",
+        ) from exc
+
+    url = getattr(link, "url", None) or _to_dict(link).get("url")
+    if not url:
+        raise ConnectUnavailable(
+            f"Stripe returned a login link with no URL for {account_id}"
+        )
+    return str(url)
+
+
 def is_closed(account: dict[str, Any]) -> bool:
     return bool(account.get("closed"))
 
@@ -517,21 +562,25 @@ def create_onboarding_link(
     )
 
 
-def create_update_link(
-    *, account_id: str, return_url: str, refresh_url: str,
-) -> str:
-    """A hosted link for re-collection once Stripe raises new requirements.
-
-    Distinct from onboarding: this is the path for an account that already
-    submitted and has since been asked for more, so FC needs both rather
-    than reusing one.
-    """
-    return _account_link(
-        account_id=account_id,
-        use_case_type="account_update",
-        return_url=return_url,
-        refresh_url=refresh_url,
-    )
+#: ``account_update`` account links are deliberately absent.
+#:
+#: They are the obvious way to let a creator edit what they have already
+#: given, and Stripe does not support them for accounts shaped like Fresh
+#: Collective's: documented as available "only for connected accounts where
+#: your platform is responsible for collecting requirements" and as
+#: impossible to create "for accounts that have access to a Stripe-hosted
+#: Dashboard". FC's accounts are ``requirements_collector: "stripe"`` *and*
+#: ``dashboard: "express"``, so they fail both halves.
+#:
+#: A ``create_update_link`` helper did exist here and was called for every
+#: creator who had finished onboarding, which meant every one of them was
+#: asking Stripe for a link it would refuse. It is gone rather than left
+#: unused, so it cannot be reached again by accident.
+#:
+#: Use :func:`create_onboarding_link` when Stripe has anything outstanding —
+#: Stripe states that type is for first-time onboarding *or* "when an
+#: existing user has new requirements" — and
+#: :func:`create_express_dashboard_link` when it does not.
 
 
 # ---------------------------------------------------------------------------

@@ -32,12 +32,17 @@ describe('Community Billing hides payment setup', () => {
     )
   })
 
-  test('Stripe Connect sits inside the gate, not before it', () => {
+  test('the route to Bank payouts sits inside the gate, not before it', () => {
+    // The Connect panel moved to /creator-studio/bank-payouts, which carries
+    // its own plan gate. What must stay gated on Billing is the pointer:
+    // Community cannot take payments, so it should not be invited to set up
+    // payouts for earnings it cannot have.
     const src = codeOnly(BILLING)
     const gate = src.indexOf('{current_plan.paid_offers_enabled && (')
-    const connect = src.indexOf('<StripeConnectPanel')
-    assert.ok(gate > -1 && connect > -1)
-    assert.ok(connect > gate, 'StripeConnectPanel must be inside the gate')
+    const pointer = src.indexOf('/creator-studio/bank-payouts')
+    assert.ok(gate > -1 && pointer > -1)
+    assert.ok(pointer > gate, 'the pointer must be inside the gate')
+    assert.ok(!src.includes('<StripeConnectPanel'), 'panel has moved')
   })
 
   test('the gate uses the capability, never a plan-name string', () => {

@@ -83,12 +83,14 @@ import app.models.access_grant_record  # noqa: F401
 import app.models.refund_operation  # noqa: F401
 import app.models.creator_payout_batch  # noqa: F401
 import app.models.creator_stripe_account  # noqa: F401
+import app.models.creator_bank_payout  # noqa: F401
 import app.comms.models  # noqa: F401
 
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
 from app.services import connect_transfer_sweeper as _sweeper
+from app.services import creator_bank_payout_sync as payout_sync
 from app.services import processing_fee_reconciliation as fee_recon
 from app.services import stripe_connect_accounts as connect_accounts
 
@@ -192,6 +194,44 @@ def reconcile_processing_fees(db) -> str | None:
         level="warning",
         rows_unpriced=len(report.unreadable),
         rows_resolved=report.resolved,
+    )
+
+
+def sync_bank_payouts(db) -> str | None:
+    """Read each creator's actual bank payouts from Stripe.
+
+    A Connect transfer and a bank payout are different events, and Fresh
+    Collective only ever observed the first — so the furthest Creator Studio
+    could honestly say was "sent to Stripe". This asks Stripe directly.
+
+    Reuses this cron rather than adding a service: payouts are weekly, so a
+    fifteen-minute lag is immaterial, and a new Render cron would mean a
+    blueprint change. Every write is an upsert on Stripe's own payout id, so
+    running it again — or alongside a future webhook writer — converges
+    rather than duplicating.
+
+    Swallows its own errors, like the reporters above. This runs after the
+    money work and writes nothing a transfer depends on.
+
+    Returns a Sentry event id when accounts could not be read.
+    """
+    try:
+        report = payout_sync.sync_creator_bank_payouts(db)
+    except Exception:
+        logger.exception("bank payout sync failed")
+        return None
+
+    if not report.unreadable:
+        return None
+    # Account ids go to the Render log only, like the lists above.
+    for account_id in report.unreadable:
+        id_logger.warning("bank payout sync: could not read account=%s", account_id)
+    return capture_job_summary(
+        "bank payouts could not be read for some connected accounts",
+        level="warning",
+        accounts_unreadable=len(report.unreadable),
+        accounts_seen=report.accounts,
+        payouts_recorded=report.created + report.updated,
     )
 
 
@@ -376,6 +416,7 @@ def main() -> int:
         # transferred correctly — and neither adds a handler to ``main``.
         reconcile_processing_fees(db)
         report_payout_schedule_stragglers(db)
+        sync_bank_payouts(db)
 
         return 0
     except Exception:

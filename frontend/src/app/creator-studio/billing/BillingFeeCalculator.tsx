@@ -66,7 +66,7 @@ export default function BillingFeeCalculator({ feeBasisPoints, currency }: Props
       </div>
 
       <p className="text-[11px] leading-relaxed text-black">
-        Estimate only. Does not include Stripe processing fees (~1.75% + $0.30 AUD), GST, refunds, disputes, or payout costs.
+        Fresh Collective covers standard card processing costs — they are not taken out of your earnings. Excludes GST, refunds and disputes.
       </p>
     </div>
   )

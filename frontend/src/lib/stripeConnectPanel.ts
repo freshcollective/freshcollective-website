@@ -86,15 +86,14 @@ export function payoutScheduleSentence(
  * Plain-language account of who takes what, once FC routes sales through
  * Connect.
  *
- * Deliberately no percentages, no Stripe pricing table and no estimated
- * amounts: the actual processing fee depends on the card used and is only
- * known after each sale, so a number here would be wrong often enough to
- * erode trust. The order is the whole point — Stripe's fee comes out
- * first, then FC's, and the remainder is the creator's.
+ * One deduction, and it is Fresh Collective's. The creator's commission
+ * percentage is named, because it is theirs and fixed by their plan. Stripe's
+ * pricing table is not, because Fresh Collective absorbs that cost — quoting
+ * a figure a creator never pays would invite them to subtract it.
  *
- * A 0% plan needs its own sentence. "0% fee" is easily heard as "nothing is
- * deducted", and Stripe's processing fee is still deducted — which for those
- * creators is the entire change Connect brings.
+ * A 0% plan needs its own sentence. "0% commission" is easily heard as a
+ * catch — the point is that there genuinely is nothing to deduct, so a
+ * Founding Creator receives the full amount of each sale.
  */
 export function feeDisclosure(platformFeeBasisPoints: number | null): string {
   const covered =

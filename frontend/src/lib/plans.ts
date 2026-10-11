@@ -33,6 +33,23 @@ export interface PublicPlanDisplay {
   /** Human price label, e.g. "Free", "$19 / month". Not used for any
    *  actual billing calculation. */
   priceLabel: string
+  /**
+   * The commission this plan takes on a paid sale, in basis points, or
+   * null for a plan with no paid offers.
+   *
+   * Display only — checkout reads the ``creator_plans`` database row. The
+   * point of holding it here is that every public surface reads the same
+   * value, so the home page and /for-creators cannot drift apart.
+   *
+   * **Must equal the live database figure, not the intended one.** A public
+   * page promising a lower commission than checkout charges is the worse of
+   * the two possible errors, so this trails the database rather than leading
+   * it: change the row first, then this.
+   */
+  commissionBasisPoints: number | null
+  /** The same figure as a label, e.g. "8%". Null when there is no paid
+   *  commission to state. */
+  commissionLabel: string | null
   /** Where the /for-creators plan CTA sends the visitor. Community
    *  skips payment; paid plans go through /checkout/creator first. */
   ctaHref: string
@@ -52,12 +69,41 @@ export interface PublicPlanDisplay {
   artworkAlt: string
 }
 
+/**
+ * What Fresh Collective covers, stated once.
+ *
+ * Fresh Collective absorbs the card processing cost out of its own
+ * commission, so a creator's earnings are the sale less the commission and
+ * nothing else. Every public surface says it the same way, and deliberately
+ * quotes no processing rate: a figure a creator never pays only invites them
+ * to subtract it.
+ */
+export const PROCESSING_COVERED_LINE =
+  'We cover standard card processing costs'
+
+/** "8% commission on paid offers", or null for a plan without paid offers. */
+export function commissionBullet(plan: PublicPlanDisplay): string | null {
+  return plan.commissionLabel
+    ? `${plan.commissionLabel} commission on paid offers`
+    : null
+}
+
+/** "8% on paid transactions" — the shorter home-page phrasing. */
+export function commissionBulletShort(plan: PublicPlanDisplay): string | null {
+  return plan.commissionLabel
+    ? `${plan.commissionLabel} on paid transactions`
+    : null
+}
+
 export const PUBLIC_PLANS: Record<CreatorPlanSlug, PublicPlanDisplay> = {
   community: {
     slug: 'community',
     displayName: 'Community Collective',
     tagline: 'A first place to gather.',
     priceLabel: 'Free',
+    // No paid offers on Community, so there is no commission to state.
+    commissionBasisPoints: null,
+    commissionLabel: null,
     ctaHref: '/signup/creator?plan=community',
     // Every bullet here is enforced server-side — see
     // backend/app/creator/plan_guards.py. "approved" was removed from the
@@ -81,6 +127,9 @@ export const PUBLIC_PLANS: Record<CreatorPlanSlug, PublicPlanDisplay> = {
     displayName: 'Creator',
     tagline: 'Build your business.',
     priceLabel: '$19 / month',
+    // 8% — matches the live ``creator_plans`` row.
+    commissionBasisPoints: 800,
+    commissionLabel: '8%',
     ctaHref: '/checkout/creator?plan=creator',
     summaryBullets: [
       'One commercial Collective',
@@ -98,6 +147,12 @@ export const PUBLIC_PLANS: Record<CreatorPlanSlug, PublicPlanDisplay> = {
     displayName: 'Creator Portfolio',
     tagline: 'Multiple Collectives. One Creator.',
     priceLabel: '$79 / month',
+    // 3% — the figure currently live in ``creator_plans``.
+    // The intended rate is 4%, but publishing it before the
+    // database carries it would advertise a commission lower
+    // than checkout actually charges. Change the row first.
+    commissionBasisPoints: 300,
+    commissionLabel: '3%',
     ctaHref: '/checkout/creator?plan=pro',
     summaryBullets: [
       'Up to 5 Collectives',
