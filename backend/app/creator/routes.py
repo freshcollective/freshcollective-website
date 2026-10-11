@@ -2231,11 +2231,31 @@ def get_member_pathway_access(
         if ent.pathway_id not in entitlement_map:
             entitlement_map[ent.pathway_id] = ent
 
-    # Active-only set for access checks
+    # Currently-valid set for access labelling.
+    #
+    # "Currently valid" is the same test the member-facing
+    # ``services.pathway_access.has_active_pathway_entitlement`` applies:
+    # ``status == 'active'`` AND ``ends_at`` NULL-or-future, for this
+    # member and this Pathway. Status alone is not enough — an active row
+    # whose ``ends_at`` has passed grants no access, and reporting it as
+    # "Purchased" told Creators the member could get in when they could
+    # not. The rows themselves are untouched, so the history below still
+    # shows what was bought and when.
+    _now = datetime.utcnow()
     active_entitlement_pathway_ids = {
         ent.pathway_id
         for ent in entitlements
         if (ent.status.value if hasattr(ent.status, "value") else str(ent.status)) == "active"
+        and (ent.ends_at is None or ent.ends_at > _now)
+    }
+    # Active status but past its end date — a lapsed purchase. Kept
+    # separate so it reads as expired rather than silently "Locked",
+    # which would hide that this member ever paid.
+    lapsed_entitlement_pathway_ids = {
+        ent.pathway_id
+        for ent in entitlements
+        if (ent.status.value if hasattr(ent.status, "value") else str(ent.status)) == "active"
+        and ent.ends_at is not None and ent.ends_at <= _now
     }
 
     step_count_map, completed_count_map, last_activity_map, pathways_with_any_progress = (
@@ -2293,6 +2313,14 @@ def get_member_pathway_access(
         elif ent_status in ("expired", "cancelled"):
             access_state = ent_status
             access_label = ent_status.capitalize()
+            access_source = ent_source
+        elif pathway.id in lapsed_entitlement_pathway_ids:
+            # Row still says ``active`` but its window has closed. The
+            # member cannot get in, so this must not read as current
+            # access; the source is preserved so the purchase history
+            # stays visible.
+            access_state = "expired"
+            access_label = "Expired"
             access_source = ent_source
         else:
             access_state = "locked"
