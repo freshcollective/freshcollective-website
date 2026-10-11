@@ -100,7 +100,29 @@ class ConnectEarningsSummary:
     processing_fee_total_cents: int
     creator_total_cents: int
     sent_total_cents: int
+    #: Everything not yet sent, collected or not. Kept because clients read
+    #: it, and because it is the sum of the two fields below — but it is the
+    #: wrong figure to show a creator on its own, for the reason those two
+    #: exist.
     awaiting_total_cents: int
+    #: Collected and owed: the customer has paid, and the transfer has not
+    #: gone out yet. This is money Fresh Collective holds for the creator,
+    #: and it is the figure to show as "owed to you".
+    owed_total_cents: int
+    #: Rows still marked ``awaiting_payment``.
+    #:
+    #: Expected to be zero. ``list_connect_earnings`` only returns rows whose
+    #: *payment* succeeded, and ``mark_transfer_owed`` moves a row to
+    #: ``pending`` at the moment it does — so this sums sales that were
+    #: collected but never queued for transfer. Nothing re-queues them: the
+    #: sweeper claims ``pending`` only. A non-zero figure is therefore a
+    #: stuck row to investigate, not money awaiting a customer.
+    #:
+    #: It is emphatically NOT uncollected revenue. A future instalment the
+    #: customer has not paid never appears in this dataset at all, which is
+    #: what keeps it out of a creator's earnings — see the test
+    #: ``test_an_unsucceeded_payment_never_reaches_the_earnings_list``.
+    awaiting_payment_total_cents: int
     row_count: int
 
 
@@ -226,6 +248,19 @@ def summarise(
                 ConnectTransferStatus.awaiting_payment.value,
                 ConnectTransferStatus.pending.value,
             )
+        ),
+        # ``awaiting`` split by transfer readiness. ``pending`` is the
+        # ordinary state: collected and queued. ``awaiting_payment`` should
+        # not occur here at all, because this list only contains succeeded
+        # payments — so it is reported separately rather than folded into a
+        # figure a creator would read as money owed to them.
+        owed_total_cents=sum(
+            r.creator_amount_cents or 0 for r in priced
+            if r.status == ConnectTransferStatus.pending.value
+        ),
+        awaiting_payment_total_cents=sum(
+            r.creator_amount_cents or 0 for r in priced
+            if r.status == ConnectTransferStatus.awaiting_payment.value
         ),
         row_count=len(in_currency),
     )

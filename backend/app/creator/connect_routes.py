@@ -56,6 +56,7 @@ from app.models.platform import Space
 from app.models.user import User
 from app.services import connect_account_sync as sync
 from app.services import connect_earnings as earnings
+from app.services import creator_bank_payout_sync as payout_sync
 from app.services import connect_routing_enablement as enablement
 from app.services import stripe_connect_accounts as connect
 
@@ -101,6 +102,14 @@ class ConnectStatusResponse(BaseModel):
     payout_interval: str | None = None
     payout_delay_days: int | None = None
 
+    #: The payout bank account, masked. Never an account or routing number:
+    #: Stripe collects those through hosted onboarding and Fresh Collective
+    #: does not hold them. All three are null when Stripe has told us nothing
+    #: — which is a real state, not an error.
+    bank_name: str | None = None
+    bank_last4: str | None = None
+    bank_currency: str | None = None
+
     #: Whether money actually routes through Connect for this creator.
     #: False for everyone until a deliberate, separate action sets it.
     connect_routing_enabled: bool = False
@@ -140,7 +149,17 @@ class ConnectEarningsResponse(BaseModel):
     processing_fee_total_cents: int
     creator_total_cents: int
     sent_total_cents: int
+    #: Everything not yet sent. Equals ``owed_total_cents +
+    #: uncollected_total_cents``; retained so an older client keeps working.
     awaiting_total_cents: int
+    #: Collected from the customer and owed to the creator — the figure to
+    #: show as "owed to you".
+    owed_total_cents: int
+    #: Collected but never queued for transfer. Expected to be zero; a
+    #: non-zero figure is a stuck row, not money awaiting a customer. See
+    #: ``ConnectEarningsSummary`` for why uncollected instalments cannot
+    #: appear here.
+    awaiting_payment_total_cents: int
     row_count: int
     rows: list[ConnectEarningOut]
 
@@ -285,6 +304,9 @@ def _to_status(row: CreatorStripeAccount | None) -> ConnectStatusResponse:
         ),
         external_account_count=row.external_account_count,
         payout_interval=row.payout_interval,
+        bank_name=row.bank_name,
+        bank_last4=row.bank_last4,
+        bank_currency=row.bank_currency,
         payout_delay_days=row.payout_delay_days,
         connect_routing_enabled=row.connect_payouts_enabled_at is not None,
         fee_disclosure_acknowledged=row.fee_disclosure_acknowledged_at is not None,
@@ -407,6 +429,27 @@ def create_or_get_account(
     return _to_status(row)
 
 
+def _has_outstanding_requirements(row: CreatorStripeAccount) -> bool:
+    """Whether Stripe still has something to collect from this creator.
+
+    Two quite different reasons it might:
+
+    * They never finished onboarding, so ``details_submitted`` is false.
+    * They finished, and Stripe has since asked for more — a new capability,
+      an expiring document, a bank account it still wants. Those arrive as
+      ``currently_due`` entries on the projection.
+
+    Either way the answer is the same hosted onboarding form, which is what
+    makes this one predicate rather than two branches. Deliberately *not*
+    keyed on ``onboarding_state``: a restricted account can have nothing
+    currently due and still not be payable, and sending that creator to a
+    form with nothing in it would imply the problem is theirs to fix.
+    """
+    if not row.details_submitted:
+        return True
+    return bool(row.currently_due_json)
+
+
 @router.post("/onboarding-link", response_model=AccountLinkResponse)
 def create_onboarding_link(
     creator: User = Depends(get_creator_user),
@@ -418,9 +461,31 @@ def create_onboarding_link(
     creation, so a cached one is usually dead by the time a creator clicks
     it, and handing out a dead link is worse than making them ask again.
 
-    Which link depends on where they are: a creator who has already
-    submitted needs ``account_update`` for re-collection, not
-    ``account_onboarding``.
+    Which link depends on what Stripe still has to collect, not on whether
+    the creator once finished a form.
+
+    This previously routed on ``details_submitted``: anyone who had submitted
+    got an ``account_update`` link. Stripe does not support those for Fresh
+    Collective's accounts — they are documented as available "only for
+    connected accounts where your platform is responsible for collecting
+    requirements" and as impossible to create "for accounts that have access
+    to a Stripe-hosted Dashboard", and FC's are ``requirements_collector:
+    "stripe"`` *and* ``dashboard: "express"``. So every already-onboarded
+    creator who pressed Continue was asking for a link Stripe would refuse.
+
+    The supported routing, per Stripe's own guidance:
+
+    * Anything outstanding — a creator mid-onboarding, or one Stripe has
+      since asked more of — gets ``account_onboarding``. Stripe is explicit
+      that this type is for first-time onboarding *or* "when an existing
+      user has new requirements", and that "the onboarding interface knows
+      what information it needs to collect".
+    * Nothing outstanding gets an Express Dashboard login link, which is
+      where Stripe lets an account holder view and change what they have
+      already given, including their payout bank account.
+
+    Neither path lets Fresh Collective see or write identity or bank
+    details; Stripe collects both.
     """
     row = _find_row(db, creator)
     if row is None or not row.stripe_account_id:
@@ -434,14 +499,29 @@ def create_onboarding_link(
             detail="This Stripe account has been closed and cannot be set up again.",
         )
 
+    # Nothing left to collect: hosted onboarding would present an empty
+    # form, and an ``account_update`` link is unsupported here. The Express
+    # Dashboard is the surface Stripe provides for this state.
+    if not _has_outstanding_requirements(row):
+        try:
+            url = connect.create_express_dashboard_link(str(row.stripe_account_id))
+        except StripeNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=503, detail="Stripe is not configured on this server.",
+            ) from exc
+        except connect.ConnectError as exc:
+            logger.error(
+                "connect: dashboard link failed for %s: %s",
+                row.stripe_account_id, exc,
+            )
+            _record_failure(db, row, str(exc))
+            raise _translate(exc) from exc
+        return AccountLinkResponse(url=url)
+
     return_url, refresh_url = _link_urls()
-    mint = (
-        connect.create_update_link if row.details_submitted
-        else connect.create_onboarding_link
-    )
 
     try:
-        url = mint(
+        url = connect.create_onboarding_link(
             account_id=row.stripe_account_id,
             return_url=return_url,
             refresh_url=refresh_url,
@@ -537,6 +617,122 @@ def acknowledge_fees(
     return _to_status(row)
 
 
+@router.post("/dashboard-link", response_model=AccountLinkResponse)
+def create_dashboard_link(
+    creator: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> AccountLinkResponse:
+    """A single-use link into this creator's Stripe Express Dashboard.
+
+    Where a creator changes their bank details. Stripe leaves no alternative
+    for accounts shaped like Fresh Collective's — see
+    :func:`stripe_connect_accounts.create_express_dashboard_link` for why an
+    ``account_update`` link and a direct ``external_account`` write are both
+    refused. Fresh Collective never sees an account number either way, which
+    is the point.
+
+    Scoped to the authenticated creator's own account row, so the link can
+    only ever open their own dashboard.
+    """
+    row = _find_row(db, creator)
+    if row is None or not row.stripe_account_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Set up bank payouts before opening your Stripe dashboard.",
+        )
+    if row.onboarding_state == OnboardingState.closed.value:
+        raise HTTPException(
+            status_code=409,
+            detail="This account has been closed and cannot be opened.",
+        )
+
+    try:
+        url = connect.create_express_dashboard_link(str(row.stripe_account_id))
+    except StripeNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503, detail="Stripe is not configured on this server.",
+        ) from exc
+    except connect.ConnectError as exc:
+        logger.error(
+            "connect: dashboard link failed for %s: %s",
+            row.stripe_account_id, exc,
+        )
+        raise _translate(exc) from exc
+
+    return AccountLinkResponse(url=url)
+
+
+class BankPayoutOut(BaseModel):
+    """One bank payout, as the creator sees it.
+
+    No Stripe payout id and no raw failure code: an id is not actionable by a
+    creator, and a code like ``account_closed`` reads as jargon. The status
+    carries the meaning, and ``paid`` is the only value that means the money
+    reached the bank.
+    """
+
+    amount_cents: int
+    currency: str
+    status: str
+    arrival_date: datetime | None = None
+    initiated_at: datetime | None = None
+
+
+class BankPayoutsResponse(BaseModel):
+    payouts: list[BankPayoutOut]
+    #: When Fresh Collective last read these from Stripe. Lets the page say
+    #: how current the list is rather than implying it is live.
+    synced_at: datetime | None = None
+    #: Whether another page of already-imported payouts exists.
+    has_more: bool = False
+    #: Whether Stripe has confirmed there are no older payouts left to
+    #: import. False while the history import is still walking backwards —
+    #: the page says so, because a partial history shown as complete is
+    #: worse than one shown as partial.
+    history_complete: bool = False
+
+
+@router.get("/payouts", response_model=BankPayoutsResponse)
+def list_bank_payouts(
+    limit: int = payout_sync.PAGE_SIZE,
+    offset: int = 0,
+    creator: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> BankPayoutsResponse:
+    """This creator's actual bank payouts, newest first.
+
+    Read from Fresh Collective's projection of Stripe's own ``Payout``
+    records — never inferred from transfers. A transfer reaching the
+    creator's Stripe balance says nothing about whether the bank accepted
+    the deposit, so the two are reported separately and only ``paid`` means
+    arrived.
+
+    Scoped to the authenticated creator and to this environment's Stripe
+    mode by :func:`payout_sync.list_for_creator`.
+    """
+    rows, has_more = payout_sync.list_for_creator(
+        db, creator_user_id=creator.id,
+        limit=min(max(limit, 1), 50), offset=max(offset, 0),
+    )
+    return BankPayoutsResponse(
+        payouts=[
+            BankPayoutOut(
+                amount_cents=r.amount_cents,
+                currency=r.currency,
+                status=r.status,
+                arrival_date=r.arrival_date,
+                initiated_at=r.initiated_at,
+            )
+            for r in rows
+        ],
+        synced_at=max((r.synced_at for r in rows), default=None),
+        has_more=has_more,
+        history_complete=payout_sync.history_is_complete(
+            db, creator_user_id=creator.id,
+        ),
+    )
+
+
 @router.get("/earnings", response_model=ConnectEarningsResponse)
 def get_connect_earnings(
     creator: User = Depends(get_creator_user),
@@ -559,6 +755,8 @@ def get_connect_earnings(
         creator_total_cents=summary.creator_total_cents,
         sent_total_cents=summary.sent_total_cents,
         awaiting_total_cents=summary.awaiting_total_cents,
+        owed_total_cents=summary.owed_total_cents,
+        awaiting_payment_total_cents=summary.awaiting_payment_total_cents,
         row_count=summary.row_count,
         rows=[
             ConnectEarningOut(**{

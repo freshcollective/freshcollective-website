@@ -394,7 +394,7 @@ export default function CreatorPaymentsClient({
         <CollectiveArtworkHeader
           collectiveName={headerCollectiveName}
           sectionTitle="Payments received"
-          meta="Real payment activity — money in from member purchases, with fees and estimated payouts across your collectives."
+          meta="Real payment activity — money in from member purchases, with Fresh Collective's commission and your earnings across your collectives."
           location={headerLocation}
           coverImageUrl={headerCoverImageUrl}
         />
@@ -624,7 +624,7 @@ export default function CreatorPaymentsClient({
                 accent
               />
               <SummaryCard
-                label="Est. Creator Earnings"
+                label="Creator Earnings"
                 value={summary ? fmt(summary.total_creator_net_amount_cents, displayCurrency) : '—'}
                 sub={`after ${feeDisplay} fee`}
               />

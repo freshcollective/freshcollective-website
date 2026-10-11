@@ -115,14 +115,17 @@ describe('copy by Connect state', () => {
     })
   }
 
-  test('every card points at the payout section of Billing', () => {
+  test('every card points at Bank payouts', () => {
     for (const state of [
       'not_started', 'onboarding', 'verifying', 'action_required',
       'restricted', 'transfers_only', 'unsupported', 'closed',
     ]) {
       assert.equal(payoutSetupCard(true, status(state))!.href, PAYOUTS_HREF)
     }
-    assert.equal(PAYOUTS_HREF, '/creator-studio/billing#payouts')
+    // Its own page with its own nav entry, not a fragment of Billing. A
+    // fragment link could only be followed from wherever the card happened
+    // to be rendered, and the card is hidden once setup is complete.
+    assert.equal(PAYOUTS_HREF, '/creator-studio/bank-payouts')
   })
 })
 
@@ -295,8 +298,13 @@ describe('Billing hierarchy', () => {
     assert.match(src, /id="payouts"/)
   })
 
-  test('the existing Connect panel and copy are still used', () => {
-    assert.match(src, /<StripeConnectPanel/)
+  test('the Connect panel has moved to its own page, leaving a pointer', () => {
+    // Billing is the creator's subscription to Fresh Collective. Payouts are
+    // money coming the other way, and they now have their own nav entry —
+    // which is the whole point, since Billing has none. A pointer rather
+    // than a second copy, so the two surfaces cannot disagree.
+    assert.ok(!src.includes('<StripeConnectPanel'))
+    assert.match(src, /\/creator-studio\/bank-payouts/)
     assert.match(src, /billingPayoutPhase/)
   })
 
@@ -334,10 +342,14 @@ describe('Community still sees no payout setup on Billing', () => {
       'the payout section must be gated on paid_offers_enabled')
   })
 
-  test('the Connect panel is inside it too', () => {
+  test('the pointer to Bank payouts is inside it too', () => {
+    // The panel itself now lives on /creator-studio/bank-payouts, which
+    // carries its own plan gate. What must stay gated here is the pointer:
+    // Community has no paid offers, so it should not be invited to set up
+    // payouts it cannot earn.
     const [start, end] = gateSpan()
-    const panel = lines.findIndex((l) => l.includes('<StripeConnectPanel'))
-    assert.ok(panel > start && panel < end)
+    const pointer = lines.findIndex((l) => l.includes('/creator-studio/bank-payouts'))
+    assert.ok(pointer > start && pointer < end, 'the pointer must be gated')
   })
 
   test('the gate itself now sits above the plan detail', () => {
@@ -408,65 +420,56 @@ describe('the Platform Owner exception', () => {
   })
 })
 
-describe('Billing shows the owner a truthful payout state', () => {
-  // Comment-stripped: the owner branch carries a comment explaining why
-  // "Not connected" is wrong for them and why Founding Creator is a
-  // plan rather than a role — so a raw read fails on the reasoning
-  // instead of on a breach. The rendered copy is JSX text and survives
-  // stripping, so it is still fully checked.
-  const src = codeOnly(BILLING)
+describe('the Platform Owner can reach their own payout page', () => {
+  // This changed deliberately. Billing used to replace the whole Connect
+  // panel with a "payout setup not required" message whenever the viewer was
+  // an admin — keyed on the account role, not on whether they had anything
+  // to be paid for. The Platform Owner holds a Founding Creator plan and a
+  // live connected account, so that branch locked them out of their own
+  // payout settings entirely, which is how this was found.
+  //
+  // The explanation survives, on the payout page, as context beside the
+  // panel rather than instead of it.
+  const payouts = codeOnly('../app/creator-studio/bank-payouts/page.tsx')
 
-  test('the owner gets the owner panel, not the Connect panel', () => {
-    assert.match(src, /billing\.is_platform_owner \? \(/)
-    // The Connect panel is the else branch.
-    const branch = src.indexOf('billing.is_platform_owner ? (')
-    const panel = src.indexOf('<StripeConnectPanel')
-    assert.ok(panel > branch, 'StripeConnectPanel must be the non-owner branch')
-  })
-
-  test('it says payout setup is not required', () => {
-    assert.match(src, /Platform payouts/)
-    assert.match(src, /Payout setup not required/)
-  })
-
-  test('it explains why, in the agreed words', () => {
-    assert.match(
-      src,
-      /Sales from your platform-owned Collectives are processed\s*\n?\s*through the Fresh Collective Stripe account, so a separate\s*\n?\s*creator payout account isn’t required\./,
+  test('the panel is rendered, not withheld by role', () => {
+    assert.match(payouts, /<StripeConnectPanel/)
+    assert.ok(
+      !/is_platform_owner \?/.test(payouts),
+      'the panel must not sit in a role ternary',
     )
   })
 
-  test('it offers the owner no Connect CTA', () => {
-    const start = src.indexOf('billing.is_platform_owner ? (')
-    const end = src.indexOf('<StripeConnectPanel')
-    const ownerBranch = src.slice(start, end)
-    for (const cta of ['Connect Stripe', 'Set up payouts', 'Finish payout setup']) {
-      assert.ok(!ownerBranch.includes(cta), `owner branch offers: ${cta}`)
-    }
+  test('the owner passes the plan gate', () => {
+    assert.match(payouts, /gate\?\.is_platform_owner/)
   })
 
-  test('"Not connected" is never the owner’s state', () => {
-    const start = src.indexOf('billing.is_platform_owner ? (')
-    const end = src.indexOf('<StripeConnectPanel')
-    assert.ok(!src.slice(start, end).includes('Not connected'))
+  test('the platform-owned explanation is kept, as context', () => {
+    // JSX text wraps across lines, so match on collapsed whitespace.
+    const flat = payouts.replace(/\s+/g, ' ')
+    assert.match(flat, /platform-owned Collectives are processed/)
+    assert.match(flat, /Fresh Collective Stripe account/)
   })
 
-  test('the connect-oriented phase copy is hidden from the owner', () => {
-    // Its text points at "Connecting Stripe above", and for the owner
-    // there is no panel above and nothing to connect.
-    assert.match(src, /\{!billing\.is_platform_owner && \(/)
+  test('and it no longer claims there is nothing to set up', () => {
+    // The old message said payout setup was "not required". For an owner who
+    // also sells through their own Collective, that was simply untrue.
+    const flat = payouts.replace(/\s+/g, ' ')
+    assert.ok(!flat.includes('Payout setup not required'))
+    assert.match(flat, /paid out below/)
   })
 
-  test('the owner keeps plan details and platform payment status', () => {
-    // The exception is about the creator payout prompt only.
+  test('Billing keeps plan details and platform payment status', () => {
+    // The change is about the payout panel only.
+    const src = codeOnly(BILLING)
     assert.match(src, /member_payments_connected/)
     assert.match(src, /Current plan/)
   })
 
-  test('it is keyed on the role, not the plan slug', () => {
-    const start = src.indexOf('billing.is_platform_owner ? (')
-    const end = src.indexOf('<StripeConnectPanel')
-    const ownerBranch = src.slice(start, end)
-    assert.ok(!/founding/i.test(ownerBranch.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')))
+  test('the home-page card is still hidden from the owner', () => {
+    // Unchanged: the card is a setup *prompt*, and the owner is not being
+    // prompted. Reachability now comes from the nav entry instead.
+    const card = codeOnly('./payoutSetupCard.ts')
+    assert.match(card, /if \(isPlatformOwner\) return null/)
   })
 })

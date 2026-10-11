@@ -208,6 +208,17 @@ class CreatorStripeAccount(Base):
     #: the UI can say "paid out daily, two days after each sale" without
     #: a Stripe round trip.
     payout_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    #: The payout bank account, masked. Projected from the same v1 account
+    #: object every sync already fetches, so it costs no extra Stripe call.
+    #:
+    #: Only ever the bank's name, the last four digits and the currency.
+    #: Never an account or routing number: Stripe collects those through
+    #: hosted onboarding and Fresh Collective has no reason to hold them.
+    #: ``NULL`` is a real state — an account can have transfers enabled with
+    #: no bank account attached to pay out to.
+    bank_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    bank_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    bank_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     payout_delay_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Defaults true. Stripe will attempt to recover a negative balance
     #: from the creator's bank account without FC asking — which matters
@@ -259,6 +270,21 @@ class CreatorStripeAccount(Base):
     last_account_link_created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
+    #: How far back through this account's Stripe payouts the history import
+    #: has read: the id of the oldest payout paged to, or NULL before it
+    #: starts. Sync bookkeeping rather than a Stripe fact, which is why it
+    #: sits beside ``last_synced_at`` and not in the projection — the
+    #: projection's ``apply_to`` deliberately never touches it.
+    payout_history_cursor: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+    )
+    #: True once Stripe has told us there are no older payouts. The page can
+    #: then say the list is complete; until then it must not, because a
+    #: partial history shown as whole is worse than one shown as partial.
+    payout_history_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+
     account_link_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )

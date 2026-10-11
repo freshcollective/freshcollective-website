@@ -9,7 +9,11 @@ import {
   getPublicPlatformArtwork,
   type PublicPlatformArtwork,
 } from '@/lib/serverApi'
-import { PUBLIC_PLANS } from '@/lib/plans'
+import {
+  PROCESSING_COVERED_LINE,
+  PUBLIC_PLANS,
+  commissionBullet,
+} from '@/lib/plans'
 
 /**
  * /for-creators — editorial companion to the homepage.
@@ -268,11 +272,12 @@ const PLANS: Plan[] = [
     tagline: 'Build your business.',
     body: 'For creators building a livelihood around what they teach, host or share. Offer paid Pathways, paid Gatherings and paid Collective Memberships — everything you need to grow a sustainable creative business from a single considered home.',
     facts: [
-      '$19 / month',
+      PUBLIC_PLANS.creator.priceLabel,
       'One Collective, up to 500 members',
       'Paid Pathways, Gatherings and Collective Memberships',
       'Unlimited Pathways',
-      '8% platform fee on paid offers',
+      commissionBullet(PUBLIC_PLANS.creator)!,
+      PROCESSING_COVERED_LINE,
     ],
     cta: { label: 'Choose Creator', href: PUBLIC_PLANS.creator.ctaHref },
     artKey: 'for_creators_creator',
@@ -284,12 +289,13 @@ const PLANS: Plan[] = [
     tagline: 'Multiple Collectives. One Creator.',
     body: 'Grow multiple Collectives under one Creator account, each with its own identity, members, Pathways, Gatherings and Resources. Perfect for creators with several offerings, brands or communities they want to tend together.',
     facts: [
-      '$79 / month',
+      PUBLIC_PLANS.pro.priceLabel,
       'Up to 5 Collectives',
       'Commercial use',
       'Advanced analytics',
       'Multiple workspaces per Collective',
-      '3% platform fee on paid offers',
+      commissionBullet(PUBLIC_PLANS.pro)!,
+      PROCESSING_COVERED_LINE,
     ],
     cta: { label: 'Choose Creator Portfolio', href: PUBLIC_PLANS.pro.ctaHref },
     artKey: 'for_creators_pro',

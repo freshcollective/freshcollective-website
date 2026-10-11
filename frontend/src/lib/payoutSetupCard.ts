@@ -54,7 +54,7 @@ export interface PayoutSetupCardView {
   tone: PayoutCardTone
 }
 
-export const PAYOUTS_HREF = '/creator-studio/billing#payouts'
+export const PAYOUTS_HREF = '/creator-studio/bank-payouts'
 
 const STRIPE_NOTE = 'Payments and payouts are securely managed by Stripe.'
 

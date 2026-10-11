@@ -1499,6 +1499,29 @@ export interface ConnectRequirementEntry {
  * sales through it. Only the second means a creator's money has moved to
  * the new path.
  */
+/** One actual bank payout, as Stripe reported it. */
+export interface CreatorBankPayout {
+  amount_cents: number
+  currency: string
+  /** Stripe's own status. ``paid`` is the only one that means the money
+   *  reached the bank. */
+  status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled'
+  arrival_date: string | null
+  initiated_at: string | null
+}
+
+export interface CreatorBankPayoutsResponse {
+  payouts: CreatorBankPayout[]
+  /** When Fresh Collective last read these from Stripe. */
+  synced_at: string | null
+  /** Another page of already-imported payouts exists. */
+  has_more: boolean
+  /** Stripe has confirmed there are no older payouts left to import. False
+   *  while the import is still walking backwards — the page must say so
+   *  rather than present a partial history as complete. */
+  history_complete: boolean
+}
+
 export interface CreatorStripeConnectStatus {
   connected: boolean
   state: ConnectOnboardingState
@@ -1522,6 +1545,11 @@ export interface CreatorStripeConnectStatus {
   external_account_count: number
   payout_interval: string | null
   payout_delay_days: number | null
+  /** The payout bank account, masked. Null when Stripe has told us nothing
+   *  — a real state, not an error. Never an account or routing number. */
+  bank_name: string | null
+  bank_last4: string | null
+  bank_currency: string | null
 
   /** True only when FC routes this creator's sales through Connect. */
   connect_routing_enabled: boolean

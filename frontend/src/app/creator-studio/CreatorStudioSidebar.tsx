@@ -123,6 +123,10 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // from "Payment Options" (what Creators offer) and avoid
       // "Payment" doubling up on both sides of the sidebar.
       { href: '/creator-studio/payments',        label: 'Payments received', requiresPaidOffers: true },
+      // Money out, beside money in. Previously reachable only through
+      // Billing, which has no nav entry of its own — so a creator who had
+      // finished setting up could not find their payout settings again.
+      { href: '/creator-studio/bank-payouts',    label: 'Bank payouts', requiresPaidOffers: true },
       // Payment Plans (FIP4C) — plan-level view of member finite-
       // instalment agreements. Sits next to Payments received so the
       // two concepts (ledger vs. agreement) live side-by-side in

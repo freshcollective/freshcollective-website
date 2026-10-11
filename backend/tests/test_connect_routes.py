@@ -503,22 +503,121 @@ class TestOnboardingLink:
             isinstance(v, str) and "connect.stripe.com" in v for v in stored.values()
         )
 
-    def test_uses_the_update_link_once_details_are_submitted(
+    def test_outstanding_requirements_use_hosted_onboarding(
         self, client, as_creator, db,
     ):
-        """A creator who already submitted needs re-collection, which is a
-        different Stripe use case."""
+        """The defect this replaces.
+
+        This used to mint an ``account_update`` link for anyone who had
+        submitted. Stripe does not support those for accounts that are
+        ``requirements_collector: "stripe"`` with a hosted dashboard — which
+        is all of Fresh Collective's — so every already-onboarded creator who
+        pressed Continue was asking for a link Stripe would refuse.
+
+        ``account_onboarding`` is the supported path: Stripe states it is for
+        first-time onboarding *or* "when an existing user has new
+        requirements".
+        """
         _row(
             db, as_creator.id, stripe_account_id=ACCT, details_submitted=True,
             onboarding_state=OnboardingState.action_required.value,
+            currently_due_json=[{"field": "individual.verification.document"}],
         )
-        with patch(f"{ADAPTER}.create_update_link", return_value="https://x/update") as update, \
-             patch(f"{ADAPTER}.create_onboarding_link") as onboarding:
+        with patch(
+            f"{ADAPTER}.create_onboarding_link", return_value="https://x/onboard",
+        ) as onboarding, patch(
+            f"{ADAPTER}.create_express_dashboard_link",
+        ) as dashboard:
             r = client.post("/api/creator/stripe-connect/onboarding-link")
 
         assert r.status_code == 200
-        assert update.call_count == 1
+        assert r.json()["url"] == "https://x/onboard"
+        assert onboarding.call_count == 1
+        assert dashboard.call_count == 0
+
+    def test_a_complete_account_gets_the_express_dashboard(
+        self, client, as_creator, db,
+    ):
+        """Nothing outstanding: hosted onboarding would show an empty form,
+        and ``account_update`` is unsupported. The Express Dashboard is where
+        Stripe lets an account holder change what they have already given."""
+        _row(
+            db, as_creator.id, stripe_account_id=ACCT, details_submitted=True,
+            onboarding_state=OnboardingState.ready.value,
+            currently_due_json=[],
+        )
+        with patch(
+            f"{ADAPTER}.create_express_dashboard_link",
+            return_value="https://connect.stripe.com/express/x",
+        ) as dashboard, patch(f"{ADAPTER}.create_onboarding_link") as onboarding:
+            r = client.post("/api/creator/stripe-connect/onboarding-link")
+
+        assert r.status_code == 200
+        assert r.json()["url"] == "https://connect.stripe.com/express/x"
+        assert dashboard.call_count == 1
         assert onboarding.call_count == 0
+
+    def test_an_unfinished_account_still_gets_hosted_onboarding(
+        self, client, as_creator, db,
+    ):
+        _row(
+            db, as_creator.id, stripe_account_id=ACCT, details_submitted=False,
+            onboarding_state=OnboardingState.onboarding.value,
+        )
+        with patch(
+            f"{ADAPTER}.create_onboarding_link", return_value="https://x/onboard",
+        ) as onboarding, patch(
+            f"{ADAPTER}.create_express_dashboard_link",
+        ) as dashboard:
+            r = client.post("/api/creator/stripe-connect/onboarding-link")
+
+        assert r.status_code == 200
+        assert onboarding.call_count == 1
+        assert dashboard.call_count == 0
+
+    def test_a_restricted_account_is_not_sent_to_an_empty_form(
+        self, client, as_creator, db,
+    ):
+        """A restricted account can have nothing currently due and still not
+        be payable. Sending that creator to a form with nothing in it would
+        imply the problem is theirs to fix, so they get the dashboard — and
+        the panel separately tells them to get in touch."""
+        _row(
+            db, as_creator.id, stripe_account_id=ACCT, details_submitted=True,
+            onboarding_state=OnboardingState.restricted.value,
+            currently_due_json=[],
+        )
+        with patch(
+            f"{ADAPTER}.create_express_dashboard_link", return_value="https://x/d",
+        ) as dashboard, patch(f"{ADAPTER}.create_onboarding_link") as onboarding:
+            r = client.post("/api/creator/stripe-connect/onboarding-link")
+
+        assert r.status_code == 200
+        assert dashboard.call_count == 1
+        assert onboarding.call_count == 0
+
+    def test_a_restricted_account_with_requirements_can_still_resolve_them(
+        self, client, as_creator, db,
+    ):
+        """Restricted *and* something due — the creator has a real path."""
+        _row(
+            db, as_creator.id, stripe_account_id=ACCT, details_submitted=True,
+            onboarding_state=OnboardingState.restricted.value,
+            currently_due_json=[{"field": "company.tax_id"}],
+        )
+        with patch(
+            f"{ADAPTER}.create_onboarding_link", return_value="https://x/onboard",
+        ) as onboarding:
+            r = client.post("/api/creator/stripe-connect/onboarding-link")
+
+        assert r.status_code == 200
+        assert onboarding.call_count == 1
+
+    def test_no_route_can_mint_an_account_update_link(self):
+        """The unsupported helper is gone, not merely unused — so it cannot
+        be reached again by accident."""
+        from app.services import stripe_connect_accounts as svc
+        assert not hasattr(svc, "create_update_link")
 
     def test_refuses_before_an_account_exists(self, client, as_creator):
         r = client.post("/api/creator/stripe-connect/onboarding-link")
@@ -846,7 +945,7 @@ def test_no_route_ever_sets_connect_payouts_enabled_at(client, as_creator, db):
          patch(f"{ADAPTER}.retrieve_legacy_account", return_value=V1_AFTER):
         client.post("/api/creator/stripe-connect/account")
     with patch(f"{ADAPTER}.create_onboarding_link", return_value="https://x/1"), \
-         patch(f"{ADAPTER}.create_update_link", return_value="https://x/2"):
+         patch(f"{ADAPTER}.create_express_dashboard_link", return_value="https://x/2"):
         client.post("/api/creator/stripe-connect/onboarding-link")
     with patch(f"{ADAPTER}.retrieve_account", return_value=V2_AFTER_ONBOARDING), \
          patch(f"{ADAPTER}.retrieve_legacy_account", return_value=V1_AFTER):
@@ -941,29 +1040,39 @@ class TestFailureTranslation:
         assert options["return_url"] == "https://x/r"
         assert options["refresh_url"] == "https://x/f"
 
-    def test_update_links_use_the_account_update_use_case(self):
-        sent = {}
+    def test_no_account_update_link_is_ever_created(self):
+        """``account_update`` is unsupported for Fresh Collective's accounts.
 
-        class _Links:
-            def create(self, params):
-                sent.update(params)
-                return {"url": "https://connect.stripe.com/setup/u/x"}
+        This test used to assert the opposite — that the use case was wired
+        correctly — which it was, for an API call Stripe would refuse given
+        ``requirements_collector: "stripe"`` and a hosted dashboard. The use
+        case being well-formed was never the question.
+        """
+        import ast
+        import inspect
 
-        class _Core:
-            account_links = _Links()
+        from app.services import stripe_connect_accounts as svc
+        assert not hasattr(svc, "create_update_link")
 
-        class _V2:
-            core = _Core()
-
-        class _Client:
-            v2 = _V2()
-
-        with patch(f"{ADAPTER}.get_stripe_client", return_value=_Client()):
-            connect.create_update_link(
-                account_id=ACCT, return_url="https://x/r", refresh_url="https://x/f",
-            )
-        assert sent["use_case"]["type"] == "account_update"
-        assert sent["use_case"]["account_update"]["configurations"] == ["recipient"]
+        # Checked against the parsed tree, not the text. The module explains
+        # at length *why* the use case is unsupported, so a substring search
+        # matches its own prose — the ban is on using the value, not on
+        # naming it.
+        tree = ast.parse(inspect.getsource(svc))
+        docstrings = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef)):
+                body = node.body
+                if body and isinstance(body[0], ast.Expr):
+                    docstrings.add(id(body[0].value))
+        used = [
+            n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and "account_update" in n.value
+            and id(n) not in docstrings
+        ]
+        assert used == [], used
 
 
 # ---------------------------------------------------------------------------
@@ -1196,3 +1305,128 @@ class TestAdminEnablement:
         for route in admin_connect.router.routes:
             guards = [d.call for d in route.dependant.dependencies]
             assert get_admin_user in guards, route.path
+
+
+# ---------------------------------------------------------------------------
+# Bank details and bank payouts
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardLink:
+    """The route a creator takes to change their bank details.
+
+    Stripe refuses both alternatives for Fresh Collective's account shape —
+    an ``account_update`` link (the account has a Stripe-hosted dashboard)
+    and a direct ``external_account`` write (Stripe collects requirements).
+    The Express Dashboard is what remains, and Stripe documents that a
+    connected account can change their bank account there.
+    """
+
+    def test_it_mints_a_link_for_the_creators_own_account(
+        self, client, as_creator, db,
+    ):
+        with patch(f"{ADAPTER}.create_recipient_account", return_value=_created_account()), \
+             patch(f"{ADAPTER}.retrieve_legacy_account", return_value=V1_BEFORE), \
+             patch(f"{ADAPTER}.set_weekly_payout_schedule", return_value=None):
+            client.post("/api/creator/stripe-connect/account")
+
+        with patch(
+            f"{ADAPTER}.create_express_dashboard_link",
+            return_value="https://connect.stripe.com/express/x",
+        ) as mint:
+            r = client.post("/api/creator/stripe-connect/dashboard-link")
+
+        assert r.status_code == 200
+        assert r.json()["url"] == "https://connect.stripe.com/express/x"
+        # Scoped to their own account id, never one passed in by the caller.
+        assert mint.call_args.args[0] == ACCT
+
+    def test_a_creator_with_no_account_is_told_to_set_up_first(
+        self, client, as_creator, db,
+    ):
+        with patch(f"{ADAPTER}.create_express_dashboard_link") as mint:
+            r = client.post("/api/creator/stripe-connect/dashboard-link")
+        assert r.status_code == 409
+        assert mint.call_args_list == []
+
+    def test_an_anonymous_caller_is_refused(self, client, db):
+        r = client.post("/api/creator/stripe-connect/dashboard-link")
+        assert r.status_code in (401, 403)
+
+    def test_the_account_id_cannot_be_chosen_by_the_caller(
+        self, client, as_creator, db,
+    ):
+        """There is no parameter to supply one — the endpoint reads the
+        authenticated creator's row. Pinned so adding one is a deliberate
+        act rather than an accident."""
+        import inspect
+
+        from app.creator.connect_routes import create_dashboard_link
+        params = set(inspect.signature(create_dashboard_link).parameters)
+        assert params == {"creator", "db"}
+
+
+class TestBankPayoutsEndpoint:
+    def test_it_returns_only_the_callers_payouts(self, client, as_creator, db, make_user):
+        from app.models.creator_bank_payout import CreatorBankPayout
+
+        other = make_user(role="creator")
+        for user_id, amount, pid in (
+            (as_creator.id, 9200, "po_mine"),
+            (other.id, 5000, "po_theirs"),
+        ):
+            db.add(CreatorBankPayout(
+                id=f"cbp_{uuid.uuid4()}",
+                creator_user_id=user_id,
+                stripe_account_id=ACCT,
+                stripe_mode="test",
+                provider_payout_id=pid,
+                amount_cents=amount, currency="AUD", status="paid",
+                arrival_date=datetime(2026, 10, 13),
+                synced_at=datetime(2026, 10, 11),
+            ))
+        db.commit()
+
+        r = client.get("/api/creator/stripe-connect/payouts")
+        assert r.status_code == 200
+        body = r.json()
+        assert [p["amount_cents"] for p in body["payouts"]] == [9200]
+        assert body["synced_at"] is not None
+
+    def test_no_stripe_identifier_reaches_the_creator(
+        self, client, as_creator, db,
+    ):
+        """A payout id is not actionable by a creator, and a raw failure code
+        reads as jargon. The status carries the meaning."""
+        from app.models.creator_bank_payout import CreatorBankPayout
+
+        db.add(CreatorBankPayout(
+            id=f"cbp_{uuid.uuid4()}",
+            creator_user_id=as_creator.id,
+            stripe_account_id=ACCT,
+            stripe_mode="test",
+            provider_payout_id="po_secret",
+            amount_cents=100, currency="AUD", status="failed",
+            failure_code="account_closed",
+            synced_at=datetime(2026, 10, 11),
+        ))
+        db.commit()
+
+        rendered = client.get("/api/creator/stripe-connect/payouts").text
+        assert "po_secret" not in rendered
+        assert ACCT not in rendered
+        assert "account_closed" not in rendered
+        # The status itself is shown — it is what a creator needs.
+        assert "failed" in rendered
+
+    def test_an_empty_list_is_not_an_error(self, client, as_creator, db):
+        r = client.get("/api/creator/stripe-connect/payouts")
+        assert r.status_code == 200
+        assert r.json() == {
+            "payouts": [], "synced_at": None,
+            "has_more": False, "history_complete": False,
+        }
+
+    def test_an_anonymous_caller_is_refused(self, client, db):
+        r = client.get("/api/creator/stripe-connect/payouts")
+        assert r.status_code in (401, 403)

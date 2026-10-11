@@ -220,22 +220,29 @@ class PaymentTransaction(Base):
     Connect routing (migration 142) does NOT change any of the above.
     ``net_creator_amount_cents`` keeps meaning the creator's share of the
     gross — ``gross - platform_fee`` — and the Stripe processing fee is
-    still never subtracted from it. Two things depend on that identity and
-    would break if it moved: ``CreatorPayoutBatch`` sums this column across
-    every historical row, and the refund invariant
+    never subtracted from it. Two things depend on that identity and would
+    break if it moved: ``CreatorPayoutBatch`` sums this column across every
+    historical row, and the refund invariant
     ``refunded_platform_fee_cents + refunded_creator_amount_cents ==
     refunded_amount_cents`` holds precisely because the gross splits in two.
 
     The Connect number lives separately, in ``transfer_amount_cents``:
 
-        transfer_amount_cents = net_creator_amount_cents - processing_fee_cents
+        transfer_amount_cents = net_creator_amount_cents
 
-    Stripe charges the processing fee to Fresh Collective as the platform
-    merchant; FC accounts for that cost by retaining it before transferring
-    the creator's share, which is why the deduction appears here and not in
-    the gross split. ``processing_fee_cents`` continues to be populated
-    exactly as before — it simply stops being informational once a row is
-    Connect-routed.
+    Fresh Collective absorbs Stripe's processing fee out of its own
+    commission rather than passing it on, so a creator receives the same
+    amount whether they are paid by Stripe transfer or by a manual payout
+    batch. ``processing_fee_cents`` is recorded on every row as Fresh
+    Collective's cost of sale — reporting only, never a deduction from the
+    creator.
+
+    Rows transferred before that policy were computed as
+    ``net_creator_amount_cents - processing_fee_cents`` and really are
+    smaller. ``transfer_amount_cents`` is a record of what Stripe actually
+    moved, not a value to re-derive: rewriting it would tell a creator they
+    received money they never got, and would make every reversal target for
+    those rows wrong.
     """
 
     __tablename__ = "payment_transactions"
@@ -494,9 +501,11 @@ class PaymentTransaction(Base):
         String(255), nullable=True,
     )
     #: What was (or will be) transferred. For Connect rows this is the
-    #: creator's authoritative entitlement, and it is deliberately NOT the
-    #: same number as ``net_creator_amount_cents`` — see the class
-    #: docstring's calculation rules.
+    #: creator's authoritative entitlement. It equals
+    #: ``net_creator_amount_cents`` for anything priced since Fresh
+    #: Collective began absorbing the processing fee, and is smaller for the
+    #: few rows transferred before that — which is why it is stored rather
+    #: than derived. See the class docstring's calculation rules.
     transfer_amount_cents: Mapped[int | None] = mapped_column(
         Integer, nullable=True,
     )

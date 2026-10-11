@@ -18,6 +18,7 @@ import { apiUrl } from '@/lib/api'
 import type { ConnectEarningsResponse } from '@/types/platform'
 import {
   earningLines,
+  earningsBasisNote,
   earningsHeadline,
   formatMoney,
   instalmentCaption,
@@ -104,11 +105,11 @@ export default function ConnectEarnings() {
             <span className="font-medium text-navy-900">
               {summary.sentTotal}
             </span>{' '}
-            sent to Stripe
+            on its way to your bank
             {summary.awaitingTotal && (
               <>
                 {' · '}
-                {summary.awaitingTotal} on its way
+                {summary.awaitingTotal} not yet sent
               </>
             )}
           </p>
@@ -149,7 +150,10 @@ export default function ConnectEarnings() {
                         className={
                           line.pending
                             ? 'text-black italic'
-                            : line.isDeduction
+                            // A covered cost is Fresh Collective's, shown for
+                            // transparency. Never emphasised like a total, and
+                            // never styled as the creator's own deduction.
+                            : line.covered || line.isDeduction
                               ? 'text-black'
                               : 'font-medium text-navy-900'
                         }
@@ -159,6 +163,12 @@ export default function ConnectEarnings() {
                     </div>
                   ))}
                 </dl>
+
+                {earningsBasisNote(row) && (
+                  <p className="mt-1 text-[12px] italic text-black">
+                    {earningsBasisNote(row)}
+                  </p>
+                )}
 
                 {isReturned(row) && (
                   <p className="mt-1 text-[12px] text-black">
