@@ -24,8 +24,7 @@ import type {
   CreatorBillingResponse,
   CreatorStripeConnectStatus,
 } from '@/types/platform'
-import StripeConnectPanel from '../billing/StripeConnectPanel'
-import BankAccountPanel from './BankAccountPanel'
+import BankPayoutsSections from './BankPayoutsSections'
 
 export const metadata = { title: 'Bank payouts — Creator Studio' }
 
@@ -90,15 +89,13 @@ export default async function BankPayoutsPage() {
         </p>
       )}
 
-      <StripeConnectPanel
+      {/* Readiness, then the bank account and the payouts Stripe has made.
+          Rendered together so they share one status: separate copies drifted
+          apart, and a refresh updated only one of them. */}
+      <BankPayoutsSections
         initialStatus={connectStatus}
         planFeeBasisPoints={planFeeBasisPoints}
       />
-
-      {/* Your bank account, and the actual bank payouts Stripe has made.
-          Beneath the readiness panel, because a creator who is not set up
-          yet needs that first. */}
-      <BankAccountPanel status={connectStatus} />
     </div>
   )
 }

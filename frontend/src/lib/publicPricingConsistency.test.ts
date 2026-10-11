@@ -193,8 +193,14 @@ describe('Commerce navigation', () => {
       readFileSync('src/app/creator-studio/bank-payouts/page.tsx', 'utf8'),
     )
     assert.match(page, /gate\?\.is_platform_owner/)
-    assert.match(page, /<StripeConnectPanel/)
-    // The panel is rendered unconditionally, not inside a role branch.
+    // Rendered via BankPayoutsSections, which shares one status between the
+    // readiness panel and the bank-account section.
+    assert.match(page, /<BankPayoutsSections/)
+    const sections = codeOnly(
+      readFileSync('src/app/creator-studio/bank-payouts/BankPayoutsSections.tsx', 'utf8'),
+    )
+    assert.match(sections, /<StripeConnectPanel/)
+    // Rendered unconditionally, not inside a role branch.
     assert.ok(!/is_platform_owner \?/.test(page))
   })
 })
