@@ -250,12 +250,47 @@ class TestByTokenEndpoint:
         assert summary.status == "paid"
         assert summary.kind == "creator_subscription"
         assert summary.plan_slug == "pro"
-        assert summary.plan_display_name == "Pro"
+        # The fixture seeds the internal name "Pro"; the buyer-facing
+        # summary must carry the creator-facing label instead. This
+        # assertion previously pinned the leak.
+        assert summary.plan_display_name == "Creator Portfolio"
         assert summary.claim_email == "paid@example.test"
         assert summary.claim_email_has_account is False
         assert summary.payer_bound is False
         assert summary.claim_token_expired is False
         assert summary.consumed_by_current_user is False
+
+    def test_internal_plan_name_never_reaches_the_buyer(
+        self, db, make_user, _plans,
+    ):
+        """"Pro" is development shorthand for the tier sold as Creator
+        Portfolio. /checkout/complete renders this summary to the person
+        who just paid, so the internal name must not appear in it — while
+        ``plan_slug`` keeps the internal key the billing code needs."""
+        intent, raw = _make_paid_intent(
+            db, plan_slug="pro", claim_email="buyer@example.test",
+        )
+        seeded = db.query(CreatorPlan).filter(CreatorPlan.slug == "pro").first()
+        assert seeded is not None and seeded.name == "Pro", (
+            "fixture must seed the internal name for this test to mean anything"
+        )
+
+        summary = get_purchase_by_token(raw, db=db, current_user=None)
+
+        assert summary.plan_display_name == "Creator Portfolio"
+        assert summary.plan_display_name != seeded.name
+        assert summary.plan_slug == "pro"
+
+    def test_the_creator_tier_keeps_its_own_name(self, db, make_user, _plans):
+        """Only the pro tier is translated. A plan whose internal name is
+        already the customer-facing one passes through untouched, so the
+        mapping cannot quietly rename every tier."""
+        intent, raw = _make_paid_intent(
+            db, plan_slug="creator", claim_email="buyer2@example.test",
+        )
+        summary = get_purchase_by_token(raw, db=db, current_user=None)
+        assert summary.plan_display_name == "Creator"
+        assert summary.plan_slug == "creator"
 
     def test_claim_email_has_account_when_user_exists(
         self, db, make_user, _plans,

@@ -252,7 +252,7 @@ interface Plan {
 
 const PLANS: Plan[] = [
   {
-    name: 'Community Collective',
+    name: PUBLIC_PLANS.community.displayName,
     tagline: 'A first place to gather.',
     body: 'A welcoming home for the gatherings that do not need to become a business — neighbourhood groups, clubs, volunteer teams, hobby circles and shared-interest communities. A beautiful place to come together, freely and without pressure.',
     facts: [
@@ -268,7 +268,7 @@ const PLANS: Plan[] = [
     artAlt: 'A Community Collective on Fresh Collective — a shared table, a small local gathering',
   },
   {
-    name: 'Creator',
+    name: PUBLIC_PLANS.creator.displayName,
     tagline: 'Build your business.',
     body: 'For creators building a livelihood around what they teach, host or share. Offer paid Pathways, paid Gatherings and paid Collective Memberships — everything you need to grow a sustainable creative business from a single considered home.',
     facts: [
@@ -285,7 +285,7 @@ const PLANS: Plan[] = [
     artAlt: 'A single creator at work — a studio, considered craft',
   },
   {
-    name: 'Creator Portfolio',
+    name: PUBLIC_PLANS.pro.displayName,
     tagline: 'Multiple Collectives. One Creator.',
     body: 'Grow multiple Collectives under one Creator account, each with its own identity, members, Pathways, Gatherings and Resources. Perfect for creators with several offerings, brands or communities they want to tend together.',
     facts: [

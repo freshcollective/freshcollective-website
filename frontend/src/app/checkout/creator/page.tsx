@@ -11,7 +11,11 @@ import {
   getPublicPlatformArtwork,
   type PublicPlatformArtwork,
 } from '@/lib/serverApi'
-import { getPublicPlan } from '@/lib/plans'
+import {
+  PROCESSING_COVERED_LINE,
+  commissionBullet,
+  getPublicPlan,
+} from '@/lib/plans'
 
 /**
  * /checkout/creator?plan=creator|pro — Review-your-plan screen for
@@ -133,6 +137,37 @@ export default async function CheckoutCreatorPage({
                 >
                   <span className="font-semibold">{plan.priceLabel}</span>
                 </p>
+
+                {/* The commercial terms, stated before anyone reaches
+                    Stripe. The monthly price was always here; the
+                    commission was not, so the second half of what a
+                    creator was agreeing to only became visible after
+                    they had subscribed. Both lines come from the shared
+                    plan config, so they cannot disagree with the public
+                    pricing page the creator just came from. */}
+                {commissionBullet(plan) && (
+                  <div
+                    className="mt-4 rounded-xl px-4 py-3"
+                    style={{
+                      background: 'rgba(56,160,158,0.06)',
+                      border: '1px solid rgba(56,160,158,0.20)',
+                    }}
+                  >
+                    <p
+                      className="text-[14px] font-semibold"
+                      style={{ color: NAVY, fontFamily: 'Georgia, serif' }}
+                    >
+                      {commissionBullet(plan)}
+                    </p>
+                    <p
+                      className="mt-1 text-[13.5px] leading-relaxed"
+                      style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+                    >
+                      {PROCESSING_COVERED_LINE}
+                    </p>
+                  </div>
+                )}
+
                 <ul className="mt-4 flex flex-col gap-1.5">
                   {plan.summaryBullets.map((bullet) => (
                     <li
