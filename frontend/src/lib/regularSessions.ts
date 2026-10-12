@@ -256,3 +256,113 @@ export function accessWaitCopy(phase: AccessWaitPhase): AccessWaitCopy {
     showReload: false,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Load failures
+//
+// "Reserve your regular sessions" used to render nothing whenever its
+// first request did not come back cleanly: a 403, a 500 and a dropped
+// connection all set the same state the component uses for "this term
+// has no sessions left to reserve", and that state renders null.
+//
+// The two are not the same thing and must never look the same. An empty
+// term is a finished term and is correctly silent. A failed request is
+// the member being told nothing at all while the control they were sent
+// to find is missing from the page — which is exactly how an EMBODY
+// member came to be hunting for a card that the page had quietly
+// decided not to draw.
+//
+// This decides what a member is told. It never shows the server's own
+// words: ``detail`` is a signal for classifying the failure, not a
+// message to put in front of someone. Server text can carry internals,
+// and the one string we do match on is phrased for a different surface.
+// ---------------------------------------------------------------------------
+
+/** Why loading failed, in terms a member-facing card can act on. */
+export type LoadFailureKind = 'verification' | 'signed_out' | 'generic'
+
+export interface LoadFailure {
+  kind: LoadFailureKind
+  headline: string
+  body: string
+  /** Somewhere to go when retrying is not the answer. */
+  actionHref: string | null
+  actionLabel: string | null
+  /** Whether repeating the same request could plausibly succeed. */
+  retryable: boolean
+}
+
+/**
+ * Does this response say the member's email is unverified?
+ *
+ * ``get_verified_current_user`` raises 403 with "Please verify your
+ * email to continue…". Other 403s exist on this path — Area access, for
+ * one — so the status alone must not be read as a verification problem:
+ * telling a member to check their inbox when the real answer is that
+ * they cannot reach this Area at all sends them somewhere pointless.
+ *
+ * Matching on the server's phrasing is the only signal available today,
+ * and it is deliberately narrow for that reason. A machine-readable
+ * error code would be stronger; until the API offers one, an
+ * unrecognised 403 falls through to the generic message rather than
+ * guessing.
+ */
+export function isVerificationFailure(status: number | null, body: unknown): boolean {
+  if (status !== 403) return false
+  const detail = (body as { detail?: unknown } | null)?.detail
+  return typeof detail === 'string' && /verify your email/i.test(detail)
+}
+
+/**
+ * Turn a failed load into something a member can act on.
+ *
+ * ``status`` is null when the request never produced one — a dropped
+ * connection, a DNS failure, a body that would not parse. Those are
+ * retryable: nothing about them says the member did anything wrong.
+ */
+export function classifyLoadFailure(
+  status: number | null,
+  body: unknown,
+): LoadFailure {
+  if (isVerificationFailure(status, body)) {
+    return {
+      kind: 'verification',
+      headline: 'Verify your email to reserve sessions',
+      // Our words, not the server's. The dashboard is where the resend
+      // action already lives, so this sends them to the flow that
+      // exists rather than describing a second one.
+      body:
+        'Your place in this term is unaffected. To reserve sessions, '
+        + 'confirm your email address using the link we sent you — or '
+        + 'send yourself a new one from your dashboard.',
+      actionHref: '/dashboard',
+      actionLabel: 'Go to your dashboard',
+      retryable: false,
+    }
+  }
+  if (status === 401) {
+    return {
+      kind: 'signed_out',
+      headline: 'Please sign in again',
+      // Retrying a 401 just repeats it, so this offers the door instead.
+      body:
+        'Your session has expired. Sign in again to choose and reserve '
+        + 'your sessions. Nothing you have already booked is affected.',
+      actionHref: '/login',
+      actionLabel: 'Sign in',
+      retryable: false,
+    }
+  }
+  return {
+    kind: 'generic',
+    headline: "We couldn't load your sessions",
+    // Says nothing about which layer failed, and reassures on the point
+    // a member will actually worry about: whether their term is intact.
+    body:
+      'Something went wrong at our end. Your access to this term and any '
+      + 'sessions you have already booked are unaffected.',
+    actionHref: null,
+    actionLabel: null,
+    retryable: true,
+  }
+}

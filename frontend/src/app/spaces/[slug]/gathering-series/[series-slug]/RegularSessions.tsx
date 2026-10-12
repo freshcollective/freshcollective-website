@@ -20,7 +20,9 @@ import {
   type RegularSessionsResponse,
   type ReservationPreview,
   type ReservationResult,
+  type LoadFailure,
   type SchedulePattern,
+  classifyLoadFailure,
 } from '@/lib/regularSessions'
 
 /**
@@ -53,7 +55,10 @@ import {
 
 type Phase =
   | { kind: 'loading' }
+  // Nothing ahead to reserve. Correctly silent.
   | { kind: 'unavailable' }
+  // The request did not come back. NEVER silent — see ``classifyLoadFailure``.
+  | { kind: 'load_error'; failure: LoadFailure }
   | { kind: 'choosing' }
   | { kind: 'previewing' }
   | { kind: 'preview'; preview: ReservationPreview }
@@ -122,31 +127,47 @@ export default function RegularSessions({
 
   const base = `/api/spaces/${spaceSlug}/gathering-series/${seriesSlug}/regular-sessions`
 
+  // Bumped by the retry button to re-run the effect below.
+  const [loadAttempt, setLoadAttempt] = useState(0)
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      if (!cancelled) setPhase({ kind: 'loading' })
       try {
         const res = await fetch(apiUrl(base), { credentials: 'include' })
         if (!res.ok) {
-          if (!cancelled) setPhase({ kind: 'unavailable' })
+          // Read the body for classification only. Its text is never
+          // shown: ``classifyLoadFailure`` writes the member's words.
+          const body = await res.json().catch(() => null)
+          if (!cancelled) {
+            setPhase({
+              kind: 'load_error',
+              failure: classifyLoadFailure(res.status, body),
+            })
+          }
           return
         }
         const body = (await res.json()) as RegularSessionsResponse
         if (cancelled) return
         setData(body)
+        // The ONLY silent outcome: the term has nothing ahead to reserve.
         setPhase(
           body.patterns.length === 0
             ? { kind: 'unavailable' }
             : { kind: 'choosing' },
         )
       } catch {
-        if (!cancelled) setPhase({ kind: 'unavailable' })
+        // No status: dropped connection, DNS, unparseable body. Retryable.
+        if (!cancelled) {
+          setPhase({ kind: 'load_error', failure: classifyLoadFailure(null, null) })
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [base])
+  }, [base, loadAttempt])
 
   const toggle = useCallback((key: string) => {
     setSelected((prev) =>
@@ -210,8 +231,48 @@ export default function RegularSessions({
   }
 
   // A Series with nothing ahead to reserve says nothing at all rather
-  // than offering an empty control.
+  // than offering an empty control. This is the only silent outcome.
   if (phase.kind === 'unavailable') return null
+
+  // A failed request is never silent. Rendering null here is what sent
+  // a member hunting the page for a control that had decided not to
+  // draw itself, with nothing to read and nothing to press.
+  if (phase.kind === 'load_error') {
+    const { failure } = phase
+    return (
+      <div
+        className="rounded-2xl border px-5 py-5"
+        style={{ borderColor: borderColour, background: bgColour }}
+        role="status"
+      >
+        <p className="font-serif text-lg text-navy-900">{failure.headline}</p>
+        <p className="mt-1 text-[13px]" style={{ color: 'rgba(12,24,38,0.70)' }}>
+          {failure.body}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {failure.retryable && (
+            <button
+              type="button"
+              onClick={() => setLoadAttempt((n) => n + 1)}
+              className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: primary }}
+            >
+              Try again
+            </button>
+          )}
+          {failure.actionHref && failure.actionLabel && (
+            <a
+              href={failure.actionHref}
+              className="text-[13px] font-semibold underline underline-offset-4"
+              style={{ color: primary }}
+            >
+              {failure.actionLabel}
+            </a>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
