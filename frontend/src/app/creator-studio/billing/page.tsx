@@ -14,6 +14,7 @@ import type {
 } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
+import { PROCESSING_COVERED_LINE } from '@/lib/plans'
 import { describeCreatorAccess } from '@/lib/creatorPlanAccess'
 import { billingPayoutPhase } from '@/lib/paymentsPayoutCopy'
 import BillingFeeCalculator from './BillingFeeCalculator'
@@ -970,6 +971,8 @@ function PlanCard({
         <p className="mt-2 text-[13px] leading-relaxed text-black">{plan.card_headline}</p>
       )}
 
+      <PlanCommercialTerms plan={plan} />
+
       <ul className="mt-5 space-y-2.5">
         {features.map((f) => (
           <PlanFeature key={f} label={f} />
@@ -1004,7 +1007,8 @@ function PlanCard({
           //     Uses POST /api/creator/billing/upgrade which drives
           //     an immediate prorated ``Subscription.modify`` with
           //     ``payment_behavior='pending_if_incomplete'`` — the
-          //     3% fee only applies after Stripe confirms payment.
+          //     transaction fee only applies after Stripe confirms
+          //     payment.
           //     Does NOT create a second Stripe subscription.
           //   * Start subscription — everyone else (no live sub yet,
           //     or downgrade path from Creator Portfolio to Creator,
@@ -1041,6 +1045,42 @@ function PlanCard({
 }
 
 /**
+ * The commercial terms of a plan, stated on its comparison card.
+ *
+ * A creator comparing plans is comparing two numbers: the monthly price
+ * and the share of each sale Fresh Collective keeps. The price was always
+ * on the card; the commission was not — it lived only on the *current*
+ * plan panel, so the figure that decides whether an upgrade pays for
+ * itself was invisible at the moment of choosing.
+ *
+ * Both lines are derived from the plan the backend served —
+ * ``transaction_fee_basis_points`` comes from the ``creator_plans`` row
+ * that checkout itself reads — so this cannot drift from what a sale is
+ * actually charged. No percentage is written here.
+ *
+ * Plans without paid offers (Community) have no commission to state and
+ * render nothing: "0%" would read as a benefit rather than an absence.
+ */
+function PlanCommercialTerms({ plan }: { plan: CreatorPlanOut }) {
+  if (plan.transaction_fee_basis_points === null) return null
+  return (
+    <div
+      className="mt-3 rounded-xl px-3 py-2.5"
+      style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
+    >
+      <p className="text-[13px] font-semibold text-navy-900">
+        {formatFee(plan.transaction_fee_basis_points)} Fresh Collective
+        commission on member sales
+      </p>
+      <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+        {PROCESSING_COVERED_LINE}
+      </p>
+    </div>
+  )
+}
+
+
+/**
  * Fallback feature list for plans whose backend response predates the
  * capability record (should not happen at runtime once the config is
  * populated, but keeps the card renderable during rollout).
@@ -1050,9 +1090,9 @@ function legacyFeaturesFallback(plan: CreatorPlanOut): string[] {
   if (plan.collective_limit !== null) {
     out.push(`${plan.collective_limit} collective${plan.collective_limit !== 1 ? 's' : ''}`)
   }
-  if (plan.transaction_fee_basis_points !== null) {
-    out.push(`${formatFee(plan.transaction_fee_basis_points)} Fresh Collective transaction fee`)
-  }
+  // The commission is NOT pushed here: ``PlanCommercialTerms`` states it
+  // on every card, and a second copy in the bullet list would show the
+  // same figure twice.
   return out
 }
 
@@ -1066,9 +1106,7 @@ function legacyFeaturesFallback(plan: CreatorPlanOut): string[] {
  */
 function internalPlanFeatures(plan: CreatorPlanOut): string[] {
   const out: string[] = []
-  if (plan.transaction_fee_basis_points !== null) {
-    out.push(`${formatFee(plan.transaction_fee_basis_points)} transaction fee`)
-  }
+  // Commission intentionally absent — ``PlanCommercialTerms`` carries it.
   out.push('No monthly platform charge')
   if (plan.collective_limit !== null) {
     const noun = plan.collective_limit === 1 ? 'Collective' : 'Collectives'

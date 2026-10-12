@@ -63,6 +63,7 @@ from app.creator.plan_activation import (
     CreatorPlanActivationError,
 )
 from app.models.creator_billing import CreatorPlan
+from app.services.creator_plan_labels import creator_facing_plan_label
 from app.models.purchase_intent import (
     PurchaseIntent,
     PurchaseIntentKind,
@@ -397,7 +398,15 @@ def get_purchase_by_token(
             .first()
         )
         if plan is not None:
-            plan_display_name = plan.name
+            # ``CreatorPlan.name`` is the internal name — "Pro" for the
+            # tier customers know as Creator Portfolio. This response
+            # feeds /checkout/complete, which a buyer reads, so it must
+            # carry the creator-facing label. Same translator the
+            # creator-facing emails already use, so there is one mapping
+            # rather than two that can disagree.
+            plan_display_name = creator_facing_plan_label(
+                slug=plan.slug, name=plan.name,
+            )
 
     claim_email_has_account = False
     if intent.claim_email:

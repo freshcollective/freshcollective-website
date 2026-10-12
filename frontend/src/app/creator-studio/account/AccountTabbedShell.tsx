@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { CreatorBillingResponse } from '@/types/platform'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
+import { PROCESSING_COVERED_LINE } from '@/lib/plans'
 
 type AccountTab = 'profile' | 'plan' | 'billing' | 'settings'
 
@@ -262,6 +263,17 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
                 )}% on member sales`
               : <span className="italic text-slate-400">Not set</span>}
           </dd>
+          {/* Said here too, not only on the marketing pages: this is the
+              figure a creator checks when working out what a sale leaves
+              them, and the commission is the only deduction. Without this
+              line the honest reading of "8% on member sales" is "8% plus
+              whatever the card costs". */}
+          {plan.transaction_fee_basis_points != null
+            && plan.transaction_fee_basis_points > 0 && (
+            <dd className="mt-1 text-[12.5px] leading-relaxed text-slate-500">
+              {PROCESSING_COVERED_LINE}
+            </dd>
+          )}
         </div>
         <div>
           <dt className="text-[12px] font-medium text-slate-500">Collectives</dt>

@@ -147,12 +147,13 @@ export const PUBLIC_PLANS: Record<CreatorPlanSlug, PublicPlanDisplay> = {
     displayName: 'Creator Portfolio',
     tagline: 'Multiple Collectives. One Creator.',
     priceLabel: '$79 / month',
-    // 3% — the figure currently live in ``creator_plans``.
-    // The intended rate is 4%, but publishing it before the
-    // database carries it would advertise a commission lower
-    // than checkout actually charges. Change the row first.
-    commissionBasisPoints: 300,
-    commissionLabel: '3%',
+    // 4% — matches the live ``creator_plans`` row, changed in
+    // World Management on 2026-10-11. Checkout reads that row per
+    // transaction, so this constant exists only to publish the same
+    // figure; it never decides what anyone is charged. If the two
+    // ever disagree, ``publicPricingConsistency.test.ts`` fails.
+    commissionBasisPoints: 400,
+    commissionLabel: '4%',
     ctaHref: '/checkout/creator?plan=pro',
     summaryBullets: [
       'Up to 5 Collectives',

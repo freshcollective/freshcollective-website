@@ -178,7 +178,17 @@ describe('advertised Community limits match what the backend enforces', () => {
 
   test('the for-creators plan card makes the same promises', () => {
     const src = codeOnly('app/for-creators/page.tsx')
-    const card = src.slice(src.indexOf("name: 'Community Collective'"))
+    // The tier is located by its config reference, not by a hardcoded
+    // name literal: the page now takes its plan names from PUBLIC_PLANS,
+    // so the old anchor ("name: 'Community Collective'") no longer
+    // exists. The explicit not-found assertion matters as much as the
+    // anchor — ``indexOf`` returning -1 made ``slice`` return the final
+    // newline, and the failure read as "'One Collective' is missing"
+    // rather than "the anchor moved".
+    const anchor = 'name: PUBLIC_PLANS.community.displayName'
+    const start = src.indexOf(anchor)
+    assert.notEqual(start, -1, `could not locate the Community tier via ${anchor}`)
+    const card = src.slice(start)
     assert.ok(!/'One approved Collective'/.test(card))
     assert.match(card, /'One Collective'/)
   })

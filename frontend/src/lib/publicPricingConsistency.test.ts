@@ -30,10 +30,14 @@ import {
 /**
  * What ``creator_plans`` holds in production right now.
  *
- * Creator is 8%. Pro is 3% — the intended rate is 4%, but the database
- * change has not been approved, so 4% must not be published yet.
+ * Creator is 8%. Pro is 4% — raised from 3% in World Management on
+ * 2026-10-11, which is why the published figure moved with it.
+ *
+ * Update these two numbers only when the database row has actually
+ * changed, never in anticipation. Publishing a rate the database does
+ * not yet carry is the failure this file exists to prevent.
  */
-const LIVE_COMMISSION_BPS = { creator: 800, pro: 300 } as const
+const LIVE_COMMISSION_BPS = { creator: 800, pro: 400 } as const
 
 /**
  * Source with comments removed.
@@ -63,9 +67,9 @@ describe('the shared pricing config matches production', () => {
     assert.equal(PUBLIC_PLANS.creator.commissionLabel, '8%')
   })
 
-  test('Pro commission is the live 3%, not the intended 4%', () => {
+  test('Pro commission is the live 4%', () => {
     assert.equal(PUBLIC_PLANS.pro.commissionBasisPoints, LIVE_COMMISSION_BPS.pro)
-    assert.equal(PUBLIC_PLANS.pro.commissionLabel, '3%')
+    assert.equal(PUBLIC_PLANS.pro.commissionLabel, '4%')
   })
 
   test('the label and the basis points agree', () => {
@@ -91,7 +95,7 @@ describe('the shared pricing config matches production', () => {
 
   test('the bullet helpers read the config', () => {
     assert.equal(commissionBullet(PUBLIC_PLANS.creator), '8% commission on paid offers')
-    assert.equal(commissionBulletShort(PUBLIC_PLANS.pro), '3% on paid transactions')
+    assert.equal(commissionBulletShort(PUBLIC_PLANS.pro), '4% on paid transactions')
   })
 })
 
@@ -111,11 +115,18 @@ describe('no public surface hardcodes its own figure', () => {
     }
   })
 
-  test('the unapproved 4% rate appears nowhere public', () => {
+  test('no page states a commission rate inline', () => {
+    // This replaced an earlier guard that specifically banned 4% while the
+    // database still held 3%. 4% is now the live, approved figure, so that
+    // rule is obsolete — but the invariant underneath it is not: a rate
+    // written into a page is a rate that can outlive the database row.
+    // Stated rate-agnostically so the next change cannot strand it either.
+    // The pages call ``commissionBullet``/``commissionBulletShort``, so the
+    // percentage only exists at runtime and never appears in the source.
     for (const [name, src] of Object.entries(PAGES)) {
-      assert.ok(!/4%\s+(commission|on paid|platform fee)/.test(src), name)
+      const stated = src.match(/\d+%\s*(commission|on paid|platform fee)/)
+      assert.equal(stated, null, `${name} states ${stated?.[0]} inline`)
     }
-    assert.notEqual(PUBLIC_PLANS.pro.commissionLabel, '4%')
   })
 })
 

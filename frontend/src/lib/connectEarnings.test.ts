@@ -116,19 +116,21 @@ describe('the fee breakdown — today\u2019s policy', () => {
     assert.equal(earningLines(r)[2].value, 'A$92.00')
   })
 
-  test('the 4% Pro plan', () => {
-    // The intended Pro rate. Production stays at 3% until approved, so this
-    // pins the arithmetic rather than the live figure.
+  test('the 4% Pro plan currently live in production', () => {
     const r = row({ platform_fee_cents: 400, creator_amount_cents: 9600 })
     assert.equal(earningsBasis(r), 'commission_only')
     assert.ok(linesReconcile(r))
     assert.equal(earningLines(r)[2].value, 'A$96.00')
   })
 
-  test('the 3% Pro rate currently live in production', () => {
+  test('the historical 3% Pro rate still reconciles', () => {
+    // Pro was 3% until 2026-10-11. Those transactions keep the fee
+    // snapshotted on their row, so this display must stay correct for them
+    // forever — the rate change does not reach backwards.
     const r = row({ platform_fee_cents: 300, creator_amount_cents: 9700 })
     assert.equal(earningsBasis(r), 'commission_only')
     assert.ok(linesReconcile(r))
+    assert.equal(earningLines(r)[2].value, 'A$97.00')
   })
 
   test('a 0% Founding Creator receives the whole sale', () => {

@@ -150,6 +150,16 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
 
 const ACCOUNT_NAV: NavItem[] = [
   { href: '/creator-studio/account', label: 'Account' },
+  // Plan comparison and subscription management were previously only
+  // reachable at Account → Plan → Manage plan, three clicks deep with
+  // no sidebar entry of their own. This points at the same existing
+  // page that "Manage plan" opens — no second page, no duplicated
+  // flow — and Account → Plan keeps working exactly as before.
+  //
+  // Deliberately NOT ``requiresPaidOffers``: a Community creator is
+  // precisely who needs to find this, and the page already renders an
+  // upgrade path for them.
+  { href: '/creator-studio/billing', label: 'Creator Plan' },
 ]
 
 interface Props {
