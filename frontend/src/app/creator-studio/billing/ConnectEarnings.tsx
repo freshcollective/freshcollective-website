@@ -105,7 +105,7 @@ export default function ConnectEarnings() {
             <span className="font-medium text-navy-900">
               {summary.sentTotal}
             </span>{' '}
-            on its way to your bank
+            released for payout
             {summary.awaitingTotal && (
               <>
                 {' · '}
