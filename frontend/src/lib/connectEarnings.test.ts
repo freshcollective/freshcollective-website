@@ -7,6 +7,7 @@
  * cost that has not been measured.
  */
 
+import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error - Node-native import
@@ -342,5 +343,44 @@ describe('nothing internal reaches the creator', () => {
     assert.ok(!rendered.includes('acct_'))
     assert.ok(!rendered.includes('tr_'))
     assert.ok(!rendered.includes('ch_'))
+  })
+})
+
+describe('the sent total is described truthfully', () => {
+  /**
+   * A transfer keeps the status ``sent`` after its money has reached the
+   * bank, so the total of sent transfers is not a figure in transit. It read
+   * "on its way to your bank", which described A$3.02 as travelling when
+   * A$1.51 of it had already been paid out.
+   *
+   * These read the rendered component, because the wording is the defect.
+   */
+  const source = readFileSync(
+    new URL('../app/creator-studio/billing/ConnectEarnings.tsx', import.meta.url),
+    'utf8',
+  )
+
+  test('it says the money was released, not that it is travelling', () => {
+    assert.match(source, /released for payout/)
+  })
+
+  test('it no longer claims sent transfers are in transit', () => {
+    assert.ok(
+      !/on its way to your bank/.test(source),
+      'a sent transfer may already have reached the bank',
+    )
+  })
+
+  test('and it still never claims the money has arrived', () => {
+    // The opposite error. Only a payout with Stripe's "paid" status means
+    // the bank took it, and that is the payout list's job to say.
+    for (const claim of [
+      /paid into your bank/i,
+      /in your bank account/i,
+      /arrived/i,
+      /received/i,
+    ]) {
+      assert.ok(!claim.test(source), `${claim} must not describe a transfer`)
+    }
   })
 })

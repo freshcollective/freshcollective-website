@@ -229,10 +229,15 @@ export interface EarningsHeadline {
 /**
  * The summary above the list.
  *
- * "On its way" rather than "paid": a completed transfer reaches the creator's
- * Stripe balance, and the bank payout happens afterwards on its own schedule.
- * Fresh Collective does not yet observe the bank payout itself, so nothing
- * here may claim the money has landed.
+ * "Released for payout" rather than "paid" or "on its way": a completed
+ * transfer reaches the creator's Stripe balance, and the bank payout happens
+ * afterwards on its own schedule.
+ *
+ * Not "on its way" either, which this said first. A transfer stays ``sent``
+ * after its money has reached the bank, so that total described A$3.02 as in
+ * transit when A$1.51 of it had already been paid. "Released" is true of
+ * every sent transfer whatever the bank has since done with it — and the
+ * payout list below now shows exactly which amounts have arrived.
  */
 export function earningsHeadline(
   data: ConnectEarningsResponse,
