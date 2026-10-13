@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import { UPLOAD_NETWORK_ERROR } from '@/lib/uploadErrors'
 import type {
   LibraryFolder,
   LibraryItem,
@@ -513,6 +514,16 @@ function UploadModal({
       setTitle(asset.title)
       show('Uploaded.', { tone: 'success' })
       onUploaded()
+    } catch {
+      // ``fetch`` rejected: the request never completed, so there is no
+      // response to read and no server reason to pass on. Previously
+      // this escaped as an unhandled rejection — Sentry FC-WEB-6 — and
+      // the creator saw the button stop spinning with nothing said.
+      //
+      // Nothing is marked uploaded and no retry is attempted: the
+      // connection can drop after the server has taken the whole file,
+      // so retrying for them risks a duplicate they did not ask for.
+      show(UPLOAD_NETWORK_ERROR, { tone: 'error' })
     } finally {
       setUploading(false)
     }
