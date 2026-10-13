@@ -48,6 +48,11 @@ export default function AboutPageEditor({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<PathwayAboutBlock[]>(initialBlocks)
+  // Held in state, not read straight from the prop, so an image
+  // uploaded from inside a block joins the Assets picker immediately
+  // rather than after a reload. Same shape as the Content editor's
+  // ``StepBlockEditor``, which this page had otherwise diverged from.
+  const [assets, setAssets] = useState<CreatorMediaAsset[]>(mediaAssets)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [newBlockId, setNewBlockId] = useState<string | null>(null)
@@ -172,9 +177,19 @@ export default function AboutPageEditor({
               block={block}
               index={i}
               total={blocks.length}
-              assets={mediaAssets}
+              assets={assets}
               resources={resources}
               initialEditing={block.id === newBlockId}
+              // Without ``spaceSlug`` the upload control renders
+              // ``disabled`` — the hidden file input too — so "Upload
+              // from your computer" did nothing at all: no picker, no
+              // spinner, no error. It is the Collective slug the
+              // upload endpoint is keyed on, and this page always had
+              // it; it simply never reached the block. The Content
+              // editor passes it via ``DraggableBlockList``, which
+              // this page does not use.
+              spaceSlug={spaceSlug}
+              onAssetUploaded={(asset) => setAssets((prev) => [asset, ...prev])}
               onMoveUp={() => moveBlock(i, 'up')}
               onMoveDown={() => moveBlock(i, 'down')}
               onDelete={() => deleteBlock(block.id)}
