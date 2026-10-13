@@ -23,6 +23,8 @@ import {
   type LoadFailure,
   type SchedulePattern,
   classifyLoadFailure,
+  nothingToReserveNotice,
+  termHasEnded,
 } from '@/lib/regularSessions'
 
 /**
@@ -106,11 +108,15 @@ function DateList({
 }
 
 export default function RegularSessions({
-  spaceSlug, seriesSlug, palette, justPurchased = false,
+  spaceSlug, seriesSlug, palette, justPurchased = false, seriesEndsAt = null,
 }: {
   spaceSlug: string
   seriesSlug: string
   palette: CollectivePaletteMeta | null
+  /** The Series' end date, when it has one. Used only to stay quiet on
+   *  a term that has demonstrably finished — null means "no defined
+   *  end", not "finished", so it does not silence anything. */
+  seriesEndsAt?: string | null
   /** True on return from a successful purchase — the moment this is
    *  most useful, so the card opens expanded rather than waiting to be
    *  found. It stays available on every later visit either way. */
@@ -230,9 +236,30 @@ export default function RegularSessions({
     }
   }
 
-  // A Series with nothing ahead to reserve says nothing at all rather
-  // than offering an empty control. This is the only silent outcome.
-  if (phase.kind === 'unavailable') return null
+  // Nothing to reserve. This component is only mounted for a member who
+  // already has access, so there is always someone here to tell — and
+  // telling them is the whole point: silence is indistinguishable from
+  // the feature not existing. See ``nothingToReserveNotice``.
+  if (phase.kind === 'unavailable') {
+    // A term that has finished says nothing, as it always did: a
+    // notice on every completed term a member revisits is noise, and
+    // there is nothing there to be confused about. Everything else
+    // gets told — see ``termHasEnded`` for why a missing end date is
+    // not treated as finished.
+    if (termHasEnded(seriesEndsAt)) return null
+    const notice = nothingToReserveNotice()
+    return (
+      <div
+        className="rounded-2xl border px-5 py-5"
+        style={{ borderColor: borderColour, background: bgColour }}
+      >
+        <p className="font-serif text-lg text-navy-900">{notice.headline}</p>
+        <p className="mt-1 text-[13px]" style={{ color: 'rgba(12,24,38,0.70)' }}>
+          {notice.body}
+        </p>
+      </div>
+    )
+  }
 
   // A failed request is never silent. Rendering null here is what sent
   // a member hunting the page for a control that had decided not to
