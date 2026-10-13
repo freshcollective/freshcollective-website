@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { UPLOAD_NETWORK_ERROR } from '@/lib/uploadErrors'
 import EmojiPicker from './EmojiPicker'
 import MentionTextarea, { type MentionTextareaHandle } from './MentionTextarea'
 
@@ -60,6 +61,21 @@ export default function CreateCommentForm({
       }
       const { url } = await res.json()
       setImageUrl(url)
+    } catch {
+      // ``fetch`` rejected: nothing was confirmed. The preview MUST go.
+      // It is the local object URL set before the request, so leaving
+      // it shows an image that is not attached — and the file input is
+      // disabled while a preview exists, which left the member unable
+      // to choose another file or to post. Clearing it is what lets
+      // them try again.
+      //
+      // ``imageUrl`` is left alone: a confirmed attachment already
+      // blocks further selection, so nothing confirmed can be reached
+      // from here, and the HTTP-error branch above does the same.
+      //
+      // No automatic retry — the server may already hold the file.
+      setError(UPLOAD_NETWORK_ERROR)
+      setImagePreview(null)
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
