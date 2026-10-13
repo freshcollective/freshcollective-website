@@ -366,3 +366,72 @@ export function classifyLoadFailure(
     retryable: true,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Nothing to reserve
+//
+// The card used to render null whenever the listing came back with no
+// weekly patterns, on the reasoning that a Series with nothing ahead
+// "says nothing at all rather than offering an empty control".
+//
+// That reasoning holds for a term that has finished and nothing else.
+// The listing also returns no patterns when occurrences are archived,
+// unlinked from the Series, or under a different space_id — and in
+// every one of those shapes the member still holds a valid term pass,
+// is still looking at a page full of sessions, and can still book them
+// one at a time. Rendering nothing told her the feature did not exist.
+// An EMBODY member spent a support cycle hunting a control that had
+// quietly decided she had no use for it.
+//
+// So a member with access is told something — unless the term has
+// demonstrably ended, where silence is correct and a notice would be
+// noise on every finished term a member ever revisits.
+// ---------------------------------------------------------------------------
+
+export interface NothingToReserve {
+  headline: string
+  body: string
+}
+
+/**
+ * What to show a member with access when no weekly pattern came back.
+ *
+ * One message, deliberately. An earlier draft varied the wording on
+ * ``remaining_occurrence_count > 0`` — a state the API cannot produce:
+ * the endpoint derives both values from the same event list and
+ * ``build_patterns`` groups every event it is given, so an empty
+ * pattern list always means an empty event list. That branch was
+ * unreachable, and a test pinned it, which is how unreachable code
+ * becomes permanent.
+ */
+export function nothingToReserveNotice(): NothingToReserve {
+  return {
+    headline: 'No regular sessions available to reserve',
+    body:
+      "There aren't any upcoming sessions available for regular booking "
+      + 'at the moment. You can still check the schedule for individual '
+      + 'sessions.',
+  }
+}
+
+/**
+ * Has this term demonstrably finished?
+ *
+ * Only ``ends_at`` in the past counts. The column is nullable by
+ * design — the model keeps it null for an ongoing weekly Series — so
+ * a missing end date means "no defined end", NOT "finished". Treating
+ * null as finished would restore the silence this notice exists to
+ * end, and on exactly the Series least likely to have been tidied up.
+ *
+ * Unparseable dates fall through to "not ended" for the same reason:
+ * when in doubt, say something.
+ */
+export function termHasEnded(
+  endsAt: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!endsAt) return false
+  const end = new Date(endsAt)
+  if (Number.isNaN(end.getTime())) return false
+  return end.getTime() < now.getTime()
+}

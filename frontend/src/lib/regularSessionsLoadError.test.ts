@@ -21,7 +21,12 @@ import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { classifyLoadFailure, isVerificationFailure } from './regularSessions.ts'
+import {
+  classifyLoadFailure,
+  isVerificationFailure,
+  nothingToReserveNotice,
+  termHasEnded,
+} from './regularSessions.ts'
 
 const VERIFY_403 = {
   detail:
@@ -55,13 +60,18 @@ describe('an empty session list is still silent', () => {
     )
   })
 
-  test('the silent state is the only one that renders nothing', () => {
+  test('nothing renders the member a blank space any more', () => {
+    // Previously 'unavailable' returned null. A member with access was
+    // shown nothing at all, which is why the control looked absent.
     const nulls = CODE.match(/if \(phase\.kind === '(\w+)'\) return null/g) ?? []
-    assert.deepEqual(
-      nulls,
-      ["if (phase.kind === 'unavailable') return null"],
-      `something other than an empty term renders nothing: ${nulls.join(' | ')}`,
-    )
+    assert.deepEqual(nulls, [], `a phase still renders nothing: ${nulls.join(' | ')}`)
+  })
+
+  test('the empty case explains itself instead of disappearing', () => {
+    assert.match(CODE, /phase\.kind === 'unavailable'/)
+    assert.match(CODE, /nothingToReserveNotice\(/)
+    assert.match(CODE, /notice\.headline/)
+    assert.match(CODE, /notice\.body/)
   })
 
   test('a failed request no longer borrows the silent state', () => {
@@ -227,5 +237,87 @@ describe('the failure card is actually rendered', () => {
       !/\{\s*(body|detail)\s*\}/.test(CODE),
       'the component renders a raw server field',
     )
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// 6 · Nothing to reserve — honest, never blank, and quiet when finished
+// ---------------------------------------------------------------------------
+
+describe('an empty listing tells a member with access something', () => {
+  test('the notice says what is true and what still works', () => {
+    const n = nothingToReserveNotice()
+    assert.equal(n.headline, 'No regular sessions available to reserve')
+    assert.match(n.body, /aren't any upcoming sessions available for regular booking/i)
+    assert.match(n.body, /check the schedule for individual sessions/i)
+  })
+
+  test('it takes no arguments and cannot branch on a count', () => {
+    // An earlier draft varied the wording on remaining_occurrence_count
+    // > 0 — a state the API cannot produce, because the endpoint builds
+    // the count and the patterns from the same event list and
+    // build_patterns drops nothing. Unreachable code with a test on it
+    // is how unreachable code survives, so both are gone.
+    //
+    // Asserted against the source, not Function.length: a defaulted
+    // parameter reports length 0, so the obvious check passes while
+    // the parameter quietly comes back.
+    const lib = codeOnly(readFileSync('src/lib/regularSessions.ts', 'utf8'))
+    const fn = lib.slice(lib.indexOf('export function nothingToReserveNotice'))
+    const signature = fn.slice(0, fn.indexOf(')') + 1)
+    assert.match(signature, /nothingToReserveNotice\(\)/, `signature: ${signature}`)
+    const body = fn.slice(0, fn.indexOf('\n}'))
+    assert.ok(!/remainingOccurrenceCount/.test(body), 'the count parameter is back')
+    assert.ok(!/\bif\s*\(/.test(body), 'the notice branches again')
+  })
+
+  test('it never claims a reservation happened', () => {
+    const { headline, body } = nothingToReserveNotice()
+    for (const claim of [/reserved/i, /booked\b/i, /confirmed/i]) {
+      assert.ok(!claim.test(`${headline} ${body}`), `${claim} reads as a booking`)
+    }
+  })
+
+  test('the component renders it rather than returning null', () => {
+    assert.match(CODE, /nothingToReserveNotice\(\)/)
+    assert.match(CODE, /notice\.headline/)
+    assert.match(CODE, /notice\.body/)
+  })
+})
+
+describe('a finished term stays quiet', () => {
+  const NOW = new Date('2026-10-13T00:00:00Z')
+
+  test('an end date in the past counts as finished', () => {
+    assert.equal(termHasEnded('2026-09-30T10:00:00Z', NOW), true)
+  })
+
+  test('an end date still ahead does not', () => {
+    assert.equal(termHasEnded('2026-12-01T10:00:00Z', NOW), false)
+  })
+
+  test('no end date is NOT treated as finished', () => {
+    // ends_at is nullable by design — the model keeps it null for an
+    // ongoing weekly Series. Reading null as "finished" would restore
+    // the silence this notice exists to end, on exactly the Series
+    // least likely to have been tidied up.
+    for (const absent of [null, undefined, '']) {
+      assert.equal(termHasEnded(absent, NOW), false, String(absent))
+    }
+  })
+
+  test('an unparseable date is not treated as finished', () => {
+    assert.equal(termHasEnded('not-a-date', NOW), false)
+  })
+
+  test('the component suppresses the notice only for a finished term', () => {
+    assert.match(CODE, /if \(termHasEnded\(seriesEndsAt\)\) return null/)
+  })
+
+  test('the page supplies the end date', () => {
+    const page = codeOnly(
+      readFileSync('src/app/spaces/[slug]/gathering-series/[series-slug]/page.tsx', 'utf8'))
+    assert.match(page, /seriesEndsAt=\{detail\.ends_at\}/)
   })
 })

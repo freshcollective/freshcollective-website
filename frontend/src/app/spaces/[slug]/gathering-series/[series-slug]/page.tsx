@@ -280,6 +280,7 @@ export default async function MemberGatheringSeriesPage({
                   seriesSlug={seriesSlug}
                   palette={collectivePalette}
                   justPurchased={justPurchased}
+                  seriesEndsAt={detail.ends_at}
                 />
               </div>
             </>
