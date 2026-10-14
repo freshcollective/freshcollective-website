@@ -1921,6 +1921,28 @@ export type ActivityCategory =
   | 'collective'
   | 'account'
 
+/**
+ * Unseen Collective activity, per Collective and category.
+ *
+ * Notifications 2.0 Phase 2. Nothing renders these yet — the numbered
+ * indicators are Phase 3. `total` on each row is the sum of its three
+ * categories, and the top-level `total` the sum of the rows, so Your
+ * World and a Collective's own badge are the same arithmetic rather
+ * than two counts that have to be kept in step.
+ */
+export interface CollectiveUnseen {
+  collective_id: string
+  conversations: number
+  pathways: number
+  gatherings: number
+  total: number
+}
+
+export interface UnseenCountsResponse {
+  collectives: CollectiveUnseen[]
+  total: number
+}
+
 export interface ActivityOut {
   id: string
   event_type: string

@@ -33,6 +33,8 @@ from app.core.database import get_db
 from app.models.activity import Activity, ActivityType
 from app.models.platform import Space
 from app.models.user import User
+from app.services.activity_counts import unseen_counts
+from app.services.activity_cursors import CursorRefused, advance
 from app.services.activity_service import ActivityService
 
 
@@ -265,6 +267,117 @@ def list_collective_activity(
     return ActivityListResponse(
         activities=[_to_out(r) for r in rows],
         next_before=_next_before(rows, limit),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — unseen counts and the seen mark
+#
+# Both endpoints are inert until Phase 3 renders an indicator: nothing
+# in the app calls them yet. They are shipped first so the counting can
+# be exercised deliberately before anything depends on it.
+# ---------------------------------------------------------------------------
+
+
+class CollectiveUnseen(BaseModel):
+    collective_id: str
+    conversations: int
+    pathways: int
+    gatherings: int
+    total: int
+
+
+class UnseenCountsResponse(BaseModel):
+    collectives: list[CollectiveUnseen]
+    #: Your World's number. Summed from the rows above rather than
+    #: counted again, so the two cannot disagree.
+    total: int
+
+
+@router.get("/api/activities/unseen-counts", response_model=UnseenCountsResponse)
+def get_unseen_counts(
+    collective_id: str | None = Query(
+        None, description="Limit to one Collective. Omitted, covers all of them."
+    ),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UnseenCountsResponse:
+    """How much this member has not yet seen, per Collective.
+
+    One response for every Collective they belong to — a member in ten
+    costs the same as a member in one.
+    """
+    counts = unseen_counts(db, current_user, collective_id=collective_id)
+    rows = [
+        CollectiveUnseen(
+            collective_id=c.collective_id,
+            conversations=c.conversations,
+            pathways=c.pathways,
+            gatherings=c.gatherings,
+            total=c.total,
+        )
+        for c in counts
+    ]
+    return UnseenCountsResponse(
+        collectives=rows, total=sum(r.total for r in rows),
+    )
+
+
+class SeenRequest(BaseModel):
+    collective_id: str
+    category: str
+    #: The highest ``sequence_number`` the client actually rendered.
+    #: Treated as a claim and clamped — see ``activity_cursors``.
+    through_sequence: int
+
+
+class SeenResponse(BaseModel):
+    collective_id: str
+    category: str
+    seen_through_seq: int
+
+
+_REFUSALS = {
+    "not_authenticated": status.HTTP_401_UNAUTHORIZED,
+    "unknown_category": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "invalid_sequence": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    # A non-member learns nothing about whether the Collective exists.
+    "not_a_member": status.HTTP_404_NOT_FOUND,
+    "area_unreachable": status.HTTP_404_NOT_FOUND,
+    "nothing_to_advance": status.HTTP_404_NOT_FOUND,
+}
+
+
+@router.post("/api/activities/seen", response_model=SeenResponse)
+def mark_seen(
+    body: SeenRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SeenResponse:
+    """Advance this member's mark for one section they just visited.
+
+    The mark always belongs to the authenticated caller — the request
+    names a Collective and a category, never a user — so one member
+    cannot touch another's seen state.
+    """
+    try:
+        state = advance(
+            db,
+            current_user,
+            collective_id=body.collective_id,
+            category=body.category,
+            through_sequence=body.through_sequence,
+        )
+    except CursorRefused as exc:
+        raise HTTPException(
+            status_code=_REFUSALS.get(exc.reason, status.HTTP_400_BAD_REQUEST),
+            detail="Could not record that section as seen.",
+        ) from exc
+    db.commit()
+    return SeenResponse(
+        collective_id=state.collective_id,
+        category=state.category,
+        seen_through_seq=state.seen_through_seq,
     )
 
 

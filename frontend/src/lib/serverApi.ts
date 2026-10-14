@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, CreatorStripeConnectStatus, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, CreatorStripeConnectStatus, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary, UnseenCountsResponse } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -1189,6 +1189,33 @@ export const getSpaceNotificationPrefs = cache(async (
     return (await res.json()) as NotificationPrefs
   } catch {
     return null
+  }
+})
+
+/**
+ * Unseen activity counts for every Collective this member belongs to.
+ *
+ * One round trip for all of them — a member in ten Collectives costs
+ * the same as a member in one. Unused until Phase 3 renders the
+ * indicators; it exists now so that phase is pure UI.
+ *
+ * Fails to zeroes rather than throwing: a missing badge is a far
+ * better outcome than a page that will not render.
+ */
+export const getUnseenCounts = cache(async (
+  collectiveId?: string,
+): Promise<UnseenCountsResponse> => {
+  const params = new URLSearchParams()
+  if (collectiveId) params.set('collective_id', collectiveId)
+  const qs = params.toString()
+  try {
+    const res = await fetchWithSession(
+      `/api/activities/unseen-counts${qs ? `?${qs}` : ''}`,
+    )
+    if (!res.ok) return { collectives: [], total: 0 }
+    return (await res.json()) as UnseenCountsResponse
+  } catch {
+    return { collectives: [], total: 0 }
   }
 })
 
