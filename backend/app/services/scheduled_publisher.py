@@ -119,6 +119,26 @@ def publish_due_posts(db: Session) -> list[str]:
     if published_ids:
         db.commit()
 
+    # Shared Collective activity, recorded at the moment the post
+    # actually appears rather than when it was scheduled. Inside this
+    # session and committed here, because a lost activity row would be
+    # invisible — unlike a notification, nothing retries it.
+    #
+    # The dedupe key makes this safe to reach more than once, which it
+    # will be: this function is called from a read path, so two
+    # concurrent feed requests can both arrive just after publish time.
+    if published_ids:
+        from app.models.platform import CommunityPost
+        from app.services import activity_producers
+
+        for post_id, _space_id, author_id in published_ids:
+            post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()
+            if post is not None:
+                activity_producers.record_thread_created(
+                    db, post, actor_user_id=author_id,
+                )
+        db.commit()
+
     # Fire triggers OUTSIDE the transaction. Each trigger opens its own
     # session (see notification_service), so we don't tie their success
     # to our commit.

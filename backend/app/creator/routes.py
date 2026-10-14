@@ -236,6 +236,7 @@ from app.services.pathway_announcement import (
     announce_if_newly_available,
     is_member_visible,
 )
+from app.services import activity_producers
 from app.services.schedule_validation import (
     apply_recurring_derivations,
     apply_recurring_update_derivations,
@@ -2981,6 +2982,11 @@ def create_pathway(
     announcement = announce_if_newly_available(
         db, pathway, actor_user_id=current_user.id,
     )
+    # Collective activity is recorded whether or not anyone is told:
+    # the indicator is a quiet signal, the announcement is a message.
+    activity_producers.record_pathway_published(
+        db, pathway, actor_user_id=current_user.id,
+    )
 
     db.commit()
     db.refresh(pathway)
@@ -3043,6 +3049,11 @@ def update_pathway(
     # one transaction; idempotent on (pathway, Collective), so
     # republishing after a return to draft announces nothing.
     announcement = announce_if_newly_available(
+        db, pathway, actor_user_id=current_user.id,
+    )
+    # Collective activity is recorded whether or not anyone is told:
+    # the indicator is a quiet signal, the announcement is a message.
+    activity_producers.record_pathway_published(
         db, pathway, actor_user_id=current_user.id,
     )
 
@@ -3340,6 +3351,13 @@ def create_step(
     # the Pathway can be unpublished in between.
     if is_member_visible(db, pathway):
         background_tasks.add_task(trigger_new_step, step.id, current_user.id)
+    # Shared Collective activity, recorded on the same condition. Silent
+    # for a drip step: that opens at a different moment for each member,
+    # so a shared row cannot describe it. See ``activity_producers``.
+    activity_producers.record_step_published(
+        db, step, actor_user_id=current_user.id,
+    )
+    db.commit()
     return step
 
 
@@ -4113,6 +4131,12 @@ def create_event(
             db=db,
             created_by=current_user.id,
         )
+
+    # Silent for a Series occurrence — the Series is the offering, and
+    # counting both would make one term look like twenty Gatherings.
+    activity_producers.record_gathering_published(
+        db, event, actor_user_id=current_user.id,
+    )
 
     db.commit()
     db.refresh(event)

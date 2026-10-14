@@ -20,7 +20,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -293,8 +293,16 @@ class Activity(Base):
     actor_user_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
-    recipient_user_id: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    # NULL means a *shared* row: one activity describing one piece of
+    # Collective content, visible to whoever may currently see that
+    # content. Phase 1 of Notifications 2.0 writes only shared rows.
+    #
+    # A non-NULL recipient keeps its original meaning — this activity
+    # belongs to one person — and remains the right shape for events
+    # that genuinely happen per member (a drip step opening, a payment
+    # failing). The two coexist in one table deliberately.
+    recipient_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True,
     )
 
     # ── Subject entities (all nullable) ─────────────────────────────
@@ -313,11 +321,24 @@ class Activity(Base):
     resource_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("space_resources.id", ondelete="SET NULL"), nullable=True,
     )
+    # A Gathering Series is one offering, not one row per occurrence.
+    # Kept separate from ``gathering_id`` so a count can treat "the
+    # Series" and "a single Gathering" as distinct subjects.
+    series_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("event_series.id", ondelete="SET NULL"), nullable=True,
+    )
 
     # ── Human-readable payload ──────────────────────────────────────
     # Everything a delivery channel needs to render the event without a
     # further DB round-trip: title, message, url, actor_name, etc.
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # One key per piece of content, enforced by a partial unique index.
+    # Producers insert and let the database refuse a duplicate rather
+    # than SELECT-then-insert, which races under the concurrent publish
+    # this is meant to survive. Mirrors ``communication_events``, which
+    # has used the same mechanism since migration 097.
+    dedupe_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # ── Delivery state timestamps ───────────────────────────────────
     read_at:     Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
@@ -350,5 +371,18 @@ class Activity(Base):
         Index(
             "ix_activities_collective_created",
             "collective_id", "created_at",
+        ),
+        # Shared-row reads and (from Phase 2) per-category counts.
+        Index(
+            "ix_activities_collective_category_created",
+            "collective_id", "category", "created_at",
+        ),
+        # Idempotency. Partial so the column stays optional for the
+        # per-recipient rows that do not need one.
+        Index(
+            "ux_activities_dedupe",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("dedupe_key IS NOT NULL"),
         ),
     )

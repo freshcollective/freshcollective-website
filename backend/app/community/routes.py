@@ -746,6 +746,14 @@ def create_community_post(
     db.add(post)
     if body.poll is not None:
         _create_poll_for_post(body.poll, post, db)
+    db.flush()
+    # Shared Collective activity for a thread published now. A
+    # scheduled post produces nothing here — it is recorded when the
+    # publisher actually releases it, not when it was written.
+    from app.services import activity_producers
+    activity_producers.record_thread_created(
+        db, post, actor_user_id=current_user.id,
+    )
     db.commit()
     db.refresh(post)
 

@@ -316,6 +316,14 @@ def update_gathering_series(
         row.status = body.status
 
     row.updated_at = datetime.utcnow()
+    # One shared activity row for the whole term, keyed on the Series,
+    # so twenty occurrences can never become twenty indicators. The
+    # producer is a no-op unless the Series is actually published, and
+    # its dedupe key makes a later edit silent.
+    from app.services import activity_producers
+    activity_producers.record_series_published(
+        db, row, actor_user_id=current_user.id,
+    )
     db.commit()
     db.refresh(row)
     return _series_to_dict(row)
