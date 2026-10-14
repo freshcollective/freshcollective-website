@@ -1927,7 +1927,9 @@ export interface ActivityOut {
   category: ActivityCategory | string
   priority: string
   actor_user_id: string | null
-  recipient_user_id: string
+  /** Null on a shared Collective activity — the row describes a
+   *  piece of content rather than a person. */
+  recipient_user_id: string | null
   collective_id: string | null
   pathway_id: string | null
   gathering_id: string | null

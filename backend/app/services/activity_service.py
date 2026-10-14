@@ -22,11 +22,13 @@ activity writes participate in the caller's own transaction.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Iterable, Sequence
 
 from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.activity import (
@@ -38,6 +40,42 @@ from app.models.activity import (
     DEFAULT_PRIORITY_OF,
     RECENT_MOMENTS,
 )
+
+logger = logging.getLogger(__name__)
+
+#: The three categories a member-facing Collective feed may show.
+#: ``personal`` and ``account`` are the bell's business; ``collective``
+#: (member joins) is creator-facing only.
+SHARED_MEMBER_CATEGORIES = ("conversations", "pathways", "gatherings")
+
+#: Postgres ``unique_violation``. The dedupe index is the only
+#: constraint whose breach means "already recorded"; see below.
+_UNIQUE_VIOLATION = "23505"
+
+#: The partial unique index created by migration 155.
+_DEDUPE_INDEX = "ux_activities_dedupe"
+
+
+def _is_dedupe_conflict(exc: IntegrityError) -> bool:
+    """True only when this row lost a race to an identical one.
+
+    Narrow on purpose. ``IntegrityError`` also covers a foreign key
+    that does not resolve and a NOT NULL that is violated — both mean
+    the row was *wrong*, not repeated. Treating those as an idempotent
+    no-op loses a real bug twice over: the activity never appears, and
+    the log line says it was already there, which is the one message
+    guaranteed to stop anybody looking.
+    """
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "pgcode", None) != _UNIQUE_VIOLATION:
+        return False
+    # A unique violation on some *other* index is still not a repeat of
+    # this content, so the constraint has to be named. When the driver
+    # declines to name it, fall back to the text.
+    constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint:
+        return constraint == _DEDUPE_INDEX
+    return _DEDUPE_INDEX in str(orig)
 
 
 class ActivityService:
@@ -103,6 +141,84 @@ class ActivityService:
         return activity
 
     @staticmethod
+    def create_shared(
+        db: Session,
+        *,
+        event_type: ActivityType,
+        dedupe_key: str,
+        collective_id: str,
+        actor_user_id: str | None = None,
+        pathway_id: str | None = None,
+        gathering_id: str | None = None,
+        series_id: str | None = None,
+        conversation_id: str | None = None,
+        resource_id: str | None = None,
+        payload: dict | None = None,
+        priority: ActivityPriority | None = None,
+    ) -> Activity | None:
+        """Create one row describing one piece of Collective content.
+
+        No recipient. Who may see it is decided when it is read, from
+        the permissions that already govern the content itself, so
+        publishing costs one insert whether the Collective has five
+        members or five thousand.
+
+        ``dedupe_key`` is required and is the whole idempotency story.
+        Returns ``None`` when the key is already present — the content
+        has been announced before, and a retry, a double-click or two
+        racing requests all land here.
+
+        Insert-and-catch rather than check-then-insert: the check loses
+        the race precisely when two publishes arrive together, which is
+        the case worth surviving. The savepoint keeps the conflict from
+        poisoning the caller's transaction, so a publish that happens to
+        be a repeat still commits its own work.
+
+        The caller owns ``db.commit()``, as with every method here.
+        """
+        if not isinstance(event_type, ActivityType):
+            raise TypeError(
+                f"event_type must be an ActivityType, got {type(event_type).__name__}"
+            )
+        if not dedupe_key:
+            raise ValueError("create_shared requires a dedupe_key")
+
+        category = CATEGORY_OF[event_type]
+        resolved_priority = priority or DEFAULT_PRIORITY_OF[event_type]
+
+        activity = Activity(
+            id=f"act_{uuid.uuid4().hex[:20]}",
+            event_type=event_type.value,
+            category=category.value,
+            priority=resolved_priority.value,
+            actor_user_id=actor_user_id,
+            recipient_user_id=None,
+            collective_id=collective_id,
+            pathway_id=pathway_id,
+            gathering_id=gathering_id,
+            series_id=series_id,
+            conversation_id=conversation_id,
+            resource_id=resource_id,
+            payload=payload or {},
+            dedupe_key=dedupe_key,
+        )
+        try:
+            with db.begin_nested():
+                db.add(activity)
+                db.flush()
+        except IntegrityError as exc:
+            if not _is_dedupe_conflict(exc):
+                # Not a repeat — a genuinely bad row. Let it out, so the
+                # producer logs it at ERROR (and Sentry raises it)
+                # rather than filing it as "already announced".
+                raise
+            logger.info(
+                "activity already recorded for dedupe_key=%s", dedupe_key,
+            )
+            return None
+        return activity
+
+    @staticmethod
     def create_for_recipients(
         db: Session,
         *,
@@ -155,6 +271,225 @@ class ActivityService:
     # the service so background workers (digest builder, "My World"
     # history compiler, automation engine) can reuse them.
     # -----------------------------------------------------------------
+
+    @staticmethod
+    def list_shared_for_member(
+        db: Session,
+        *,
+        user,
+        collective_id: str | None = None,
+        limit: int = 20,
+        since: "datetime | None" = None,
+        before: "datetime | None" = None,
+    ) -> list[Activity]:
+        """Shared Collective activity this member is allowed to see.
+
+        A shared row has no recipient, so access is decided here. The
+        filters run cheapest-first and each one is the rule that already
+        governs the underlying content — none of them is a second
+        opinion invented for activity:
+
+          1. active membership of the Collective;
+          2. the Area must be reachable by this member;
+          3. the entity itself must be visible to them;
+          4. the entity must still be live.
+
+        (4) is a join rather than a cleanup job, so unpublishing or
+        deleting content removes it from every feed at once and cannot
+        drift out of step with the rows.
+
+        A member never sees their own action. Ordered newest-first.
+        """
+        from app.models.platform import (
+            CommunityPost,
+            Event,
+            EventSeries,
+            Pathway,
+            SpaceMembership,
+            SpaceMembershipStatus,
+        )
+
+        if user is None:
+            return []
+
+        memberships = (
+            db.query(SpaceMembership.space_id)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .all()
+        )
+        space_ids = {m[0] for m in memberships}
+        if collective_id is not None:
+            space_ids &= {collective_id}
+        if not space_ids:
+            return []
+
+        q = (
+            db.query(Activity)
+            .filter(
+                Activity.recipient_user_id.is_(None),
+                Activity.collective_id.in_(space_ids),
+                Activity.archived_at.is_(None),
+                Activity.category.in_(SHARED_MEMBER_CATEGORIES),
+            )
+        )
+        if since is not None:
+            q = q.filter(Activity.created_at > since)
+        # `before` is applied in SQL, not to the returned page. Trimming
+        # afterwards would cap the rows at `limit` *first* and then
+        # throw most of them away, so a Collective with a busy first
+        # page would appear to have no older shared activity at all.
+        if before is not None:
+            q = q.filter(Activity.created_at < before)
+        if user.id:
+            q = q.filter(Activity.actor_user_id.is_distinct_from(user.id))
+
+        # Over-fetch: permission filtering below removes rows, and the
+        # caller asked for `limit` visible ones, not `limit` candidates.
+        rows = q.order_by(Activity.created_at.desc()).limit(limit * 5).all()
+
+        return ActivityService._visible_only(db, user, rows)[:limit]
+
+    @staticmethod
+    def _visible_only(db: Session, user, rows: list[Activity]) -> list[Activity]:
+        """Drop rows whose subject this member may not see or which no
+        longer exist. Resolves each permission set once, not per row."""
+        from app.models.platform import (
+            CommunityPost,
+            Event,
+            EventSeries,
+            Pathway,
+            Space,
+        )
+        from app.services.channel_permissions import accessible_channels_for_user
+        from app.spaces import area_policies
+        from app.spaces.area_access import resolve_area_access
+
+        if not rows:
+            return []
+
+        spaces = {
+            s.id: s
+            for s in db.query(Space)
+            .filter(Space.id.in_({r.collective_id for r in rows if r.collective_id}))
+            .all()
+        }
+
+        area_of = {
+            "conversations": area_policies.AREA_CONVERSATIONS,
+            "pathways": area_policies.AREA_PATHWAYS,
+            "gatherings": area_policies.AREA_GATHERINGS,
+        }
+        # One resolve per Collective — it answers every area at once —
+        # rather than one per (space, area) or, worse, one per row.
+        area_cache: dict[str, object] = {}
+        channel_cache: dict[str, set[str]] = {}
+
+        # One liveness lookup per entity kind, not one per row.
+        live_pathways = {
+            p.id
+            for p in db.query(Pathway.id)
+            .filter(
+                Pathway.id.in_({r.pathway_id for r in rows if r.pathway_id} or {""}),
+                Pathway.status.in_(["active", "coming_soon"]),
+            )
+            .all()
+        }
+        live_gatherings = {
+            e.id
+            for e in db.query(Event.id)
+            .filter(
+                Event.id.in_({r.gathering_id for r in rows if r.gathering_id} or {""}),
+                Event.is_published.is_(True),
+                Event.status == "active",
+            )
+            .all()
+        }
+        live_series = {
+            x.id
+            for x in db.query(EventSeries.id)
+            .filter(
+                EventSeries.id.in_({r.series_id for r in rows if r.series_id} or {""}),
+                EventSeries.status == "published",
+            )
+            .all()
+        }
+        live_posts = {
+            c.id
+            for c in db.query(CommunityPost.id)
+            .filter(
+                CommunityPost.id.in_(
+                    {r.conversation_id for r in rows if r.conversation_id} or {""}
+                ),
+                CommunityPost.publication_status == "published",
+            )
+            .all()
+        }
+
+        out: list[Activity] = []
+        for r in rows:
+            # A shared row is *about* something, and the entity id is
+            # the only link to the content whose liveness and
+            # permissions decide visibility. Every one of those columns
+            # is ON DELETE SET NULL, so deleting the content does not
+            # delete the row — it empties it, and an empty row would
+            # then pass every check below by having nothing left to
+            # check. Require a subject, so deleted content disappears.
+            if not (
+                r.pathway_id
+                or r.gathering_id
+                or r.series_id
+                or r.conversation_id
+            ):
+                continue
+
+            space = spaces.get(r.collective_id or "")
+            if space is None or space.status != "active":
+                continue
+
+            area = area_of.get(r.category)
+            if area is not None:
+                if space.id not in area_cache:
+                    try:
+                        area_cache[space.id] = resolve_area_access(db, space, user)
+                    except Exception:
+                        logger.exception(
+                            "activity: area access failed for space %s", space.id,
+                        )
+                        area_cache[space.id] = None
+                access = area_cache[space.id]
+                # Fail closed: an unresolvable policy hides the row
+                # rather than exposing it.
+                if access is None or not access.can_reach(area):
+                    continue
+
+            if r.pathway_id and r.pathway_id not in live_pathways:
+                continue
+            if r.gathering_id and r.gathering_id not in live_gatherings:
+                continue
+            if r.series_id and r.series_id not in live_series:
+                continue
+            if r.conversation_id:
+                if r.conversation_id not in live_posts:
+                    continue
+                if space.id not in channel_cache:
+                    channel_cache[space.id] = {
+                        c.id
+                        for c in accessible_channels_for_user(user, space, db)
+                    }
+                post = (
+                    db.query(CommunityPost)
+                    .filter(CommunityPost.id == r.conversation_id)
+                    .first()
+                )
+                chan = getattr(post, "channel_id", None) if post else None
+                if chan is not None and chan not in channel_cache[space.id]:
+                    continue
+
+            out.append(r)
+        return out
 
     @staticmethod
     def list_for_recipient(

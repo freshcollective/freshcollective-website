@@ -55,10 +55,11 @@ class ActivityOut(BaseModel):
     category: str
     priority: str
     actor_user_id: str | None
-    recipient_user_id: str
+    recipient_user_id: str | None
     collective_id: str | None
     pathway_id: str | None
     gathering_id: str | None
+    series_id: str | None = None
     conversation_id: str | None
     resource_id: str | None
     payload: dict[str, Any]
@@ -94,6 +95,7 @@ def _to_out(a: Activity) -> ActivityOut:
         collective_id=a.collective_id,
         pathway_id=a.pathway_id,
         gathering_id=a.gathering_id,
+        series_id=a.series_id,
         conversation_id=a.conversation_id,
         resource_id=a.resource_id,
         payload=a.payload or {},
@@ -146,7 +148,14 @@ def list_activities(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ActivityListResponse:
-    rows = ActivityService.list_for_recipient(
+    # Two kinds of row, one feed. Personal rows belong to this member;
+    # shared rows describe Collective content and are filtered by the
+    # permissions that govern the content itself.
+    #
+    # ``unread_only`` applies only to personal rows: a shared row has no
+    # per-member read state until Phase 2 introduces cursors, so there
+    # is nothing truthful it could mean for them yet.
+    personal = ActivityService.list_for_recipient(
         db,
         recipient_user_id=current_user.id,
         unread_only=unread_only,
@@ -156,6 +165,20 @@ def list_activities(
         collective_id=collective_id,
         recent_moments_only=recent_moments,
     )
+    shared: list = []
+    if not unread_only:
+        shared = ActivityService.list_shared_for_member(
+            db,
+            user=current_user,
+            collective_id=collective_id,
+            limit=limit,
+            since=None,
+            before=before,
+        )
+
+    rows = sorted(
+        [*personal, *shared], key=lambda r: r.created_at, reverse=True,
+    )[:limit]
     return ActivityListResponse(
         activities=[_to_out(r) for r in rows],
         next_before=_next_before(rows, limit),
