@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { NotificationItem, NotificationsResponse } from '@/types/platform'
 import {
@@ -17,8 +17,32 @@ interface Props {
   initialCount: number
 }
 
+/**
+ * The unread count, or null when the request failed or was refused.
+ *
+ * Module scope so the poll, the focus refresh and the mount/navigation
+ * read share one definition of how the count is fetched, and so the
+ * effect below can decide for itself whether a late answer is still
+ * wanted.
+ */
+async function readUnreadCount(): Promise<number | null> {
+  try {
+    const res = await fetch(apiUrl('/api/notifications/unread-count'), {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.count ?? 0
+  } catch {
+    // Silently ignore polling errors
+    return null
+  }
+}
+
 export default function NotificationBell({ initialCount }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
   const [unreadCount, setUnreadCount] = useState(initialCount)
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
@@ -27,20 +51,39 @@ export default function NotificationBell({ initialCount }: Props) {
 
   // Poll unread count every 60 seconds
   const fetchUnreadCount = useCallback(async () => {
-    try {
-      const res = await fetch(apiUrl('/api/notifications/unread-count'), {
-        credentials: 'include',
-        cache: 'no-store',
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setUnreadCount(data.count ?? 0)
-      }
-    } catch {
-      // Silently ignore polling errors
-    }
+    const count = await readUnreadCount()
+    if (count !== null) setUnreadCount(count)
   }, [])
 
+  // Read the real count on mount, and again on every navigation.
+  //
+  // `initialCount` is 0 at every call site, and `setInterval` has no
+  // leading call, so without this the badge is guaranteed to read zero
+  // for the first 60 seconds of a session — long enough that opening
+  // the bell was the only thing that ever corrected it.
+  //
+  // Keyed on `pathname` as well as mount: the bell lives in a layout
+  // that persists across some navigations and remounts across others.
+  // On the persisting ones nothing else would refetch; on the
+  // remounting ones state resets to zero and this restores it. One
+  // request per navigation, and none of them duplicates the interval.
+  useEffect(() => {
+    // Ignore an answer that arrives after we've moved on: two
+    // navigations in quick succession leave two requests in flight,
+    // and without this the slower one can land last and show a count
+    // that was already out of date when it was asked for.
+    let cancelled = false
+    void (async () => {
+      const count = await readUnreadCount()
+      if (!cancelled && count !== null) setUnreadCount(count)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [pathname])
+
+  // Polling and focus stay in their own effect so a navigation does
+  // not tear down and restart the 60-second timer.
   useEffect(() => {
     const interval = setInterval(fetchUnreadCount, 60000)
     const onFocus = () => void fetchUnreadCount()

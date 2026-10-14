@@ -281,6 +281,7 @@ class ActivityService:
         limit: int = 20,
         since: "datetime | None" = None,
         before: "datetime | None" = None,
+        recent_moments_only: bool = False,
     ) -> list[Activity]:
         """Shared Collective activity this member is allowed to see.
 
@@ -335,6 +336,15 @@ class ActivityService:
                 Activity.category.in_(SHARED_MEMBER_CATEGORIES),
             )
         )
+        # Recent Moments is a narrower set than "everything in this
+        # category" — see RECENT_MOMENTS. It has to be applied here as
+        # well as to the personal query, or a shared row reaches the
+        # panel on category alone and the two halves of one feed
+        # disagree about what belongs in it.
+        if recent_moments_only:
+            q = q.filter(
+                Activity.event_type.in_([t.value for t in RECENT_MOMENTS])
+            )
         if since is not None:
             q = q.filter(Activity.created_at > since)
         # `before` is applied in SQL, not to the returned page. Trimming

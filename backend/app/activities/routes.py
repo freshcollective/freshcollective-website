@@ -174,6 +174,7 @@ def list_activities(
             limit=limit,
             since=None,
             before=before,
+            recent_moments_only=recent_moments,
         )
 
     rows = sorted(
