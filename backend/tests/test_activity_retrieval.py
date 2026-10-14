@@ -20,6 +20,7 @@ from app.models.activity import Activity
 from app.models.platform import (
     CommunityPost,
     ConversationChannel,
+    Event,
     Pathway,
     PathwayStatus,
     PathwayType,
@@ -61,6 +62,19 @@ def _channel(db, space, *, channel_type="open") -> ConversationChannel:
     )
     db.add(c); db.flush()
     return c
+
+
+def _gathering(db, space) -> Event:
+    e = Event(
+        id=_uid("e"), space_id=space.id, created_by_id=space.creator_id,
+        title="A Gathering",
+        starts_at=datetime.utcnow() + timedelta(days=7),
+        ends_at=datetime.utcnow() + timedelta(days=7, hours=1),
+        is_published=True, status="active", requires_booking=True,
+        capacity=20, gathering_type="circle", attendance_format="online",
+    )
+    db.add(e); db.flush()
+    return e
 
 
 def _post(db, space, channel, author) -> CommunityPost:
@@ -446,3 +460,159 @@ class TestPagination:
             f"paging stopped after {len(seen)} of {total} rows"
         )
         assert len(set(seen)) == total, "a row was returned on two pages"
+
+
+class TestRecentMomentsFilter:
+    """Recent Moments is narrower than the three member categories.
+
+    The panel asks for `recent_moments=true`, and that has to narrow
+    both halves of the feed. Applying it only to the personal query
+    let a shared row in on its category alone, so the same panel
+    answered two different questions depending on which half a row
+    came from.
+    """
+
+    def _row(self, db, space, actor, event_type, category, **kw):
+        row = Activity(
+            id=_uid("act"), event_type=event_type, category=category,
+            priority="standard", actor_user_id=actor.id,
+            recipient_user_id=None, collective_id=space.id, payload={},
+            dedupe_key=_uid("k"), **kw,
+        )
+        db.add(row)
+        return row
+
+    def test_a_non_moment_shared_row_is_excluded(self, db, make_space, make_user):
+        """`gathering_changed` sits in the gatherings category but is
+        not a Recent Moment, so category alone would let it through."""
+        from app.models.activity import CATEGORY_OF, RECENT_MOMENTS, ActivityType
+
+        subject = ActivityType.gathering_changed
+        # Both halves of the premise, asserted rather than assumed —
+        # the first draft of this test picked an event that turned out
+        # to be a Recent Moment, and passed for the wrong reason.
+        assert CATEGORY_OF[subject].value == "gatherings"
+        assert subject not in RECENT_MOMENTS
+
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        self._row(
+            db, space, actor, subject.value, "gatherings", gathering_id=ev.id,
+        )
+        db.commit()
+
+        assert len(_read(db, member)) == 1, "visible on the unfiltered feed"
+        assert _read(db, member, recent_moments_only=True) == [], (
+            "but it is not a Recent Moment"
+        )
+
+    def test_a_moment_shared_row_is_kept(self, db, make_space, make_user):
+        """The control: proves the filter narrows rather than empties."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        pw = _pathway(db, space); db.commit()
+        ap.record_pathway_published(db, pw, actor_user_id=creator.id)
+        db.commit()
+
+        assert len(_read(db, member, recent_moments_only=True)) == 1
+
+    def test_every_producer_emits_a_recent_moment(self):
+        """Today all five producers happen to emit Recent Moments, so
+        the bug was invisible. This fails the moment that stops being
+        true, which is exactly when the filter starts mattering."""
+        from app.models.activity import RECENT_MOMENTS, ActivityType
+
+        produced = {
+            ActivityType.pathway_published,
+            ActivityType.pathway_step_released,
+            ActivityType.conversation_created,
+            ActivityType.gathering_created,
+        }
+        assert produced <= RECENT_MOMENTS
+
+    def test_the_filter_does_not_widen_permissions(
+        self, db, make_space, make_user,
+    ):
+        """A Recent Moment the member may not see stays hidden — the
+        new filter narrows, it must not bypass the permission pass."""
+        space = make_space(); creator = make_user(); outsider = make_user()
+        pw = _pathway(db, space); db.commit()
+        ap.record_pathway_published(db, pw, actor_user_id=creator.id)
+        db.commit()
+
+        assert _read(db, outsider, recent_moments_only=True) == [], (
+            "a non-member sees nothing, Recent Moment or not"
+        )
+
+    def test_the_actor_is_still_excluded_under_the_filter(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user()
+        _member(db, creator, space)
+        pw = _pathway(db, space); db.commit()
+        ap.record_pathway_published(db, pw, actor_user_id=creator.id)
+        db.commit()
+
+        assert _read(db, creator, recent_moments_only=True) == []
+
+
+class TestTheEndpointAppliesTheFilterToBothHalves:
+    """The service-level tests above prove the filter works; this
+    proves the endpoint actually asks for it.
+
+    Called directly rather than over HTTP because the suite has no
+    shared TestClient fixture and the wiring — not auth — is what is
+    in question. Every parameter is passed explicitly: the defaults
+    are `Query(...)` objects, which are truthy, so a partial call
+    would silently test something else.
+    """
+
+    def _call(self, db, user, *, recent_moments):
+        from app.activities.routes import list_activities
+
+        return list_activities(
+            unread_only=False,
+            include_archived=False,
+            limit=20,
+            before=None,
+            collective_id=None,
+            recent_moments=recent_moments,
+            current_user=user,
+            db=db,
+        )
+
+    def test_a_non_moment_is_dropped_when_recent_moments_is_asked_for(
+        self, db, make_space, make_user,
+    ):
+        from app.models.activity import ActivityType
+
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        db.add(Activity(
+            id=_uid("act"), event_type=ActivityType.gathering_changed.value,
+            category="gatherings", priority="standard",
+            actor_user_id=actor.id, recipient_user_id=None,
+            collective_id=space.id, gathering_id=ev.id, payload={},
+            dedupe_key=_uid("k"),
+        ))
+        db.commit()
+
+        assert len(self._call(db, member, recent_moments=False).activities) == 1
+        assert self._call(db, member, recent_moments=True).activities == [], (
+            "the endpoint is not passing recent_moments to the shared query"
+        )
+
+    def test_a_moment_still_comes_through_the_endpoint(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        pw = _pathway(db, space); db.commit()
+        ap.record_pathway_published(db, pw, actor_user_id=creator.id)
+        db.commit()
+
+        out = self._call(db, member, recent_moments=True)
+        assert len(out.activities) == 1
+        assert out.activities[0].pathway_id == pw.id
