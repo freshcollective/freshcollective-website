@@ -149,7 +149,46 @@ def _route_event_bg(event_id: str, delivery_mode: str) -> None:
         if not result.intent_ids:
             return
         from app.comms.worker import dispatch_specific_intent  # local — cycle guard
+        from app.comms.intents import STATE_QUEUED, STATE_RECORDED
+        from app.comms.models import CommunicationIntent
+
         for intent_id in result.intent_ids:
+            # Not everything routing produced is dispatchable.
+            #
+            # A silent-priority intent is created directly in
+            # ``recorded`` (see ``intents.create_intent``) because the
+            # member has that channel off — the row *is* the outcome,
+            # and there is nothing to send. ``RoutingResult`` has no
+            # bucket for that case, so it arrives here alongside the
+            # queued ones and the dispatcher, correctly, refuses it
+            # (FC-API-7).
+            #
+            # Checked here rather than by loosening the dispatcher's
+            # guard: that guard is right, and its other caller — the
+            # operator test-send endpoint — depends on it raising.
+            intent = db.get(CommunicationIntent, intent_id)
+            if intent is None:
+                # Created moments ago in this same transaction, so its
+                # absence is not an ordinary outcome. Loud on purpose.
+                logger.error(
+                    "comms rollout: intent %s vanished between routing "
+                    "and dispatch (event=%s)", intent_id, event_id,
+                )
+                continue
+            if intent.state == STATE_RECORDED:
+                # Expected and intentional. The only quiet skip.
+                continue
+            if intent.state != STATE_QUEUED:
+                # Anything else is a freshly-created intent in a state
+                # it should not yet be able to reach. Reported rather
+                # than folded in with deliberate silence, so a real
+                # anomaly cannot hide behind this fix.
+                logger.error(
+                    "comms rollout: intent %s is in unexpected state %r "
+                    "before dispatch (event=%s)",
+                    intent_id, intent.state, event_id,
+                )
+                continue
             try:
                 dispatch_specific_intent(db, intent_id)
             except Exception:
