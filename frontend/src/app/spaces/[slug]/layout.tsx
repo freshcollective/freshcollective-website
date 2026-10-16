@@ -4,7 +4,7 @@ import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
 import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
 import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
 import SiteShell from '@/components/layout/SiteShell'
-import { getSpace, getMe, getMyMemberships, getSpaceMessageThreads } from '@/lib/serverApi'
+import { getSpace, getMe, getMyMemberships, getSpaceMessageThreads, getUnseenCounts } from '@/lib/serverApi'
 import type { SpaceMembership, UserProfile } from '@/types/platform'
 
 interface Props {
@@ -39,6 +39,25 @@ export default async function SpaceLayout({ children, params }: Props) {
     const inbox = await getSpaceMessageThreads(slug)
     if (inbox.kind === 'ok') {
       unreadMessageCount = inbox.data.reduce((sum, t) => sum + t.unread_count, 0)
+    }
+  }
+
+  // Unseen activity for the three member tabs. Same posture as the
+  // Messages count above: non-critical, and ``cache()``-deduped with
+  // the section pages, which read the same response for the boundary
+  // they report back.
+  let unseenByCategory: Record<string, number> | undefined
+  if (isMember) {
+    // Unscoped so the layout and all three section pages share a
+    // single cache()'d request per page load.
+    const counts = await getUnseenCounts()
+    const mine = counts.collectives.find((c) => c.collective_id === space.id)
+    if (mine) {
+      unseenByCategory = {
+        conversations: mine.conversations,
+        pathways: mine.pathways,
+        gatherings: mine.gatherings,
+      }
     }
   }
 
@@ -96,6 +115,7 @@ export default async function SpaceLayout({ children, params }: Props) {
         spaceName={space.name}
         isMember={isMember}
         unreadMessageCount={unreadMessageCount}
+        unseenByCategory={unseenByCategory}
         showMemberDirectory={space.show_member_directory ?? true}
         reachableAreas={space.area_access}
       />

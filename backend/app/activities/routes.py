@@ -33,7 +33,8 @@ from app.core.database import get_db
 from app.models.activity import Activity, ActivityType
 from app.models.platform import Space
 from app.models.user import User
-from app.services.activity_counts import unseen_counts
+from app.services.activity_counts import current_boundary, unseen_counts
+from app.services.activity_visibility import resolve_member_scope
 from app.services.activity_cursors import CursorRefused, advance
 from app.services.activity_service import ActivityService
 
@@ -292,6 +293,12 @@ class UnseenCountsResponse(BaseModel):
     #: Your World's number. Summed from the rows above rather than
     #: counted again, so the two cannot disagree.
     total: int
+    #: The highest activity sequence that existed when this response
+    #: was built. A section page captures it *before* fetching its
+    #: content and sends it back with what it rendered, so anything
+    #: published mid-visit is numbered above it and cannot be marked
+    #: seen — including a new step inside a Pathway already on screen.
+    as_of_sequence: int
 
 
 @router.get("/api/activities/unseen-counts", response_model=UnseenCountsResponse)
@@ -319,28 +326,41 @@ def get_unseen_counts(
         for c in counts
     ]
     return UnseenCountsResponse(
-        collectives=rows, total=sum(r.total for r in rows),
+        collectives=rows,
+        total=sum(r.total for r in rows),
+        as_of_sequence=current_boundary(db, resolve_member_scope(
+            db, current_user, collective_id=collective_id,
+        )),
     )
 
 
 class SeenRequest(BaseModel):
     collective_id: str
     category: str
-    #: The highest ``sequence_number`` the client actually rendered.
-    #: Treated as a claim and clamped — see ``activity_cursors``.
-    through_sequence: int
+    #: The content the page actually displayed — Pathway ids, post
+    #: ids, Gathering and Series ids. The server resolves these to
+    #: activity rows itself; the client never names a sequence.
+    subject_ids: list[str]
+    #: ``as_of_sequence`` from the counts response that the page was
+    #: built against. Bounds the resolution in time, so a second step
+    #: published into a Pathway already on screen is not swept up by
+    #: that Pathway's id.
+    boundary_sequence: int
 
 
 class SeenResponse(BaseModel):
     collective_id: str
     category: str
-    seen_through_seq: int
+    #: scope_key → the mark now held. Empty when nothing advanced.
+    advanced: dict[str, int]
 
 
 _REFUSALS = {
     "not_authenticated": status.HTTP_401_UNAUTHORIZED,
     "unknown_category": status.HTTP_422_UNPROCESSABLE_ENTITY,
-    "invalid_sequence": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "invalid_subjects": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "too_many_subjects": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "invalid_boundary": status.HTTP_422_UNPROCESSABLE_ENTITY,
     # A non-member learns nothing about whether the Collective exists.
     "not_a_member": status.HTTP_404_NOT_FOUND,
     "area_unreachable": status.HTTP_404_NOT_FOUND,
@@ -366,7 +386,8 @@ def mark_seen(
             current_user,
             collective_id=body.collective_id,
             category=body.category,
-            through_sequence=body.through_sequence,
+            subject_ids=body.subject_ids,
+            boundary_sequence=body.boundary_sequence,
         )
     except CursorRefused as exc:
         raise HTTPException(
@@ -377,7 +398,7 @@ def mark_seen(
     return SeenResponse(
         collective_id=state.collective_id,
         category=state.category,
-        seen_through_seq=state.seen_through_seq,
+        advanced=state.advanced,
     )
 
 

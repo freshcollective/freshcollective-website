@@ -24,8 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, or_, select, text
+from sqlalchemy.orm import Session, aliased
 
 from app.models.activity import Activity, CollectiveActivityCursor
 from app.services.activity_visibility import (
@@ -71,6 +71,92 @@ def _subject(model=Activity):
     )
 
 
+
+def _liveness_filters(scope: MemberScope, moment: datetime) -> list:
+    """The predicates that decide whether an activity row is still
+    about something this member can open, right now.
+
+    One definition, used by the count, the clamp and the presented-id
+    resolver. Three copies of a permission rule is three chances for
+    one of them to drift, and a drift here either hides activity or
+    leaks it.
+    """
+    from app.models.platform import (
+        CommunityPost,
+        Event,
+        EventSeries,
+        Pathway,
+    )
+
+    return [
+        or_(
+            Activity.pathway_id.is_(None),
+            Activity.pathway_id.in_(
+                select(Pathway.id).where(
+                    Pathway.status.in_(["active", "coming_soon"])
+                )
+            ),
+        ),
+        or_(
+            Activity.gathering_id.is_(None),
+            Activity.gathering_id.in_(
+                select(Event.id).where(
+                    Event.is_published.is_(True),
+                    Event.status == "active",
+                    # Only what the Gatherings page renders. It shows
+                    # the ``upcoming`` scope; a past Gathering sits
+                    # behind a link to the archive and is never on
+                    # screen, so counting one leaves a badge no visit
+                    # can clear. This is the page's own rule for past.
+                    func.coalesce(
+                        Event.ends_at,
+                        Event.starts_at + text("interval '1 hour'"),
+                    ) >= moment,
+                )
+            ),
+        ),
+        or_(
+            Activity.series_id.is_(None),
+            Activity.series_id.in_(
+                select(EventSeries.id).where(EventSeries.status == "published")
+            ),
+        ),
+        or_(
+            Activity.conversation_id.is_(None),
+            Activity.conversation_id.in_(
+                select(CommunityPost.id).where(
+                    CommunityPost.publication_status == "published",
+                    # Mirrors the community feed. A post hidden by
+                    # Community Care, or made invisible, never renders
+                    # — counting it leaves a badge no visit can clear.
+                    CommunityPost.is_visible.is_(True),
+                    CommunityPost.cc_hidden_at.is_(None),
+                    CommunityPost.channel_id.in_(scope.accessible_channel_ids)
+                    if scope.accessible_channel_ids
+                    else False,
+                )
+            ),
+        ),
+        or_(
+            Activity.event_type != STEP_EVENT_TYPE,
+            Activity.pathway_id.in_(scope.accessible_pathway_ids)
+            if scope.accessible_pathway_ids
+            else False,
+        ),
+    ]
+
+
+def scope_key_for(category: str, channel_id: str | None) -> str:
+    """Which part of a category a mark covers.
+
+    Conversations is the only category the interface sub-divides, so
+    it is the only one with a non-empty scope.
+    """
+    if category == "conversations":
+        return channel_id or ""
+    return ""
+
+
 def unseen_counts(
     db: Session,
     user,
@@ -91,7 +177,7 @@ def unseen_counts(
     if not scope.space_ids:
         return []
 
-    rows = _unseen_rows(db, scope)
+    rows = _unseen_rows(db, scope, now=now)
 
     tally: dict[str, dict[str, int]] = {
         sid: {c: 0 for c in COUNTED_CATEGORIES} for sid in scope.space_ids
@@ -115,7 +201,7 @@ def unseen_counts(
     ]
 
 
-def _unseen_rows(db: Session, scope: MemberScope):
+def _unseen_rows(db: Session, scope: MemberScope, *, now: datetime | None = None):
     """The grouped (collective, category, count) rows, before Area
     filtering. Shared with the cursor clamp, which needs the same
     predicate to decide what a member could legitimately have seen."""
@@ -127,12 +213,25 @@ def _unseen_rows(db: Session, scope: MemberScope):
     )
 
     me = scope.user_id
+    moment = now or datetime.utcnow()
     cursor = CollectiveActivityCursor
 
     joined_cases = [
         (Activity.collective_id == sid, joined)
         for sid, joined in scope.joined_at.items()
     ]
+
+    # The Channel a conversation row belongs to, which is also its
+    # cursor scope. Outer-joined because only conversation rows have
+    # one; liveness is still decided by the subquery below.
+    post_for_scope = aliased(CommunityPost)
+    row_scope = case(
+        (
+            Activity.category == "conversations",
+            func.coalesce(post_for_scope.channel_id, ""),
+        ),
+        else_="",
+    )
 
     q = (
         db.query(
@@ -141,10 +240,16 @@ def _unseen_rows(db: Session, scope: MemberScope):
             func.count(func.distinct(_subject())),
         )
         .outerjoin(
+            post_for_scope, post_for_scope.id == Activity.conversation_id,
+        )
+        .outerjoin(
             cursor,
             (cursor.user_id == me)
             & (cursor.collective_id == Activity.collective_id)
-            & (cursor.category == Activity.category),
+            & (cursor.category == Activity.category)
+            # Scoped: a mark for one Channel says nothing about
+            # another. Without this, reading Channel A clears B.
+            & (cursor.scope_key == row_scope),
         )
         .filter(
             Activity.collective_id.in_(scope.space_ids),
@@ -170,57 +275,13 @@ def _unseen_rows(db: Session, scope: MemberScope):
 
     # Liveness, as joins rather than a cleanup job — unpublishing
     # removes a row from every count at once and cannot drift.
-    q = q.filter(
-        or_(
-            Activity.pathway_id.is_(None),
-            Activity.pathway_id.in_(
-                select(Pathway.id).where(
-                    Pathway.status.in_(["active", "coming_soon"])
-                )
-            ),
-        ),
-        or_(
-            Activity.gathering_id.is_(None),
-            Activity.gathering_id.in_(
-                select(Event.id).where(
-                    Event.is_published.is_(True), Event.status == "active"
-                )
-            ),
-        ),
-        or_(
-            Activity.series_id.is_(None),
-            Activity.series_id.in_(
-                select(EventSeries.id).where(EventSeries.status == "published")
-            ),
-        ),
-        # Conversations carry a channel, and channel access varies per
-        # row — so unlike Area policy this one has to be in SQL.
-        or_(
-            Activity.conversation_id.is_(None),
-            Activity.conversation_id.in_(
-                select(CommunityPost.id).where(
-                    CommunityPost.publication_status == "published",
-                    CommunityPost.channel_id.in_(scope.accessible_channel_ids)
-                    if scope.accessible_channel_ids
-                    else False,
-                )
-            ),
-        ),
-        # A released step counts only where the member can open the
-        # Pathway. The Pathway's own publication is governed by
-        # listing visibility above, which is deliberately looser.
-        or_(
-            Activity.event_type != STEP_EVENT_TYPE,
-            Activity.pathway_id.in_(scope.accessible_pathway_ids)
-            if scope.accessible_pathway_ids
-            else False,
-        ),
-    )
+    q = q.filter(*_liveness_filters(scope, moment))
 
     # Unseen: above the cursor, or since joining when there is none.
     if joined_cases:
-        from sqlalchemy import case
-
+        # ``case`` is imported at module level. A local re-import here
+        # would make the name a local for this whole function and
+        # shadow it from its first use above — the FC-API-8 shape.
         joined_for_row = case(*joined_cases, else_=None)
         q = q.filter(
             or_(
@@ -239,6 +300,7 @@ def max_visible_sequence(
     *,
     collective_id: str,
     category: str,
+    now: datetime | None = None,
 ) -> int | None:
     """The highest activity position this member could legitimately
     have been shown in this Collective and category.
@@ -262,6 +324,7 @@ def max_visible_sequence(
         return None
 
     me = scope.user_id
+    moment = now or datetime.utcnow()
     q = (
         db.query(func.max(Activity.sequence_number))
         .filter(
@@ -271,49 +334,95 @@ def max_visible_sequence(
             Activity.archived_at.is_(None),
             Activity.actor_user_id.is_distinct_from(me),
             _subject().isnot(None),
-            or_(
-                Activity.pathway_id.is_(None),
-                Activity.pathway_id.in_(
-                    select(Pathway.id).where(
-                        Pathway.status.in_(["active", "coming_soon"])
-                    )
-                ),
-            ),
-            or_(
-                Activity.gathering_id.is_(None),
-                Activity.gathering_id.in_(
-                    select(Event.id).where(
-                        Event.is_published.is_(True), Event.status == "active"
-                    )
-                ),
-            ),
-            or_(
-                Activity.series_id.is_(None),
-                Activity.series_id.in_(
-                    select(EventSeries.id).where(
-                        EventSeries.status == "published"
-                    )
-                ),
-            ),
-            or_(
-                Activity.conversation_id.is_(None),
-                Activity.conversation_id.in_(
-                    select(CommunityPost.id).where(
-                        CommunityPost.publication_status == "published",
-                        CommunityPost.channel_id.in_(
-                            scope.accessible_channel_ids
-                        )
-                        if scope.accessible_channel_ids
-                        else False,
-                    )
-                ),
-            ),
-            or_(
-                Activity.event_type != STEP_EVENT_TYPE,
-                Activity.pathway_id.in_(scope.accessible_pathway_ids)
-                if scope.accessible_pathway_ids
-                else False,
-            ),
+            *_liveness_filters(scope, moment),
         )
     )
     return q.scalar()
+
+
+def resolve_presented(
+    db: Session,
+    scope: MemberScope,
+    *,
+    collective_id: str,
+    category: str,
+    subject_ids: list[str],
+    boundary_sequence: int,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """The furthest each scope may advance, given what was rendered.
+
+    Two independent limits, and both are needed.
+
+    ``subject_ids`` says *which* content was on screen. It is what
+    stops a visit to one Channel clearing another, and a visit to
+    upcoming Gatherings clearing the archive.
+
+    ``boundary_sequence`` says *when* the page was built. Subject ids
+    alone are not enough: a member reading a Pathway while a second
+    step is published in it would submit that same Pathway id, and the
+    new step's row hangs off it. The boundary excludes anything
+    numbered after the render, so the new step survives.
+
+    Returns ``{scope_key: max_sequence}`` — one entry per scope the
+    submitted content actually touched, so a page that rendered one
+    Channel moves exactly one cursor.
+    """
+    from app.models.platform import CommunityPost
+
+    moment = now or datetime.utcnow()
+    if not subject_ids:
+        return {}
+
+    post_for_scope = aliased(CommunityPost)
+    row_scope = case(
+        (
+            Activity.category == "conversations",
+            func.coalesce(post_for_scope.channel_id, ""),
+        ),
+        else_="",
+    )
+
+    rows = (
+        db.query(row_scope, func.max(Activity.sequence_number))
+        .outerjoin(
+            post_for_scope, post_for_scope.id == Activity.conversation_id,
+        )
+        .filter(
+            Activity.collective_id == collective_id,
+            Activity.category == category,
+            Activity.recipient_user_id.is_(None),
+            Activity.archived_at.is_(None),
+            Activity.actor_user_id.is_distinct_from(scope.user_id),
+            _subject().isnot(None),
+            # What the page said it showed...
+            _subject().in_(subject_ids),
+            # ...as it was when the page was built.
+            Activity.sequence_number <= boundary_sequence,
+            # ...and only what this member may actually see. A crafted
+            # id for someone else's private thread resolves to nothing.
+            *_liveness_filters(scope, moment),
+        )
+        .group_by(row_scope)
+        .all()
+    )
+    return {str(k): int(v) for k, v in rows if v is not None}
+
+
+def current_boundary(db: Session, scope: MemberScope) -> int:
+    """The highest activity sequence that exists for this member's
+    Collectives right now.
+
+    Captured when a section page begins rendering and sent back with
+    the ids it displayed. Anything published afterwards is numbered
+    higher and therefore cannot be marked seen, whether or not it
+    shares a subject with something on the page.
+    """
+    if not scope.space_ids:
+        return 0
+    return int(
+        db.query(func.coalesce(func.max(Activity.sequence_number), 0))
+        .filter(Activity.collective_id.in_(scope.space_ids))
+        .scalar()
+        or 0
+    )

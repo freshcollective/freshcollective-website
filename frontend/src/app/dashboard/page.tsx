@@ -11,6 +11,7 @@ import {
   getPublicPlatformArtwork,
   getSpace,
   getSpaceEvents,
+  getUnseenCounts,
 } from '@/lib/serverApi'
 import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
@@ -20,6 +21,7 @@ import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
+import CountBadge from '@/components/platform/CountBadge'
 import FirstCollectiveOrientation from './FirstCollectiveOrientation'
 import RecentMomentsSection from './RecentMomentsSection'
 import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
@@ -248,6 +250,14 @@ export default async function DashboardPage({
     }),
   )
 
+  // Unseen activity for every Collective at once — one request, not
+  // one per card. Failure yields an empty map and no badges, which is
+  // the right failure for a decoration.
+  const unseenCounts = await getUnseenCounts()
+  const unseenBySpace = new Map(
+    unseenCounts.collectives.map((c) => [c.collective_id, c.total]),
+  )
+
   const publicBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
   const { soon, hasMore } = filterUpcoming(cards)
   const discoveryOn = isDiscoveryPillarEnabled()
@@ -375,6 +385,7 @@ export default async function DashboardPage({
                       key={c.membership.space_id}
                       card={c}
                       publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
+                      unseen={unseenBySpace.get(c.membership.space_id) ?? 0}
                     />
                   ))}
                 </div>
@@ -402,6 +413,7 @@ export default async function DashboardPage({
                       key={c.membership.space_id}
                       card={c}
                       publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
+                      unseen={unseenBySpace.get(c.membership.space_id) ?? 0}
                     />
                   ))}
                 </div>
@@ -752,10 +764,14 @@ function WelcomeBanner({ firstName }: { firstName: string }) {
 // ---------------------------------------------------------------------------
 
 function CollectiveCard({
-  card, publicCard,
+  card, publicCard, unseen = 0,
 }: {
   card: MembershipCard
   publicCard: PublicSpaceCard | null
+  /** Combined unseen activity for this Collective — Conversations,
+   *  Pathways and Gatherings summed by the server, so this card and
+   *  the Collective's own tabs cannot disagree. */
+  unseen?: number
 }) {
   const name = card.membership.space_name
   const description =
@@ -787,9 +803,14 @@ function CollectiveCard({
         // arriving from Your World should land on the Home that
         // orients them, and choose Conversations from there.
         href={`/spaces/${card.membership.space_slug}`}
-      className="group block overflow-hidden rounded-2xl bg-white transition-all"
+      className="group relative block overflow-hidden rounded-2xl bg-white transition-all"
       style={ATLAS_CARD_STYLE}
     >
+      {unseen > 0 && (
+        <span className="absolute right-3 top-3 z-10">
+          <CountBadge count={unseen} label={`in ${name}`} />
+        </span>
+      )}
       <AtlasArtwork url={artUrl} fallbackBg={cs.background} alt={name} />
       <AtlasCardBody name={name} description={description} meta={meta} cta="Continue →" />
     </Link>
