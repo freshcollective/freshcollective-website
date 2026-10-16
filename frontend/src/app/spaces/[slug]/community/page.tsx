@@ -1,6 +1,7 @@
-import { getCommunityFeed, getMemberChannels, getSpace, getSpaceMembers, getMe, type ChannelSummaryLite } from '@/lib/serverApi'
+import { getCommunityFeed, getMemberChannels, getSpace, getSpaceMembers, getMe, type ChannelSummaryLite, getUnseenCounts } from '@/lib/serverApi'
 import { requireArea } from '@/lib/areaAccess'
 import CommunityFeed from '@/components/community/CommunityFeed'
+import MarkSectionSeen from '@/components/activity/MarkSectionSeen'
 import ChannelSelector from '@/components/community/ChannelSelector'
 import ChannelHeader from '@/components/community/ChannelHeader'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
@@ -36,6 +37,11 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
     : defaultChannel
   const activeSlug = activeChannel?.slug ?? 'general'
 
+  // Boundary FIRST, content second. Taken the other way round it
+  // would include activity created in between — never rendered, and
+  // cleared anyway. ``cache()`` dedupes this with the layout's call,
+  // so it costs no extra request.
+  const boundary = (await getUnseenCounts()).as_of_sequence
   const posts: PostSummary[] = await getCommunityFeed(slug, activeSlug)
 
   // Authoritative counts — the members list is privacy-filtered for
@@ -58,6 +64,14 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+      {space && (
+        <MarkSectionSeen
+          collectiveId={space.id}
+          category="conversations"
+          subjectIds={posts.map((p: PostSummary) => p.id)}
+          boundarySequence={boundary}
+        />
+      )}
 
       {/* ── Left column: intro + channel selector + composer + feed ── */}
       <div className="min-w-0">

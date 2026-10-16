@@ -1,4 +1,5 @@
-import { getSpace, getSpaceMembers, getSpacePathways, getMe } from '@/lib/serverApi'
+import { getSpace, getSpaceMembers, getSpacePathways, getMe, getUnseenCounts } from '@/lib/serverApi'
+import MarkSectionSeen from '@/components/activity/MarkSectionSeen'
 import { requireArea } from '@/lib/areaAccess'
 import PathwayCard from '@/components/spaces/PathwayCard'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
@@ -10,6 +11,13 @@ interface Props {
 
 export default async function SpacePathwaysPage({ params }: Props) {
   const { slug } = await params
+
+  // Boundary FIRST, content second. Awaited ahead of the fetches
+  // below rather than beside them: a boundary captured after the
+  // content could include a step published in between — never
+  // rendered, and cleared anyway. cache() makes it free.
+  const boundary = (await getUnseenCounts()).as_of_sequence
+
   const [pathways, space, members, user]: [PathwaySummary[], SpaceResponse | null, MemberProfile[], UserProfile | null] = await Promise.all([
     getSpacePathways(slug),
     getSpace(slug),
@@ -38,6 +46,14 @@ export default async function SpacePathwaysPage({ params }: Props) {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      {space && (
+        <MarkSectionSeen
+          collectiveId={space.id}
+          category="pathways"
+          subjectIds={[...active.map((p) => p.id), ...soon.map((p) => p.id)]}
+          boundarySequence={boundary}
+        />
+      )}
 
       {/* ── Main column ── */}
       <div className="min-w-0">

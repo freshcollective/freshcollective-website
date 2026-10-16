@@ -6,8 +6,10 @@ import {
   getMySpaceAccess,
   getMyPasses,
   getSpaceGatheringSeries,
+  getUnseenCounts,
 } from '@/lib/serverApi'
 import { requireArea } from '@/lib/areaAccess'
+import MarkSectionSeen from '@/components/activity/MarkSectionSeen'
 import MemberGatheringsGrid from '@/components/spaces/MemberGatheringsGrid'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { EventSummary, MemberProfile, SpaceResponse, SpaceAccessStatus, AccessPassSummary } from '@/types/platform'
@@ -36,6 +38,9 @@ export default async function SpaceEventsPage({ params }: Props) {
   const { slug } = await params
 
   let passes: AccessPassSummary[] = []
+  // Boundary FIRST, content second — see MarkSectionSeen.
+  const boundary = (await getUnseenCounts()).as_of_sequence
+
   const [space, events, pastEvents, members, access, series] = await Promise.all([
     getSpace(slug),
     getSpaceEvents(slug, 'upcoming'),
@@ -77,6 +82,14 @@ export default async function SpaceEventsPage({ params }: Props) {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      {space && (
+        <MarkSectionSeen
+          collectiveId={space.id}
+          category="gatherings"
+          subjectIds={[...standaloneEvents.map((e) => e.id), ...series.map((s) => s.id)]}
+          boundarySequence={boundary}
+        />
+      )}
 
       {/* ── Main column ── */}
       <div className="min-w-0">
