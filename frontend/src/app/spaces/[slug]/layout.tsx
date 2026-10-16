@@ -5,6 +5,7 @@ import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProv
 import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
 import SiteShell from '@/components/layout/SiteShell'
 import { getSpace, getMe, getMyMemberships, getSpaceMessageThreads, getUnseenCounts } from '@/lib/serverApi'
+import { unseenForCollective } from '@/lib/unseenForCollective'
 import type { SpaceMembership, UserProfile } from '@/types/platform'
 
 interface Props {
@@ -48,17 +49,9 @@ export default async function SpaceLayout({ children, params }: Props) {
   // they report back.
   let unseenByCategory: Record<string, number> | undefined
   if (isMember) {
-    // Unscoped so the layout and all three section pages share a
-    // single cache()'d request per page load.
-    const counts = await getUnseenCounts()
-    const mine = counts.collectives.find((c) => c.collective_id === space.id)
-    if (mine) {
-      unseenByCategory = {
-        conversations: mine.conversations,
-        pathways: mine.pathways,
-        gatherings: mine.gatherings,
-      }
-    }
+    // Unscoped so the layout, all three section pages and the
+    // Collective Home share a single cache()'d request per page load.
+    unseenByCategory = unseenForCollective(await getUnseenCounts(), space.id)
   }
 
   // Atlas v1.2 — the chosen Colour Palette drives collective-scoped CSS

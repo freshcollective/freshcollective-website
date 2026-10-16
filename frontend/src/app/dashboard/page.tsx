@@ -808,7 +808,7 @@ function CollectiveCard({
     >
       {unseen > 0 && (
         <span className="absolute right-3 top-3 z-10">
-          <CountBadge count={unseen} label={`in ${name}`} />
+          <CountBadge variant="card" count={unseen} label={`in ${name}`} />
         </span>
       )}
       <AtlasArtwork url={artUrl} fallbackBg={cs.background} alt={name} />

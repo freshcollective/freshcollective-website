@@ -15,6 +15,8 @@ import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { unseenForCollective } from '../../lib/unseenForCollective.ts'
+
 function codeOnly(src: string): string {
   let out = ''
   let i = 0
@@ -52,6 +54,9 @@ const BADGE = read('src/components/platform/CountBadge.tsx')
 const NAV = read('src/components/spaces/SpaceNav.tsx')
 const BELL = read('src/components/layout/NotificationBell.tsx')
 const DASH = read('src/app/dashboard/page.tsx')
+const HOME = read('src/components/collective/CollectiveHome.tsx')
+const HOME_PAGE = read('src/app/spaces/[slug]/page.tsx')
+const LAYOUT = read('src/app/spaces/[slug]/layout.tsx')
 
 // ---------------------------------------------------------------------------
 // 3 · The badge
@@ -75,7 +80,7 @@ describe('CountBadge', () => {
     assert.match(BADGE, /sr-only">\{`\$\{count\} new \$\{label\}`\}/)
   })
 
-  test('both variants exist and the corner one is positioned', () => {
+  test('the corner variant exists and is positioned', () => {
     assert.match(BADGE, /variant === 'corner'/)
     assert.match(BADGE, /absolute -right-1\.5 -top-1/)
   })
@@ -113,11 +118,132 @@ describe('placement', () => {
 
   test('Your World puts the combined total at the card corner', () => {
     assert.match(DASH, /absolute right-3 top-3/)
-    assert.match(DASH, /<CountBadge count=\{unseen\}/)
+    assert.match(DASH, /<CountBadge variant="card" count=\{unseen\}/)
   })
 
   test('Your World fetches every Collective in one request', () => {
     assert.match(DASH, /const unseenCounts = await getUnseenCounts\(\)/)
     assert.equal((DASH.match(/getUnseenCounts\(/g) ?? []).length, 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5 · The card variant — a badge laid over artwork
+// ---------------------------------------------------------------------------
+
+describe('the card variant', () => {
+  test('it is about 22px with a larger numeral', () => {
+    assert.match(BADGE, /variant === 'card'/)
+    assert.match(BADGE, /h-\[22px\] min-w-\[22px\] px-\[5px\] text-\[12px\]/)
+  })
+
+  test('it carries a white keyline and a shadow', () => {
+    // Without the keyline a teal disc vanishes into a teal-green
+    // headland, which is the whole reason this variant exists.
+    assert.match(BADGE, /boxShadow: '0 0 0 2px #fff/)
+  })
+
+  test('the keyline is scoped to this variant alone', () => {
+    assert.match(BADGE, /\.\.\.\(variant === 'card'\s*\?\s*\{ boxShadow/)
+  })
+
+  test('the navigation variants are untouched', () => {
+    assert.match(BADGE, /absolute -right-1\.5 -top-1 h-3\.5 min-w-\[14px\] px-\[3px\] text-\[8px\]/)
+    assert.match(BADGE, /h-4 min-w-\[16px\] px-\[3px\] text-\[9px\]/)
+  })
+
+  test('it inherits the cap, the colour and the spoken sentence', () => {
+    // Nothing variant-specific may sit near any of these. A badge on
+    // artwork may look different; it may not say anything different.
+    assert.equal((BADGE.match(/CAP = /g) ?? []).length, 1)
+    assert.equal((BADGE.match(/aria-hidden="true"/g) ?? []).length, 1)
+    assert.equal((BADGE.match(/sr-only/g) ?? []).length, 1)
+    assert.equal((BADGE.match(/--fc-accent, #38A09E/g) ?? []).length, 1)
+    assert.equal((BADGE.match(/return null/g) ?? []).length, 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6 · Where the card variant is used
+// ---------------------------------------------------------------------------
+
+describe('Your World and Collective Home', () => {
+  test('the Home tiles use the shared badge, not a local one', () => {
+    assert.match(HOME, /import CountBadge/)
+    assert.match(HOME, /variant="card"/)
+    assert.match(HOME, /absolute right-3 top-3/)
+    // An absolutely positioned badge needs a positioned ancestor —
+    // the tile itself, or it pins to the page instead.
+    assert.match(HOME, /className="group relative block h-full/)
+  })
+
+  test('a tile with no category resolves to nothing, with no allow-list', () => {
+    // Messages, Members and About are real tile keys. They must fall
+    // out by having no category behind them, not by being listed.
+    assert.match(HOME, /unseenByCategory\?\.\[tile\.key\] \?\? 0/)
+    assert.match(HOME, /\{unseen > 0 && \(/)
+  })
+
+  test('the Home invents no counting logic of its own', () => {
+    for (const banned of [/collectives\.find/, /\.reduce\(/, /conversations:/]) {
+      assert.ok(
+        !banned.test(HOME),
+        `${banned} — the Home renders counts, it does not derive them`,
+      )
+    }
+  })
+
+  test('the Home costs no extra request', () => {
+    // One unscoped call, cache()-deduped with the layout's. A scoped
+    // call would be a second cache key and a second round trip.
+    assert.equal((HOME_PAGE.match(/getUnseenCounts\(/g) ?? []).length, 1)
+    assert.match(HOME_PAGE, /await getUnseenCounts\(\)/)
+  })
+
+  test('the layout and the Home share one projection', () => {
+    assert.match(LAYOUT, /unseenForCollective\(await getUnseenCounts\(\), space\.id\)/)
+    assert.match(HOME_PAGE, /unseenForCollective\(/)
+  })
+
+  test('opening the Home advances no cursor', () => {
+    // The Home reads counts. Clearing a section is the business of
+    // visiting that section — see markSectionSeen.test.ts.
+    for (const src of [HOME, HOME_PAGE]) {
+      assert.ok(!/MarkSectionSeen/.test(src), 'the Home must mount no marker')
+      assert.ok(!/activities\/seen/.test(src), 'the Home must not report seen state')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7 · The projection itself
+// ---------------------------------------------------------------------------
+
+describe('unseenForCollective', () => {
+  const counts = {
+    collectives: [
+      { collective_id: 'a', conversations: 3, pathways: 0, gatherings: 2, total: 5 },
+      { collective_id: 'b', conversations: 0, pathways: 1, gatherings: 0, total: 1 },
+    ],
+    total: 6,
+    as_of_sequence: 42,
+  }
+
+  test('it picks the named Collective, not the first row', () => {
+    assert.deepEqual(unseenForCollective(counts, 'b'), {
+      conversations: 0, pathways: 1, gatherings: 0,
+    })
+  })
+
+  test('a Collective with no row is unknown, not clear', () => {
+    // undefined renders no badges. A zeroed map would be a claim that
+    // every section has been read.
+    assert.equal(unseenForCollective(counts, 'missing'), undefined)
+    assert.equal(unseenForCollective({ collectives: [], total: 0, as_of_sequence: 0 }, 'a'), undefined)
+  })
+
+  test('it carries the three categories and no total', () => {
+    const projected = unseenForCollective(counts, 'a')
+    assert.deepEqual(Object.keys(projected ?? {}).sort(), ['conversations', 'gatherings', 'pathways'])
   })
 })
