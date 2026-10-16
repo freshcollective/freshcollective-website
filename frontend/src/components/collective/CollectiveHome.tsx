@@ -6,6 +6,7 @@ import {
   tileFallbackBackground,
   tileImageUrl,
 } from '@/lib/collectiveHomeArtwork'
+import CountBadge from '@/components/platform/CountBadge'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import type { SpaceResponse } from '@/types/platform'
 
@@ -35,10 +36,15 @@ import type { SpaceResponse } from '@/types/platform'
 export default function CollectiveHome({
   space,
   platformArtwork,
+  unseenByCategory,
 }: {
   space: SpaceResponse
   /** ``(artworkKey) => url | null`` over the public platform artwork. */
   platformArtwork: (key: string) => string | null
+  /** Unseen activity by category, from the one unscoped counts
+   *  response this request already makes. Absent when nothing is
+   *  known, which renders no badges — see ``unseenForCollective``. */
+  unseenByCategory?: Record<string, number>
 }) {
   const tiles = buildTiles(space)
   const palette = space.colour_palette ?? null
@@ -85,11 +91,12 @@ export default function CollectiveHome({
       <ul className="grid list-none grid-cols-1 gap-6 p-0 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((tile, index) => {
           const image = tileImageUrl(tile.key, tile.imageUrl, platformArtwork)
+          const unseen = unseenByCategory?.[tile.key] ?? 0
           return (
             <li key={tile.key}>
               <Link
                 href={tile.href}
-                className="group block h-full overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                className="group relative block h-full overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 style={{
                   ...ATLAS_CARD_STYLE,
                   // Border and hover shadow in the Collective's colour
@@ -101,6 +108,20 @@ export default function CollectiveHome({
                   ['--tw-ring-color' as string]: 'var(--fc-accent-ring, rgba(56,160,158,0.32))',
                 }}
               >
+                {/* Only the three activity categories carry a
+                    number. Messages, Members and About are real tile
+                    keys with no category behind them, so they resolve
+                    to nothing and render nothing — no allow-list to
+                    keep in step with the categories. */}
+                {unseen > 0 && (
+                  <span className="absolute right-3 top-3 z-10">
+                    <CountBadge
+                      variant="card"
+                      count={unseen}
+                      label={`in ${tile.name}`}
+                    />
+                  </span>
+                )}
                 <AtlasArtwork
                   url={image}
                   // Each tile's gradient differs from its neighbours'

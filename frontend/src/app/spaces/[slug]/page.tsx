@@ -7,7 +7,9 @@ import {
   getMyMemberships,
   getPublicPlatformArtwork,
   getSpace,
+  getUnseenCounts,
 } from '@/lib/serverApi'
+import { unseenForCollective } from '@/lib/unseenForCollective'
 import type { SpaceMembership } from '@/types/platform'
 
 interface Props {
@@ -65,11 +67,23 @@ export default async function SpacePage({ params }: Props) {
   const isMember = memberships.some((m) => m.space_slug === slug)
   if (!isMember) redirect(`/spaces/${slug}/about`)
 
+  // Unseen activity for the three member-area tiles. Read after the
+  // membership check, so a visitor on their way to /about never costs
+  // a request — and unscoped, which is the same call the layout above
+  // already makes, so ``cache()`` serves both from one response. The
+  // Home only *reads* these counts: it mounts no marker, and arriving
+  // here advances no cursor. Clearing a section is the business of
+  // visiting it.
+  const unseenByCategory = unseenForCollective(
+    await getUnseenCounts(), space.id,
+  )
+
   return (
     <>
       <CollectiveHome
         space={space}
         platformArtwork={buildPlatformArtLookup(artwork)}
+        unseenByCategory={unseenByCategory}
       />
       {/* Shared Gatherings and Pathways inside this Collective. Not
           Collective-level evidence — co-membership alone still says
