@@ -20,7 +20,18 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -346,6 +357,16 @@ class Activity(Base):
     pushed_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
 
+    # Total order over activity, and the only safe basis for a seen
+    # cursor. ``created_at`` defaults to ``now()``, which in Postgres is
+    # the *transaction* timestamp — every row written in one commit
+    # shares it to the microsecond. A cursor compared on time alone
+    # cannot tell those rows apart and clears ones it never presented.
+    # Mirrors ``communication_events.sequence_number``.
+    sequence_number: Mapped[int] = mapped_column(
+        BigInteger, Identity(always=False, start=1), nullable=False,
+    )
+
     # ── Timestamps ──────────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False,
@@ -377,6 +398,12 @@ class Activity(Base):
             "ix_activities_collective_category_created",
             "collective_id", "category", "created_at",
         ),
+        # Counting reads one Collective and one category and compares
+        # against a cursor, so this is the shape that predicate wants.
+        Index(
+            "ix_activities_collective_category_seq",
+            "collective_id", "category", "sequence_number",
+        ),
         # Idempotency. Partial so the column stays optional for the
         # per-recipient rows that do not need one.
         Index(
@@ -385,4 +412,60 @@ class Activity(Base):
             unique=True,
             postgresql_where=text("dedupe_key IS NOT NULL"),
         ),
+    )
+
+
+class CollectiveActivityCursor(Base):
+    """How far one member has seen into one Collective's activity.
+
+    Three rows per member per Collective at most, one per category,
+    each a high-water mark rather than a per-item read flag. Visiting a
+    section clears what that visit *presented*, which is exactly what a
+    high-water mark expresses — so this is the rule written down, not a
+    cheaper approximation of it.
+
+    No row means "nothing seen since you joined". That is the right
+    answer for a new member and costs no write, so rows are created on
+    first advance rather than when a membership is created.
+
+    ``seen_through_seq`` decides everything; ``seen_through`` is carried
+    alongside because every support question about this table is "when
+    did they last look", not "which integer".
+
+    Cursors only ever move forwards — see ``activity_cursors.advance``.
+    """
+
+    __tablename__ = "collective_activity_cursors"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    collective_id: Mapped[str] = mapped_column(
+        String, ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False,
+    )
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    seen_through: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False,
+    )
+    seen_through_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('conversations', 'pathways', 'gatherings')",
+            name="ck_activity_cursor_category",
+        ),
+        UniqueConstraint(
+            "user_id", "collective_id", "category",
+            name="ux_activity_cursor_member_scope",
+        ),
+        Index("ix_activity_cursors_user", "user_id", "collective_id"),
     )
