@@ -1,17 +1,19 @@
-"""Phase 2 — advancing a member's seen mark.
+"""Phase 3 — a visit marks what it showed, and nothing else.
 
-The cursor is the only thing standing between "you have seen this" and
-"we have decided you have seen this". Two properties carry almost all
-of the risk:
+Phase 2 stored one mark per category and the page sent a sequence
+number. Both broke once a section shows only part of its category:
 
-* it must never move backwards, or a slow response or a second tab
-  reopens activity that was already cleared;
-* it must never move further than the member could actually have been
-  shown, or a crafted request silently buries activity that nothing
-  will ever surface again.
+* a page renders **one** Channel, so a single mark per category meant
+  reading Channel A silently cleared Channel B;
+* a page renders content, not activity rows, so any sequence it named
+  was a guess — and resolving the Pathway it displayed to "the newest
+  activity for that Pathway" would sweep up a step published while
+  the member was still reading.
 
-Both are enforced in the service rather than trusted from the client,
-and both are tested here against the attempt, not just the happy path.
+So the page now sends the **subjects it displayed** and the
+**boundary it displayed them against**. Those two together are the
+whole correctness argument: subjects bound *what*, the boundary
+bounds *when*. Each has a test here that fails without the other.
 """
 
 from __future__ import annotations
@@ -23,7 +25,11 @@ import pytest
 
 from app.models.activity import Activity, CollectiveActivityCursor
 from app.models.platform import (
+    ChannelMembership,
+    CommunityPost,
     ConversationChannel,
+    Event,
+    EventSeries,
     Pathway,
     PathwayStatus,
     PathwayType,
@@ -31,8 +37,9 @@ from app.models.platform import (
     SpaceMembershipStatus,
     SpaceRole,
 )
-from app.services.activity_counts import unseen_counts
+from app.services.activity_counts import current_boundary, unseen_counts
 from app.services.activity_cursors import CursorRefused, advance
+from app.services.activity_visibility import resolve_member_scope
 
 
 def _uid(p: str) -> str:
@@ -48,506 +55,659 @@ def _member(db, user, space, *, role=SpaceRole.learner):
     db.flush()
 
 
-def _pathway(db, space):
+def _pathway(db, space, *, access_type="free"):
     p = Pathway(
         id=_uid("pw"), space_id=space.id, slug=f"pw-{uuid.uuid4().hex[:8]}",
-        title="A Pathway", status=PathwayStatus.active, access_type="free",
+        title="A Pathway", status=PathwayStatus.active, access_type=access_type,
         pathway_type=PathwayType.guided_experience,
     )
     db.add(p); db.flush()
     return p
 
 
-def _activity(db, space, actor, *, created_at=None, category="pathways",
-              event_type="pathway_published", **subject):
-    if not subject:
-        subject = {"pathway_id": _pathway(db, space).id}
+def _channel(db, space, *, channel_type="open"):
+    c = ConversationChannel(
+        id=_uid("ch"), space_id=space.id, name="Room",
+        slug=f"ch-{uuid.uuid4().hex[:8]}", channel_type=channel_type,
+    )
+    db.add(c); db.flush()
+    return c
+
+
+def _post(db, space, channel, author, *, hidden=False, visible=True):
+    p = CommunityPost(
+        id=_uid("cp"), space_id=space.id, channel_id=channel.id,
+        author_id=author.id, title="A thread", body="hi",
+        publication_status="published", is_visible=visible,
+        cc_hidden_at=datetime.utcnow() if hidden else None,
+    )
+    db.add(p); db.flush()
+    return p
+
+
+def _gathering(db, space, *, past=False):
+    base = datetime.utcnow() + (timedelta(days=-7) if past else timedelta(days=7))
+    e = Event(
+        id=_uid("e"), space_id=space.id, created_by_id=space.creator_id,
+        title="A Gathering", starts_at=base, ends_at=base + timedelta(hours=1),
+        is_published=True, status="active", requires_booking=True,
+        capacity=20, gathering_type="circle", attendance_format="online",
+    )
+    db.add(e); db.flush()
+    return e
+
+
+def _series(db, space):
+    s = EventSeries(
+        id=_uid("es"), space_id=space.id, title="Term",
+        slug=f"s-{uuid.uuid4().hex[:8]}", status="published",
+        starts_at=datetime.utcnow() + timedelta(days=7),
+    )
+    db.add(s); db.flush()
+    return s
+
+
+def _activity(db, space, actor, *, category, event_type, **subject):
     a = Activity(
         id=_uid("act"), event_type=event_type, category=category,
         priority="standard", actor_user_id=actor.id, recipient_user_id=None,
         collective_id=space.id, payload={}, dedupe_key=_uid("k"), **subject,
     )
-    if created_at is not None:
-        a.created_at = created_at
     db.add(a); db.flush()
     return a
 
 
-def _cursor(db, user, space, category="pathways"):
-    return (
-        db.query(CollectiveActivityCursor)
-        .filter(
-            CollectiveActivityCursor.user_id == user.id,
-            CollectiveActivityCursor.collective_id == space.id,
-            CollectiveActivityCursor.category == category,
-        )
-        .first()
+def _boundary(db, user, space=None):
+    return current_boundary(
+        db,
+        resolve_member_scope(
+            db, user, collective_id=space.id if space else None,
+        ),
     )
+
+
+def _counts(db, user):
+    return {c.collective_id: c for c in unseen_counts(db, user)}
 
 
 def _total(db, user):
     return sum(c.total for c in unseen_counts(db, user))
 
 
-# ---------------------------------------------------------------------------
-# Creation and ordinary advancement
-# ---------------------------------------------------------------------------
-
-class TestAdvancing:
-    def test_the_first_advance_creates_the_row(self, db, make_space, make_user):
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        a = _activity(db, space, creator)
-        db.commit()
-        assert _cursor(db, member, space) is None, "nothing written before a visit"
-
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=a.sequence_number)
-        db.commit()
-
-        row = _cursor(db, member, space)
-        assert row is not None and row.seen_through_seq == a.sequence_number
-        assert _total(db, member) == 0
-
-    def test_a_later_visit_moves_it_further(self, db, make_space, make_user):
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        first = _activity(db, space, creator)
-        db.commit()
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=first.sequence_number)
-        db.commit()
-
-        second = _activity(db, space, creator)
-        db.commit()
-        assert _total(db, member) == 1
-
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=second.sequence_number)
-        db.commit()
-
-        assert _cursor(db, member, space).seen_through_seq == second.sequence_number
-        assert _total(db, member) == 0
-
-    def test_advancing_one_category_leaves_the_others(self, db, make_space, make_user):
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        pw_row = _activity(db, space, creator)
-        db.add(ConversationChannel(
-            id=_uid("ch"), space_id=space.id, name="R",
-            slug=f"c-{uuid.uuid4().hex[:8]}", channel_type="open",
-        ))
-        db.commit()
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=pw_row.sequence_number)
-        db.commit()
-
-        assert _cursor(db, member, space, "pathways") is not None
-        assert _cursor(db, member, space, "conversations") is None
-
-    def test_advancing_one_collective_leaves_the_other(self, db, make_space, make_user):
-        a, b = make_space(), make_space()
-        creator = make_user(); member = make_user()
-        _member(db, member, a); _member(db, member, b)
-        ra = _activity(db, a, creator)
-        _activity(db, b, creator)
-        db.commit()
-
-        advance(db, member, collective_id=a.id, category="pathways",
-                through_sequence=ra.sequence_number)
-        db.commit()
-
-        assert _total(db, member) == 1, "only the visited Collective cleared"
+def _cursors(db, user, space, category="conversations"):
+    return {
+        c.scope_key: c.seen_through_seq
+        for c in db.query(CollectiveActivityCursor).filter(
+            CollectiveActivityCursor.user_id == user.id,
+            CollectiveActivityCursor.collective_id == space.id,
+            CollectiveActivityCursor.category == category,
+        )
+    }
 
 
 # ---------------------------------------------------------------------------
-# Forward only — tabs and out-of-order responses
+# 1 · The headline: one Channel at a time
 # ---------------------------------------------------------------------------
 
-class TestForwardOnly:
-    def test_an_older_mark_cannot_move_it_back(self, db, make_space, make_user):
-        """A response from an earlier request arriving late."""
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        first = _activity(db, space, creator)
-        second = _activity(db, space, creator)
+class TestConversationChannelsAreIndependent:
+    """The defect scoped cursors exist to fix. Channel A at the higher
+    sequence, Channel B lower; reading A must leave B alone."""
+
+    @staticmethod
+    def _two_channels(db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, author, space); _member(db, member, space)
+        chan_b, chan_a = _channel(db, space), _channel(db, space)
+        post_b = _post(db, space, chan_b, author)
+        post_a = _post(db, space, chan_a, author)
+        act_b = _activity(db, space, author, category="conversations",
+                          event_type="conversation_created",
+                          conversation_id=post_b.id)
+        act_a = _activity(db, space, author, category="conversations",
+                          event_type="conversation_created",
+                          conversation_id=post_a.id)
+        db.commit()
+        assert act_a.sequence_number > act_b.sequence_number
+        return space, member, chan_a, chan_b, post_a, post_b
+
+    def test_reading_the_newer_channel_leaves_the_older_unseen(
+        self, db, make_space, make_user,
+    ):
+        space, member, chan_a, _cb, post_a, _pb = self._two_channels(
+            db, make_space, make_user,
+        )
+        assert _counts(db, member)[space.id].conversations == 2
+
+        advance(db, member, collective_id=space.id, category="conversations",
+                subject_ids=[post_a.id],
+                boundary_sequence=_boundary(db, member, space))
         db.commit()
 
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=second.sequence_number)
-        db.commit()
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=first.sequence_number)
-        db.commit()
+        assert _counts(db, member)[space.id].conversations == 1, (
+            "Channel B was cleared by a visit to Channel A"
+        )
+        assert set(_cursors(db, member, space)) == {chan_a.id}
 
-        assert _cursor(db, member, space).seen_through_seq == second.sequence_number
-        assert _total(db, member) == 0, "the stale mark must not reopen anything"
-
-    def test_two_tabs_settle_on_the_higher_mark(self, db, make_space, make_user):
-        """Two tabs rendered different amounts and report independently;
-        the order they arrive in must not matter."""
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        rows = [_activity(db, space, creator) for _ in range(3)]
-        db.commit()
-        tab_a = rows[0].sequence_number      # opened earlier, saw less
-        tab_b = rows[2].sequence_number      # opened later, saw everything
-
-        for order in ([tab_b, tab_a], [tab_a, tab_b]):
-            db.query(CollectiveActivityCursor).delete()
+    def test_reading_both_clears_both(self, db, make_space, make_user):
+        space, member, chan_a, chan_b, post_a, post_b = self._two_channels(
+            db, make_space, make_user,
+        )
+        b = _boundary(db, member, space)
+        for post in (post_a, post_b):
+            advance(db, member, collective_id=space.id,
+                    category="conversations", subject_ids=[post.id],
+                    boundary_sequence=b)
             db.commit()
-            for seq in order:
-                advance(db, member, collective_id=space.id,
-                        category="pathways", through_sequence=seq)
-                db.commit()
-            assert _cursor(db, member, space).seen_through_seq == tab_b, (
-                f"arrival order {order} changed the outcome"
-            )
 
-    def test_the_timestamp_half_moves_forward_too(self, db, make_space, make_user):
-        """Both columns take the greater value, so they cannot end up
-        describing different visits."""
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        old = _activity(db, space, creator,
-                        created_at=datetime.utcnow() - timedelta(days=5))
-        new = _activity(db, space, creator)
+        assert _counts(db, member)[space.id].conversations == 0
+        assert set(_cursors(db, member, space)) == {chan_a.id, chan_b.id}
+
+    def test_each_channel_keeps_its_own_mark(self, db, make_space, make_user):
+        """A scope advances to its own content, not to the category's
+        highest sequence."""
+        space, member, _ca, chan_b, _pa, post_b = self._two_channels(
+            db, make_space, make_user,
+        )
+        b = _boundary(db, member, space)
+        advance(db, member, collective_id=space.id, category="conversations",
+                subject_ids=[post_b.id], boundary_sequence=b)
         db.commit()
 
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=new.sequence_number)
-        db.commit()
-        before = _cursor(db, member, space).seen_through
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=old.sequence_number)
-        db.commit()
-
-        assert _cursor(db, member, space).seen_through == before
+        marks = _cursors(db, member, space)
+        assert list(marks) == [chan_b.id]
+        assert marks[chan_b.id] < b
 
 
 # ---------------------------------------------------------------------------
-# The mid-visit rule — the subtle one
+# 2 · The boundary: same subject, new activity
 # ---------------------------------------------------------------------------
 
 class TestActivityArrivingDuringAVisit:
-    def test_something_published_while_you_read_is_not_cleared(
+    def test_a_new_subject_published_mid_visit_survives(
         self, db, make_space, make_user,
     ):
-        """The mark is the newest thing *rendered*, never ``now()``.
-        Anything created after the page loaded is above it and
-        survives — which is the whole reason this is a cursor and not
-        a 'mark all seen' button."""
         space = make_space(); creator = make_user(); member = make_user()
         _member(db, member, space)
-        rendered = [_activity(db, space, creator) for _ in range(2)]
+        shown = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_published", pathway_id=shown.id)
         db.commit()
-        high_water = max(r.sequence_number for r in rendered)
+        boundary = _boundary(db, member, space)
 
-        # ... the member is reading; a Pathway is published meanwhile.
-        mid_visit = _activity(db, space, creator)
-        db.commit()
-
-        # ... and only then does the page report what it had shown.
-        advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=high_water)
-        db.commit()
-
-        assert _total(db, member) == 1, "the mid-visit publication was cleared"
-        assert _cursor(db, member, space).seen_through_seq < mid_visit.sequence_number
-
-    def test_a_client_claiming_now_cannot_clear_the_future(
-        self, db, make_space, make_user,
-    ):
-        """Even if a client reports far beyond what exists, the clamp
-        holds it to the newest row that actually exists — so activity
-        created afterwards still counts."""
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space)
-        _activity(db, space, creator)
+        later = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_published", pathway_id=later.id)
         db.commit()
 
         advance(db, member, collective_id=space.id, category="pathways",
-                through_sequence=9_999_999)
+                subject_ids=[shown.id], boundary_sequence=boundary)
         db.commit()
 
-        later = _activity(db, space, creator)
-        db.commit()
-        assert _total(db, member) == 1
-        assert _cursor(db, member, space).seen_through_seq < later.sequence_number
+        assert _counts(db, member)[space.id].pathways == 1
 
-
-# ---------------------------------------------------------------------------
-# Safeguards — what a client may not do
-# ---------------------------------------------------------------------------
-
-class TestTheClampOnWhatWasPresented:
-    def test_an_arbitrary_future_sequence_is_clamped(self, db, make_space, make_user):
+    def test_a_new_step_in_a_pathway_already_on_screen_survives(
+        self, db, make_space, make_user,
+    ):
+        """The case subject ids alone cannot handle. The member is
+        reading the Pathway; a second step is published *into it*. Its
+        activity hangs off the same pathway_id the page will submit,
+        so only the boundary keeps it unseen."""
         space = make_space(); creator = make_user(); member = make_user()
         _member(db, member, space)
-        real = _activity(db, space, creator)
+        pw = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_step_released", pathway_id=pw.id)
+        db.commit()
+        boundary = _boundary(db, member, space)
+        assert _counts(db, member)[space.id].pathways == 1
+
+        mid_visit = _activity(db, space, creator, category="pathways",
+                              event_type="pathway_step_released",
+                              pathway_id=pw.id)
         db.commit()
 
-        state = advance(db, member, collective_id=space.id,
-                        category="pathways", through_sequence=2_000_000_000)
+        advance(db, member, collective_id=space.id, category="pathways",
+                subject_ids=[pw.id], boundary_sequence=boundary)
         db.commit()
 
-        assert state.seen_through_seq == real.sequence_number, (
-            "the cursor must not pass the newest row this member could see"
+        assert _counts(db, member)[space.id].pathways == 1, (
+            "the step published mid-visit was swept up by its parent's id"
         )
+        assert _cursors(db, member, space, "pathways")[""] < mid_visit.sequence_number
 
-    def test_the_clamp_uses_what_this_member_may_see_not_what_exists(
+    def test_a_boundary_taken_too_late_does_clear_it(
         self, db, make_space, make_user,
     ):
-        """A private-channel thread nobody showed them must not raise
-        the ceiling — otherwise a crafted request could clear activity
-        they are entitled to, by pointing past activity they are not."""
+        """States the failure mode directly, so the ordering rule is
+        not merely documented: capture the boundary *before* fetching
+        content, or the same call loses the step."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        pw = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_step_released", pathway_id=pw.id)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_step_released", pathway_id=pw.id)
+        db.commit()
+
+        advance(db, member, collective_id=space.id, category="pathways",
+                subject_ids=[pw.id],
+                boundary_sequence=_boundary(db, member, space))
+        db.commit()
+        assert _counts(db, member)[space.id].pathways == 0
+
+
+# ---------------------------------------------------------------------------
+# 3 · Gatherings — upcoming, past, Series
+# ---------------------------------------------------------------------------
+
+class TestGatherings:
+    def test_a_past_gathering_is_not_counted(self, db, make_space, make_user):
+        """The page shows upcoming only; a past Gathering sits behind
+        the archive link, so counting one leaves a badge no visit can
+        clear."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        past = _gathering(db, space, past=True)
+        _activity(db, space, creator, category="gatherings",
+                  event_type="gathering_created", gathering_id=past.id)
+        db.commit()
+
+        assert _counts(db, member)[space.id].gatherings == 0
+
+    def test_an_upcoming_gathering_counts_and_clears(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        _activity(db, space, creator, category="gatherings",
+                  event_type="gathering_created", gathering_id=ev.id)
+        db.commit()
+        assert _counts(db, member)[space.id].gatherings == 1
+
+        advance(db, member, collective_id=space.id, category="gatherings",
+                subject_ids=[ev.id],
+                boundary_sequence=_boundary(db, member, space))
+        db.commit()
+        assert _counts(db, member)[space.id].gatherings == 0
+
+    def test_a_series_counts_once_and_clears_by_its_own_id(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        series = _series(db, space)
+        _activity(db, space, creator, category="gatherings",
+                  event_type="gathering_created", series_id=series.id)
+        db.commit()
+        assert _counts(db, member)[space.id].gatherings == 1
+
+        advance(db, member, collective_id=space.id, category="gatherings",
+                subject_ids=[series.id],
+                boundary_sequence=_boundary(db, member, space))
+        db.commit()
+        assert _counts(db, member)[space.id].gatherings == 0
+
+    def test_an_occurrence_id_does_not_clear_its_series(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        series = _series(db, space)
+        occurrence = _gathering(db, space)
+        _activity(db, space, creator, category="gatherings",
+                  event_type="gathering_created", series_id=series.id)
+        db.commit()
+
+        advance(db, member, collective_id=space.id, category="gatherings",
+                subject_ids=[occurrence.id],
+                boundary_sequence=_boundary(db, member, space))
+        db.commit()
+        assert _counts(db, member)[space.id].gatherings == 1
+
+
+# ---------------------------------------------------------------------------
+# 4 · Hidden content never sticks
+# ---------------------------------------------------------------------------
+
+class TestHiddenPosts:
+    def test_a_community_care_hidden_post_is_not_counted(
+        self, db, make_space, make_user,
+    ):
+        """It never renders, so its id is never submitted. Counting it
+        would leave a badge the member could never clear."""
         space = make_space(); author = make_user(); member = make_user()
         _member(db, author, space); _member(db, member, space)
-        visible = _activity(db, space, author)
-        private = ConversationChannel(
-            id=_uid("ch"), space_id=space.id, name="Private",
-            slug=f"c-{uuid.uuid4().hex[:8]}", channel_type="private",
-        )
-        db.add(private); db.flush()
-        from app.models.platform import CommunityPost
-
-        hidden_post = CommunityPost(
-            id=_uid("cp"), space_id=space.id, channel_id=private.id,
-            author_id=author.id, title="Hidden", body="x",
-            publication_status="published",
-        )
-        db.add(hidden_post); db.flush()
-        hidden = _activity(
-            db, space, author, category="conversations",
-            event_type="conversation_created", conversation_id=hidden_post.id,
-        )
-        db.commit()
-        assert hidden.sequence_number > visible.sequence_number
-
-        state = advance(db, member, collective_id=space.id,
-                        category="pathways", through_sequence=hidden.sequence_number)
+        ch = _channel(db, space)
+        post = _post(db, space, ch, author, hidden=True)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
         db.commit()
 
-        assert state.seen_through_seq == visible.sequence_number
+        assert _counts(db, member)[space.id].conversations == 0
 
-    def test_your_own_activity_does_not_raise_the_ceiling(
+    def test_an_invisible_post_is_not_counted(self, db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, author, space); _member(db, member, space)
+        ch = _channel(db, space)
+        post = _post(db, space, ch, author, visible=False)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        assert _counts(db, member)[space.id].conversations == 0
+
+    def test_a_visible_post_still_counts(self, db, make_space, make_user):
+        """Control — the filters narrow, they do not empty."""
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, author, space); _member(db, member, space)
+        ch = _channel(db, space)
+        post = _post(db, space, ch, author)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        assert _counts(db, member)[space.id].conversations == 1
+
+
+# ---------------------------------------------------------------------------
+# 5 · Forward only — tabs and out-of-order
+# ---------------------------------------------------------------------------
+
+class TestForwardOnly:
+    @staticmethod
+    def _two_posts(db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, author, space); _member(db, member, space)
+        ch = _channel(db, space)
+        first = _post(db, space, ch, author)
+        second = _post(db, space, ch, author)
+        for post in (first, second):
+            _activity(db, space, author, category="conversations",
+                      event_type="conversation_created",
+                      conversation_id=post.id)
+        db.commit()
+        return space, member, ch, first, second
+
+    def test_a_stale_submission_cannot_move_the_mark_back(
         self, db, make_space, make_user,
     ):
-        space = make_space(); creator = make_user(); member = make_user()
-        _member(db, member, space); _member(db, creator, space)
-        theirs = _activity(db, space, creator)
-        mine = _activity(db, space, member)
+        space, member, ch, first, second = self._two_posts(
+            db, make_space, make_user,
+        )
+        b = _boundary(db, member, space)
+        advance(db, member, collective_id=space.id, category="conversations",
+                subject_ids=[first.id, second.id], boundary_sequence=b)
         db.commit()
-        assert mine.sequence_number > theirs.sequence_number
+        high = _cursors(db, member, space)[ch.id]
 
-        state = advance(db, member, collective_id=space.id,
-                        category="pathways", through_sequence=mine.sequence_number)
-        db.commit()
-        assert state.seen_through_seq == theirs.sequence_number
-
-
-class TestRefusals:
-    def test_a_non_member_cannot_advance(self, db, make_space, make_user):
-        space = make_space(); creator = make_user(); outsider = make_user()
-        _activity(db, space, creator)
+        advance(db, member, collective_id=space.id, category="conversations",
+                subject_ids=[first.id], boundary_sequence=b)
         db.commit()
 
+        assert _cursors(db, member, space)[ch.id] == high
+        assert _counts(db, member)[space.id].conversations == 0
+
+    def test_two_tabs_settle_the_same_way_in_either_order(
+        self, db, make_space, make_user,
+    ):
+        space, member, _ch, first, second = self._two_posts(
+            db, make_space, make_user,
+        )
+        b = _boundary(db, member, space)
+        both, one = [first.id, second.id], [first.id]
+
+        for order in ([both, one], [one, both]):
+            db.query(CollectiveActivityCursor).delete(); db.commit()
+            for ids in order:
+                advance(db, member, collective_id=space.id,
+                        category="conversations", subject_ids=ids,
+                        boundary_sequence=b)
+                db.commit()
+            assert _counts(db, member)[space.id].conversations == 0, (
+                f"arrival order changed the outcome: {order}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 6 · Categories and Collectives stay separate
+# ---------------------------------------------------------------------------
+
+class TestIsolation:
+    def test_visiting_pathways_leaves_conversations_alone(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, author, space); _member(db, member, space)
+        pw = _pathway(db, space)
+        _activity(db, space, author, category="pathways",
+                  event_type="pathway_published", pathway_id=pw.id)
+        ch = _channel(db, space); post = _post(db, space, ch, author)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        advance(db, member, collective_id=space.id, category="pathways",
+                subject_ids=[pw.id],
+                boundary_sequence=_boundary(db, member, space))
+        db.commit()
+
+        c = _counts(db, member)[space.id]
+        assert c.pathways == 0 and c.conversations == 1
+
+    def test_visiting_one_collective_leaves_the_other(
+        self, db, make_space, make_user,
+    ):
+        a, b = make_space(), make_space()
+        creator = make_user(); member = make_user()
+        _member(db, member, a); _member(db, member, b)
+        pa, pb = _pathway(db, a), _pathway(db, b)
+        for sp, pw in ((a, pa), (b, pb)):
+            _activity(db, sp, creator, category="pathways",
+                      event_type="pathway_published", pathway_id=pw.id)
+        db.commit()
+
+        advance(db, member, collective_id=a.id, category="pathways",
+                subject_ids=[pa.id], boundary_sequence=_boundary(db, member))
+        db.commit()
+
+        assert _total(db, member) == 1
+
+
+# ---------------------------------------------------------------------------
+# 7 · Permissions and refusals
+# ---------------------------------------------------------------------------
+
+class TestPermissionsAndRefusals:
+    def test_a_private_channel_id_resolves_to_nothing(
+        self, db, make_space, make_user,
+    ):
+        """A crafted id for a thread this member cannot open must
+        advance nothing — and must not raise either."""
+        space = make_space(); author = make_user(); outsider = make_user()
+        _member(db, author, space); _member(db, outsider, space)
+        private = _channel(db, space, channel_type="private")
+        hidden_post = _post(db, space, private, author)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created",
+                  conversation_id=hidden_post.id)
+        open_ch = _channel(db, space)
+        seen_post = _post(db, space, open_ch, author)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created",
+                  conversation_id=seen_post.id)
+        db.commit()
+
+        state = advance(
+            db, outsider, collective_id=space.id, category="conversations",
+            subject_ids=[hidden_post.id],
+            boundary_sequence=_boundary(db, outsider, space),
+        )
+        db.commit()
+        assert state.advanced == {}
+        assert _counts(db, outsider)[space.id].conversations == 1
+
+    def test_a_channel_member_can_clear_their_own_private_channel(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); insider = make_user()
+        _member(db, author, space); _member(db, insider, space)
+        private = _channel(db, space, channel_type="private")
+        db.add(ChannelMembership(
+            id=_uid("cm"), channel_id=private.id, user_id=insider.id,
+            role="member", source="manual",
+        ))
+        post = _post(db, space, private, author)
+        _activity(db, space, author, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+        assert _counts(db, insider)[space.id].conversations == 1
+
+        advance(db, insider, collective_id=space.id, category="conversations",
+                subject_ids=[post.id],
+                boundary_sequence=_boundary(db, insider, space))
+        db.commit()
+        assert _counts(db, insider)[space.id].conversations == 0
+
+    def test_a_non_member_is_refused(self, db, make_space, make_user):
+        space = make_space(); outsider = make_user()
+        db.commit()
         with pytest.raises(CursorRefused) as e:
             advance(db, outsider, collective_id=space.id,
-                    category="pathways", through_sequence=1)
+                    category="pathways", subject_ids=["pw_x"],
+                    boundary_sequence=1)
         assert e.value.reason == "not_a_member"
         assert db.query(CollectiveActivityCursor).count() == 0
-
-    def test_an_unknown_category_is_refused(self, db, make_space, make_user):
-        space = make_space(); member = make_user()
-        _member(db, member, space); db.commit()
-
-        for bad in ("personal", "account", "collective", "", "pathways; drop"):
-            with pytest.raises(CursorRefused) as e:
-                advance(db, member, collective_id=space.id,
-                        category=bad, through_sequence=1)
-            assert e.value.reason == "unknown_category"
-
-    def test_a_negative_or_non_integer_sequence_is_refused(
-        self, db, make_space, make_user,
-    ):
-        space = make_space(); member = make_user()
-        _member(db, member, space); db.commit()
-
-        for bad in (-1, True, "5", 1.5, None):
-            with pytest.raises(CursorRefused) as e:
-                advance(db, member, collective_id=space.id,
-                        category="pathways", through_sequence=bad)
-            assert e.value.reason == "invalid_sequence"
 
     def test_an_unreachable_area_is_refused(self, db, make_space, make_user):
         space = make_space()
         space.area_policies = {"areas": {"pathways": "active_access"}}
         creator = make_user(); member = make_user()
         _member(db, member, space)
-        a = _activity(db, space, creator)
+        pw = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_published", pathway_id=pw.id)
         db.commit()
 
         with pytest.raises(CursorRefused) as e:
-            advance(db, member, collective_id=space.id,
-                    category="pathways", through_sequence=a.sequence_number)
+            advance(db, member, collective_id=space.id, category="pathways",
+                    subject_ids=[pw.id], boundary_sequence=10_000)
         assert e.value.reason == "area_unreachable"
 
-    def test_an_unknown_collective_is_refused_as_not_a_member(
-        self, db, make_space, make_user,
-    ):
-        member = make_user()
-        db.commit()
-        with pytest.raises(CursorRefused) as e:
-            advance(db, member, collective_id="s_does_not_exist",
-                    category="pathways", through_sequence=1)
-        assert e.value.reason == "not_a_member"
-
-
-class TestOneMemberCannotTouchAnother:
-    def test_the_cursor_always_belongs_to_the_caller(
-        self, db, make_space, make_user,
-    ):
-        """The request names a Collective and a category — never a
-        user — so there is no parameter through which one member could
-        reach another's state. This pins that shape."""
-        space = make_space(); creator = make_user()
-        alice = make_user(); bob = make_user()
-        _member(db, alice, space); _member(db, bob, space)
-        a = _activity(db, space, creator)
-        db.commit()
-
-        advance(db, alice, collective_id=space.id, category="pathways",
-                through_sequence=a.sequence_number)
-        db.commit()
-
-        assert _cursor(db, alice, space) is not None
-        assert _cursor(db, bob, space) is None, "Bob's state was touched"
-        assert _total(db, bob) == 1, "and Bob still has his count"
-
-    def test_advance_takes_no_user_parameter(self):
-        import inspect
-
-        from app.services import activity_cursors
-
-        params = set(inspect.signature(activity_cursors.advance).parameters)
-        for leak in ("user_id", "recipient_user_id", "member_id", "for_user"):
-            assert leak not in params, (
-                f"`{leak}` would let a caller name someone else's cursor"
-            )
-
-
-class TestAHollowedRowCannotRaiseTheCeiling:
-    """Deleting content empties an activity row rather than removing
-    it — every subject column is ON DELETE SET NULL. Such a row must
-    not count towards how far a member may advance, or deleting a
-    Pathway would quietly let the cursor jump past activity that is
-    still live."""
-
-    def test_a_subjectless_row_does_not_raise_the_clamp(
-        self, db, make_space, make_user,
-    ):
-        space = make_space(); creator = make_user(); member = make_user()
+    def test_your_own_activity_advances_nothing(self, db, make_space, make_user):
+        space = make_space(); member = make_user()
         _member(db, member, space)
-        live = _activity(db, space, creator)
-        doomed_pathway = _pathway(db, space)
-        hollow = _activity(db, space, creator, pathway_id=doomed_pathway.id)
+        pw = _pathway(db, space)
+        _activity(db, space, member, category="pathways",
+                  event_type="pathway_published", pathway_id=pw.id)
         db.commit()
-        assert hollow.sequence_number > live.sequence_number
-
-        db.delete(doomed_pathway); db.commit(); db.expire_all()
-        assert db.query(Activity).filter(
-            Activity.id == hollow.id
-        ).first().pathway_id is None, "fixture: the row was hollowed, not removed"
 
         state = advance(db, member, collective_id=space.id,
-                        category="pathways",
-                        through_sequence=hollow.sequence_number)
+                        category="pathways", subject_ids=[pw.id],
+                        boundary_sequence=_boundary(db, member, space))
         db.commit()
+        assert state.advanced == {}
 
-        assert state.seen_through_seq == live.sequence_number
-
-
-class TestEmptyAndInaccessibleSectionsClearNothing:
-    """Visiting a section with nothing in it must be a no-op.
-
-    The risk is not the empty section itself but its neighbours: a
-    visit that quietly created a cursor at some default — or worse, at
-    ``now()`` — would clear activity in a category the member never
-    opened, and nothing would ever show it again.
-    """
-
-    def test_an_empty_section_creates_no_cursor(self, db, make_space, make_user):
+    @pytest.mark.parametrize("bad", ["personal", "account", "collective", ""])
+    def test_an_unknown_category_is_refused(self, db, make_space, make_user, bad):
         space = make_space(); member = make_user()
         _member(db, member, space); db.commit()
-
         with pytest.raises(CursorRefused) as e:
-            advance(db, member, collective_id=space.id,
-                    category="pathways", through_sequence=5)
-        assert e.value.reason == "nothing_to_advance"
-        assert db.query(CollectiveActivityCursor).count() == 0
+            advance(db, member, collective_id=space.id, category=bad,
+                    subject_ids=["x"], boundary_sequence=1)
+        assert e.value.reason == "unknown_category"
 
-    def test_a_section_holding_only_your_own_activity_is_empty_to_you(
-        self, db, make_space, make_user,
-    ):
+    @pytest.mark.parametrize("bad", [-1, True, "5", 1.5, None])
+    def test_a_bad_boundary_is_refused(self, db, make_space, make_user, bad):
         space = make_space(); member = make_user()
-        _member(db, member, space)
-        mine = _activity(db, space, member)
-        db.commit()
-
+        _member(db, member, space); db.commit()
         with pytest.raises(CursorRefused) as e:
-            advance(db, member, collective_id=space.id,
-                    category="pathways", through_sequence=mine.sequence_number)
-        assert e.value.reason == "nothing_to_advance"
+            advance(db, member, collective_id=space.id, category="pathways",
+                    subject_ids=["x"], boundary_sequence=bad)
+        assert e.value.reason == "invalid_boundary"
 
-    def test_visiting_an_empty_section_leaves_other_categories_counted(
-        self, db, make_space, make_user,
-    ):
-        """The one that matters: an empty Pathways section must not
-        touch unread Conversations."""
-        from app.models.platform import CommunityPost
+    @pytest.mark.parametrize("bad", ["notalist", [1, 2], [""], [None]])
+    def test_bad_subject_ids_are_refused(self, db, make_space, make_user, bad):
+        space = make_space(); member = make_user()
+        _member(db, member, space); db.commit()
+        with pytest.raises(CursorRefused) as e:
+            advance(db, member, collective_id=space.id, category="pathways",
+                    subject_ids=bad, boundary_sequence=1)
+        assert e.value.reason == "invalid_subjects"
 
-        space = make_space(); author = make_user(); member = make_user()
-        _member(db, author, space); _member(db, member, space)
-        ch = ConversationChannel(
-            id=_uid("ch"), space_id=space.id, name="R",
-            slug=f"c-{uuid.uuid4().hex[:8]}", channel_type="open",
-        )
-        db.add(ch); db.flush()
-        post = CommunityPost(
-            id=_uid("cp"), space_id=space.id, channel_id=ch.id,
-            author_id=author.id, title="T", body="x",
-            publication_status="published",
-        )
-        db.add(post); db.flush()
-        _activity(db, space, author, category="conversations",
-                  event_type="conversation_created", conversation_id=post.id)
-        db.commit()
-        assert _total(db, member) == 1
+    def test_an_oversized_submission_is_refused(self, db, make_space, make_user):
+        space = make_space(); member = make_user()
+        _member(db, member, space); db.commit()
+        with pytest.raises(CursorRefused) as e:
+            advance(db, member, collective_id=space.id, category="pathways",
+                    subject_ids=[f"x{i}" for i in range(501)],
+                    boundary_sequence=1)
+        assert e.value.reason == "too_many_subjects"
 
-        with pytest.raises(CursorRefused):
-            advance(db, member, collective_id=space.id,
-                    category="pathways", through_sequence=10_000)
 
-        assert _total(db, member) == 1, "the Conversations count was disturbed"
-        assert db.query(CollectiveActivityCursor).count() == 0
+# ---------------------------------------------------------------------------
+# 8 · Nothing to do is not a failure
+# ---------------------------------------------------------------------------
 
-    def test_an_inaccessible_section_clears_nothing(self, db, make_space, make_user):
-        space = make_space()
-        space.area_policies = {"areas": {"pathways": "active_access"}}
-        creator = make_user(); member = make_user()
+class TestEmptyAndHarmless:
+    @staticmethod
+    def _one_unseen(db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
         _member(db, member, space)
-        a = _activity(db, space, creator)
+        pw = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_published", pathway_id=pw.id)
         db.commit()
-        assert _total(db, member) == 0, "an unreachable Area counts nothing anyway"
+        return space, member, pw
 
-        with pytest.raises(CursorRefused):
-            advance(db, member, collective_id=space.id,
-                    category="pathways", through_sequence=a.sequence_number)
-
+    def test_an_empty_list_advances_nothing(self, db, make_space, make_user):
+        space, member, _pw = self._one_unseen(db, make_space, make_user)
+        state = advance(db, member, collective_id=space.id,
+                        category="pathways", subject_ids=[],
+                        boundary_sequence=_boundary(db, member, space))
+        db.commit()
+        assert state.advanced == {}
         assert db.query(CollectiveActivityCursor).count() == 0
+        assert _counts(db, member)[space.id].pathways == 1
 
-        # And once the Area opens, the activity is still there to see.
-        space.area_policies = {"areas": {"pathways": "members"}}
+    def test_an_unknown_id_is_harmless(self, db, make_space, make_user):
+        space, member, _pw = self._one_unseen(db, make_space, make_user)
+        state = advance(db, member, collective_id=space.id,
+                        category="pathways", subject_ids=["pw_nonexistent"],
+                        boundary_sequence=_boundary(db, member, space))
         db.commit()
-        assert _total(db, member) == 1
+        assert state.advanced == {}
+        assert _counts(db, member)[space.id].pathways == 1
+
+    def test_a_zero_boundary_advances_nothing(self, db, make_space, make_user):
+        """A page whose boundary predates all activity must not clear
+        anything created since."""
+        space, member, pw = self._one_unseen(db, make_space, make_user)
+        state = advance(db, member, collective_id=space.id,
+                        category="pathways", subject_ids=[pw.id],
+                        boundary_sequence=0)
+        db.commit()
+        assert state.advanced == {}
+        assert _counts(db, member)[space.id].pathways == 1
+
+
+# ---------------------------------------------------------------------------
+# 9 · The boundary itself
+# ---------------------------------------------------------------------------
+
+class TestTheBoundary:
+    def test_it_rises_with_new_activity(self, db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        before = _boundary(db, member, space)
+        pw = _pathway(db, space)
+        a = _activity(db, space, creator, category="pathways",
+                      event_type="pathway_published", pathway_id=pw.id)
+        db.commit()
+
+        after = _boundary(db, member, space)
+        assert after == a.sequence_number > before
+
+    def test_a_member_of_nothing_gets_zero(self, db, make_user):
+        assert _boundary(db, make_user()) == 0

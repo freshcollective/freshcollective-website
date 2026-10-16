@@ -446,6 +446,18 @@ class CollectiveActivityCursor(Base):
     )
     category: Mapped[str] = mapped_column(String(32), nullable=False)
 
+    #: Which part of the category this mark covers. The Channel id for
+    #: ``conversations``; the empty string for ``pathways`` and
+    #: ``gatherings``, which have no sub-division.
+    #:
+    #: A scalar mark per category cannot describe a partial view, and
+    #: Conversations is always partial — the page renders one Channel
+    #: while every reachable Channel is counted. Without this, reading
+    #: Channel A marks Channel B seen.
+    scope_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="",
+    )
+
     seen_through: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False,
     )
@@ -464,7 +476,7 @@ class CollectiveActivityCursor(Base):
             name="ck_activity_cursor_category",
         ),
         UniqueConstraint(
-            "user_id", "collective_id", "category",
+            "user_id", "collective_id", "category", "scope_key",
             name="ux_activity_cursor_member_scope",
         ),
         Index("ix_activity_cursors_user", "user_id", "collective_id"),

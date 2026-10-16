@@ -1212,10 +1212,10 @@ export const getUnseenCounts = cache(async (
     const res = await fetchWithSession(
       `/api/activities/unseen-counts${qs ? `?${qs}` : ''}`,
     )
-    if (!res.ok) return { collectives: [], total: 0 }
+    if (!res.ok) return { collectives: [], total: 0, as_of_sequence: 0 }
     return (await res.json()) as UnseenCountsResponse
   } catch {
-    return { collectives: [], total: 0 }
+    return { collectives: [], total: 0, as_of_sequence: 0 }
   }
 })
 

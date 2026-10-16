@@ -1941,6 +1941,11 @@ export interface CollectiveUnseen {
 export interface UnseenCountsResponse {
   collectives: CollectiveUnseen[]
   total: number
+  /** The highest activity sequence that existed when this response
+   *  was built. A section page captures it *before* fetching content
+   *  and returns it with the ids it rendered, so anything published
+   *  mid-visit is numbered above it and cannot be marked seen. */
+  as_of_sequence: number
 }
 
 export interface ActivityOut {

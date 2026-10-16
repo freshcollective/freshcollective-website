@@ -30,7 +30,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.activity import Activity, CollectiveActivityCursor
-from app.services.activity_counts import max_visible_sequence
+from app.services.activity_counts import (
+    current_boundary,
+    max_visible_sequence,
+    resolve_presented,
+    scope_key_for,
+)
 from app.services.activity_visibility import (
     CATEGORY_AREA,
     MemberScope,
@@ -52,12 +57,20 @@ class CursorRefused(Exception):
         self.reason = reason
 
 
+#: A page cannot submit an unbounded id list. Far above any real
+#: section — the busiest Channel renders tens — and low enough that a
+#: crafted request cannot turn one POST into a scan.
+MAX_SUBJECT_IDS = 500
+
+
 @dataclass(frozen=True)
 class CursorState:
     collective_id: str
     category: str
-    seen_through_seq: int
-    seen_through: datetime
+    #: One entry per scope actually advanced. Conversations moves the
+    #: visited Channel only; the other categories move their single
+    #: unscoped cursor.
+    advanced: dict[str, int]
 
 
 def advance(
@@ -66,11 +79,18 @@ def advance(
     *,
     collective_id: str,
     category: str,
-    through_sequence: int,
+    subject_ids: list[str],
+    boundary_sequence: int,
     now: datetime | None = None,
     scope: MemberScope | None = None,
 ) -> CursorState:
-    """Move this member's mark for one Collective and category.
+    """Record what a section visit actually put on screen.
+
+    The page sends the content it rendered and the boundary it
+    rendered against. The server decides what that means — which
+    activity rows those subjects carry, which of them this member may
+    see, and which scope each belongs to. Nothing about the result is
+    taken from the client.
 
     The caller owns ``db.commit()``.
     """
@@ -78,47 +98,66 @@ def advance(
         raise CursorRefused("not_authenticated")
     if category not in VALID_CATEGORIES:
         raise CursorRefused("unknown_category")
-    if not isinstance(through_sequence, int) or isinstance(through_sequence, bool):
-        raise CursorRefused("invalid_sequence")
-    if through_sequence < 0:
-        raise CursorRefused("invalid_sequence")
+    if not isinstance(subject_ids, list):
+        raise CursorRefused("invalid_subjects")
+    if len(subject_ids) > MAX_SUBJECT_IDS:
+        raise CursorRefused("too_many_subjects")
+    if any(not isinstance(i, str) or not i for i in subject_ids):
+        raise CursorRefused("invalid_subjects")
+    if not isinstance(boundary_sequence, int) or isinstance(boundary_sequence, bool):
+        raise CursorRefused("invalid_boundary")
+    if boundary_sequence < 0:
+        raise CursorRefused("invalid_boundary")
 
     scope = scope or resolve_member_scope(
         db, user, collective_id=collective_id, now=now,
     )
-    # Membership is checked by resolving the scope, not by trusting the
-    # id in the request — one member can never move another's state,
-    # and a non-member cannot create one.
+    # Membership is established by resolving the scope, not by
+    # trusting the id in the request.
     if collective_id not in scope.space_ids:
         raise CursorRefused("not_a_member")
     if category not in scope.categories_for(collective_id):
         raise CursorRefused("area_unreachable")
 
-    ceiling = max_visible_sequence(
-        db, scope, collective_id=collective_id, category=category,
+    presented = resolve_presented(
+        db, scope,
+        collective_id=collective_id,
+        category=category,
+        subject_ids=subject_ids,
+        boundary_sequence=boundary_sequence,
+        now=now,
     )
-    if ceiling is None:
-        # Nothing this member could have been shown, so there is
-        # nothing to clear. Not an error — an empty section is a
-        # perfectly ordinary thing to visit.
-        existing = _existing(db, user.id, collective_id, category)
-        if existing is not None:
-            return CursorState(
-                collective_id, category,
-                existing.seen_through_seq, existing.seen_through,
-            )
-        raise CursorRefused("nothing_to_advance")
+    if not presented:
+        # An empty section, a page of content with no activity behind
+        # it, or ids this member cannot see. None of those is an
+        # error, and none of them may move a cursor.
+        return CursorState(collective_id, category, {})
 
-    effective = min(through_sequence, ceiling)
+    advanced: dict[str, int] = {}
+    for key, seq in presented.items():
+        advanced[key] = _upsert(
+            db,
+            user_id=user.id,
+            collective_id=collective_id,
+            category=category,
+            scope_key=key,
+            sequence=seq,
+            now=now,
+        )
+    return CursorState(collective_id, category, advanced)
 
-    # The timestamp is carried for legibility only, so it is read from
-    # the row the mark lands on rather than invented.
+
+def _upsert(
+    db: Session, *, user_id: str, collective_id: str, category: str,
+    scope_key: str, sequence: int, now: datetime | None,
+) -> int:
+    """Move one scope's mark forward, never back."""
     stamp = (
         db.query(Activity.created_at)
         .filter(
             Activity.collective_id == collective_id,
             Activity.category == category,
-            Activity.sequence_number <= effective,
+            Activity.sequence_number <= sequence,
         )
         .order_by(Activity.sequence_number.desc())
         .limit(1)
@@ -130,28 +169,29 @@ def advance(
         pg_insert(table)
         .values(
             id=f"cur_{uuid.uuid4().hex[:20]}",
-            user_id=user.id,
+            user_id=user_id,
             collective_id=collective_id,
             category=category,
+            scope_key=scope_key,
             seen_through=stamp,
-            seen_through_seq=effective,
+            seen_through_seq=sequence,
         )
         .on_conflict_do_update(
             constraint="ux_activity_cursor_member_scope",
             set_={
-                # Forward only. Both columns take the greater value so
-                # they cannot disagree about which visit won.
+                # Forward only. A slow response, a second tab, or a
+                # replayed request cannot reopen cleared activity —
+                # and cannot clear more than the highest visit.
                 "seen_through_seq": func_greatest(
-                    table.c.seen_through_seq, effective,
+                    table.c.seen_through_seq, sequence,
                 ),
                 "seen_through": func_greatest(table.c.seen_through, stamp),
                 "updated_at": datetime.utcnow(),
             },
         )
-        .returning(table.c.seen_through_seq, table.c.seen_through)
+        .returning(table.c.seen_through_seq)
     )
-    row = db.execute(stmt).first()
-    return CursorState(collective_id, category, row[0], row[1])
+    return int(db.execute(stmt).scalar())
 
 
 def func_greatest(column, value):
@@ -160,13 +200,15 @@ def func_greatest(column, value):
     return func.greatest(column, value)
 
 
-def _existing(db: Session, user_id: str, collective_id: str, category: str):
+def _existing(db: Session, user_id: str, collective_id: str, category: str,
+              scope_key: str = ""):
     return (
         db.query(CollectiveActivityCursor)
         .filter(
             CollectiveActivityCursor.user_id == user_id,
             CollectiveActivityCursor.collective_id == collective_id,
             CollectiveActivityCursor.category == category,
+            CollectiveActivityCursor.scope_key == scope_key,
         )
         .first()
     )
