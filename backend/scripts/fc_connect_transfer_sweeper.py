@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -235,8 +236,40 @@ def sync_bank_payouts(db) -> str | None:
     )
 
 
-def report_payout_schedule_stragglers(db) -> str | None:
+#: Hour (UTC) whose first sweep carries the payout-schedule report.
+#: UTC because Render runs crons in UTC, and a fixed hour is what makes
+#: "once a day" mean the same thing every day.
+DAILY_REPORT_HOUR_UTC = 2
+
+
+def _is_daily_report_slot(now: datetime) -> bool:
+    """True for the first sweep of the reporting hour.
+
+    The sweeper ticks every fifteen minutes, so the opening quarter of
+    one hour is one run a day.
+
+    A sweep missed inside that window means no report that day. That is
+    an acceptable trade for this particular check and not for the
+    others: the straggler list is a *standing* condition that cannot
+    change on its own, so a skipped day loses nothing that tomorrow
+    will not say identically. Genuine failures never arrive here —
+    ``set_weekly_payout_schedule`` logs those at ERROR the moment an
+    account is created, which reaches Sentry independently of this
+    script.
+    """
+    return now.hour == DAILY_REPORT_HOUR_UTC and now.minute < 15
+
+
+def report_payout_schedule_stragglers(
+    db, *, now: datetime | None = None,
+) -> str | None:
     """Which connected accounts Stripe is not paying out weekly.
+
+    Reported once a day, not once a sweep. The condition is static —
+    nothing in the system moves an account onto weekly, so the same
+    list was being re-sent every fifteen minutes (FC-API-5: ~390
+    identical events in four days). Daily keeps the signal and drops
+    96 events a day to one.
 
     Setting the schedule at account creation can fail quietly — Stripe may
     refuse the write, and the function deliberately does not raise so that a
@@ -251,6 +284,12 @@ def report_payout_schedule_stragglers(db) -> str | None:
     live payout schedule is an operator decision. Returns a Sentry event id
     when there is something to report. Swallows its own errors.
     """
+    # Checked before the query, not after: on the other ninety-five
+    # sweeps of the day there is nothing to decide, so there is no
+    # reason to ask the database.
+    if not _is_daily_report_slot(now or datetime.now(timezone.utc)):
+        return None
+
     try:
         stragglers = connect_accounts.accounts_not_on_weekly_payouts(db)
     except Exception:

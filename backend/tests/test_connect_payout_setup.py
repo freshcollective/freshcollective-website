@@ -13,6 +13,7 @@ Stripe's answers — including Stripe refusing.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -493,13 +494,21 @@ class TestFindingStragglers:
         assert api.call_args_list == []
 
 
+#: A time inside the daily reporting window. Every test below passes an
+#: explicit ``now``: the report is gated to one sweep a day, so without
+#: one they would pass or fail according to the clock, and the two that
+#: assert "nothing reported" would pass for the wrong reason on all but
+#: fifteen minutes of it.
+IN_SLOT = datetime(2026, 10, 15, 2, 3, 0)
+
+
 class TestTheCronSurfacesStragglers:
     @staticmethod
-    def _run(db):
+    def _run(db, now=IN_SLOT):
         from scripts import fc_connect_transfer_sweeper as cron
         with patch.object(cron, "capture_job_summary", return_value="evt_1") as cap, \
              patch.object(cron, "id_logger") as ids:
-            event = cron.report_payout_schedule_stragglers(db)
+            event = cron.report_payout_schedule_stragglers(db, now=now)
         return event, cap, ids
 
     def test_nothing_is_reported_when_every_account_is_weekly(self, db, make_user):
@@ -560,8 +569,125 @@ class TestTheCronSurfacesStragglers:
             cron.connect_accounts, "accounts_not_on_weekly_payouts",
             side_effect=RuntimeError("db gone"),
         ), patch.object(cron, "capture_job_summary") as cap:
-            assert cron.report_payout_schedule_stragglers(db) is None
+            assert cron.report_payout_schedule_stragglers(
+                db, now=IN_SLOT,
+            ) is None
         assert cap.call_args_list == []
+
+
+class TestTheReportRunsOnceADay:
+    """FC-API-5. The sweeper ticks every fifteen minutes and the
+    straggler list is a standing condition — nothing in the system
+    moves an account onto weekly — so the same unchanged list was
+    re-sent ninety-six times a day, ~390 identical Sentry events in
+    four days.
+
+    The transfer sweep keeps its cadence; only this report is gated.
+    """
+
+    @staticmethod
+    def _run_at(db, now):
+        from scripts import fc_connect_transfer_sweeper as cron
+        with patch.object(cron, "capture_job_summary", return_value="evt_1") as cap, \
+             patch.object(cron, "id_logger"):
+            event = cron.report_payout_schedule_stragglers(db, now=now)
+        return event, cap
+
+    def test_the_opening_quarter_of_the_hour_reports(self, db, make_user):
+        _csa(db, make_user(role="creator").id, payout_interval="daily")
+        for minute in (0, 7, 14):
+            event, cap = self._run_at(db, datetime(2026, 10, 15, 2, minute))
+            assert event == "evt_1", f"02:{minute:02d} should report"
+            assert cap.call_count == 1
+
+    def test_the_rest_of_the_day_reports_nothing(self, db, make_user):
+        """The straggler exists on every one of these; only the clock
+        differs. Ninety-five of the day's ninety-six sweeps are quiet."""
+        _csa(db, make_user(role="creator").id, payout_interval="daily")
+        for hour, minute in [
+            (2, 15), (2, 30), (2, 45),      # same hour, later quarters
+            (0, 0), (1, 59), (3, 0),        # neighbouring hours
+            (12, 0), (23, 45),              # the rest of the day
+        ]:
+            event, cap = self._run_at(db, datetime(2026, 10, 15, hour, minute))
+            assert event is None, f"{hour:02d}:{minute:02d} should be quiet"
+            assert cap.call_args_list == []
+
+    def test_exactly_one_sweep_a_day_reports(self, db, make_user):
+        """Counted across a full day of fifteen-minute ticks, rather
+        than asserted about."""
+        _csa(db, make_user(role="creator").id, payout_interval="daily")
+        reported = [
+            (h, m)
+            for h in range(24) for m in (0, 15, 30, 45)
+            if self._run_at(db, datetime(2026, 10, 15, h, m))[0] is not None
+        ]
+        assert reported == [(2, 0)]
+
+    def test_the_hour_is_utc(self, db, make_user):
+        """Render runs crons in UTC, so the gate reads UTC. An
+        aware timestamp in another zone is judged on its UTC hour,
+        not its local one."""
+        from datetime import timedelta, timezone as tz
+
+        from scripts import fc_connect_transfer_sweeper as cron
+
+        assert cron.DAILY_REPORT_HOUR_UTC == 2
+        # 13:03 in UTC+11 is 02:03 UTC — inside the window.
+        aware = datetime(
+            2026, 10, 15, 13, 3, tzinfo=tz(timedelta(hours=11)),
+        ).astimezone(tz.utc).replace(tzinfo=None)
+        assert cron._is_daily_report_slot(aware)
+
+    def test_nothing_is_reported_in_the_slot_when_all_are_weekly(
+        self, db, make_user,
+    ):
+        """The gate narrows when the report fires; it must not change
+        what the report says."""
+        _csa(db, make_user(role="creator").id, payout_interval="weekly")
+        event, cap = self._run_at(db, datetime(2026, 10, 15, 2, 0))
+        assert event is None
+        assert cap.call_args_list == []
+
+    def test_the_payload_is_unchanged_by_the_gate(self, db, make_user):
+        """The separate daily / unknown / other counts are the whole
+        value of the event and must survive the change untouched."""
+        _csa(db, make_user(role="creator").id, payout_interval="daily")
+        _csa(db, make_user(role="creator").id, payout_interval=None)
+        _csa(db, make_user(role="creator").id, payout_interval="monthly")
+        _, cap = self._run_at(db, datetime(2026, 10, 15, 2, 0))
+
+        kwargs = {k: v for k, v in cap.call_args.kwargs.items() if k != "level"}
+        assert kwargs == {
+            "accounts": 3,
+            "on_daily": 1,
+            "interval_unknown": 1,
+            "other_interval": 1,
+        }
+        assert cap.call_args.kwargs["level"] == "warning"
+
+    def test_a_broken_listing_in_the_slot_still_does_not_fail_the_cron(self, db):
+        from scripts import fc_connect_transfer_sweeper as cron
+        with patch.object(
+            cron.connect_accounts, "accounts_not_on_weekly_payouts",
+            side_effect=RuntimeError("db gone"),
+        ), patch.object(cron, "capture_job_summary") as cap:
+            assert cron.report_payout_schedule_stragglers(
+                db, now=datetime(2026, 10, 15, 2, 0),
+            ) is None
+        assert cap.call_args_list == []
+
+    def test_outside_the_slot_the_database_is_not_queried_at_all(self, db):
+        """Ninety-five sweeps a day have nothing to decide, so they
+        should not pay for the question."""
+        from scripts import fc_connect_transfer_sweeper as cron
+        with patch.object(
+            cron.connect_accounts, "accounts_not_on_weekly_payouts",
+        ) as listing:
+            assert cron.report_payout_schedule_stragglers(
+                db, now=datetime(2026, 10, 15, 14, 30),
+            ) is None
+        assert listing.call_args_list == []
 
 
 class TestAdministratorsCanSeeTheInterval:

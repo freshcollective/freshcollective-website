@@ -128,11 +128,27 @@ def publish_due_posts(db: Session) -> list[str]:
     # will be: this function is called from a read path, so two
     # concurrent feed requests can both arrive just after publish time.
     if published_ids:
-        from app.models.platform import CommunityPost
+        # ``activity_producers`` is imported here to avoid an import
+        # cycle. ``CommunityPost`` must NOT be — it is already imported
+        # at module level, and re-importing it here made the name a
+        # local for this whole function, shadowing the module-level
+        # binding from the first line that used it (FC-API-8).
         from app.services import activity_producers
 
         for post_id, _space_id, author_id in published_ids:
-            post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()
+            # ``populate_existing`` is load-bearing. The transition
+            # above is raw SQL, which the identity map knows nothing
+            # about, so a plain query hands back the cached instance
+            # still reading ``scheduled`` — and the producer, which
+            # only records published posts, silently returns. Without
+            # this, a scheduled post publishes but never produces the
+            # activity row this block exists to write.
+            post = (
+                db.query(CommunityPost)
+                .populate_existing()
+                .filter(CommunityPost.id == post_id)
+                .first()
+            )
             if post is not None:
                 activity_producers.record_thread_created(
                     db, post, actor_user_id=author_id,
