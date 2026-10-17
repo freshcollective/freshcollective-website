@@ -35,7 +35,7 @@ from app.models.platform import (
     SpaceMembershipStatus,
     SpaceRole,
 )
-from app.services.activity_counts import unseen_counts
+from app.services.activity_counts import current_boundary, unseen_counts
 from app.services.activity_visibility import resolve_member_scope
 
 
@@ -761,3 +761,133 @@ class TestHiddenChannelsAreNotNotifiable:
         assert ch.id not in scope.accessible_channel_ids
         assert ch.id not in scope.notifiable_channel_ids
         assert _counts(db, member)[space.id].conversations == 0
+
+
+# ---------------------------------------------------------------------------
+# Which Channels the number came from
+# ---------------------------------------------------------------------------
+
+class TestPerChannelBreakdown:
+    """The selector marks each Channel with a dot; the navigation keeps
+    the number. So the response says *which* Channels, not how many
+    each — and the two must agree about the total.
+    """
+
+    def _two_channels(self, db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        a = _channel(db, space); b = _channel(db, space)
+        for ch in (a, b):
+            post = _post(db, space, ch, creator)
+            _activity(db, space, creator, category="conversations",
+                      event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+        return space, member, creator, a, b
+
+    def test_each_channel_with_something_unseen_is_named(
+        self, db, make_space, make_user,
+    ):
+        space, member, _creator, a, b = self._two_channels(db, make_space, make_user)
+        row = _counts(db, member)[space.id]
+
+        assert row.conversations == 2
+        assert set(row.conversation_channels) == {a.id, b.id}
+
+    def test_many_discussions_in_one_channel_name_it_once(
+        self, db, make_space, make_user,
+    ):
+        """The safeguard: one dot per Channel, whatever it holds, while
+        the badge keeps the true total."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        for _ in range(3):
+            post = _post(db, space, ch, creator)
+            _activity(db, space, creator, category="conversations",
+                      event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.conversations == 3, "the badge must still show every discussion"
+        assert row.conversation_channels == (ch.id,), "but the Channel gets one dot"
+
+    def test_nothing_unseen_names_no_channel(self, db, make_space, make_user):
+        space = make_space(); member = make_user()
+        _member(db, member, space)
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.conversations == 0
+        assert row.conversation_channels == (), "zero activity must produce no dot"
+
+    def test_a_visited_channel_drops_out_and_the_other_remains(
+        self, db, make_space, make_user,
+    ):
+        """Dots clear independently, for the same reason the counts do:
+        the cursor is scoped per Channel."""
+        from app.services.activity_cursors import advance
+
+        space, member, _creator, a, b = self._two_channels(db, make_space, make_user)
+        post_a = (
+            db.query(CommunityPost)
+            .filter(CommunityPost.channel_id == a.id).first()
+        )
+        advance(
+            db, member, collective_id=space.id, category="conversations",
+            subject_ids=[post_a.id],
+            boundary_sequence=current_boundary(db, resolve_member_scope(db, member)),
+        )
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.conversations == 1
+        assert row.conversation_channels == (b.id,), (
+            "visiting Channel A must clear only A's dot"
+        )
+
+    def test_the_total_is_the_sum_of_the_channels(self, db, make_space, make_user):
+        """Guards the finer GROUP BY: the category number is now summed
+        across scope rows rather than read from one, so an assignment
+        where a sum belongs would silently under-count."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        for n in (1, 2, 3):
+            ch = _channel(db, space)
+            for _ in range(n):
+                post = _post(db, space, ch, creator)
+                _activity(db, space, creator, category="conversations",
+                          event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.conversations == 6
+        assert len(row.conversation_channels) == 3
+
+    def test_pathways_and_gatherings_are_untouched_by_the_finer_grouping(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        pw = _pathway(db, space)
+        _activity(db, space, creator, category="pathways",
+                  event_type="pathway_published", pathway_id=pw.id)
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.pathways == 1
+        assert row.conversation_channels == ()
+
+    def test_a_hidden_channel_is_never_named(self, db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        ch.show_in_navigation = False
+        db.flush()
+        post = _post(db, space, ch, creator)
+        _activity(db, space, creator, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        row = _counts(db, member)[space.id]
+        assert row.conversations == 0
+        assert row.conversation_channels == ()

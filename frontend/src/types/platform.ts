@@ -1936,6 +1936,11 @@ export interface CollectiveUnseen {
   pathways: number
   gatherings: number
   total: number
+  /** Channel ids carrying unseen Conversations — one entry per Channel
+   *  however many discussions it holds, so the selector marks each
+   *  with a single dot while `conversations` stays the true total.
+   *  Empty when nothing is unseen. */
+  conversation_channels: string[]
 }
 
 export interface UnseenCountsResponse {

@@ -97,11 +97,24 @@ describe('the render-time boundary', () => {
 
     test(`${name}: the boundary is awaited, not raced`, () => {
       const src = read(file)
-      // `await getUnseenCounts()` on its own line, not inside the
-      // Promise.all that fetches content.
+      // The danger this guards is the boundary becoming a member of
+      // the `Promise.all` that fetches content, which would make it
+      // concurrent with the thing it must precede. So assert the shape
+      // that cannot be: a standalone `const … = await getUnseenCounts()`
+      // statement. An array element would carry neither `const` nor
+      // `await`.
+      //
+      // Deliberately not pinned to one spelling — the Conversations
+      // page binds the whole response (it also reads
+      // `conversation_channels` for the Channel dots) while the other
+      // two read `.as_of_sequence` inline. Both are standalone awaits.
+      const line = src
+        .split('\n')
+        .find((l) => l.includes('getUnseenCounts('))
+      assert.ok(line, 'no getUnseenCounts call found')
       assert.match(
-        src,
-        /const boundary = \(await getUnseenCounts\(\)\)\.as_of_sequence/,
+        line,
+        /^\s*const \w+ = \(?await getUnseenCounts\(\)\)?/,
         'the boundary must be its own await, not a member of Promise.all',
       )
     })

@@ -292,6 +292,11 @@ class CollectiveUnseen(BaseModel):
     pathways: int
     gatherings: int
     total: int
+    #: Channel ids carrying unseen Conversations — one entry per
+    #: Channel however many discussions it holds, so the selector can
+    #: mark each with a single dot while the tally above stays whole.
+    #: Empty when nothing is unseen, which renders no dots.
+    conversation_channels: list[str] = []
 
 
 class UnseenCountsResponse(BaseModel):
@@ -328,6 +333,7 @@ def get_unseen_counts(
             pathways=c.pathways,
             gatherings=c.gatherings,
             total=c.total,
+            conversation_channels=list(c.conversation_channels),
         )
         for c in counts
     ]

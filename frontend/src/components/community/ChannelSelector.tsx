@@ -18,7 +18,15 @@ import Link from 'next/link'
  * with a single addition to `GROUP_ORDER`.
  *
  * Design rules:
- *  - No unread badges, no counts, no dots.
+ *  - One dot, and only a dot, on a Channel holding unseen activity.
+ *    No counts here: the number lives on the single Conversations
+ *    badge in the navigation, and a Channel shows one dot however
+ *    many unseen discussions it holds. (This replaces an earlier rule
+ *    of "no badges, no counts, no dots" — which predated Notifications
+ *    2.0 and left a member with a count they could clear only one
+ *    Channel at a time and no way to see which Channel to open. A dot
+ *    answers that without turning a navigation list into a tally.)
+ *  - Nothing unseen renders nothing at all — never an empty dot.
  *  - Icons are strictly type-driven (server-computed).
  *  - URL `?channel=<slug>` is the source of truth.
  */
@@ -38,6 +46,10 @@ export interface ChannelSummary {
 interface Props {
   channels: ChannelSummary[]
   activeSlug: string
+  /** Channel ids holding unseen activity, from the counts response the
+   *  page already fetches. Membership is the whole signal — the count
+   *  itself is the navigation badge's business. */
+  unseenChannelIds?: readonly string[]
 }
 
 // Order the group headings render in. Groups not listed here still
@@ -51,7 +63,10 @@ const GROUP_ORDER: string[] = [
   'OPEN DISCUSSIONS',
 ]
 
-export default function ChannelSelector({ channels, activeSlug }: Props) {
+export default function ChannelSelector({
+  channels, activeSlug, unseenChannelIds,
+}: Props) {
+  const unseen = new Set(unseenChannelIds ?? [])
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -85,6 +100,7 @@ export default function ChannelSelector({ channels, activeSlug }: Props) {
           activeSlug={activeSlug}
           onNavigate={(slug) => router.push(hrefFor(slug), { scroll: false })}
           hrefFor={hrefFor}
+          unseen={unseen}
         />
       )}
 
@@ -102,6 +118,7 @@ export default function ChannelSelector({ channels, activeSlug }: Props) {
               activeSlug={activeSlug}
               onNavigate={(slug) => router.push(hrefFor(slug), { scroll: false })}
               hrefFor={hrefFor}
+              unseen={unseen}
             />
           </div>
         )
@@ -111,12 +128,13 @@ export default function ChannelSelector({ channels, activeSlug }: Props) {
 }
 
 function ChannelRow({
-  channels, activeSlug, onNavigate, hrefFor,
+  channels, activeSlug, onNavigate, hrefFor, unseen,
 }: {
   channels: ChannelSummary[]
   activeSlug: string
   onNavigate: (slug: string) => void
   hrefFor: (slug: string) => string
+  unseen: Set<string>
 }) {
   return (
     <div
@@ -144,6 +162,22 @@ function ChannelRow({
           >
             {c.icon_emoji && <span aria-hidden="true">{c.icon_emoji}</span>}
             <span>{c.name}</span>
+            {unseen.has(c.id) && (
+              <>
+                {/* A dot carries no number, so it is spoken rather
+                    than shown to assistive technology — "3" beside a
+                    Channel name would be ambiguous read aloud, and a
+                    bare dot is nothing at all. */}
+                <span
+                  aria-hidden="true"
+                  className="h-[6px] w-[6px] shrink-0 rounded-full"
+                  style={{
+                    background: active ? '#FFFFFF' : 'var(--fc-accent, #0f766e)',
+                  }}
+                />
+                <span className="sr-only">{`unseen activity in ${c.name}`}</span>
+              </>
+            )}
             {c.is_archived && (
               <span
                 className="rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"

@@ -41,7 +41,16 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
   // would include activity created in between — never rendered, and
   // cleared anyway. ``cache()`` dedupes this with the layout's call,
   // so it costs no extra request.
-  const boundary = (await getUnseenCounts()).as_of_sequence
+  const counts = await getUnseenCounts()
+  const boundary = counts.as_of_sequence
+  // Which Channels hold something unseen, from the response just
+  // fetched for the boundary — the selector's dots cost no request of
+  // their own. The number stays on the navigation badge; here it is
+  // only ever "this Channel has something".
+  const unseenChannelIds = space
+    ? (counts.collectives.find((c) => c.collective_id === space.id)
+        ?.conversation_channels ?? [])
+    : []
   const posts: PostSummary[] = await getCommunityFeed(slug, activeSlug)
 
   // Authoritative counts — the members list is privacy-filtered for
@@ -116,6 +125,7 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
               icon_emoji: c.icon_emoji, group_label: c.group_label,
             }))}
             activeSlug={activeSlug}
+            unseenChannelIds={unseenChannelIds}
           />
         )}
 
