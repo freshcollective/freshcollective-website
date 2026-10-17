@@ -81,6 +81,7 @@ from app.services.channel_permissions import (
     is_active_space_member,
     is_caretaker,
 )
+from app.services.channel_types import GROUP_LABEL_BY_TYPE
 
 router = APIRouter(prefix="/api/spaces", tags=["community"])
 
@@ -623,6 +624,10 @@ def get_community_post(
         scheduled_for=post.scheduled_for,
         scheduling_timezone=post.scheduling_timezone,
         published_at=post.published_at,
+        channel_slug=channel.slug,
+        channel_name=channel.name,
+        channel_type=channel.channel_type,
+        channel_group_label=GROUP_LABEL_BY_TYPE.get(channel.channel_type),
     )
 
 

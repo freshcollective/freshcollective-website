@@ -590,6 +590,17 @@ export interface PostSummary {
 
 export interface PostDetail extends Omit<PostSummary, 'comment_count'> {
   comments: CommentItem[]
+  /** Where this discussion lives. Resolved server-side from the
+   *  Channel the access gate already loaded. Nullable only for
+   *  robustness against an older payload — reaching a PostDetail at
+   *  all means the viewer may open this Channel's feed, so the name
+   *  is always safe to link. */
+  channel_slug?: string | null
+  channel_name?: string | null
+  channel_type?: string | null
+  /** PATHWAYS / GATHERINGS / SERIES / PRIVATE / OPEN DISCUSSIONS, or
+   *  null for the two system Channels, which belong to no group. */
+  channel_group_label?: string | null
 }
 
 export interface ManualMember {

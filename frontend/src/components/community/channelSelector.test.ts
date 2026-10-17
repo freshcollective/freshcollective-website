@@ -160,3 +160,39 @@ describe('the main Conversations badge', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// 5 · A discussion says where it lives
+// ---------------------------------------------------------------------------
+
+const DETAIL = read('src/app/spaces/[slug]/community/[postId]/page.tsx')
+
+describe('the conversation detail back link', () => {
+  test('it points at the Channel the post is in', () => {
+    assert.match(DETAIL, /community\?channel=\$\{post\.channel_slug\}/)
+  })
+
+  test('it names the Channel', () => {
+    assert.match(DETAIL, /←\s*\{post\.channel_name \?\? 'Conversations'\}/)
+  })
+
+  test('it shows the Channel kind in prose, not as a heading', () => {
+    // The server sends the selector's uppercase group label; beside a
+    // name in a sentence it reads as prose.
+    assert.match(DETAIL, /CHANNEL_KIND\[post\.channel_group_label\]/)
+    assert.match(DETAIL, /PATHWAYS: '· Pathway discussion'/)
+  })
+
+  test('it degrades to the Conversations root without a Channel', () => {
+    assert.match(DETAIL, /: `\/spaces\/\$\{slug\}\/community`/)
+  })
+
+  test('no second permission check is invented here', () => {
+    // Reaching this page required `can_view_channel`, which is the
+    // same predicate the feed applies — a check here would be a
+    // duplicate answer to a settled question.
+    for (const banned of [/canViewChannel/, /channel_can_/, /canAccessChannel/]) {
+      assert.ok(!banned.test(DETAIL), `${banned} — already decided server-side`)
+    }
+  })
+})

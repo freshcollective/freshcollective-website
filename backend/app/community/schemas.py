@@ -169,6 +169,21 @@ class PostDetail(BaseModel):
     scheduled_for: datetime | None = None
     scheduling_timezone: str | None = None
     published_at: datetime | None = None
+    # Where this discussion lives. Resolved from the Channel the
+    # endpoint already loaded to run its access gate, so these cost no
+    # extra query and cannot disagree with the gate.
+    #
+    # No permission field accompanies them: reaching this payload at
+    # all required ``can_view_channel``, which is the same predicate
+    # the Channel feed applies. A reader holding this response is
+    # therefore always authorised for the feed it names, and a second
+    # check here would be a duplicate answer to a settled question.
+    channel_slug: str | None = None
+    channel_name: str | None = None
+    channel_type: str | None = None
+    #: PATHWAYS / GATHERINGS / SERIES / PRIVATE / OPEN DISCUSSIONS, or
+    #: NULL for the two system Channels, which belong to no group.
+    channel_group_label: str | None = None
 
 
 class CreatePostRequest(BaseModel):
