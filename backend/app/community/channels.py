@@ -50,6 +50,7 @@ from app.services.channel_types import (
     GROUP_LABEL_BY_TYPE,
     icon_for,
 )
+from app.spaces import area_access, area_policies
 
 
 member_router = APIRouter(prefix="/api/spaces", tags=["channels-member"])
@@ -509,6 +510,20 @@ def list_member_channels(
     current_user: User = Depends(get_current_user),
 ) -> list[ChannelSummary]:
     space = _get_space_or_404(slug, db)
+    # The doorway, before the rooms behind it. The feed, the post
+    # detail and search all open with this; without it a member whose
+    # Conversations Area is shut could still enumerate the names and
+    # descriptions of Channels whose posts they are refused.
+    #
+    # Safe for the Creator Studio callers of this endpoint: a leader,
+    # owner or platform admin reaches every Area unconditionally —
+    # ``SpaceViewer.qualifies`` and ``is_leader`` are true for them
+    # without a membership row (see ``resolve_area_access``). Only a
+    # learner in an ``active_access`` Collective holding no access is
+    # newly refused, which is what the feed already does to them.
+    area_access.require_area(
+        db, space, current_user, area_policies.AREA_CONVERSATIONS,
+    )
     channels = accessible_channels_for_user(current_user, space, db, include_archived=True)
     # Members only see Channels the creator chose to surface in navigation.
     # Caretakers still see everything.

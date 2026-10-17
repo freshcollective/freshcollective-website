@@ -616,3 +616,130 @@ class TestTheEndpointAppliesTheFilterToBothHalves:
         out = self._call(db, member, recent_moments=True)
         assert len(out.activities) == 1
         assert out.activities[0].pathway_id == pw.id
+
+
+# ---------------------------------------------------------------------------
+# Addressed rows that name a Conversation
+# ---------------------------------------------------------------------------
+
+class TestPersonalConversationRowsRespectChannelAccess:
+    """A recipient-addressed row needs no permission check — unless it
+    names a post, because a post lives in a Channel with its own rule.
+
+    Nothing writes such a row today: every producer calls
+    ``create_shared``. These tests therefore guard a path that is
+    currently unreachable, which is the point — the three conversation
+    event types are already in ``RECENT_MOMENTS``, so the guard has to
+    predate the first producer rather than follow it.
+    """
+
+    def _personal(self, db, *, recipient, space, post, actor):
+        from app.models.activity import ActivityType
+
+        row = Activity(
+            id=_uid("act"), event_type=ActivityType.mention_received.value,
+            category="personal", priority="standard",
+            actor_user_id=actor.id, recipient_user_id=recipient.id,
+            collective_id=space.id, conversation_id=post.id,
+            payload={"title": "You were mentioned"},
+        )
+        db.add(row); db.flush()
+        return row
+
+    def _filtered(self, db, user, rows):
+        return ActivityService.filter_personal_conversation_rows(db, user, rows)
+
+    def test_an_accessible_channel_comes_through(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="open")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [row], (
+            "an open Channel must still reach its recipient — a filter that "
+            "drops everything would pass every other test in this class"
+        )
+
+    def test_an_unbooked_gathering_channel_is_dropped(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        ch = _channel(db, space, channel_type="gathering")
+        ch.gathering_id = ev.id
+        db.flush()
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [], (
+            "being named in a post does not grant access to the Channel it "
+            "sits in — the confirmed-booking rule still decides"
+        )
+
+    def test_a_private_channel_without_membership_is_dropped(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="private")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == []
+
+    def test_a_row_with_no_conversation_is_untouched(self, db, make_space, make_user):
+        from app.models.activity import ActivityType
+
+        space = make_space(); member = make_user()
+        _member(db, member, space)
+        row = Activity(
+            id=_uid("act"), event_type=ActivityType.password_changed.value,
+            category="account", priority="standard",
+            recipient_user_id=member.id, collective_id=None, payload={},
+        )
+        db.add(row); db.commit()
+
+        assert self._filtered(db, member, [row]) == [row], (
+            "rows with no subject must pass untouched — the bell's own rows "
+            "have nothing to check"
+        )
+
+    def test_a_vanished_post_fails_closed(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="open")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.flush()
+        db.delete(post)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [], (
+            "the access question cannot be answered for a post that is gone, "
+            "so the row must be dropped rather than shown"
+        )
+
+    def test_the_endpoint_applies_the_filter(self, db, make_space, make_user):
+        from app.activities.routes import list_activities
+
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        ch = _channel(db, space, channel_type="gathering")
+        ch.gathering_id = ev.id
+        db.flush()
+        post = _post(db, space, ch, actor)
+        self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        out = list_activities(
+            unread_only=False, include_archived=False, limit=20, before=None,
+            collective_id=None, recent_moments=True,
+            current_user=member, db=db,
+        )
+        assert out.activities == [], (
+            "the endpoint is not passing its personal rows through the filter"
+        )

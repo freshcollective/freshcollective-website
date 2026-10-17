@@ -502,6 +502,76 @@ class ActivityService:
         return out
 
     @staticmethod
+    def filter_personal_conversation_rows(db: Session, user, rows: list[Activity]) -> list[Activity]:
+        """Drop addressed rows about a Conversation the member cannot open.
+
+        A recipient-addressed row is something that happened *to* this
+        member, so ``list_for_recipient`` filters on recipient id and
+        nothing else — which is right for every row that has no
+        subject to check. A row carrying a ``conversation_id`` is the
+        exception: its payload names a post, and a post lives in a
+        Channel with its own access rule.
+
+        Nothing writes such a row today. Every producer calls
+        ``create_shared``, so this is a no-op in production and is
+        here deliberately ahead of the producers rather than after
+        them: ``mention_received``, ``reply_received`` and
+        ``conversation_replied`` are already in ``RECENT_MOMENTS``, so
+        the first writer of any of them would otherwise surface a post
+        title and URL from a Channel the member is refused.
+
+        Fails closed. A row whose post cannot be resolved — deleted,
+        or belonging to no Collective — is dropped rather than shown,
+        because the access question cannot be answered for it.
+
+        Deliberately not applied to ``unread_count``: the bell is a
+        separate surface and out of scope here. If a producer ever
+        does address a conversation row to a member who cannot reach
+        the Channel, the bell would count it while this list omits it.
+        That seam is known and documented rather than closed by
+        reaching into the bell.
+        """
+        from app.models.platform import CommunityPost, Space
+        from app.services.channel_permissions import accessible_channels_for_user
+
+        bearing = [r for r in rows if r.conversation_id]
+        if not bearing:
+            return rows
+
+        channel_of = dict(
+            db.query(CommunityPost.id, CommunityPost.channel_id)
+            .filter(
+                CommunityPost.id.in_({r.conversation_id for r in bearing})
+            )
+            .all()
+        )
+        spaces = {
+            sp.id: sp
+            for sp in db.query(Space)
+            .filter(Space.id.in_({r.collective_id for r in bearing if r.collective_id}))
+            .all()
+        }
+        channel_cache: dict[str, set[str]] = {}
+
+        out: list[Activity] = []
+        for r in rows:
+            if not r.conversation_id:
+                out.append(r)
+                continue
+            channel_id = channel_of.get(r.conversation_id)
+            space = spaces.get(r.collective_id or "")
+            if channel_id is None or space is None:
+                continue
+            if space.id not in channel_cache:
+                channel_cache[space.id] = {
+                    c.id for c in accessible_channels_for_user(user, space, db)
+                }
+            if channel_id not in channel_cache[space.id]:
+                continue
+            out.append(r)
+        return out
+
+    @staticmethod
     def list_for_recipient(
         db: Session,
         *,

@@ -168,6 +168,12 @@ def list_activities(
         collective_id=collective_id,
         recent_moments_only=recent_moments,
     )
+    # Addressed rows are this member's own, so they need no permission
+    # check — except when one names a Conversation, which lives in a
+    # Channel with its own rule. A no-op today; see the method's note.
+    personal = ActivityService.filter_personal_conversation_rows(
+        db, current_user, personal,
+    )
     shared: list = []
     if not unread_only:
         shared = ActivityService.list_shared_for_member(
