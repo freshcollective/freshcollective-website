@@ -590,6 +590,17 @@ export interface PostSummary {
 
 export interface PostDetail extends Omit<PostSummary, 'comment_count'> {
   comments: CommentItem[]
+  /** Where this discussion lives. Resolved server-side from the
+   *  Channel the access gate already loaded. Nullable only for
+   *  robustness against an older payload — reaching a PostDetail at
+   *  all means the viewer may open this Channel's feed, so the name
+   *  is always safe to link. */
+  channel_slug?: string | null
+  channel_name?: string | null
+  channel_type?: string | null
+  /** PATHWAYS / GATHERINGS / SERIES / PRIVATE / OPEN DISCUSSIONS, or
+   *  null for the two system Channels, which belong to no group. */
+  channel_group_label?: string | null
 }
 
 export interface ManualMember {
@@ -1936,6 +1947,18 @@ export interface CollectiveUnseen {
   pathways: number
   gatherings: number
   total: number
+  /** Channel ids carrying unseen Conversations — one entry per Channel
+   *  however many discussions it holds, so the selector marks each
+   *  with a single dot while `conversations` stays the true total.
+   *  Empty when nothing is unseen.
+   *
+   *  Optional because fc-web and fc-api redeploy from one push but not
+   *  in one instant: for a few seconds a new page can read an old
+   *  response that has no such field. Call sites already cope — the
+   *  Conversations page reads it as `?.conversation_channels ?? []` —
+   *  and this makes the type say so rather than promise a field that
+   *  can briefly be absent. */
+  conversation_channels?: string[]
 }
 
 export interface UnseenCountsResponse {

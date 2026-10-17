@@ -51,6 +51,15 @@ class CollectiveCounts:
     conversations: int
     pathways: int
     gatherings: int
+    #: Which Channels the ``conversations`` number came from — the ids
+    #: with anything unseen, not a count each.
+    #:
+    #: Ids rather than numbers on purpose. The selector shows one dot
+    #: per Channel however many unseen discussions it holds, and the
+    #: tally belongs to the one badge in the navigation. Shipping a set
+    #: makes that true by construction instead of by convention at the
+    #: render site.
+    conversation_channels: tuple[str, ...] = ()
 
     @property
     def total(self) -> int:
@@ -131,8 +140,17 @@ def _liveness_filters(scope: MemberScope, moment: datetime) -> list:
                     # — counting it leaves a badge no visit can clear.
                     CommunityPost.is_visible.is_(True),
                     CommunityPost.cc_hidden_at.is_(None),
-                    CommunityPost.channel_id.in_(scope.accessible_channel_ids)
-                    if scope.accessible_channel_ids
+                    # The *notifiable* set, not the accessible one. A
+                    # Channel hidden from navigation stays readable by
+                    # direct link and findable in search, but it is
+                    # absent from the selector — so an indicator
+                    # pointing at it could never be cleared by any
+                    # visit. One definition, used by the count, the
+                    # clamp and the presented-id resolver alike, so a
+                    # hidden Channel is uncounted, un-clamped and
+                    # un-markable together.
+                    CommunityPost.channel_id.in_(scope.notifiable_channel_ids)
+                    if scope.notifiable_channel_ids
                     else False,
                 )
             ),
@@ -182,13 +200,20 @@ def unseen_counts(
     tally: dict[str, dict[str, int]] = {
         sid: {c: 0 for c in COUNTED_CATEGORIES} for sid in scope.space_ids
     }
-    for space_id, category, n in rows:
+    channels: dict[str, set[str]] = {sid: set() for sid in scope.space_ids}
+    for space_id, category, n, scope_key in rows:
         # Area policy is a decision per (Collective, category), not per
         # row, so it is applied here rather than in SQL — the grouped
-        # result is at most three rows per Collective, which makes this
+        # result is a handful of rows per Collective, which makes this
         # exactly equivalent and free.
-        if category in scope.categories_for(space_id):
-            tally[space_id][category] = int(n)
+        if category not in scope.categories_for(space_id):
+            continue
+        count = int(n)
+        # Summed, not assigned: the query now returns one row per
+        # scope, and a category's number is the whole category.
+        tally[space_id][category] += count
+        if category == "conversations" and scope_key and count > 0:
+            channels[space_id].add(str(scope_key))
 
     return [
         CollectiveCounts(
@@ -196,15 +221,23 @@ def unseen_counts(
             conversations=t["conversations"],
             pathways=t["pathways"],
             gatherings=t["gatherings"],
+            conversation_channels=tuple(sorted(channels[sid])),
         )
         for sid, t in sorted(tally.items())
     ]
 
 
 def _unseen_rows(db: Session, scope: MemberScope, *, now: datetime | None = None):
-    """The grouped (collective, category, count) rows, before Area
-    filtering. Shared with the cursor clamp, which needs the same
-    predicate to decide what a member could legitimately have seen."""
+    """The grouped ``(collective, category, count, scope_key)`` rows,
+    before Area filtering.
+
+    One row per Channel for conversations and a single empty-scope row
+    for the other two categories, so one query answers both the
+    category totals and which Channels they came from. The clamp in
+    ``max_visible_sequence`` does not call this — it shares
+    ``_liveness_filters`` instead, which is the part that must not
+    drift.
+    """
     from app.models.platform import (
         CommunityPost,
         Event,
@@ -238,6 +271,7 @@ def _unseen_rows(db: Session, scope: MemberScope, *, now: datetime | None = None
             Activity.collective_id,
             Activity.category,
             func.count(func.distinct(_subject())),
+            row_scope,
         )
         .outerjoin(
             post_for_scope, post_for_scope.id == Activity.conversation_id,
@@ -291,7 +325,18 @@ def _unseen_rows(db: Session, scope: MemberScope, *, now: datetime | None = None
             )
         )
 
-    return q.group_by(Activity.collective_id, Activity.category).all()
+    # Grouped one level finer than the caller needs, so the per-Channel
+    # breakdown the selector dots want comes out of the query that was
+    # already running rather than a second one.
+    #
+    # The per-category totals stay exact under this: a post belongs to
+    # exactly one Channel, so ``count(DISTINCT subject)`` partitions
+    # cleanly across scopes and the sums agree. Pathways and
+    # Gatherings have no sub-division and collapse to a single empty
+    # scope, exactly as before.
+    return q.group_by(
+        Activity.collective_id, Activity.category, row_scope,
+    ).all()
 
 
 def max_visible_sequence(

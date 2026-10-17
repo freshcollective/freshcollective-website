@@ -426,17 +426,32 @@ class ActivityService:
             )
             .all()
         }
-        live_posts = {
-            c.id
-            for c in db.query(CommunityPost.id)
+        # Both the liveness answer and the Channel each post belongs
+        # to, in one query. This used to be a set of ids here plus a
+        # fresh ``db.query(CommunityPost)`` per row inside the loop
+        # below — an N+1 over a page of twenty.
+        post_rows = (
+            db.query(CommunityPost.id, CommunityPost.channel_id)
             .filter(
                 CommunityPost.id.in_(
                     {r.conversation_id for r in rows if r.conversation_id} or {""}
                 ),
                 CommunityPost.publication_status == "published",
+                # The same three conditions the count applies (see
+                # ``activity_counts._liveness_filters``). This query
+                # checked only publication, so a post hidden by
+                # Community Care or made invisible by a moderator kept
+                # its row in Recent Moments — carrying its title — while
+                # the badge had already stopped counting it, and the
+                # post detail page answered 404 to everyone but an
+                # admin. Three surfaces, two answers.
+                CommunityPost.is_visible.is_(True),
+                CommunityPost.cc_hidden_at.is_(None),
             )
             .all()
-        }
+        )
+        channel_of_post = {row.id: row.channel_id for row in post_rows}
+        live_posts = set(channel_of_post)
 
         out: list[Activity] = []
         for r in rows:
@@ -489,15 +504,149 @@ class ActivityService:
                         c.id
                         for c in accessible_channels_for_user(user, space, db)
                     }
-                post = (
-                    db.query(CommunityPost)
-                    .filter(CommunityPost.id == r.conversation_id)
-                    .first()
-                )
-                chan = getattr(post, "channel_id", None) if post else None
+                chan = channel_of_post.get(r.conversation_id)
                 if chan is not None and chan not in channel_cache[space.id]:
                     continue
 
+            out.append(r)
+        return out
+
+    @staticmethod
+    def display_titles(db: Session, rows: list[Activity]) -> dict[str, str]:
+        """``{activity_id: title}`` for rows whose own payload has none.
+
+        A Conversation may be published without a title, and the
+        writer stored the literal words "New conversation" for those —
+        a row that said nothing about itself in a list whose job is to
+        say what happened. This substitutes the opening line of the
+        discussion instead.
+
+        Resolved on read rather than stamped into the payload at write
+        time, deliberately. The payload is frozen the moment it is
+        written, so a stamped excerpt would outlive an edit, a
+        Community Care hold and an unpublish — and every row already in
+        the table would need a backfill to say anything better. Read
+        time fixes those rows for free and cannot go stale.
+
+        Only ever derived from a post that is published, visible and
+        not held: the two filters upstream already decide *whether* a
+        member sees the row at all, and this re-states the content
+        conditions so an excerpt can never be the thing that outlives
+        them.
+
+        Titles the author actually supplied are left completely alone.
+        """
+        from app.models.platform import CommunityPost
+        from app.community.excerpt import plain_text_excerpt
+
+        wanted = {r.conversation_id for r in rows if r.conversation_id}
+        if not wanted:
+            return {}
+
+        bodies = (
+            db.query(CommunityPost.id, CommunityPost.title, CommunityPost.body)
+            .filter(
+                CommunityPost.id.in_(wanted),
+                CommunityPost.publication_status == "published",
+                CommunityPost.is_visible.is_(True),
+                CommunityPost.cc_hidden_at.is_(None),
+            )
+            .all()
+        )
+        excerpt_of: dict[str, str] = {}
+        for post_id, title, body in bodies:
+            if title and title.strip():
+                continue          # the author named it; nothing to do
+            excerpt = plain_text_excerpt(body)
+            if excerpt:
+                excerpt_of[post_id] = excerpt
+
+        return {
+            r.id: excerpt_of[r.conversation_id]
+            for r in rows
+            if r.conversation_id and r.conversation_id in excerpt_of
+        }
+
+    @staticmethod
+    def filter_personal_conversation_rows(db: Session, user, rows: list[Activity]) -> list[Activity]:
+        """Drop addressed rows about a Conversation the member cannot open.
+
+        A recipient-addressed row is something that happened *to* this
+        member, so ``list_for_recipient`` filters on recipient id and
+        nothing else — which is right for every row that has no
+        subject to check. A row carrying a ``conversation_id`` is the
+        exception: its payload names a post, and a post lives in a
+        Channel with its own access rule.
+
+        Nothing writes such a row today. Every producer calls
+        ``create_shared``, so this is a no-op in production and is
+        here deliberately ahead of the producers rather than after
+        them: ``mention_received``, ``reply_received`` and
+        ``conversation_replied`` are already in ``RECENT_MOMENTS``, so
+        the first writer of any of them would otherwise surface a post
+        title and URL from a Channel the member is refused.
+
+        Fails closed. A row whose post cannot be resolved — deleted,
+        or belonging to no Collective — is dropped rather than shown,
+        because the access question cannot be answered for it.
+
+        Access only, and deliberately not liveness. A row naming a post
+        that is unpublished, made invisible by a moderator, or held by
+        Community Care still passes here: the shared path applies those
+        three conditions in ``_visible_only``, and this path does not.
+        So the prerequisite for the first producer of an addressed
+        Conversation row is both halves — channel access *and*
+        publication, moderation visibility and Community Care liveness
+        — either added here or by routing through the same filter the
+        shared rows use. The excerpt resolver already re-states the
+        three content conditions itself (see ``display_titles``), so no
+        excerpt can be derived from a held post by either path; it is
+        the stored payload title that would otherwise outlive the hold.
+
+        Deliberately not applied to ``unread_count``: the bell is a
+        separate surface and out of scope here. If a producer ever
+        does address a conversation row to a member who cannot reach
+        the Channel, the bell would count it while this list omits it.
+        That seam is known and documented rather than closed by
+        reaching into the bell.
+        """
+        from app.models.platform import CommunityPost, Space
+        from app.services.channel_permissions import accessible_channels_for_user
+
+        bearing = [r for r in rows if r.conversation_id]
+        if not bearing:
+            return rows
+
+        channel_of = dict(
+            db.query(CommunityPost.id, CommunityPost.channel_id)
+            .filter(
+                CommunityPost.id.in_({r.conversation_id for r in bearing})
+            )
+            .all()
+        )
+        spaces = {
+            sp.id: sp
+            for sp in db.query(Space)
+            .filter(Space.id.in_({r.collective_id for r in bearing if r.collective_id}))
+            .all()
+        }
+        channel_cache: dict[str, set[str]] = {}
+
+        out: list[Activity] = []
+        for r in rows:
+            if not r.conversation_id:
+                out.append(r)
+                continue
+            channel_id = channel_of.get(r.conversation_id)
+            space = spaces.get(r.collective_id or "")
+            if channel_id is None or space is None:
+                continue
+            if space.id not in channel_cache:
+                channel_cache[space.id] = {
+                    c.id for c in accessible_channels_for_user(user, space, db)
+                }
+            if channel_id not in channel_cache[space.id]:
+                continue
             out.append(r)
         return out
 

@@ -711,3 +711,62 @@ class TestTheBoundary:
 
     def test_a_member_of_nothing_gets_zero(self, db, make_user):
         assert _boundary(db, make_user()) == 0
+
+
+# ---------------------------------------------------------------------------
+# A navigation-hidden Channel has nothing to mark
+# ---------------------------------------------------------------------------
+
+class TestHiddenChannelsAreUnmarkable:
+    """A hidden Channel is uncounted, so there is nothing to clear —
+    and because one ``_liveness_filters`` definition serves the count,
+    the clamp and the presented-id resolver, reaching it by direct
+    link writes no cursor rather than writing a meaningless one.
+    """
+
+    def _hidden(self, db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="open")
+        ch.show_in_navigation = False
+        db.flush()
+        post = _post(db, space, ch, creator)
+        _activity(db, space, creator, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+        return space, member, ch, post
+
+    def test_visiting_by_direct_link_writes_no_cursor(
+        self, db, make_space, make_user,
+    ):
+        space, member, _ch, post = self._hidden(db, make_space, make_user)
+
+        state = advance(
+            db, member, collective_id=space.id, category="conversations",
+            subject_ids=[post.id],
+            boundary_sequence=_boundary(db, member, space),
+        )
+        db.commit()
+
+        assert state.advanced == {}, (
+            "nothing was counted for this Channel, so nothing may be marked"
+        )
+        assert _cursors(db, member, space) == {}
+
+    def test_an_unhidden_channel_still_marks(self, db, make_space, make_user):
+        # The control: the resolver must still work for a shown
+        # Channel, or the test above would pass against a resolver
+        # that refused everything.
+        space, member, ch, post = self._hidden(db, make_space, make_user)
+        ch.show_in_navigation = True
+        db.commit()
+
+        state = advance(
+            db, member, collective_id=space.id, category="conversations",
+            subject_ids=[post.id],
+            boundary_sequence=_boundary(db, member, space),
+        )
+        db.commit()
+
+        assert set(state.advanced) == {ch.id}
+        assert _counts(db, member)[space.id].conversations == 0

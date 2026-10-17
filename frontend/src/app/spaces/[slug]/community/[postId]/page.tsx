@@ -24,6 +24,22 @@ function formatDate(isoString: string): string {
 
 const URL_REGEX = /https?:\/\/[^\s<>"]+/g
 
+/**
+ * The selector's group headings, said in running text.
+ *
+ * The server sends the same uppercase label the channel selector
+ * groups by; beside a Channel name in a sentence it wants reading as
+ * prose, not as a heading. Unknown labels render nothing rather than
+ * shouting an unstyled string.
+ */
+const CHANNEL_KIND: Record<string, string> = {
+  PATHWAYS: '· Pathway discussion',
+  GATHERINGS: '· Gathering discussion',
+  SERIES: '· Series discussion',
+  PRIVATE: '· Private channel',
+  'OPEN DISCUSSIONS': '· Open discussion',
+}
+
 function renderBodyWithLinks(text: string, mentionedNames: string[]) {
   return text.split('\n\n').filter(Boolean).map((para, i) => {
     // Split on links; segments in-between still pass through MentionText
@@ -116,13 +132,31 @@ export default async function PostDetailPage({ params }: Props) {
   return (
     <div className="max-w-2xl">
 
-      {/* Back */}
-      <Link
-        href={`/spaces/${slug}/community`}
-        className="mb-7 inline-block text-sm text-black hover:text-navy-700"
-      >
-        ← Conversations
-      </Link>
+      {/* Back — to the Channel this discussion is actually in, not to
+          the Collective's default one. A member arriving from Recent
+          Moments otherwise read a thread without ever learning where
+          it lived, and "back" sent them somewhere they had not been.
+
+          Always a link: reaching this page required ``can_view_channel``,
+          the same predicate the Channel feed applies, so the
+          destination can never be refused. Falls back to the
+          Conversations root only for an older payload with no Channel
+          on it. */}
+      <div className="mb-7 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <Link
+          href={post.channel_slug
+            ? `/spaces/${slug}/community?channel=${post.channel_slug}`
+            : `/spaces/${slug}/community`}
+          className="text-black hover:text-navy-700"
+        >
+          ← {post.channel_name ?? 'Conversations'}
+        </Link>
+        {post.channel_group_label && (
+          <span style={{ color: 'rgba(12,24,38,0.52)' }}>
+            {CHANNEL_KIND[post.channel_group_label] ?? null}
+          </span>
+        )}
+      </div>
 
       {/* Post header */}
       <div className="mb-6">

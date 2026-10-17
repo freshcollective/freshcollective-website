@@ -616,3 +616,326 @@ class TestTheEndpointAppliesTheFilterToBothHalves:
         out = self._call(db, member, recent_moments=True)
         assert len(out.activities) == 1
         assert out.activities[0].pathway_id == pw.id
+
+
+# ---------------------------------------------------------------------------
+# Addressed rows that name a Conversation
+# ---------------------------------------------------------------------------
+
+class TestPersonalConversationRowsRespectChannelAccess:
+    """A recipient-addressed row needs no permission check — unless it
+    names a post, because a post lives in a Channel with its own rule.
+
+    Nothing writes such a row today: every producer calls
+    ``create_shared``. These tests therefore guard a path that is
+    currently unreachable, which is the point — the three conversation
+    event types are already in ``RECENT_MOMENTS``, so the guard has to
+    predate the first producer rather than follow it.
+    """
+
+    def _personal(self, db, *, recipient, space, post, actor):
+        from app.models.activity import ActivityType
+
+        row = Activity(
+            id=_uid("act"), event_type=ActivityType.mention_received.value,
+            category="personal", priority="standard",
+            actor_user_id=actor.id, recipient_user_id=recipient.id,
+            collective_id=space.id, conversation_id=post.id,
+            payload={"title": "You were mentioned"},
+        )
+        db.add(row); db.flush()
+        return row
+
+    def _filtered(self, db, user, rows):
+        return ActivityService.filter_personal_conversation_rows(db, user, rows)
+
+    def test_an_accessible_channel_comes_through(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="open")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [row], (
+            "an open Channel must still reach its recipient — a filter that "
+            "drops everything would pass every other test in this class"
+        )
+
+    def test_an_unbooked_gathering_channel_is_dropped(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        ch = _channel(db, space, channel_type="gathering")
+        ch.gathering_id = ev.id
+        db.flush()
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [], (
+            "being named in a post does not grant access to the Channel it "
+            "sits in — the confirmed-booking rule still decides"
+        )
+
+    def test_a_private_channel_without_membership_is_dropped(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="private")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == []
+
+    def test_a_row_with_no_conversation_is_untouched(self, db, make_space, make_user):
+        from app.models.activity import ActivityType
+
+        space = make_space(); member = make_user()
+        _member(db, member, space)
+        row = Activity(
+            id=_uid("act"), event_type=ActivityType.password_changed.value,
+            category="account", priority="standard",
+            recipient_user_id=member.id, collective_id=None, payload={},
+        )
+        db.add(row); db.commit()
+
+        assert self._filtered(db, member, [row]) == [row], (
+            "rows with no subject must pass untouched — the bell's own rows "
+            "have nothing to check"
+        )
+
+    def test_a_vanished_post_fails_closed(self, db, make_space, make_user):
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="open")
+        post = _post(db, space, ch, actor)
+        row = self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.flush()
+        db.delete(post)
+        db.commit()
+
+        assert self._filtered(db, member, [row]) == [], (
+            "the access question cannot be answered for a post that is gone, "
+            "so the row must be dropped rather than shown"
+        )
+
+    def test_the_endpoint_applies_the_filter(self, db, make_space, make_user):
+        from app.activities.routes import list_activities
+
+        space = make_space(); actor = make_user(); member = make_user()
+        _member(db, member, space)
+        ev = _gathering(db, space)
+        ch = _channel(db, space, channel_type="gathering")
+        ch.gathering_id = ev.id
+        db.flush()
+        post = _post(db, space, ch, actor)
+        self._personal(db, recipient=member, space=space, post=post, actor=actor)
+        db.commit()
+
+        out = list_activities(
+            unread_only=False, include_archived=False, limit=20, before=None,
+            collective_id=None, recent_moments=True,
+            current_user=member, db=db,
+        )
+        assert out.activities == [], (
+            "the endpoint is not passing its personal rows through the filter"
+        )
+
+
+# ---------------------------------------------------------------------------
+# What an untitled Conversation is called in Recent Moments
+# ---------------------------------------------------------------------------
+
+class TestUntitledConversationsGetTheirOpeningLine:
+    """The writer stores "New conversation" for a post with no title —
+    a row that says nothing about itself. The opening line is
+    substituted on read, so rows already in the table are fixed too
+    and no excerpt can outlive an edit, a hold or an unpublish.
+    """
+
+    def _untitled(self, db, space, channel, author, body):
+        p = CommunityPost(
+            id=_uid("cp"), space_id=space.id, channel_id=channel.id,
+            author_id=author.id, title=None, body=body,
+            publication_status="published",
+        )
+        db.add(p); db.flush()
+        return p
+
+    def _call(self, db, user):
+        from app.activities.routes import list_activities
+
+        return list_activities(
+            unread_only=False, include_archived=False, limit=20, before=None,
+            collective_id=None, recent_moments=True,
+            current_user=user, db=db,
+        )
+
+    def test_an_untitled_post_shows_its_opening_line(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        post = self._untitled(
+            db, space, ch, author,
+            "<p>Does anyone else find the evenings easier now?</p>",
+        )
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+
+        out = self._call(db, member)
+        assert len(out.activities) == 1
+        assert out.activities[0].payload["title"] == (
+            "Does anyone else find the evenings easier now?"
+        )
+
+    def test_a_supplied_title_is_left_alone(self, db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        post = _post(db, space, ch, author)      # title="A thread"
+        post.body = "<p>some other words entirely</p>"
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+
+        out = self._call(db, member)
+        assert out.activities[0].payload["title"] == "A thread"
+
+    def test_a_post_with_no_text_keeps_the_writers_wording(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        post = self._untitled(db, space, ch, author, "<p></p>")
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+
+        out = self._call(db, member)
+        assert out.activities[0].payload["title"] == "New conversation", (
+            "with nothing to excerpt the payload must still say something"
+        )
+
+    def test_the_row_object_is_never_mutated(self, db, make_space, make_user):
+        """A GET must not write, and the substitution must not touch the
+        row it is serialising.
+
+        Asserted on the **in-memory** object, not just on what is in
+        the table. ``payload`` is a plain JSON column with no
+        ``MutableDict``, so SQLAlchemy does not track an in-place
+        ``payload["title"] = …`` and would never flush it — a test that
+        only re-read the database would pass against exactly the bug
+        it was written to catch. The identity map hands back the same
+        instance the endpoint used, so this sees what it did to it.
+        """
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        post = self._untitled(db, space, ch, author, "<p>Fresh words here</p>")
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+
+        row = (
+            db.query(Activity)
+            .filter(Activity.conversation_id == post.id)
+            .one()
+        )
+        assert row.payload["title"] == "New conversation"
+
+        assert self._call(db, member).activities[0].payload["title"] == (
+            "Fresh words here"
+        )
+
+        # Same instance, untouched — no refresh, no re-read.
+        assert row.payload["title"] == "New conversation", (
+            "the read-time title was written into the row being serialised"
+        )
+        assert not db.dirty, "serialising a row left the session dirty"
+
+        db.commit()
+        db.refresh(row)
+        assert row.payload["title"] == "New conversation", (
+            "the read-time title reached the table"
+        )
+
+    def test_an_inaccessible_channel_yields_no_row_and_so_no_excerpt(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="private")
+        post = self._untitled(db, space, ch, author, "<p>Private words</p>")
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+
+        assert self._call(db, member).activities == [], (
+            "the excerpt must never be the thing that leaks a post"
+        )
+
+    def test_a_held_post_yields_no_row_and_so_no_excerpt(
+        self, db, make_space, make_user,
+    ):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space)
+        post = self._untitled(db, space, ch, author, "<p>Held words</p>")
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        post.cc_hidden_at = datetime.utcnow()
+        db.commit()
+
+        assert self._call(db, member).activities == []
+
+
+# ---------------------------------------------------------------------------
+# Held and hidden posts leave the feed, not just the count
+# ---------------------------------------------------------------------------
+
+class TestModeratedPostsLeaveRecentMoments:
+    """Found while adding excerpts. ``_visible_only`` checked only
+    ``publication_status``, so a post held by Community Care or made
+    invisible kept its Recent Moments row — and its title — while the
+    badge had already stopped counting it and the detail page answered
+    404 to everyone but an admin. Three surfaces, two answers.
+    """
+
+    def _row(self, db, space, author, member):
+        ch = _channel(db, space)
+        post = _post(db, space, ch, author)
+        db.commit()
+        ap.record_thread_created(db, post, actor_user_id=author.id)
+        db.commit()
+        return post
+
+    def test_the_control_a_live_post_is_there(self, db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        self._row(db, space, author, member)
+        assert len(_read(db, member)) == 1
+
+    def test_a_community_care_hold_removes_it(self, db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        post = self._row(db, space, author, member)
+
+        post.cc_hidden_at = datetime.utcnow()
+        db.commit()
+        assert _read(db, member) == []
+
+    def test_an_invisible_post_removes_it(self, db, make_space, make_user):
+        space = make_space(); author = make_user(); member = make_user()
+        _member(db, member, space)
+        post = self._row(db, space, author, member)
+
+        post.is_visible = False
+        db.commit()
+        assert _read(db, member) == []
