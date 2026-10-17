@@ -1950,8 +1950,15 @@ export interface CollectiveUnseen {
   /** Channel ids carrying unseen Conversations — one entry per Channel
    *  however many discussions it holds, so the selector marks each
    *  with a single dot while `conversations` stays the true total.
-   *  Empty when nothing is unseen. */
-  conversation_channels: string[]
+   *  Empty when nothing is unseen.
+   *
+   *  Optional because fc-web and fc-api redeploy from one push but not
+   *  in one instant: for a few seconds a new page can read an old
+   *  response that has no such field. Call sites already cope — the
+   *  Conversations page reads it as `?.conversation_channels ?? []` —
+   *  and this makes the type say so rather than promise a field that
+   *  can briefly be absent. */
+  conversation_channels?: string[]
 }
 
 export interface UnseenCountsResponse {

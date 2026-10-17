@@ -590,6 +590,19 @@ class ActivityService:
         or belonging to no Collective — is dropped rather than shown,
         because the access question cannot be answered for it.
 
+        Access only, and deliberately not liveness. A row naming a post
+        that is unpublished, made invisible by a moderator, or held by
+        Community Care still passes here: the shared path applies those
+        three conditions in ``_visible_only``, and this path does not.
+        So the prerequisite for the first producer of an addressed
+        Conversation row is both halves — channel access *and*
+        publication, moderation visibility and Community Care liveness
+        — either added here or by routing through the same filter the
+        shared rows use. The excerpt resolver already re-states the
+        three content conditions itself (see ``display_titles``), so no
+        excerpt can be derived from a held post by either path; it is
+        the stored payload title that would otherwise outlive the hold.
+
         Deliberately not applied to ``unread_count``: the bell is a
         separate surface and out of scope here. If a producer ever
         does address a conversation row to a member who cannot reach
