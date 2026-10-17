@@ -197,6 +197,12 @@ def record_thread_created(
             actor_user_id=actor_user_id or getattr(post, "author_id", None),
             conversation_id=post.id,
             payload={
+                # Last-resort wording only. An untitled discussion is
+                # given its opening line on read instead — see
+                # ``ActivityService.display_titles`` — so this is what
+                # shows when a post has neither a title nor any text.
+                # Deliberately not removed: the payload must still say
+                # something if the read-time resolver ever cannot.
                 "title": (getattr(post, "title", None) or "New conversation"),
                 "url": f"/spaces/{space.slug}/community/{post.id}",
             },

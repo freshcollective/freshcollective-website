@@ -426,17 +426,32 @@ class ActivityService:
             )
             .all()
         }
-        live_posts = {
-            c.id
-            for c in db.query(CommunityPost.id)
+        # Both the liveness answer and the Channel each post belongs
+        # to, in one query. This used to be a set of ids here plus a
+        # fresh ``db.query(CommunityPost)`` per row inside the loop
+        # below — an N+1 over a page of twenty.
+        post_rows = (
+            db.query(CommunityPost.id, CommunityPost.channel_id)
             .filter(
                 CommunityPost.id.in_(
                     {r.conversation_id for r in rows if r.conversation_id} or {""}
                 ),
                 CommunityPost.publication_status == "published",
+                # The same three conditions the count applies (see
+                # ``activity_counts._liveness_filters``). This query
+                # checked only publication, so a post hidden by
+                # Community Care or made invisible by a moderator kept
+                # its row in Recent Moments — carrying its title — while
+                # the badge had already stopped counting it, and the
+                # post detail page answered 404 to everyone but an
+                # admin. Three surfaces, two answers.
+                CommunityPost.is_visible.is_(True),
+                CommunityPost.cc_hidden_at.is_(None),
             )
             .all()
-        }
+        )
+        channel_of_post = {row.id: row.channel_id for row in post_rows}
+        live_posts = set(channel_of_post)
 
         out: list[Activity] = []
         for r in rows:
@@ -489,17 +504,68 @@ class ActivityService:
                         c.id
                         for c in accessible_channels_for_user(user, space, db)
                     }
-                post = (
-                    db.query(CommunityPost)
-                    .filter(CommunityPost.id == r.conversation_id)
-                    .first()
-                )
-                chan = getattr(post, "channel_id", None) if post else None
+                chan = channel_of_post.get(r.conversation_id)
                 if chan is not None and chan not in channel_cache[space.id]:
                     continue
 
             out.append(r)
         return out
+
+    @staticmethod
+    def display_titles(db: Session, rows: list[Activity]) -> dict[str, str]:
+        """``{activity_id: title}`` for rows whose own payload has none.
+
+        A Conversation may be published without a title, and the
+        writer stored the literal words "New conversation" for those —
+        a row that said nothing about itself in a list whose job is to
+        say what happened. This substitutes the opening line of the
+        discussion instead.
+
+        Resolved on read rather than stamped into the payload at write
+        time, deliberately. The payload is frozen the moment it is
+        written, so a stamped excerpt would outlive an edit, a
+        Community Care hold and an unpublish — and every row already in
+        the table would need a backfill to say anything better. Read
+        time fixes those rows for free and cannot go stale.
+
+        Only ever derived from a post that is published, visible and
+        not held: the two filters upstream already decide *whether* a
+        member sees the row at all, and this re-states the content
+        conditions so an excerpt can never be the thing that outlives
+        them.
+
+        Titles the author actually supplied are left completely alone.
+        """
+        from app.models.platform import CommunityPost
+        from app.community.excerpt import plain_text_excerpt
+
+        wanted = {r.conversation_id for r in rows if r.conversation_id}
+        if not wanted:
+            return {}
+
+        bodies = (
+            db.query(CommunityPost.id, CommunityPost.title, CommunityPost.body)
+            .filter(
+                CommunityPost.id.in_(wanted),
+                CommunityPost.publication_status == "published",
+                CommunityPost.is_visible.is_(True),
+                CommunityPost.cc_hidden_at.is_(None),
+            )
+            .all()
+        )
+        excerpt_of: dict[str, str] = {}
+        for post_id, title, body in bodies:
+            if title and title.strip():
+                continue          # the author named it; nothing to do
+            excerpt = plain_text_excerpt(body)
+            if excerpt:
+                excerpt_of[post_id] = excerpt
+
+        return {
+            r.id: excerpt_of[r.conversation_id]
+            for r in rows
+            if r.conversation_id and r.conversation_id in excerpt_of
+        }
 
     @staticmethod
     def filter_personal_conversation_rows(db: Session, user, rows: list[Activity]) -> list[Activity]:

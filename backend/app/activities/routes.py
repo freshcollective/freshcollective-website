@@ -87,7 +87,18 @@ class MarkAllReadResponse(BaseModel):
     marked_read: int
 
 
-def _to_out(a: Activity) -> ActivityOut:
+def _to_out(a: Activity, *, title: str | None = None) -> ActivityOut:
+    """Serialise one row.
+
+    ``title`` substitutes the payload's own when the writer had none
+    worth showing — an untitled Conversation, whose opening line is
+    resolved on read. A *copy* of the payload carries it: mutating
+    ``a.payload`` would dirty the ORM row and flush a write out of a
+    GET.
+    """
+    payload = a.payload or {}
+    if title:
+        payload = {**payload, "title": title}
     return ActivityOut(
         id=a.id,
         event_type=a.event_type,
@@ -101,7 +112,7 @@ def _to_out(a: Activity) -> ActivityOut:
         series_id=a.series_id,
         conversation_id=a.conversation_id,
         resource_id=a.resource_id,
-        payload=a.payload or {},
+        payload=payload,
         read_at=a.read_at,
         archived_at=a.archived_at,
         created_at=a.created_at,
@@ -189,8 +200,11 @@ def list_activities(
     rows = sorted(
         [*personal, *shared], key=lambda r: r.created_at, reverse=True,
     )[:limit]
+    # Resolved for the finished page only — at most ``limit`` rows, so
+    # one small query, and it covers both halves of the feed.
+    titles = ActivityService.display_titles(db, rows)
     return ActivityListResponse(
-        activities=[_to_out(r) for r in rows],
+        activities=[_to_out(r, title=titles.get(r.id)) for r in rows],
         next_before=_next_before(rows, limit),
     )
 
