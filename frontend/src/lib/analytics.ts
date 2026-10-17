@@ -38,16 +38,34 @@
  * is a signed-out check at render time, not a longer list here.
  */
 
-/** Pages tracked by exact path. */
+/**
+ * Pages tracked by exact path.
+ *
+ * Every entry here renders for an anonymous visitor. That is a
+ * stronger requirement than "the middleware does not protect it", and
+ * the difference cost three wrong entries on the first pass: a page
+ * can gate or redirect itself without the middleware knowing. ``/about``
+ * is a body of ``redirect('/')``; ``/build-your-place`` is a legacy
+ * alias that redirects; ``/build-your-collective`` is the authenticated
+ * creator ritual, which reads creator drafts and sends a signed-out
+ * caller to ``/login``. None of them belongs on a public allow-list,
+ * and ``/build-your-collective`` would have been reported for a
+ * signed-in creator.
+ *
+ * ``/about`` is simply absent rather than refused below: it is dead,
+ * not sensitive, and absence is what a fail-closed allow-list does
+ * with a page nobody named.
+ *
+ * ``analytics.test.ts`` now asserts this property from each page's
+ * source, so the next wrong entry fails a test rather than reaching
+ * production.
+ */
 const TRACKED_EXACT: ReadonlySet<string> = new Set([
   // Marketing and orientation
   '/',
-  '/about',
   '/for-creators',
   '/real-journey',
   '/membership',
-  '/build-your-collective',
-  '/build-your-place',
   '/ecosystem-interest',
   '/leadershipbodychart',
   '/tnlbook',
@@ -99,6 +117,11 @@ const NEVER_TRACKED: readonly string[] = [
   '/creator',
   '/creator-studio',
   '/creator-onboarding',
+  // The creator ritual and its legacy alias. Signed out it redirects
+  // to /login, but a signed-in creator renders it — so it is an
+  // authenticated surface, not a public one.
+  '/build-your-collective',
+  '/build-your-place',
   '/dev',
   '/api',
   // Public, but carrying ?next= / ?token=
