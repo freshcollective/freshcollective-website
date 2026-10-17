@@ -95,9 +95,9 @@ describe('SEC-011 Stage A — transport/content headers', () => {
   test('no referrer path can reach a third party, before or after', () => {
     // The property that makes the change safe rather than merely
     // tighter: both policies send origin-only cross-origin, so
-    // MailerLite, Stripe, the embeds and Cloudflare see what they
-    // always saw. Pinned as a sentence because the reasoning is the
-    // part worth preserving.
+    // MailerLite, Stripe and the embeds see what they always saw.
+    // Pinned as a sentence because the reasoning is the part worth
+    // preserving.
     assert.ok(get('Referrer-Policy').startsWith('strict-origin'))
   })
 
@@ -180,15 +180,18 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })
 
-  test('connect-src is self, MailerLite and Cloudflare Analytics only, with no DSN configured', () => {
+  test('connect-src is self and MailerLite only, with no DSN configured', () => {
     // SEC-002 keeps browser XHR same-origin. The exceptions are the
     // MailerLite opt-in form on /tnlbook, which pings its own endpoint
-    // and submits through it; Cloudflare Web Analytics, which POSTs
-    // its measurement to its own host because the beacon is embedded
-    // by this app rather than injected by Cloudflare's edge; and —
-    // only when a DSN is configured — Sentry's ingest host (asserted
-    // separately below). Asserted as an exact set rather than a
-    // contains-check, so the next addition has to be argued for here.
+    // and submits through it; and — only when a DSN is configured —
+    // Sentry's ingest host (asserted separately below). Asserted as an
+    // exact set rather than a contains-check, so the next addition has
+    // to be argued for here.
+    //
+    // The analytics reporting host that used to sit between them is
+    // gone with Cloudflare Web Analytics, and no replacement has been
+    // granted. A page-view service added later has to appear in this
+    // list to transmit at all, which is the point of pinning the set.
     //
     // Built from an explicit absent DSN rather than read from the
     // ambient environment, so the result does not depend on whether
@@ -197,7 +200,6 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(withoutSentry['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
-      'https://cloudflareinsights.com',
     ])
   })
 
@@ -225,9 +227,6 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
       'https://assets.mlcdn.com',
       'https://static.mailerlite.com',
       'https://assets.mailerlite.com',
-      // Cloudflare Web Analytics — the beacon itself. Its reporting
-      // host is a different origin and lives in connect-src.
-      'https://static.cloudflareinsights.com',
     ])
   })
 
@@ -268,6 +267,46 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
           `${directive} still allows ${v} after reCAPTCHA was removed`,
         )
       }
+    }
+  })
+
+  test('no Cloudflare Analytics origin survives in any directive', () => {
+    // Cloudflare Web Analytics was removed. Both of its origins came
+    // out with it — ``static.cloudflareinsights.com`` from script-src
+    // and ``cloudflareinsights.com`` from connect-src — and a beacon
+    // cannot report without both, so this is the directive-level proof
+    // that nothing reaches it any more.
+    //
+    // Checked across every directive rather than the two that carried
+    // them, so a reappearance anywhere fails here. Matched on
+    // ``cloudflareinsights`` and NOT on ``cloudflare``, because the R2
+    // media origins are ``*.r2.cloudflarestorage.com`` and
+    // ``*.r2.dev`` — file storage, unrelated to analytics, and
+    // deliberately still granted in img-src and media-src.
+    for (const [directive, values] of Object.entries(parsed)) {
+      for (const v of values) {
+        assert.ok(
+          !v.includes('cloudflareinsights'),
+          `${directive} still allows ${v} after analytics was removed`,
+        )
+      }
+    }
+  })
+
+  test('the R2 media origins are untouched by the analytics removal', () => {
+    // The guard above is narrow on purpose. Cloudflare R2 is where
+    // uploads live, and both directives that reach it must keep doing
+    // so — asserted here so a future broad-brush "remove Cloudflare"
+    // edit breaks a test instead of breaking every image on the site.
+    for (const directive of ['img-src', 'media-src']) {
+      assert.ok(
+        parsed[directive].includes('https://*.r2.cloudflarestorage.com'),
+        `${directive} lost the private-bucket R2 origin`,
+      )
+      assert.ok(
+        parsed[directive].includes('https://*.r2.dev'),
+        `${directive} lost the public-bucket R2 origin`,
+      )
     }
   })
 
@@ -412,7 +451,6 @@ describe('Sentry ingest is permitted, narrowly', () => {
     assert.deepEqual(parsed['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
-      'https://cloudflareinsights.com',
       EU_ORIGIN,
     ])
   })
@@ -452,7 +490,6 @@ describe('Sentry ingest is permitted, narrowly', () => {
       assert.deepEqual(parseCsp(buildCsp(dsn))['connect-src'], [
         "'self'",
         'https://assets.mailerlite.com',
-        'https://cloudflareinsights.com',
       ])
     })
   }

@@ -1,16 +1,21 @@
 /**
- * Which pages may be reported to Cloudflare Web Analytics.
+ * Which pages may be reported to an analytics service.
  *
- * This is the privacy boundary of the whole feature, so it is tested
- * for what it lets through as well as what it stops — a file that
- * only proved "nothing is tracked" would pass against a predicate
- * that always returned false, and that failure mode is invisible
- * (missing numbers, never an error).
+ * This is the privacy boundary, so it is tested for what it lets
+ * through as well as what it stops — a file that only proved "nothing
+ * is tracked" would pass against a predicate that always returned
+ * false, and that failure mode is invisible (missing numbers, never
+ * an error). That property matters more than usual now: Cloudflare
+ * Web Analytics was removed, nothing consumes ``isTrackablePath``,
+ * and a rule with no caller is exactly the kind of thing that rots
+ * quietly. These tests are what keep it honest until a replacement
+ * arrives — including the source-reading ones below, which re-check
+ * every allow-listed page against the app as it actually is today.
  *
  * The cases that matter most are the URLs carrying a bearer
  * credential. ``/invites/{token}``, ``/reset-password?token=`` and
- * ``/verify-email?token=`` would each put a live secret into an
- * analytics dashboard, and Cloudflare reports Path as a dimension.
+ * ``/verify-email?token=`` would each put a live secret into a
+ * dashboard, since Path is a reportable dimension everywhere.
  */
 
 import { describe, test } from 'node:test'
