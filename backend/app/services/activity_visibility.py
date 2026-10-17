@@ -61,7 +61,20 @@ class MemberScope:
     #: space_id -> the categories whose Area this member can reach.
     reachable_categories: Mapping[str, frozenset[str]]
     #: Channels whose posts this member may read, across every space.
+    #: The access question — what a direct link or a search hit may
+    #: open.
     accessible_channel_ids: frozenset[str]
+    #: Channels this member may be *told* about. The same set, minus
+    #: anything the creator has hidden from navigation — for a
+    #: non-caretaker, because that is exactly who the member Channel
+    #: list hides it from.
+    #:
+    #: Two sets rather than one because the two questions have
+    #: different answers. A hidden Channel stays readable by direct
+    #: link and findable in search, but an indicator pointing at it
+    #: could never be cleared: the Channel is absent from the
+    #: selector, so no visit ever reports its posts.
+    notifiable_channel_ids: frozenset[str]
     #: Pathways this member may actually open. Used only to decide
     #: whether a *step* counts — a Pathway's own publication counts on
     #: listing visibility, which is a different and looser question.
@@ -108,6 +121,7 @@ def resolve_member_scope(
         caretaker_space_ids=frozenset(),
         reachable_categories={},
         accessible_channel_ids=frozenset(),
+        notifiable_channel_ids=frozenset(),
         accessible_pathway_ids=frozenset(),
     )
     if user is None or not getattr(user, "id", None):
@@ -267,6 +281,7 @@ def resolve_member_scope(
             ConversationChannel.pathway_id,
             ConversationChannel.gathering_id,
             ConversationChannel.series_id,
+            ConversationChannel.show_in_navigation,
         )
         .filter(ConversationChannel.space_id.in_(space_ids))
         .all()
@@ -294,7 +309,13 @@ def resolve_member_scope(
         }
 
     accessible_channels: set[str] = set()
-    for cid, sid, ctype, pw_id, ev_id, series_id in channels:
+    # Navigation-hidden channels, for the non-caretaker narrowing
+    # below. Mirrors ``list_member_channels``, which applies
+    # ``show_in_navigation`` to members and not to caretakers — a
+    # caretaker sees every Channel in their selector, so a caretaker
+    # may be told about every Channel they can read.
+    hidden_ids = {c[0] for c in channels if not c[6]}
+    for cid, sid, ctype, pw_id, ev_id, series_id, _nav in channels:
         if sid in caretaker:
             accessible_channels.add(cid)
             continue
@@ -316,6 +337,12 @@ def resolve_member_scope(
             if series_id and series_id in pass_series_ids:
                 accessible_channels.add(cid)
 
+    space_of_channel = {c[0]: c[1] for c in channels}
+    notifiable_channels = {
+        cid for cid in accessible_channels
+        if space_of_channel.get(cid) in caretaker or cid not in hidden_ids
+    }
+
     return MemberScope(
         user_id=user.id,
         space_ids=frozenset(space_ids),
@@ -323,5 +350,6 @@ def resolve_member_scope(
         caretaker_space_ids=frozenset(caretaker),
         reachable_categories=reachable,
         accessible_channel_ids=frozenset(accessible_channels),
+        notifiable_channel_ids=frozenset(notifiable_channels),
         accessible_pathway_ids=frozenset(accessible_pathways),
     )

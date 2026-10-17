@@ -131,8 +131,17 @@ def _liveness_filters(scope: MemberScope, moment: datetime) -> list:
                     # — counting it leaves a badge no visit can clear.
                     CommunityPost.is_visible.is_(True),
                     CommunityPost.cc_hidden_at.is_(None),
-                    CommunityPost.channel_id.in_(scope.accessible_channel_ids)
-                    if scope.accessible_channel_ids
+                    # The *notifiable* set, not the accessible one. A
+                    # Channel hidden from navigation stays readable by
+                    # direct link and findable in search, but it is
+                    # absent from the selector — so an indicator
+                    # pointing at it could never be cleared by any
+                    # visit. One definition, used by the count, the
+                    # clamp and the presented-id resolver alike, so a
+                    # hidden Channel is uncounted, un-clamped and
+                    # un-markable together.
+                    CommunityPost.channel_id.in_(scope.notifiable_channel_ids)
+                    if scope.notifiable_channel_ids
                     else False,
                 )
             ),

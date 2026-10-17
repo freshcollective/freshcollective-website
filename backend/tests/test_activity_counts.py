@@ -665,3 +665,99 @@ class TestPathwayStatusAndAccessTypeAtTheEdges:
         db.commit()
 
         assert _counts(db, member)[space.id].pathways == 1
+
+
+# ---------------------------------------------------------------------------
+# Navigation-hidden Channels — readable, but never announced
+# ---------------------------------------------------------------------------
+
+class TestHiddenChannelsAreNotNotifiable:
+    """``show_in_navigation`` was applied on exactly one of six
+    surfaces: the member Channel list. So a Channel a member could
+    read but the creator had hidden raised a badge that no visit could
+    ever clear — the Channel is absent from the selector, so nothing
+    reports its posts.
+
+    Access is deliberately unchanged. A hidden Channel stays readable
+    by direct link and findable in search; it simply stops being
+    announced.
+    """
+
+    def _hidden_post(self, db, space, creator, *, shown):
+        ch = _channel(db, space, channel_type="open")
+        ch.show_in_navigation = shown
+        db.flush()
+        post = _post(db, space, ch, creator)
+        _activity(db, space, creator, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        return ch
+
+    def test_a_hidden_channel_counts_nothing(self, db, make_space, make_user):
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        self._hidden_post(db, space, creator, shown=False)
+        db.commit()
+
+        assert _counts(db, member)[space.id].conversations == 0
+
+    def test_the_same_channel_counts_once_shown(self, db, make_space, make_user):
+        # The control. A filter that dropped every conversation row
+        # would pass the test above.
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = self._hidden_post(db, space, creator, shown=False)
+        db.commit()
+        assert _counts(db, member)[space.id].conversations == 0
+
+        ch.show_in_navigation = True
+        db.commit()
+        assert _counts(db, member)[space.id].conversations == 1
+
+    def test_hiding_does_not_revoke_access(self, db, make_space, make_user):
+        """The two sets answer different questions, and the hidden
+        Channel must stay in the access one — that is what keeps a
+        direct link and a search hit working."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = self._hidden_post(db, space, creator, shown=False)
+        db.commit()
+
+        scope = resolve_member_scope(db, member)
+        assert ch.id in scope.accessible_channel_ids, (
+            "hiding a Channel from navigation must not revoke the right "
+            "to read it"
+        )
+        assert ch.id not in scope.notifiable_channel_ids
+
+    def test_a_caretaker_is_still_told(self, db, make_space, make_user):
+        """A caretaker sees every Channel in their own selector —
+        ``list_member_channels`` applies ``show_in_navigation`` to
+        members only — so a caretaker can reach a hidden Channel and
+        may be told about it."""
+        space = make_space(); creator = make_user(); mod = make_user()
+        _member(db, mod, space, role=SpaceRole.moderator)
+        ch = self._hidden_post(db, space, creator, shown=False)
+        db.commit()
+
+        scope = resolve_member_scope(db, mod)
+        assert ch.id in scope.notifiable_channel_ids
+        assert _counts(db, mod)[space.id].conversations == 1
+
+    def test_an_inaccessible_channel_is_still_excluded(self, db, make_space, make_user):
+        """Regression: narrowing to the notifiable set must not have
+        widened anything. A private Channel the member is not in stays
+        out of both sets, shown in navigation or not."""
+        space = make_space(); creator = make_user(); member = make_user()
+        _member(db, member, space)
+        ch = _channel(db, space, channel_type="private")
+        ch.show_in_navigation = True
+        db.flush()
+        post = _post(db, space, ch, creator)
+        _activity(db, space, creator, category="conversations",
+                  event_type="conversation_created", conversation_id=post.id)
+        db.commit()
+
+        scope = resolve_member_scope(db, member)
+        assert ch.id not in scope.accessible_channel_ids
+        assert ch.id not in scope.notifiable_channel_ids
+        assert _counts(db, member)[space.id].conversations == 0
