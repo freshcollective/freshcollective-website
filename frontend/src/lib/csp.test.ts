@@ -83,8 +83,22 @@ describe('SEC-011 Stage A — transport/content headers', () => {
     assert.equal(get('X-Content-Type-Options'), 'nosniff')
   })
 
-  test('Referrer-Policy: strict-origin-when-cross-origin is set', () => {
-    assert.equal(get('Referrer-Policy'), 'strict-origin-when-cross-origin')
+  test('Referrer-Policy: strict-origin is set', () => {
+    // Not ``strict-origin-when-cross-origin``. The two differ only on
+    // a same-origin navigation, where the looser one sends the full
+    // URL — putting private member paths into the next page's
+    // ``document.referrer``, which is exactly what an analytics beacon
+    // reads and transmits.
+    assert.equal(get('Referrer-Policy'), 'strict-origin')
+  })
+
+  test('no referrer path can reach a third party, before or after', () => {
+    // The property that makes the change safe rather than merely
+    // tighter: both policies send origin-only cross-origin, so
+    // MailerLite, Stripe, the embeds and Cloudflare see what they
+    // always saw. Pinned as a sentence because the reasoning is the
+    // part worth preserving.
+    assert.ok(get('Referrer-Policy').startsWith('strict-origin'))
   })
 
   test('X-Frame-Options: DENY is set', () => {

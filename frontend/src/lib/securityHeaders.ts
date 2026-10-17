@@ -309,7 +309,24 @@ const PERMISSIONS_POLICY = [
 export const SECURITY_HEADERS: readonly { key: string; value: string }[] = [
   { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
-  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  // ``strict-origin`` rather than ``strict-origin-when-cross-origin``.
+  //
+  // The two differ in exactly one case: a same-origin navigation. The
+  // looser policy sends the full URL there, which put private member
+  // paths — a conversation, a thread, an invitation token's own URL —
+  // into ``document.referrer`` on the next page, where any analytics
+  // beacon reads them. ``strict-origin`` sends the origin and nothing
+  // else, so there is no path to leak.
+  //
+  // Cross-origin behaviour is unchanged. Both policies already send
+  // origin-only to a third party and nothing at all on an HTTPS→HTTP
+  // downgrade, so MailerLite, Stripe, the video embeds and Cloudflare
+  // see precisely what they saw before. What is given up is referrer
+  // *paths for internal navigation* — which nothing in this codebase
+  // reads (no backend handler inspects ``Referer``, no component
+  // reads ``document.referrer``) and which we actively do not want
+  // recorded.
+  { key: 'Referrer-Policy', value: 'strict-origin' },
   { key: 'Permissions-Policy', value: PERMISSIONS_POLICY },
   { key: 'X-Frame-Options', value: 'DENY' },
   // SEC-011 Stage C — enforcing. Value is unchanged from Stage A;

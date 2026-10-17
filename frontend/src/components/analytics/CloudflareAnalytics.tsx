@@ -12,22 +12,43 @@ import { isTrackablePath } from '@/lib/analytics'
  * navigation whether this page may be reported at all
  * (``isTrackablePath``), and reports it by loading Cloudflare's beacon.
  *
- * Why the beacon is loaded per page instead of once
- * -------------------------------------------------
+ * Why SPA mode is off
+ * -------------------
  *
- * Cloudflare's own single-page-app mode (``spa: true``) works by
- * patching ``history.pushState`` and listening for ``popstate``. Once
- * that patch is installed it reports *every* subsequent route the
- * visitor opens — including, for a signed-in member who happened to
- * arrive via a public page, their dashboard and their private
- * conversations. Nothing in this component could then intervene:
- * unmounting the element does not remove the patch.
+ * Cloudflare's single-page-app mode works by patching
+ * ``history.pushState`` and listening for ``popstate``. Once that
+ * patch is installed it reports *every* subsequent route the visitor
+ * opens — including, for a signed-in member who happened to arrive
+ * via a public page, their dashboard and their private conversations.
+ * Nothing here could then intervene: unmounting the element does not
+ * remove the patch, and the ``popstate`` listener cannot be
+ * intercepted at all.
  *
- * So SPA mode is explicitly **off**, and this component does the
- * reporting itself: a fresh beacon per allowed page, one page view
- * each. The beacon never touches the History API, which means it can
- * only ever report a path this module decided to allow. Every
- * transmission is one we caused.
+ * **It is on by default.** Read from the beacon source (js 2026.10.1):
+ * ``spa == null`` resolves to ``HistoryAndNavigationAPI``, so the
+ * snippet exactly as the dashboard supplies it patches the History
+ * API. ``spa: false`` resolves to ``None``, and the whole
+ * instrumentation block — soft-navigation observer, Navigation API
+ * listener, ``pushState`` patch, ``popstate`` listener — sits behind
+ * that one check. Passing it explicitly is therefore load-bearing,
+ * not defensive.
+ *
+ * What is transmitted
+ * -------------------
+ *
+ * Every URL in the payload passes through the beacon's own sanitiser
+ * before it leaves the browser: it clears ``search``, ``hash``,
+ * ``username`` and ``password``, so an allowed page visited as
+ * ``/about?utm_source=x#team`` reports ``/about`` and nothing more. A
+ * query parameter can never be transmitted, which is why the
+ * allow-list only has to be right about paths.
+ *
+ * The payload also carries a referrer, path intact. That is not a
+ * path this module chose, so it is governed elsewhere: the app sends
+ * ``Referrer-Policy: strict-origin`` (see ``securityHeaders``), which
+ * reduces a same-origin referrer to the bare origin. Without that
+ * header a member arriving at a public page by a full page load from
+ * a private one would hand over the private path.
  *
  * Why a classic script and not the ``type="module"`` snippet
  * ----------------------------------------------------------
@@ -90,9 +111,10 @@ export default function CloudflareAnalytics() {
     // script the parser encounters in the document.
     script.setAttribute(OWNED_ATTR, 'true')
     // ``spa: false`` is the load-bearing half of this component — see
-    // the note above. Without it the beacon patches the History API
-    // and follows the visitor into pages this module exists to
-    // exclude.
+    // the note above. Without it — including by simply omitting the
+    // key, which is how the dashboard's own snippet comes — the beacon
+    // patches the History API and follows the visitor into pages this
+    // module exists to exclude.
     script.setAttribute(
       'data-cf-beacon',
       JSON.stringify({ token: BEACON_TOKEN, spa: false }),
