@@ -70,12 +70,55 @@ const HEADERS = read('src/lib/securityHeaders.ts')
 
 describe('the beacon cannot follow a visitor', () => {
   test('SPA mode is explicitly disabled', () => {
+    // Required, not defensive: read from the beacon source
+    // (js 2026.10.1), ``spa == null`` resolves to
+    // ``HistoryAndNavigationAPI``, so the dashboard's own snippet —
+    // which carries no ``spa`` key — patches the History API. Only
+    // ``spa: false`` resolves to ``None``, and the whole
+    // instrumentation block (soft-navigation observer, Navigation API
+    // listener, pushState patch, popstate listener) sits behind that
+    // single check.
     assert.match(BEACON, /spa: false/)
     assert.ok(
       !/spa: true/.test(BEACON),
       'SPA mode patches history.pushState and would report every route '
-        + 'the visitor opens, defeating the allow-list entirely',
+        + 'the visitor opens, defeating the allow-list entirely — and '
+        + 'the popstate listener it adds cannot be intercepted at all',
     )
+  })
+
+  test('multi-load is enabled, or nothing after the first page reports', () => {
+    // The other half, and the one that looks removable. ``load``
+    // defaults to ``"single"``; on a second execution the beacon hits
+    // ``"single" === window.__cfBeacon.load`` and returns *before* the
+    // token gate and before any code path that transmits — the page
+    // view it just recorded sits in a closure-local buffer that is
+    // then abandoned. So without this key, client-side navigation is
+    // not under-counted, it is not counted at all, and nothing fails
+    // loudly to say so.
+    //
+    // It survives across executions because the beacon's config merge
+    // is ``Object.assign({}, parsed, window.__cfBeacon)`` — the value
+    // the first execution stored wins over each later parse.
+    assert.match(BEACON, /load: 'multi'/)
+  })
+
+  test('both settings travel in the data attribute, where they are read', () => {
+    // ``load`` is only honoured from ``data-cf-beacon``: the beacon's
+    // src-query parser reads ``token`` and ``spa`` and nothing else.
+    assert.match(
+      BEACON,
+      /'data-cf-beacon',\s*JSON\.stringify\(\{ token: BEACON_TOKEN, spa: false, load: 'multi' \}\)/,
+    )
+  })
+
+  test('the accumulation it causes is documented, not discovered later', () => {
+    // A reader who finds ten visibilitychange listeners in a long
+    // session should find the reason in this file rather than in a
+    // bug report.
+    const raw = readFileSync('src/components/analytics/CloudflareAnalytics.tsx', 'utf8')
+    assert.match(raw, /Known limitation/)
+    assert.match(raw, /Core Web Vitals/)
   })
 
   test('the beacon is a classic script, so it can report per page', () => {

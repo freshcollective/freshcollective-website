@@ -62,6 +62,33 @@ import { isTrackablePath } from '@/lib/analytics'
  * differs, and only because the module form cannot express "report
  * again".
  *
+ * Known limitation: what a long visit accumulates
+ * -----------------------------------------------
+ *
+ * ``load: "multi"`` means the beacon's setup runs once per reported
+ * page, and two things are registered each time: a
+ * ``visibilitychange`` listener, and the web-vitals observers. They
+ * are not removed when the element is — removing a script tag does
+ * not undo what the script did — so a visit that passes through ten
+ * tracked pages in one document holds ten of each.
+ *
+ * Accepted, with its shape understood rather than guessed at. The
+ * tracked surface is the public site, the beacon never executes on a
+ * member area, and the History API instrumentation stays off, so the
+ * long navigation chains inside the app cost nothing here. A visitor
+ * reading five or ten public pages is the realistic case and browsers
+ * carry that without complaint. It does grow with the length of a
+ * single visit rather than with time, so it is unbounded in
+ * principle.
+ *
+ * The real cost is to Core Web Vitals, not to page views. Each
+ * execution measures from the same document's performance timeline,
+ * so the second and later page views in a visit report the *first*
+ * load's LCP rather than their own — performance data for those rows
+ * should not be trusted. Page view counts are unaffected: each
+ * execution sends its own ``pageloadId`` with no re-send marker, so
+ * Cloudflare counts each as a distinct view.
+ *
  * Duplicate page views
  * --------------------
  *
@@ -110,14 +137,25 @@ export default function CloudflareAnalytics() {
     // the attribute would be inert here — it only means something on a
     // script the parser encounters in the document.
     script.setAttribute(OWNED_ATTR, 'true')
-    // ``spa: false`` is the load-bearing half of this component — see
-    // the note above. Without it — including by simply omitting the
-    // key, which is how the dashboard's own snippet comes — the beacon
-    // patches the History API and follows the visitor into pages this
-    // module exists to exclude.
+    // Two settings, and the component does not work without either.
+    //
+    // ``spa: false`` — see the note above. Without it, including by
+    // simply omitting the key (which is how the dashboard's own
+    // snippet comes), the beacon patches the History API and follows
+    // the visitor into pages this module exists to exclude.
+    //
+    // ``load: "multi"`` — without it the beacon reports only the first
+    // page of each visit, silently. ``load`` defaults to ``"single"``,
+    // and on a second execution the script returns early, before the
+    // token gate and before anything that transmits; the page view it
+    // recorded goes into a closure-local buffer that is then
+    // abandoned. ``"multi"`` is Cloudflare's own key for a document
+    // that loads the beacon more than once, and it persists across
+    // executions because the config merge lets the existing
+    // ``window.__cfBeacon`` win.
     script.setAttribute(
       'data-cf-beacon',
-      JSON.stringify({ token: BEACON_TOKEN, spa: false }),
+      JSON.stringify({ token: BEACON_TOKEN, spa: false, load: 'multi' }),
     )
     document.body.appendChild(script)
   }, [pathname])
