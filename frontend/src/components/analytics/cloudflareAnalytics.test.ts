@@ -228,3 +228,39 @@ describe('the policy grants no more than the beacon needs', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// 5 · Client-side navigation into a private page
+// ---------------------------------------------------------------------------
+
+describe('a navigation into a private page reports nothing new', () => {
+  test('the gate is re-evaluated on every pathname change', () => {
+    // The effect depends on ``pathname`` alone, so a client-side
+    // navigation re-runs it and the allow-list is consulted again.
+    // An effect keyed on nothing would decide once, on the public page,
+    // and never reconsider.
+    assert.match(BEACON, /\}, \[pathname\]\)/)
+    assert.match(BEACON, /const pathname = usePathname\(\)/)
+  })
+
+  test('nothing is inserted when the destination is not allowed', () => {
+    // No element, so no new execution, so no page view. The beacon
+    // already running cannot add one either: with SPA mode off it
+    // installs no pushState patch and no popstate listener.
+    const gate = BEACON.indexOf('isTrackablePath(pathname)')
+    const create = BEACON.indexOf("createElement('script')")
+    const append = BEACON.indexOf('appendChild(script)')
+    assert.ok(gate !== -1 && gate < create && create < append)
+  })
+
+  test('the surviving-listener limitation is documented, not forgotten', () => {
+    // The allow-list governs insertion, not an already-running beacon.
+    // Its visibilitychange listener sits outside the SPA gate and
+    // computes its location when the tab is hidden, so it can carry a
+    // private path. Unfixable from here; recorded so it stays a known
+    // trade.
+    const raw = readFileSync('src/components/analytics/CloudflareAnalytics.tsx', 'utf8')
+    assert.match(raw, /outlives the page that loaded it/)
+    assert.match(raw, /visibilitychange/)
+  })
+})

@@ -62,6 +62,39 @@ import { isTrackablePath } from '@/lib/analytics'
  * differs, and only because the module form cannot express "report
  * again".
  *
+ * Known limitation: a beacon outlives the page that loaded it
+ * -----------------------------------------------------------
+ *
+ * The allow-list decides what is *inserted*. It cannot decide what an
+ * already-running beacon does, and one thing it does survives
+ * navigation: each execution registers
+ * ``document.addEventListener("visibilitychange", …)``, which sits
+ * **outside** the SPA gate, so ``spa: false`` does not prevent it. On
+ * the first tab-hide that listener sends a Core Web Vitals payload,
+ * and the payload's ``location`` is computed then — ``_t(type, e)``
+ * builds ``location: ot(e || rt())`` and the handler calls it with no
+ * argument, so ``rt()`` reads ``window.location`` **at the moment the
+ * tab is hidden**, not the page the beacon loaded on.
+ *
+ * So a member who arrives on a public page, navigates client-side into
+ * a private one and then hides the tab transmits that private path —
+ * path only, since the sanitiser strips the query, and as performance
+ * data rather than a page view, but paths here can carry identifiers
+ * (``/messages/{threadId}``, ``/profile/{userId}``). With
+ * ``load: "multi"`` there is one such payload per tracked page visited
+ * in that document.
+ *
+ * Not fixable from here. The beacon exposes no key that disables
+ * vitals collection, and the listener cannot be removed without a
+ * reference to it. Nor is reverting ``load: "multi"`` a mitigation —
+ * the very first beacon on the landing page leaks the same way; multi
+ * only multiplies the count. The one robust fix is to stop loading the
+ * beacon for signed-in visitors, since every path a signed-out visitor
+ * can reach is public by construction; that needs a session read in
+ * the root layout, which costs static rendering on every route, so it
+ * is a decision rather than a cleanup. Recorded here so it is a known
+ * trade rather than a surprise.
+ *
  * Known limitation: what a long visit accumulates
  * -----------------------------------------------
  *
