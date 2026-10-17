@@ -1,5 +1,19 @@
 /**
- * Which pages Cloudflare Web Analytics is allowed to see.
+ * Which pages any analytics service is allowed to see.
+ *
+ * **No service reads this today.** Cloudflare Web Analytics was
+ * removed and nothing replaced it, so this module has no runtime
+ * caller. It is kept because the rule is the hard part and it is not
+ * vendor-specific: whatever is adopted next — Google Analytics,
+ * Umami, something else — needs exactly this answer, and rebuilding
+ * it from scratch is how the wrong page gets reported. The first pass
+ * at this list contained three pages that only looked public; the
+ * tests that caught them are still here.
+ *
+ * Nothing in it grants a service anything. A beacon also needs a
+ * ``script-src`` and a ``connect-src`` origin, and ``cspDirectives``
+ * in ``securityHeaders.ts`` now names none — so adopting a service is
+ * a deliberate act in two files, not an import away.
  *
  * An allow-list, not a deny-list, and that choice is the whole safety
  * story. A deny-list fails open: the next route someone adds is
@@ -21,9 +35,9 @@
  *
  * ``/invites/{token}``, ``/reset-password?token=`` and
  * ``/verify-email?token=`` each carry a bearer credential in the URL.
- * Cloudflare records Path as a reportable dimension, so a tracked
- * visit to one of those would put a live token in an analytics
- * dashboard. They are absent from the allow-list *and* named in
+ * Path is a reportable dimension in every analytics product worth
+ * naming, so a tracked visit to one of those would put a live token
+ * in a dashboard. They are absent from the allow-list *and* named in
  * ``NEVER_TRACKED`` below — two independent reasons they can never be
  * reported, because this is the one mistake with no recovery.
  *
@@ -141,10 +155,11 @@ function isUnder(pathname: string, prefix: string): boolean {
 }
 
 /**
- * May this page be reported to Cloudflare Web Analytics?
+ * May this page be reported to an analytics service?
  *
  * Pure, so the rule can be tested directly rather than inferred from
- * a rendered component.
+ * a rendered component — which is what keeps it meaningful while it
+ * has no caller.
  */
 export function isTrackablePath(pathname: string): boolean {
   if (!pathname || !pathname.startsWith('/')) return false

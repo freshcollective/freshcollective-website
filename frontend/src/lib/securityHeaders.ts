@@ -122,25 +122,6 @@ const MAILERLITE_API_ORIGIN = 'https://assets.mailerlite.com'
 const MAILERLITE_JQUERY_ORIGIN = 'https://assets.mlcdn.com'
 const MAILERLITE_STATIC_ORIGIN = 'https://static.mailerlite.com'
 
-/**
- * Cloudflare Web Analytics.
- *
- * Two origins, two jobs. ``static.cloudflareinsights.com`` serves the
- * beacon, so it belongs to ``script-src``;
- * ``https://cloudflareinsights.com`` receives the measurement, so it
- * belongs to ``connect-src``. Both are needed because the beacon is
- * embedded by this app rather than injected by Cloudflare's own edge —
- * an edge-injected beacon reports same-origin to ``/cdn-cgi/rum`` and
- * would be covered by ``'self'`` alone, but this site's DNS is at
- * GoDaddy and its Cloudflare is Render's, not ours, so the embedded
- * form is the only one available.
- *
- * Exact origins, scheme included, no wildcard — as with every other
- * entry in this policy.
- */
-const CF_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
-const CF_ANALYTICS_REPORT_ORIGIN = 'https://cloudflareinsights.com'
-
 /** Every origin webforms.min.js needs to reach to bind its handler. */
 const MAILERLITE_SCRIPT_SOURCES: readonly string[] = [
   MAILERLITE_FORM_SCRIPT_ORIGIN,
@@ -211,12 +192,7 @@ export function cspDirectives(
     // is accepted for Stage A per policy — nonce/hash strategy is
     // deferred until after SEC-016 lands, since SEC-001 sanitisation
     // already closes the primary XSS surface.
-    'script-src': [
-      "'self'",
-      "'unsafe-inline'",
-      ...MAILERLITE_SCRIPT_SOURCES,
-      CF_ANALYTICS_SCRIPT_ORIGIN,
-    ],
+    'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
     // Same reasoning as script-src, plus pervasive React inline
     // ``style={…}`` attributes that would require every value to be
     // nonced/hashed. Not tractable without a large refactor.
@@ -234,13 +210,17 @@ export function cspDirectives(
     // own endpoint from the /tnlbook form, and — once a DSN is
     // configured — Sentry's ingest host for error envelopes. The Sentry
     // entry appears only when a DSN is set and only as the one exact
-    // origin that DSN names; with no DSN this directive is byte-for-byte
-    // what it was before Phase 3.
+    // origin that DSN names.
+    //
+    // No analytics origin is granted here. Cloudflare Web Analytics
+    // was removed, and nothing replaced it: a page-view beacon needs
+    // both a script host and a reporting host, so whichever service
+    // comes next has to be argued for in this directive before it can
+    // transmit anything at all.
     'connect-src': [
       "'self'",
       MAILERLITE_API_ORIGIN,
-      CF_ANALYTICS_REPORT_ORIGIN,
-        ...(sentryIngest ? [sentryIngest] : []),
+      ...(sentryIngest ? [sentryIngest] : []),
     ],
     // <audio> and <video> sources. Same host set as ``img-src`` minus
     // the ``data:``/``blob:`` variants that only apply to previews.
@@ -314,14 +294,21 @@ export const SECURITY_HEADERS: readonly { key: string; value: string }[] = [
   // The two differ in exactly one case: a same-origin navigation. The
   // looser policy sends the full URL there, which put private member
   // paths — a conversation, a thread, an invitation token's own URL —
-  // into ``document.referrer`` on the next page, where any analytics
-  // beacon reads them. ``strict-origin`` sends the origin and nothing
-  // else, so there is no path to leak.
+  // into ``document.referrer`` on the next page, where any third-party
+  // script can read them. ``strict-origin`` sends the origin and
+  // nothing else, so there is no path to leak.
+  //
+  // Kept after Cloudflare Web Analytics was removed, and not because
+  // of it. The header is what stops a private path reaching *any*
+  // embedded third party — the MailerLite loader chain and the video
+  // embeds are here today — and it is what a future analytics service
+  // would otherwise be handed on the first full page load out of a
+  // member area.
   //
   // Cross-origin behaviour is unchanged. Both policies already send
   // origin-only to a third party and nothing at all on an HTTPS→HTTP
-  // downgrade, so MailerLite, Stripe, the video embeds and Cloudflare
-  // see precisely what they saw before. What is given up is referrer
+  // downgrade, so MailerLite, Stripe and the video embeds see
+  // precisely what they saw before. What is given up is referrer
   // *paths for internal navigation* — which nothing in this codebase
   // reads (no backend handler inspects ``Referer``, no component
   // reads ``document.referrer``) and which we actively do not want

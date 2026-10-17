@@ -3,7 +3,6 @@ import "./globals.css";
 import { FreshProviders } from "@/components/platform/FreshProviders";
 import { BrandProvider } from '@/components/brand/BrandProvider'
 import { getBrandOverrides } from '@/lib/serverApi'
-import CloudflareAnalytics from '@/components/analytics/CloudflareAnalytics'
 
 export const metadata: Metadata = {
   title: "Fresh Collective",
@@ -39,11 +38,6 @@ export default async function RootLayout({
         <BrandProvider overrides={brandOverrides}>
           <FreshProviders>{children}</FreshProviders>
         </BrandProvider>
-        {/* Renders nothing, and reports nothing on any page its own
-            allow-list refuses. Mounted here so one component sees
-            every navigation; it reads only the pathname, so this
-            layout stays as static as it was. */}
-        <CloudflareAnalytics />
       </body>
     </html>
   );
