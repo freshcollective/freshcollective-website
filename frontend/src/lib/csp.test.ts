@@ -166,13 +166,15 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })
 
-  test('connect-src is self plus MailerLite only, with no DSN configured', () => {
+  test('connect-src is self, MailerLite and Cloudflare Analytics only, with no DSN configured', () => {
     // SEC-002 keeps browser XHR same-origin. The exceptions are the
     // MailerLite opt-in form on /tnlbook, which pings its own endpoint
-    // and submits through it, and — only when a DSN is configured —
-    // Sentry's ingest host (asserted separately below). Asserted as an
-    // exact set rather than a contains-check, so the next addition has
-    // to be argued for here.
+    // and submits through it; Cloudflare Web Analytics, which POSTs
+    // its measurement to its own host because the beacon is embedded
+    // by this app rather than injected by Cloudflare's edge; and —
+    // only when a DSN is configured — Sentry's ingest host (asserted
+    // separately below). Asserted as an exact set rather than a
+    // contains-check, so the next addition has to be argued for here.
     //
     // Built from an explicit absent DSN rather than read from the
     // ambient environment, so the result does not depend on whether
@@ -181,6 +183,7 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(withoutSentry['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
+      'https://cloudflareinsights.com',
     ])
   })
 
@@ -208,6 +211,9 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
       'https://assets.mlcdn.com',
       'https://static.mailerlite.com',
       'https://assets.mailerlite.com',
+      // Cloudflare Web Analytics — the beacon itself. Its reporting
+      // host is a different origin and lives in connect-src.
+      'https://static.cloudflareinsights.com',
     ])
   })
 
@@ -392,6 +398,7 @@ describe('Sentry ingest is permitted, narrowly', () => {
     assert.deepEqual(parsed['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
+      'https://cloudflareinsights.com',
       EU_ORIGIN,
     ])
   })
@@ -431,6 +438,7 @@ describe('Sentry ingest is permitted, narrowly', () => {
       assert.deepEqual(parseCsp(buildCsp(dsn))['connect-src'], [
         "'self'",
         'https://assets.mailerlite.com',
+        'https://cloudflareinsights.com',
       ])
     })
   }

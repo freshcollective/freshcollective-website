@@ -122,6 +122,25 @@ const MAILERLITE_API_ORIGIN = 'https://assets.mailerlite.com'
 const MAILERLITE_JQUERY_ORIGIN = 'https://assets.mlcdn.com'
 const MAILERLITE_STATIC_ORIGIN = 'https://static.mailerlite.com'
 
+/**
+ * Cloudflare Web Analytics.
+ *
+ * Two origins, two jobs. ``static.cloudflareinsights.com`` serves the
+ * beacon, so it belongs to ``script-src``;
+ * ``https://cloudflareinsights.com`` receives the measurement, so it
+ * belongs to ``connect-src``. Both are needed because the beacon is
+ * embedded by this app rather than injected by Cloudflare's own edge —
+ * an edge-injected beacon reports same-origin to ``/cdn-cgi/rum`` and
+ * would be covered by ``'self'`` alone, but this site's DNS is at
+ * GoDaddy and its Cloudflare is Render's, not ours, so the embedded
+ * form is the only one available.
+ *
+ * Exact origins, scheme included, no wildcard — as with every other
+ * entry in this policy.
+ */
+const CF_ANALYTICS_SCRIPT_ORIGIN = 'https://static.cloudflareinsights.com'
+const CF_ANALYTICS_REPORT_ORIGIN = 'https://cloudflareinsights.com'
+
 /** Every origin webforms.min.js needs to reach to bind its handler. */
 const MAILERLITE_SCRIPT_SOURCES: readonly string[] = [
   MAILERLITE_FORM_SCRIPT_ORIGIN,
@@ -192,7 +211,12 @@ export function cspDirectives(
     // is accepted for Stage A per policy — nonce/hash strategy is
     // deferred until after SEC-016 lands, since SEC-001 sanitisation
     // already closes the primary XSS surface.
-    'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
+    'script-src': [
+      "'self'",
+      "'unsafe-inline'",
+      ...MAILERLITE_SCRIPT_SOURCES,
+      CF_ANALYTICS_SCRIPT_ORIGIN,
+    ],
     // Same reasoning as script-src, plus pervasive React inline
     // ``style={…}`` attributes that would require every value to be
     // nonced/hashed. Not tractable without a large refactor.
@@ -215,6 +239,7 @@ export function cspDirectives(
     'connect-src': [
       "'self'",
       MAILERLITE_API_ORIGIN,
+      CF_ANALYTICS_REPORT_ORIGIN,
         ...(sentryIngest ? [sentryIngest] : []),
     ],
     // <audio> and <video> sources. Same host set as ``img-src`` minus
