@@ -347,3 +347,93 @@ describe('no allow-listed page gates or redirects itself', () => {
     assert.equal(__lists.TRACKED_PATTERNS.length, PAGE_OF_PATTERN.length)
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// 9 · The private surfaces, named one by one
+// ---------------------------------------------------------------------------
+
+describe('no private surface can be reported, by any route into it', () => {
+  // Written as the explicit list rather than by category, so the
+  // answer to "is X excluded?" is greppable. Each entry is tested at
+  // its root, one level deep, and with a query string, because a
+  // client-side navigation can arrive at any of those shapes.
+
+  const PRIVATE: ReadonlyArray<[string, string]> = [
+    ['the member dashboard', '/dashboard'],
+    ['platform administration', '/admin'],
+    ['Creator Studio', '/creator-studio'],
+    ['the legacy creator routes', '/creator'],
+    ['the creator ritual', '/build-your-collective'],
+    ['account settings', '/settings'],
+    ['onboarding', '/onboarding'],
+    ['the personal notification centre', '/notifications'],
+    ['checkout', '/checkout'],
+    ['private messages', '/messages'],
+    ['member profiles', '/profile'],
+  ]
+
+  for (const [label, root] of PRIVATE) {
+    test(`${label} (${root}) is excluded at every depth`, () => {
+      for (const p of [root, `${root}/`, `${root}/abc`, `${root}/abc/def`, `${root}?x=1`]) {
+        assert.equal(isTrackablePath(p), false, `${p} must not be tracked`)
+      }
+    })
+  }
+
+  test('private Collective areas are excluded, including identifiers', () => {
+    // ``/spaces/{slug}`` is not proxy-protected — each area decides for
+    // itself server-side — so these are excluded by the allow-list
+    // naming only the two public About shapes, never by middleware.
+    for (const p of [
+      '/spaces/moonlit-circle',
+      '/spaces/moonlit-circle/community',
+      '/spaces/moonlit-circle/community/cp_abc123',
+      '/spaces/moonlit-circle/messages',
+      '/spaces/moonlit-circle/messages/thr_abc123',
+      '/spaces/moonlit-circle/members',
+      '/spaces/moonlit-circle/members/mem_abc123',
+      '/spaces/moonlit-circle/events',
+      '/spaces/moonlit-circle/events/evt_abc123',
+      '/spaces/moonlit-circle/pathways',
+      '/spaces/moonlit-circle/pathways/slowing-down',
+      '/spaces/moonlit-circle/pathways/slowing-down/step-one',
+      '/spaces/moonlit-circle/gathering-series/term-4',
+      '/spaces/moonlit-circle/offers/term-pass',
+    ]) {
+      assert.equal(isTrackablePath(p), false, `${p} must not be tracked`)
+    }
+  })
+
+  test('the two public Collective shapes are still tracked, and only those', () => {
+    // The control. Without it, an allow-list that had quietly stopped
+    // matching anything would pass every assertion above.
+    assert.equal(isTrackablePath('/spaces/moonlit-circle/about'), true)
+    assert.equal(
+      isTrackablePath('/spaces/moonlit-circle/pathways/slowing-down/about'),
+      true,
+    )
+  })
+
+  test('token-bearing URLs are excluded whether the token is in path or query', () => {
+    const token = 'a'.repeat(64)
+    for (const p of [
+      '/invites/8f3c1d9e4b7a2056',
+      `/invites/${token}`,
+      `/reset-password?token=${token}`,
+      `/verify-email?token=${token}`,
+      '/login?next=%2Fspaces%2Fmoonlit-circle%2Fcommunity',
+    ]) {
+      assert.equal(isTrackablePath(p), false, `${p} must not be tracked`)
+    }
+  })
+
+  test('every private root above is refused, not merely unlisted', () => {
+    for (const [, root] of PRIVATE) {
+      assert.ok(
+        __lists.NEVER_TRACKED.includes(root),
+        `${root} should be in NEVER_TRACKED so no allow-list edit can reach it`,
+      )
+    }
+  })
+})
