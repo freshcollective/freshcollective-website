@@ -124,6 +124,20 @@ class OfferingFulfilmentKind(str, enum.Enum):
     digital_download = "digital_download"
 
 
+class OfferingPricingKind(str, enum.Enum):
+    """What the creator chose on the Pricing tab.
+
+    Two options, which is the whole point: a creator sells a digital
+    product without meeting Payment Options, grants or Stripe. The
+    mapping from this intent onto the commerce tables is Phase D's
+    job — see migration 160 for why it is not done at the moment the
+    creator picks.
+    """
+
+    free = "free"
+    one_time = "one_time"
+
+
 class OfferingFileValidationStatus(str, enum.Enum):
     """Where a file stands in structural validation.
 
@@ -177,6 +191,11 @@ OFFERING_STATUSES: tuple[str, ...] = tuple(s.value for s in OfferingStatus)
 #: Values accepted by the ``offerings.fulfilment_kind`` CHECK constraint.
 OFFERING_FULFILMENT_KINDS: tuple[str, ...] = tuple(
     k.value for k in OfferingFulfilmentKind
+)
+
+#: Values accepted by the ``offerings.pricing_kind`` CHECK.
+OFFERING_PRICING_KINDS: tuple[str, ...] = tuple(
+    k.value for k in OfferingPricingKind
 )
 
 #: Values accepted by the ``offering_files.validation_status`` CHECK.
@@ -263,6 +282,20 @@ class Offering(Base):
 
     #: Set once, on first publish. Not cleared by unpublishing — it
     #: records when the thing first became available, which stays true.
+    # ── Pricing intent (Phase B4) ──────────────────────────────────────
+    #
+    # NULL until the creator reaches the Pricing tab. Deliberately not a
+    # ``PaymentOption``: ``payment_option_grants`` has no ``offering_id``
+    # and no ``offering`` grant kind yet, both deferred to Phase D, so
+    # provisioning now would write a commerce row nothing can fulfil.
+    # The CHECK ``ck_offerings_pricing_shape`` keeps the pair consistent.
+    pricing_kind: Mapped[str | None] = mapped_column(
+        String(20), nullable=True,
+    )
+
+    #: Minor units, in the Collective's existing currency. NULL for free.
+    price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
@@ -303,7 +336,27 @@ class Offering(Base):
         # Collective", so the composite leads with the column that
         # narrows most.
         Index("ix_offerings_space_status", "space_id", "status"),
+        CheckConstraint(
+            "pricing_kind IS NULL OR pricing_kind IN ('free', 'one_time')",
+            name="ck_offerings_pricing_kind",
+        ),
+        CheckConstraint(
+            "(pricing_kind IS NULL AND price_cents IS NULL)"
+            " OR (pricing_kind = 'free' AND (price_cents IS NULL OR price_cents = 0))"
+            " OR (pricing_kind = 'one_time' AND price_cents IS NOT NULL"
+            "     AND price_cents > 0)",
+            name="ck_offerings_pricing_shape",
+        ),
     )
+
+    @property
+    def is_priced(self) -> bool:
+        """Has the creator made a pricing choice at all?"""
+        return self.pricing_kind is not None
+
+    @property
+    def is_paid(self) -> bool:
+        return self.pricing_kind == OfferingPricingKind.one_time.value
 
     def __repr__(self) -> str:  # pragma: no cover — debugging aid
         return f"<Offering {self.id} {self.slug!r} {self.status}>"
@@ -373,6 +426,13 @@ class OfferingFile(Base):
     content_type: Mapped[str] = mapped_column(String(160), nullable=False)
 
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    #: One sentence explaining this resource to a member — "A 15-minute
+    #: guided audio practice". Optional, and length-limited in the column
+    #: as well as the schema so the ceiling holds whatever writes the row.
+    #: Not rich text: the Offering's About section is where long-form
+    #: explanation belongs.
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     #: Creator-controlled display order within the current bundle.
     sort_order: Mapped[int] = mapped_column(
@@ -685,6 +745,8 @@ __all__ = [
     "OfferingEntitlement",
     "OfferingStatus",
     "OfferingFulfilmentKind",
+    "OfferingPricingKind",
+    "OFFERING_PRICING_KINDS",
     "OfferingFileValidationStatus",
     "OFFERING_FILE_VALIDATION_STATUSES",
     "OfferingEntitlementSource",

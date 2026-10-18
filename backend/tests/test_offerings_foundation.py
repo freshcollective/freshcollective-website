@@ -775,12 +775,28 @@ class TestFeatureFlag:
         key = f"{of.OFFERING_COVERS_PREFIX}/{off.id}/{uuid.uuid4().hex}_c.png"
         assert _authorise(key, owner, db) == 403
 
-    def test_no_offering_route_exists_yet(self):
-        """Phase A ships no endpoint at all, so there is nothing to
-        browse or purchase regardless of the flag."""
+    def test_every_offering_route_is_gated_by_the_feature_flag(self):
+        """**Updated in B4.** This asserted that no Offering route
+        existed at all, which was true while the phase shipped no
+        endpoints. B4 adds the creator API, so the guarantee it was
+        really protecting — nothing reachable while Offerings is off —
+        moves from "no routes" to "every route gated".
+
+        Rewritten rather than deleted, so the change of fact is visible
+        in the suite's history.
+        """
+        from fastapi.routing import APIRoute
         from app.main import app
-        paths = [r.path for r in app.routes if "offering" in r.path.lower()]
-        assert paths == [], paths
+        routes = [
+            r for r in app.routes
+            if isinstance(r, APIRoute) and "offerings" in r.path
+        ]
+        assert routes, "B4 ships the creator API; expected routes"
+        for r in routes:
+            names = [
+                getattr(d.call, "__name__", "") for d in r.dependant.dependencies
+            ]
+            assert "require_offerings_enabled" in names, r.path
 
 
 # ---------------------------------------------------------------------------

@@ -56,6 +56,10 @@ from app.community.channels import (
 )
 from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
+# Offerings creator management (Phase B4). A separate router so the
+# feature-flag dependency is attached once, at the router, rather than
+# remembered in each handler.
+from app.creator._offering_routes import router as creator_offerings_router
 from app.creator.attendance import router as creator_attendance_router
 from app.creator.build_your_collective import router as build_your_collective_router
 from app.creator.community_start import router as creator_community_start_router
@@ -267,6 +271,7 @@ app.include_router(channels_creator_router)
 app.include_router(members_router)
 app.include_router(profiles_router)
 app.include_router(creator_router)
+app.include_router(creator_offerings_router)
 app.include_router(creator_attendance_router)
 app.include_router(build_your_collective_router)
 app.include_router(creator_community_start_router)

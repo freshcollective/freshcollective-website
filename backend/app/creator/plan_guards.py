@@ -358,6 +358,80 @@ def guard_pathway_limit(user: User, space: Space, db: Session) -> None:
         )
 
 
+def guard_offering_limit(user: User, space: Space, db: Session) -> None:
+    """Refuse a new Offering when the plan caps how many a Collective may
+    hold. Community is capped at five; paid plans are uncapped. Platform
+    Owner bypasses.
+
+    Mirrors :func:`guard_pathway_limit` deliberately — same scope, same
+    shape, same grandfathering. Called from the create-Offering route
+    before insertion.
+
+    Why the count includes drafts and retired Offerings
+    --------------------------------------------------
+
+    All three lifecycle states hold database rows and may hold stored
+    files, so all three consume the allowance. A creator cannot free a
+    slot by unpublishing, which is the approved rule and also the honest
+    one: the cost to the platform is the stored bytes, not the
+    visibility.
+
+    Why existing Offerings are grandfathered
+    ----------------------------------------
+
+    The guard fires on creation only. A creator who downgrades keeps
+    every Offering they have — nothing is deleted, no purchaser loses a
+    download — and is simply refused the next one until they are back
+    under the allowance. Same contract as Pathways.
+
+    Concurrency
+    -----------
+
+    Two simultaneous creates could both read a count of four and both
+    insert. The row lock on the Space closes that: callers take
+    ``SELECT ... FOR UPDATE`` on the Collective before counting, so the
+    second request waits and then sees five. The lock is the caller's
+    responsibility because this function is also used for read-only
+    readiness reporting, where a lock would be wrong.
+    """
+    if is_platform_owner(user):
+        return
+
+    plan = resolve_creator_plan(user, db)
+    if plan is None or plan.offerings_max_per_collective is None:
+        return   # no cap for this plan
+
+    from app.models.offering import Offering   # local import avoids cycle
+    current = (
+        db.query(Offering)
+        .filter(Offering.space_id == space.id)
+        .count()
+    )
+    if current >= plan.offerings_max_per_collective:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Your {plan.display_name} plan includes "
+                f"{plan.offerings_max_per_collective} Offerings per "
+                "Collective. Upgrade to Creator to add more."
+            ),
+        )
+
+
+def offering_allowance(user: User, db: Session) -> int | None:
+    """The plan's Offering cap, or ``None`` for uncapped.
+
+    Exposed so the readiness response and any future display read the
+    same number the guard enforces, rather than a second copy of the
+    lookup — the discipline ``effective_collective_allowance`` already
+    follows.
+    """
+    if is_platform_owner(user):
+        return None
+    plan = resolve_creator_plan(user, db)
+    return plan.offerings_max_per_collective if plan else None
+
+
 # ---------------------------------------------------------------------------
 # Member allowance
 # ---------------------------------------------------------------------------

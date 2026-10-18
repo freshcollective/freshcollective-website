@@ -90,6 +90,24 @@ class PlanCapability:
     # Maximum number of Pathways per Collective. `None` means no cap
     # (Creator / Pro / Organisation). Community caps at 5.
     pathways_max_per_collective: Optional[int] = None
+    # Maximum number of Offerings per Collective. `None` means no cap.
+    # Community caps at 5.
+    #
+    # Scoped per Collective to match ``pathways_max_per_collective`` and
+    # ``member_allowance_per_collective`` — the convention is that things
+    # *inside* a Collective are capped per Collective, while the number of
+    # Collectives themselves is capped per account
+    # (``active_collective_limit``).
+    #
+    # The approved product rule is "five Offerings across all Collectives a
+    # Community creator owns". Those are the same number here, because
+    # Community's ``active_collective_limit`` is 1 and Offering management is
+    # owner-only — so a Community creator can hold Offerings in at most one
+    # Collective. Following the convention therefore delivers the intent
+    # without inventing a second quota model. See the Phase B4 notes if
+    # Community's collective allowance ever rises above 1, at which point
+    # the two readings diverge and this becomes a real decision.
+    offerings_max_per_collective: Optional[int] = None
 
     # Categorical capabilities
     location_scope: LocationScope = "atlas_full"
@@ -132,6 +150,7 @@ COMMUNITY = PlanCapability(
     member_allowance_per_collective=100,
     caretaker_limit_per_collective=1,
     pathways_max_per_collective=5,   # capped at five Pathways
+    offerings_max_per_collective=5,  # capped at five Offerings
     location_scope="community_only",
     analytics_level="basic",
     paid_offers_enabled=False,
@@ -253,6 +272,7 @@ FOUNDING_CREATOR = PlanCapability(
     pooled_member_allowance=None,           # unrestricted
     caretaker_limit_per_collective=None,    # unrestricted
     pathways_max_per_collective=None,       # unrestricted
+    offerings_max_per_collective=None,      # unrestricted
     storage_allowance_mb=None,              # unrestricted
     location_scope="atlas_full",
     analytics_level="advanced",
