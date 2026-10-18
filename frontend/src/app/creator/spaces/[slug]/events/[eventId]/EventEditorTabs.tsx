@@ -7,7 +7,6 @@ import type {
   CreatorEvent,
   CreatorGatheringSeriesSummary,
   CreatorMediaAsset,
-  CreatorOfferPageSummary,
   CreatorPathway,
   CreatorResource,
   EventBooking,
@@ -15,15 +14,12 @@ import type {
 } from '@/types/platform'
 import EventForm from '../EventForm'
 import EventManagePanel from './EventManagePanel'
-import OfferPagesShortcut from '@/app/creator-studio/offers/OfferPagesShortcut'
-import SeriesChildOfferHint from '@/app/creator-studio/offers/SeriesChildOfferHint'
 import AboutPageEditor from '@/app/creator-studio/pathways/[pathwaySlug]/AboutPageEditor'
 
 /**
  * Creator Gathering editor with Settings | About tabs (MF7).
  *
- *   Settings — existing form + Offer Page shortcut + attendees/roster
- *              panel (unchanged; every existing knob preserved).
+ *   Settings — existing form + attendees/roster panel.
  *   About    — rich block editor writing to the polymorphic
  *              ``pathway_about_blocks`` rows with ``owner_kind='event'``,
  *              added in migration 113 + wired up in MF2.
@@ -45,14 +41,12 @@ interface Props {
   members: SpaceMember[]
   pathways: CreatorPathway[]
   series: CreatorGatheringSeriesSummary[]
-  offers: CreatorOfferPageSummary[]
-  paidOffersEnabled: boolean
 }
 
 type EventTab = 'settings' | 'about'
 
 export default function EventEditorTabs({
-  spaceSlug, event, bookings, members, pathways, series, offers, paidOffersEnabled,
+  spaceSlug, event, bookings, members, pathways, series,
 }: Props) {
   const [tab, setTab] = useState<EventTab>('settings')
 
@@ -68,8 +62,6 @@ export default function EventEditorTabs({
           members={members}
           pathways={pathways}
           series={series}
-          offers={offers}
-          paidOffersEnabled={paidOffersEnabled}
         />
       )}
 
@@ -115,11 +107,8 @@ function EventTabsBar({
 }
 
 function SettingsTab({
-  spaceSlug, event, bookings, members, pathways, series, offers, paidOffersEnabled,
+  spaceSlug, event, bookings, members, pathways, series,
 }: Props) {
-  const parentSeries = event.series_id
-    ? series.find((s) => s.id === event.series_id) ?? null
-    : null
 
   return (
     <>
@@ -152,27 +141,6 @@ function SettingsTab({
       )}
 
       <EventForm spaceSlug={spaceSlug} event={event} pathways={pathways} series={series} />
-
-      <div className="mt-6">
-        {parentSeries ? (
-          <SeriesChildOfferHint
-            seriesId={parentSeries.id}
-            seriesTitle={parentSeries.title}
-            seriesSlug={parentSeries.slug}
-            offers={offers}
-            paidOffersEnabled={paidOffersEnabled}
-          />
-        ) : (
-          <OfferPagesShortcut
-            targetKind="gathering"
-            targetId={event.id}
-            targetTitle={event.title}
-            offers={offers}
-            paidOffersEnabled={paidOffersEnabled}
-            variant="compact"
-          />
-        )}
-      </div>
 
       <EventManagePanel
         event={event}

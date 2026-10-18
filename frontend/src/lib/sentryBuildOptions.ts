@@ -18,7 +18,7 @@
  * --------------
  * A production browser stack frame currently reads
  * ``09ae.el~njpln.js:1:48213``. With maps uploaded it reads
- * ``src/app/creator-studio/offers/page.tsx:38``.
+ * ``src/app/creator-studio/pathways/page.tsx:38``.
  *
  * How the maps stay private
  * -------------------------

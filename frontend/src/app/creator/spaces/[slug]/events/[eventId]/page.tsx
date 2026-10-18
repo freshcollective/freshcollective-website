@@ -1,31 +1,18 @@
 import { notFound } from 'next/navigation'
 import {
-  getCreatorBilling,
   getCreatorEvent,
   getCreatorEventBookings,
   getCreatorGatheringSeriesList,
   getCreatorMembers,
-  getCreatorOfferPages,
   getCreatorPathways,
 } from '@/lib/serverApi'
 import type {
   CreatorGatheringSeriesSummary,
-  CreatorOfferPageSummary,
   CreatorPathway,
 } from '@/types/platform'
 import CreatorBackLink from '@/components/creator/CreatorBackLink'
 import EventEditorTabs from './EventEditorTabs'
 
-import { captureDegradedSurface } from '@/lib/sentryHandled'
-async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
-  try {
-    return await p
-  } catch (err) {
-    captureDegradedSurface(err, 'creator-event-editor', label)
-    console.error(`[creator/events/edit] ${label} failed:`, err)
-    return fallback
-  }
-}
 
 export default async function EditEventPage({
   params, searchParams,
@@ -35,31 +22,20 @@ export default async function EditEventPage({
 }) {
   const { slug, eventId } = await params
   const { from_series: fromSeries } = await searchParams
-  const [event, bookings, members, pathways, series, offers, billing]: [
+  const [event, bookings, members, pathways, series]: [
     Awaited<ReturnType<typeof getCreatorEvent>>,
     Awaited<ReturnType<typeof getCreatorEventBookings>>,
     Awaited<ReturnType<typeof getCreatorMembers>>,
     CreatorPathway[],
     CreatorGatheringSeriesSummary[],
-    CreatorOfferPageSummary[],
-    Awaited<ReturnType<typeof getCreatorBilling>>,
   ] = await Promise.all([
     getCreatorEvent(slug, eventId),
     getCreatorEventBookings(slug, eventId),
     getCreatorMembers(slug),
     getCreatorPathways(slug) as Promise<CreatorPathway[]>,
     getCreatorGatheringSeriesList(slug),
-    // Best-effort: the shortcut degrades to a "not on your plan"
-    // state on failure rather than 500ing the Gathering editor.
-    _safe(getCreatorOfferPages(slug), 'getCreatorOfferPages', []),
-    _safe(getCreatorBilling(), 'getCreatorBilling', null),
   ])
   if (!event) notFound()
-
-  const paidOffersEnabled = !!(
-    billing?.is_platform_owner
-    || billing?.current_plan?.paid_offers_enabled
-  )
 
   // Contextual back-link. When the Creator arrived from a specific
   // Gathering Series editor (via ``?from_series=<slug>``), return them
@@ -88,8 +64,6 @@ export default async function EditEventPage({
         members={members}
         pathways={pathways}
         series={series}
-        offers={offers}
-        paidOffersEnabled={paidOffersEnabled}
       />
     </div>
   )

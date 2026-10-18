@@ -154,7 +154,6 @@ describe('pages whose audience depends on the Collective stay out', () => {
     '/spaces/moonlit-circle/events/evt_1',
     '/spaces/moonlit-circle/pathways',
     '/spaces/moonlit-circle/pathways/slowing-down',
-    '/spaces/moonlit-circle/offers/term-pass',
     '/spaces/moonlit-circle/gathering-series/term-4',
     '/spaces/moonlit-circle/messages',
   ]) {
@@ -404,7 +403,6 @@ describe('no private surface can be reported, by any route into it', () => {
       '/spaces/moonlit-circle/pathways/slowing-down',
       '/spaces/moonlit-circle/pathways/slowing-down/step-one',
       '/spaces/moonlit-circle/gathering-series/term-4',
-      '/spaces/moonlit-circle/offers/term-pass',
     ]) {
       assert.equal(isTrackablePath(p), false, `${p} must not be tracked`)
     }
