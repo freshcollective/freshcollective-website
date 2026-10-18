@@ -55,6 +55,12 @@ interface NavItem {
    *  step into an unfinished feature. Existing direct URLs remain
    *  functional (backend + routes are untouched); only Creator-
    *  facing prompts are removed. */
+  /** Renders the item muted, non-navigable and suffixed "Coming
+   *  later". No item uses this today — Offer Pages was the only one
+   *  and it is retired (see the COMMERCE group below). Kept as a
+   *  general navigation capability rather than removed, so a future
+   *  not-yet-open surface does not have to rebuild it; it is
+   *  therefore currently unexercised by any test. */
   paused?: boolean
   /** Optional badge feed — see ``sidebarBadges`` in the component.
    *  Currently only ``payment_plans_attention`` (FIP4C) is defined. */
@@ -138,12 +144,23 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // Access — renamed from "Memberships". Route is /access;
       // /passes redirects here for backwards compatibility.
       { href: '/creator-studio/access',          label: 'Access',          requiresCollective: true, requiresPaidOffers: true },
-      // Offer Pages remain on hold. Muted + non-navigable + "Coming
-      // later" suffix so Creators know the surface exists without
-      // being invited into it. Data + backend endpoints + migrations
-      // are all preserved; direct URLs still resolve for
-      // development / recovery.
-      { href: '/creator-studio/offers',          label: 'Offer Pages',     requiresCollective: true, paused: true, requiresPaidOffers: true },
+      // Offer Pages is retired and deliberately absent.
+      //
+      // It was an unlaunched experiment in mini sales pages, shown
+      // here as a muted "Coming later" entry. It is gone because the
+      // new digital-products feature is called **Offerings**, and two
+      // adjacent Creator Studio entries one letter apart would be a
+      // permanent source of confusion about which is which.
+      //
+      // Retired, not deleted. The routes, API endpoints, model,
+      // ``offer_pages`` table, its migration and existing rows are
+      // all untouched, and ``/creator-studio/offers`` still resolves
+      // for development and recovery — it simply has no entry point
+      // in the navigation. Richer sales pages remain possible as a
+      // separate future feature; nothing here forecloses that.
+      //
+      // Do not re-add this item to introduce Offerings. Offerings is
+      // its own feature with its own nav entry.
     ],
   },
 ]
