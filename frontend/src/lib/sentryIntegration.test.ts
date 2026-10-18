@@ -340,14 +340,17 @@ describe('the BFF proxy', () => {
 // ---------------------------------------------------------------------------
 
 describe('silent degradation', () => {
+  // Three entries left with the retired Offer Pages feature. Two were
+  // its own pages. The third, the Gathering editor, kept every fetch it
+  // had — but the only two wrapped best-effort were the Offer Pages and
+  // billing reads feeding the shortcut, so the page no longer degrades
+  // anything and has no surface to tag. Its surviving fetches were never
+  // wrapped, then or now.
   const CAPTURED = [
     ['src/app/dashboard/page.tsx', 'dashboard'],
-    ['src/app/creator-studio/offers/page.tsx', 'creator-offers'],
-    ['src/app/creator-studio/offers/[offerSlug]/page.tsx', 'creator-offer-editor'],
     ['src/app/creator-studio/gathering-series/[seriesSlug]/page.tsx', 'creator-gathering-series'],
     ['src/app/creator-studio/library/page.tsx', 'creator-library'],
     ['src/app/creator-studio/settings/page.tsx', 'creator-settings'],
-    ['src/app/creator/spaces/[slug]/events/[eventId]/page.tsx', 'creator-event-editor'],
     ['src/app/creator-studio/layout.tsx', 'creator-studio-layout'],
   ]
 

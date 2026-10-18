@@ -363,7 +363,6 @@ export interface EventSummary {
   /** Slug of the *published* Offer Page targeting this Event's Series,
    *  if one exists. Lets a "Buy series pass" CTA route to the right
    *  public page without a second round-trip. */
-  series_offer_page_slug?: string | null
   /** True when the viewer holds a valid, in-window Series pass
    *  scoped to this Event's series. Lets the booking UI show the
    *  correct state (Reserve vs Pass required) without triggering a
@@ -1671,93 +1670,26 @@ export interface CreatorBillingResponse {
 
 
 // ---------------------------------------------------------------------------
-// Offer Pages
+// Public Payment Options
 //
-// Presentation-layer entity: an Offer Page is a public sales page for
-// an existing sellable (Pathway in V1). Commerce plumbing stays where
-// it is — the CTA deep-links to the target's existing checkout.
+// The published, member-visible projection of a Payment Option and its
+// schedules. Read by ``lib/paymentPlan.ts``. These outlived the retired
+// Offer Pages surface that first exposed them; commerce plumbing itself
+// is unchanged.
 // ---------------------------------------------------------------------------
 
-export type OfferPageStatus = 'draft' | 'published' | 'archived'
-/** What an Offer Page invites people into. Values are the wire
- *  contract with the backend; the UI never surfaces `event_series`
- *  as a string — creator-facing labels are always
- *  "Pathway" | "Gathering Series" | "Gathering". */
-export type OfferPageTargetKind = 'pathway' | 'event_series' | 'gathering'
 
-/** Restrained TipTap JSON. The Invitation editor exposes a small
- *  set of marks (bold, italic, links) + paragraphs + a single
- *  heading level; content is stored as a JSON string. */
-export type OfferInvitationBody = string
 
-export interface OfferInvitationSection {
-  enabled: boolean
-  body: string | null
-}
 
-export interface OfferWhatsIncludedSection {
-  enabled: boolean
-  items: string[]
-}
 
-export interface OfferPracticalSection {
-  enabled: boolean
-  dates: string | null
-  duration: string | null
-  location: string | null
-  format: string | null
-  access_period: string | null
-  capacity: string | null
-  requirements: string | null
-}
 
-export interface OfferFaqItem {
-  question: string
-  answer: string
-}
 
-export interface OfferFaqsSection {
-  enabled: boolean
-  items: OfferFaqItem[]
-}
 
-export interface OfferCreatorSection {
-  enabled: boolean
-}
 
-/** The typed sections shape the editor writes. The backend stores it
- *  as a JSON blob and returns the raw dict on reads — the frontend
- *  narrows via ``normaliseSectionsConfig`` at the editor boundary
- *  so shape evolution never crashes a page. */
-export interface OfferSectionsConfig {
-  invitation: OfferInvitationSection
-  whats_included: OfferWhatsIncludedSection
-  practical: OfferPracticalSection
-  faqs: OfferFaqsSection
-  creator: OfferCreatorSection
-}
 
-/** Full editor payload. */
-export interface CreatorOfferPage {
-  id: string
-  space_id: string
-  slug: string
-  title: string
-  promise: string | null
-  hero_image_url: string | null
-  target_kind: OfferPageTargetKind
-  target_id: string
-  status: OfferPageStatus
-  sections_config: Partial<OfferSectionsConfig> & Record<string, unknown>
-  published_at: string | null
-  /** Derived on the backend: permanent once ``published_at`` is set. */
-  slug_locked: boolean
-  created_at: string
-  updated_at: string
-}
 
-/** Published PaymentOptionSchedule surfaced on the public Offer Page
- *  for a Gathering Series target. */
+/** Published PaymentOptionSchedule in the public projection of a
+ *  Payment Option. */
 export interface PublicPaymentOptionSchedule {
   id: string
   name: string
@@ -1775,8 +1707,7 @@ export interface PublicPaymentOptionSchedule {
   is_member_checkoutable: boolean
 }
 
-/** Published PaymentOption + its published schedules — surfaced on
- *  the public Offer Page for a Gathering Series target. */
+/** Published PaymentOption + its published schedules. */
 export interface PublicPaymentOption {
   id: string
   name: string
@@ -1791,72 +1722,9 @@ export interface PublicPaymentOption {
   schedules: PublicPaymentOptionSchedule[]
 }
 
-/** Real Creator identity behind the Space. `null` on `PublicOfferPage`
- *  when no personal Creator info exists — never falls back to the
- *  Collective name. */
-export interface PublicOfferCreator {
-  display_name: string | null
-  tagline: string | null
-  bio: string | null
-  avatar_url: string | null
-  website_url: string | null
-}
 
-/** Denormalised target snapshot returned by the public Offer Page read.
- *  Everything the CTA needs to route + label without a second fetch. */
-export interface OfferPageTargetSnapshot {
-  kind: OfferPageTargetKind
-  id: string
-  slug: string
-  title: string
-  description: string | null
-  cover_image_url: string | null
-  access_type: string | null
-  price_cents: number | null
-  currency: string | null
-  billing_interval: string | null
-  checkout_path: string | null
-  enter_path: string | null
-  /** Series/gathering window; null for `pathway`. */
-  starts_at: string | null
-  ends_at: string | null
-  /** Series-only: published Payment Options + Schedules. */
-  payment_options: PublicPaymentOption[]
-  /** Gathering-only: standalone ticket price. */
-  ticket_price_cents: number | null
-  ticket_currency: string | null
-}
 
-/** Public shape returned by GET /api/spaces/{slug}/offers/{offer_slug}.
- *  Only published pages are visible to non-owners; owners see drafts +
- *  archived through the same URL (no separate preview mode). */
-export interface PublicOfferPage {
-  id: string
-  slug: string
-  title: string
-  promise: string | null
-  hero_image_url: string | null
-  status: OfferPageStatus
-  sections_config: Partial<OfferSectionsConfig> & Record<string, unknown>
-  target: OfferPageTargetSnapshot
-  creator: PublicOfferCreator | null
-  user_has_target_access: boolean
-}
 
-/** Index row — light shape for the Offer Pages list. */
-export interface CreatorOfferPageSummary {
-  id: string
-  slug: string
-  title: string
-  hero_image_url: string | null
-  target_kind: OfferPageTargetKind
-  target_id: string
-  /** Populated by the server; null if the target has been deleted. */
-  target_title: string | null
-  status: OfferPageStatus
-  slug_locked: boolean
-  updated_at: string
-}
 
 /** Minimal shared shape used by block editor sub-components. */
 export interface EditorBlock {

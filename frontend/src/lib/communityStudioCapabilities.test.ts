@@ -37,7 +37,6 @@ describe('Creator Studio navigation is plan-aware, not capability-only', () => {
       '/creator-studio/payments',
       '/creator-studio/payment-plans',
       '/creator-studio/access',
-      '/creator-studio/offers',
     ]) {
       const line = src.split('\n').find((l) => l.includes(`href: '${href}'`))
       assert.ok(line, `no nav entry for ${href}`)
@@ -66,14 +65,19 @@ describe('Creator Studio navigation is plan-aware, not capability-only', () => {
     }
   })
 
-  test('the plan gate outranks "paused"', () => {
-    // Offer Pages is paused AND commercial. "Coming later" is
-    // misleading to a plan that will never unlock it.
+  test('nothing bypasses the plan gate', () => {
+    // This began as a check that "paused" could not sneak a
+    // commercial item past the plan filter — Offer Pages was both
+    // paused and commercial, and "Coming later" is misleading to a
+    // plan that will never unlock it. Offer Pages is retired, so that
+    // example is gone, but the property is the one worth keeping: the
+    // filter is on the plan flag alone, and no condition is OR-ed
+    // alongside it.
     const src = codeOnly(SIDEBAR)
     assert.match(src, /items\.filter\(\s*\(\{ requiresPaidOffers \}\) =>/)
     assert.ok(
       !/paused \|\| !requiresPaidOffers/.test(src),
-      'paused must no longer bypass the plan gate',
+      'paused must not bypass the plan gate',
     )
   })
 

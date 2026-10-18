@@ -3,9 +3,7 @@ import Link from 'next/link'
 import { formatCalendarDate } from '@/lib/dateTime'
 import {
   getActiveCreatorSpace,
-  getCreatorBilling,
   getCreatorGatheringSeries,
-  getCreatorOfferPages,
   getCreatorPathways,
   getCreatorSeriesGatherings,
   getCreatorSeriesPaymentOptions,
@@ -14,13 +12,11 @@ import {
 import type {
   CreatorEvent,
   CreatorGatheringSeries,
-  CreatorOfferPageSummary,
   CreatorPathway,
   CreatorSeriesPaymentOption,
   CreatorSpaceDetail,
 } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
-import OfferPagesShortcut from '../../offers/OfferPagesShortcut'
 import SeriesEditorClient from './SeriesEditorClient'
 
 import { captureDegradedSurface } from '@/lib/sentryHandled'
@@ -70,14 +66,12 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
     )
   }
 
-  const [series, gatherings, paymentOptions, pathways, spaceDetail, offers, billing]: [
+  const [series, gatherings, paymentOptions, pathways, spaceDetail]: [
     CreatorGatheringSeries | null,
     CreatorEvent[],
     CreatorSeriesPaymentOption[],
     CreatorPathway[],
     CreatorSpaceDetail | null,
-    CreatorOfferPageSummary[],
-    Awaited<ReturnType<typeof getCreatorBilling>>,
   ] = await Promise.all([
     _safe(
       getCreatorGatheringSeries(activeSpace.slug, seriesSlug) as Promise<CreatorGatheringSeries | null>,
@@ -90,19 +84,9 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
       getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
       'getCreatorSpace', null,
     ),
-    // Offers + billing feed the Offer Pages shortcut card. Best-effort:
-    // the shortcut degrades to a "not on your plan" state on failure
-    // rather than 500ing the Series editor.
-    _safe(getCreatorOfferPages(activeSpace.slug), 'getCreatorOfferPages', []),
-    _safe(getCreatorBilling(), 'getCreatorBilling', null),
   ])
 
   if (!series) notFound()
-
-  const paidOffersEnabled = !!(
-    billing?.is_platform_owner
-    || billing?.current_plan?.paid_offers_enabled
-  )
 
   // ``series.starts_at`` / ``series.ends_at`` are CALENDAR DATES
   // (set from ``<input type="date">``, stored as
@@ -126,20 +110,6 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
         backLink={{ href: '/creator-studio/gatherings', label: '← Back to Gatherings' }}
       />
-
-      {/* Offer Pages shortcut — directly below the Series hero so
-          the primary commercial action (creating / editing the
-          Series Offer Page) is visible without scrolling past every
-          editor card. Sits above About this Series, as agreed. */}
-      <div className="mb-6">
-        <OfferPagesShortcut
-          targetKind="event_series"
-          targetId={series.id}
-          targetTitle={series.title}
-          offers={offers}
-          paidOffersEnabled={paidOffersEnabled}
-        />
-      </div>
 
       <SeriesEditorClient
         spaceSlug={activeSpace.slug}

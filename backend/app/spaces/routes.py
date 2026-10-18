@@ -21,7 +21,6 @@ from app.models.platform import (
     EntitlementStatus,
     Event,
     EventBooking,
-    OfferPage,
     Pathway,
     PathwayAboutBlock,
     PathwayEntitlement,
@@ -61,16 +60,11 @@ from app.spaces.schemas import (
     KnowledgeGuideResponse,
     NotificationPrefsResponse,
     NotificationPrefsUpdate,
-    OfferPageTargetSnapshot,
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
-    PublicOfferCreator,
-    PublicOfferPage,
-    PublicPaymentOption,
-    PublicPaymentOptionSchedule,
     PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
@@ -1586,7 +1580,6 @@ def list_events(
     series_titles: dict[str, str] = {}
     series_slugs: dict[str, str] = {}
     series_covers: dict[str, str | None] = {}
-    series_offer_slugs: dict[str, str] = {}
     if series_ids:
         rows = db.query(
             _EventSeries.id, _EventSeries.title, _EventSeries.slug,
@@ -1595,25 +1588,6 @@ def list_events(
         series_titles = {sid: t for sid, t, _sl, _c in rows}
         series_slugs = {sid: sl for sid, _t, sl, _c in rows}
         series_covers = {sid: c for sid, _t, _sl, c in rows}
-        # Bulk-lookup the published Offer Page (if any) targeting each
-        # Series in the batch so member Gathering cards can eventually
-        # send a "Buy series pass" CTA to the right public URL without
-        # a per-event round-trip. Only ``published`` pages count — a
-        # draft/archived page must not leak into the member API.
-        offer_rows = (
-            db.query(OfferPage.target_id, OfferPage.slug)
-            .filter(
-                OfferPage.space_id == space.id,
-                OfferPage.target_kind == "event_series",
-                OfferPage.target_id.in_(series_ids),
-                OfferPage.status == "published",
-            )
-            .all()
-        )
-        # If a Series has multiple published Offer Pages (edge case),
-        # last write wins — the frontend only needs *a* slug. Ordering
-        # is intentionally unspecified.
-        series_offer_slugs = {sid: sl for sid, sl in offer_rows}
 
     # Bulk-check the viewer's active AccessPasses for these series so
     # the booking UI can distinguish "has pass → Reserve" from "no
@@ -1775,7 +1749,6 @@ def list_events(
             series_title=series_titles.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             series_slug=series_slugs.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             series_cover_image_url=series_covers.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
-            series_offer_page_slug=series_offer_slugs.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             user_has_series_pass=(getattr(e, 'series_id', None) in user_series_pass_ids) if getattr(e, 'series_id', None) else False,
             is_public=e.is_public,
             thumbnail_url=e.thumbnail_url,
@@ -2494,17 +2467,6 @@ def get_event(
         # is not a concern for a per-Event detail page.
         "series_id": getattr(event, 'series_id', None),
         **(lambda t: {"series_title": t[0], "series_slug": t[1], "series_cover_image_url": t[2]})(_series_info_for(event, db)),
-        "series_offer_page_slug": (
-            (db.query(OfferPage.slug)
-                .filter(
-                    OfferPage.space_id == space.id,
-                    OfferPage.target_kind == "event_series",
-                    OfferPage.target_id == event.series_id,
-                    OfferPage.status == "published",
-                )
-                .scalar())
-            if getattr(event, 'series_id', None) else None
-        ),
         "user_has_series_pass": _viewer_has_series_pass(
             current_user, getattr(event, 'series_id', None), db, now,
         ),
@@ -3730,355 +3692,6 @@ def update_notification_settings(
     db.commit()
     db.refresh(prefs)
     return _prefs_response(space, prefs)
-
-
-# ---------------------------------------------------------------------------
-# Offer Pages — public read
-#
-# One public endpoint. Only ``published`` Offer Pages are exposed to
-# non-owners; ``draft`` and ``archived`` return 404. Owners
-# (creators/moderators of the Collective, or admins) see every status
-# through the same URL — mirrors the pathway About page's preview
-# behaviour so we don't need a separate ``?preview=1`` mode.
-# ---------------------------------------------------------------------------
-
-
-def _viewer_owns_space(user: "User | None", space: Space, db: Session) -> bool:
-    """True when the viewer can preview draft / archived Offer Pages.
-
-    Site admins always qualify. Otherwise the viewer must hold an
-    active creator or moderator membership on the Collective.
-    """
-    if user is None:
-        return False
-    if user.role == "admin":
-        return True
-    return db.query(SpaceMembership).filter(
-        SpaceMembership.space_id == space.id,
-        SpaceMembership.user_id == user.id,
-        SpaceMembership.status == SpaceMembershipStatus.active,
-        SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
-    ).first() is not None
-
-
-def _build_series_payment_options(series_id: str, db: Session) -> list[PublicPaymentOption]:
-    """Return published PaymentOptions attached to a Series, each
-    with its published PaymentOptionSchedules nested. Order matches
-    the creator-configured ``position`` on each level."""
-    options = (
-        db.query(PaymentOption)
-        .filter(
-            PaymentOption.attaches_to_kind == "event_series",
-            PaymentOption.attaches_to_id == series_id,
-            PaymentOption.status == "published",
-        )
-        .order_by(PaymentOption.position, PaymentOption.created_at)
-        .all()
-    )
-    if not options:
-        return []
-    opt_ids = [o.id for o in options]
-    schedule_rows = (
-        db.query(PaymentOptionSchedule)
-        .filter(
-            PaymentOptionSchedule.payment_option_id.in_(opt_ids),
-            PaymentOptionSchedule.status == "published",
-        )
-        .order_by(PaymentOptionSchedule.position, PaymentOptionSchedule.created_at)
-        .all()
-    )
-    options_by_id = {o.id: o for o in options}
-    by_option: dict[str, list[PublicPaymentOptionSchedule]] = {}
-    for s in schedule_rows:
-        by_option.setdefault(s.payment_option_id, []).append(
-            PublicPaymentOptionSchedule(
-                id=s.id,
-                name=s.name,
-                description=s.description,
-                schedule_type=s.schedule_type,
-                total_amount_cents=s.total_amount_cents,
-                upfront_amount_cents=s.upfront_amount_cents,
-                installment_amount_cents=s.installment_amount_cents,
-                installment_count=s.installment_count,
-                # See the pathway serializer's ``interval`` comment.
-                interval=s.interval or s.stripe_interval,
-                currency=s.currency,
-                buyer_note=s.buyer_note,
-                is_member_checkoutable=_schedule_is_member_checkoutable(
-                    s, options_by_id.get(s.payment_option_id),
-                ),
-            )
-        )
-    return [
-        PublicPaymentOption(
-            id=o.id,
-            name=o.name,
-            description=o.description,
-            payment_type=(
-                o.payment_type.value if hasattr(o.payment_type, "value")
-                else str(o.payment_type)
-            ),
-            sessions_per_week=o.sessions_per_week,
-            total_sessions=o.total_sessions,
-            price_per_session_cents=o.price_per_session_cents,
-            effective_price_cents=o.effective_price_cents,
-            currency=o.currency,
-            buyer_note=o.buyer_note,
-            schedules=by_option.get(o.id, []),
-        )
-        for o in options
-    ]
-
-
-def _build_offer_creator(space: Space, db: Session) -> "PublicOfferCreator | None":
-    """Resolve the personal Creator identity behind the Space.
-
-    Preference order:
-      1. Public ``CreatorProfile`` fields.
-      2. ``User.name`` for the Space's creator.
-      3. ``None`` — omit the "Meet your guide" section entirely.
-
-    Never falls back to ``Space.name`` / tagline / description /
-    logo. The Collective is not the Creator (e.g. Collective EMBODY,
-    Creator Lindsey). A future "About this Collective" section will
-    represent Collective identity separately.
-    """
-    if not space.creator_id:
-        return None
-    from app.models.platform import CreatorProfile
-    u_row = db.query(User.name).filter(User.id == space.creator_id).first()
-    user_name = (u_row[0] if u_row and u_row[0] else "").strip() or None
-    profile = (
-        db.query(CreatorProfile)
-        .filter(CreatorProfile.user_id == space.creator_id)
-        .first()
-    )
-    if profile and profile.is_public:
-        display = (profile.display_name or "").strip() or user_name
-        if not display:
-            return None
-        return PublicOfferCreator(
-            display_name=display,
-            tagline=profile.profile_tagline,
-            bio=profile.bio,
-            avatar_url=profile.avatar_url,
-            website_url=profile.website_url,
-        )
-    if not user_name:
-        return None
-    return PublicOfferCreator(display_name=user_name)
-
-
-def _build_target_snapshot(
-    row: OfferPage, space: Space, viewer: "User | None", db: Session,
-) -> tuple[OfferPageTargetSnapshot, bool]:
-    """Resolve an Offer Page's target and return ``(snapshot, has_access)``.
-
-    Returns None-shaped snapshot fields when the target has since
-    been deleted so the frontend can render an honest "unavailable"
-    state instead of crashing on a missing reference. Access lookup
-    reuses the existing pathway helper so entitlement / enrolment /
-    admin all behave identically to the pathway landing page.
-    """
-    if row.target_kind == "pathway":
-        pathway = db.query(Pathway).filter(
-            Pathway.id == row.target_id,
-            Pathway.space_id == space.id,
-        ).first()
-        if not pathway:
-            # Target deleted — surface an empty snapshot so the
-            # public renderer can show an "Unavailable" state
-            # without crashing. Access defaults to False.
-            return (
-                OfferPageTargetSnapshot(
-                    kind="pathway",
-                    id=row.target_id,
-                    slug="",
-                    title="(Unavailable)",
-                ),
-                False,
-            )
-        access_type = (
-            pathway.access_type.value
-            if hasattr(pathway.access_type, "value")
-            else str(pathway.access_type or "free")
-        )
-        checkout_path = (
-            f"/spaces/{space.slug}/pathways/{pathway.slug}/checkout"
-            if access_type in ("one_time", "subscription", "included_with_offer")
-            else None
-        )
-        has_access = _compute_pathway_access(viewer, pathway, space, db)
-        return (
-            OfferPageTargetSnapshot(
-                kind="pathway",
-                id=pathway.id,
-                slug=pathway.slug,
-                title=pathway.title,
-                description=pathway.description,
-                cover_image_url=pathway.cover_image_url,
-                access_type=access_type,
-                price_cents=pathway.price_cents,
-                currency=pathway.currency,
-                billing_interval=pathway.billing_interval,
-                checkout_path=checkout_path,
-                enter_path=f"/spaces/{space.slug}/pathways/{pathway.slug}",
-            ),
-            has_access,
-        )
-    if row.target_kind == "event_series":
-        series = db.query(_EventSeriesModel).filter(
-            _EventSeriesModel.id == row.target_id,
-            _EventSeriesModel.space_id == space.id,
-        ).first()
-        if not series:
-            return (
-                OfferPageTargetSnapshot(
-                    kind="event_series",
-                    id=row.target_id,
-                    slug="",
-                    title="(Unavailable)",
-                ),
-                False,
-            )
-        now = datetime.utcnow()
-        has_access = _viewer_has_series_pass(viewer, series.id, db, now)
-        return (
-            OfferPageTargetSnapshot(
-                kind="event_series",
-                id=series.id,
-                slug=series.slug,
-                title=series.title,
-                description=series.description,
-                cover_image_url=series.cover_image_url,
-                # Series pricing lives on PaymentOptions — no single
-                # price / access_type / checkout_path applies here.
-                starts_at=series.starts_at,
-                ends_at=series.ends_at,
-                enter_path=f"/spaces/{space.slug}/gatherings",
-                payment_options=_build_series_payment_options(series.id, db),
-            ),
-            has_access,
-        )
-    if row.target_kind == "gathering":
-        event = db.query(Event).filter(
-            Event.id == row.target_id,
-            Event.space_id == space.id,
-        ).first()
-        if not event:
-            return (
-                OfferPageTargetSnapshot(
-                    kind="gathering",
-                    id=row.target_id,
-                    slug="",
-                    title="(Unavailable)",
-                ),
-                False,
-            )
-        has_access = False
-        if viewer is not None:
-            confirmed = (
-                db.query(EventBooking.id)
-                .filter(
-                    EventBooking.event_id == event.id,
-                    EventBooking.user_id == viewer.id,
-                    EventBooking.status == BookingStatus.confirmed,
-                )
-                .first()
-            )
-            has_access = confirmed is not None
-        access_type = getattr(event, "booking_access_type", None)
-        return (
-            OfferPageTargetSnapshot(
-                kind="gathering",
-                id=event.id,
-                # Events have no public slug — use id as the stable
-                # routing key so the frontend can build a link even
-                # when a public event URL isn't wired up yet.
-                slug=event.id,
-                title=event.title,
-                description=event.description,
-                cover_image_url=event.thumbnail_url,
-                access_type=access_type,
-                starts_at=event.starts_at,
-                ends_at=event.ends_at,
-                ticket_price_cents=getattr(event, "ticket_price_cents", None),
-                ticket_currency=getattr(event, "ticket_currency", None),
-                enter_path=f"/spaces/{space.slug}/events/{event.id}",
-            ),
-            has_access,
-        )
-    # Unknown kind — surface an empty snapshot so the renderer can
-    # show an "Unavailable" state without crashing.
-    return (
-        OfferPageTargetSnapshot(
-            kind=row.target_kind,
-            id=row.target_id,
-            slug="",
-            title="(Unavailable)",
-        ),
-        False,
-    )
-
-
-@router.get(
-    "/{slug}/offers/{offer_slug}",
-    response_model=PublicOfferPage,
-    summary="Public read of an Offer Page (owners see drafts)",
-)
-def get_public_offer_page(
-    slug: str,
-    offer_slug: str,
-    db: Session = Depends(get_db),
-    current_user: "User | None" = Depends(get_optional_user),
-):
-    # Space visibility mirrors the pathway About endpoint —
-    # unlisted collectives are still reachable by direct URL.
-    space = _get_space_visible_to(slug, db, current_user)
-
-    row = db.query(OfferPage).filter(
-        OfferPage.space_id == space.id,
-        OfferPage.slug == offer_slug,
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Offer Page not found.")
-
-    # Only ``published`` is publicly visible. Owners see every
-    # status (draft + archived) through the same URL so we never
-    # need a separate preview mode.
-    if row.status != "published":
-        if not _viewer_owns_space(current_user, space, db):
-            raise HTTPException(status_code=404, detail="Offer Page not found.")
-
-    # Future — plan-downgrade handling for commercial pages.
-    #
-    # Product intent: when a Creator's plan lapses back to Community,
-    # their previously-published Offer Pages should become publicly
-    # unavailable (returning 404 here, or a soft "temporarily
-    # unavailable" state) WITHOUT deleting the underlying rows, and
-    # should restore automatically if the paid plan is reactivated.
-    # This is not implemented yet — today the only plan gate is
-    # write-side (``guard_paid_offers_enabled`` at create / update),
-    # so a page published on Creator will keep serving after a
-    # downgrade until we add a runtime read-side check here (and a
-    # matching handler on subscription-lapsed webhooks). Track when
-    # commercial content downgrade policy is decided.
-
-    target_snapshot, has_access = _build_target_snapshot(
-        row, space, current_user, db,
-    )
-    return PublicOfferPage(
-        id=row.id,
-        slug=row.slug,
-        title=row.title,
-        promise=row.promise,
-        hero_image_url=row.hero_image_url,
-        status=row.status,
-        sections_config=row.sections_config or {},
-        target=target_snapshot,
-        creator=_build_offer_creator(space, db),
-        user_has_target_access=has_access,
-    )
 
 
 # ---------------------------------------------------------------------------
