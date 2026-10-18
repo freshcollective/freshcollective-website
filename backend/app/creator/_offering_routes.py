@@ -75,12 +75,31 @@ logger = logging.getLogger(__name__)
 def require_offerings_enabled() -> None:
     """Refuse every route in this module while Offerings is disabled.
 
-    **503, not 404.** The distinction matters for the two audiences: a
-    404 would tell a developer the route does not exist, sending them
-    looking for a bug, whereas 503 says "built, not switched on". No
-    Offering can be created, edited or published through these routes
-    while the flag is False, which is the requirement; concealing their
-    existence is not.
+    **404, not 503**, and the reason is operational rather than
+    semantic.
+
+    This shipped as 503 on the grounds that it told a developer "built,
+    not switched on" rather than sending them hunting for a missing
+    route. That reasoning was fine; its consequence was not. Sentry's
+    ``StarletteIntegration`` keeps its ``failed_request_status_codes``
+    default of **500–599**, so every 503 became a captured event: the
+    B4 deployment monitoring polled this endpoint 35 times and produced
+    FC-API-9, 36 events of the application working exactly as designed.
+
+    An unreleased feature refusing a request is not an error, and an
+    error tracker that says otherwise is worse than one that stays
+    quiet — a channel full of expected noise is a channel nobody reads.
+    404 puts the response outside the captured range **without touching
+    the range itself**, so genuine 5xx anywhere in the platform are
+    reported exactly as before. That is the whole fix: no change to
+    global exception handling, no suppression, no new ignore rule.
+
+    What is given up is a little developer signal, and the comment you
+    are reading replaces it.
+
+    ``Not found.`` rather than naming the feature, consistent with
+    :func:`_get_owned_space` further down: a refusal should not confirm
+    the existence of something the caller is not entitled to see.
 
     There is deliberately **no admin or platform-owner bypass**. A
     bypass is how unfinished functionality reaches production: an
@@ -92,8 +111,8 @@ def require_offerings_enabled() -> None:
     """
     if not settings.offerings_enabled:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Offerings are not available yet.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
         )
 
 
