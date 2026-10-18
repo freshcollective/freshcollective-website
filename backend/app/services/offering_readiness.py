@@ -23,6 +23,7 @@ been checked for adequacy.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -82,24 +83,49 @@ _DEFAULT_COVER_PREFIX = "/api/uploads/platform-artwork/offering-covers/"
 _UPLOADED_COVER_PREFIX = "/api/uploads/offering-covers/"
 
 
+#: A curated default is a single flat filename under its prefix —
+#: ``workbook.png``, not ``a/b/c.png``. Verified against the serving
+#: architecture: such a key routes to the PUBLIC bucket and is served by
+#: ``serve_public_upload``, the same unauthenticated route brand assets
+#: already use, so no media-security rule changes to support it.
+_DEFAULT_COVER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}\.(png|jpg|jpeg|webp)$")
+
+#: A creator upload is ``{offering_id}/{uuid}_{name}`` under its prefix,
+#: which routes to the PRIVATE bucket and through
+#: ``_authorise_offering_cover``.
+_UPLOADED_COVER_PATH = re.compile(
+    r"^[A-Za-z0-9_-]{1,64}/[A-Za-z0-9._-]{1,200}$"
+)
+
+
 def is_acceptable_cover(url: str | None) -> bool:
     """Is this a cover we are willing to publish?
 
-    An allow-list of two shapes, not a URL validator. ``validate_media_url``
-    accepts any ``https`` URL, which is right for a content block and
-    wrong here: a cover is chrome on a member-facing card, and letting a
-    creator point it at an arbitrary host would mean an off-platform
-    request on every page view — blocked by our CSP in practice, but a
-    silently broken image is a poor way to discover that.
+    An allow-list of two shapes, not a URL validator.
+    ``validate_media_url`` accepts any ``https`` URL, which is right for
+    a content block and wrong here: a cover is chrome on a member-facing
+    card, and letting a creator point it at an arbitrary host would mean
+    an off-platform request on every page view — blocked by our CSP in
+    practice, but a silently broken image is a poor way to discover that.
 
-    So a cover must be either a curated platform default or a file this
-    platform stored. A default qualifies, which is the approved rule.
+    The two shapes are matched precisely rather than by prefix alone, so
+    a creator cannot set an arbitrary deep path under either namespace.
+    What this does **not** check is existence: until the curated set
+    ships there is nothing to check against. When it does, the right
+    tightening is a manifest constant listing the real filenames —
+    recorded here so it is a known gap rather than an oversight.
     """
     if not url:
         return False
-    return url.startswith(_DEFAULT_COVER_PREFIX) or url.startswith(
-        _UPLOADED_COVER_PREFIX
-    )
+    if url.startswith(_DEFAULT_COVER_PREFIX):
+        return bool(
+            _DEFAULT_COVER_NAME.match(url[len(_DEFAULT_COVER_PREFIX):])
+        )
+    if url.startswith(_UPLOADED_COVER_PREFIX):
+        return bool(
+            _UPLOADED_COVER_PATH.match(url[len(_UPLOADED_COVER_PREFIX):])
+        )
+    return False
 
 
 def evaluate(

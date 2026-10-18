@@ -615,6 +615,93 @@ class TestCoverImages:
             db=db, current_user=owner,
         ) == 422, url
 
+    def test_a_default_cover_routes_to_the_public_bucket_and_route(
+        self, monkeypatch,
+    ):
+        """Verified against the real serving architecture, not asserted.
+
+        A curated default is platform-owned imagery shown to anyone who
+        can see the Offering, so it belongs on the same public path
+        brand assets already use — which means supporting it changes no
+        shared media-security rule.
+        """
+        from fastapi.routing import APIRoute
+        from app.core import storage
+        from app.core.config import settings
+        from app.main import app
+        monkeypatch.setattr(settings, "r2_bucket_public", "fc-public")
+        monkeypatch.setattr(settings, "r2_bucket_private", "fc-private")
+
+        key = "platform-artwork/offering-covers/workbook.png"
+        assert storage._bucket_for_key(key) == "fc-public"
+
+        scope = {
+            "type": "http", "method": "GET", "path": f"/api/uploads/{key}",
+            "headers": [], "query_string": b"", "root_path": "",
+        }
+        matched = next(
+            r for r in app.routes
+            if isinstance(r, APIRoute)
+            and str(r.matches(scope)[0]) == "Match.FULL"
+        )
+        assert matched.endpoint.__name__ == "serve_public_upload"
+
+    def test_a_creator_cover_routes_to_the_private_gated_path(
+        self, monkeypatch,
+    ):
+        """The counterpart. A creator's own cover stays private and goes
+        through ``_authorise_offering_cover`` — so the two kinds coexist
+        without the public one widening access to the other."""
+        from fastapi.routing import APIRoute
+        from app.core import storage
+        from app.core.config import settings
+        from app.main import app
+        monkeypatch.setattr(settings, "r2_bucket_public", "fc-public")
+        monkeypatch.setattr(settings, "r2_bucket_private", "fc-private")
+
+        key = "offering-covers/off_123/abcdef_mycover.png"
+        assert storage._bucket_for_key(key) == "fc-private"
+
+        scope = {
+            "type": "http", "method": "GET", "path": f"/api/uploads/{key}",
+            "headers": [], "query_string": b"", "root_path": "",
+        }
+        matched = next(
+            r for r in app.routes
+            if isinstance(r, APIRoute)
+            and str(r.matches(scope)[0]) == "Match.FULL"
+        )
+        assert matched.endpoint.__name__ == "serve_upload"
+        from app.uploads import authorization
+        assert "offering-covers" in authorization._DISPATCH
+
+    @pytest.mark.parametrize("url", [
+        "/api/uploads/platform-artwork/offering-covers/../brand/logo.png",
+        "/api/uploads/platform-artwork/offering-covers/sub/dir/x.png",
+        "/api/uploads/platform-artwork/offering-covers/script.svg",
+        "/api/uploads/offering-covers/../../avatars/x.png",
+    ])
+    def test_neither_namespace_accepts_an_arbitrary_deep_path(self, url):
+        """Shapes are matched precisely, not by prefix alone, so a
+        creator cannot reach another namespace through either one."""
+        assert readiness.is_acceptable_cover(url) is False
+
+    def test_a_default_cover_is_referenced_not_copied(self, db, owner_space):
+        """No duplication: selecting a default stores a URL, so N
+        Offerings choosing the same cover share one stored object."""
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        space, owner = owner_space()
+        a, b = _offering(db, space, slug="a"), _offering(db, space, slug="b")
+        db.flush()
+        for off in (a, b):
+            api.update_offering(
+                space.slug, off.slug,
+                OfferingUpdateRequest(cover_image_url=DEFAULT_COVER),
+                db=db, current_user=owner,
+            )
+        db.refresh(a); db.refresh(b)
+        assert a.cover_image_url == b.cover_image_url == DEFAULT_COVER
+
     def test_the_default_prefix_is_the_existing_public_namespace(self):
         """Default covers need no change to media-security rules: the
         ``platform-artwork/`` prefix already has a public read route for
