@@ -1031,7 +1031,68 @@ class TestFeatureFlag:
         assert settings.offerings_enabled is False
         with pytest.raises(HTTPException) as exc:
             api.require_offerings_enabled()
-        assert exc.value.status_code == 503
+        assert exc.value.status_code == 404
+
+    def test_the_refusal_stays_outside_sentrys_captured_range(self):
+        """The regression this fix exists for.
+
+        Sentry's ``StarletteIntegration`` keeps its
+        ``failed_request_status_codes`` default of 500–599, so a 5xx
+        refusal from a *deliberately* disabled feature becomes a
+        captured event — which is what produced FC-API-9: 36 events of
+        the application working as designed.
+
+        Asserted against the SDK's actual default rather than the
+        number 500, so this keeps meaning what it says if the default
+        ever moves.
+        """
+        from sentry_sdk.integrations.starlette import (
+            StarletteIntegration,
+        )
+        import inspect
+
+        sig = inspect.signature(StarletteIntegration.__init__)
+        captured = sig.parameters["failed_request_status_codes"].default
+
+        with pytest.raises(HTTPException) as exc:
+            api.require_offerings_enabled()
+        code = exc.value.status_code
+
+        # ``captured`` is a range-like set of status codes in current
+        # SDKs; fall back to the documented 500-599 if the shape differs.
+        try:
+            is_captured = code in captured
+        except TypeError:          # pragma: no cover - SDK shape change
+            is_captured = 500 <= code <= 599
+        assert not is_captured, (
+            f"status {code} falls inside Sentry's captured range — a "
+            "disabled feature must not report itself as an error"
+        )
+
+    def test_the_refusal_does_not_name_the_feature(self):
+        """A refusal should not confirm the existence of something the
+        caller is not entitled to see — the same reasoning
+        ``_get_owned_space`` uses for its 404."""
+        with pytest.raises(HTTPException) as exc:
+            api.require_offerings_enabled()
+        assert "offering" not in str(exc.value.detail).lower()
+
+    def test_global_exception_handling_is_untouched(self):
+        """The fix changes one status code, not how errors are
+        reported. Genuine 5xx must still reach Sentry, so the captured
+        range and the ignore list stay exactly as they were."""
+        import inspect
+        from app.core import observability
+        src = inspect.getsource(observability)
+        assert "failed_request_status_codes=" not in src, (
+            "the captured range must not be narrowed to fix this"
+        )
+        assert "default_integrations=True" in src
+        # And no new logger suppression was added for Offerings.
+        assert not any(
+            "offering" in p.lower()
+            for p in observability.NEVER_REPORTED_LOGGERS
+        )
 
     def test_the_dependency_allows_when_enabled(self, monkeypatch):
         from app.core.config import settings
