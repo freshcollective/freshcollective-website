@@ -34,6 +34,17 @@ GET /api/uploads/{file_path:path}
     (5 minutes) for the private bucket. In filesystem mode it serves
     the local file directly.
 
+    Two namespaces inside that catch-all behave differently, and
+    both are Offerings. ``offering-files/*`` is a purchased download:
+    authorised on *entitlement* rather than membership, and served as
+    a forced attachment with a signed ``Content-Disposition`` so the
+    bytes cannot render inline on a storage domain.
+    ``offering-covers/*`` is ordinary imagery and follows the
+    Collective's visibility like any other cover. They are separate
+    prefixes precisely so a change to how covers are served can never
+    reach the files people paid for. There is no public route for
+    either, and there must never be one for the former.
+
 Path traversal is blocked in filesystem mode by ``resolve()`` +
 ``is_relative_to(UPLOAD_DIR)``. In R2 mode any ``..`` segment in the
 requested path is rejected outright — R2 keys are opaque strings, but
@@ -57,6 +68,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.storage import UPLOAD_DIR
 from app.models.user import User
+from app.services.offering_files import OFFERING_FILES_PREFIX
 from app.uploads.authorization import authorize_upload
 
 uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -79,7 +91,9 @@ def _reject_traversal(file_path: str) -> None:
             raise HTTPException(status_code=400, detail="Invalid path.")
 
 
-def _serve_from_filesystem(file_path: str) -> FileResponse:
+def _serve_from_filesystem(
+    file_path: str, *, force_download: bool = False,
+) -> FileResponse:
     """Filesystem-mode serving — the pre-Stage-B behaviour, preserved
     for local dev and tests that write to UPLOAD_DIR."""
     target = (UPLOAD_DIR / file_path).resolve()
@@ -95,13 +109,22 @@ def _serve_from_filesystem(file_path: str) -> FileResponse:
     # these bytes as ``<img src>`` from a different origin.
     # ``X-Content-Type-Options: nosniff`` refuses browser MIME
     # sniffing — ``media_type`` is authoritative.
+    headers = {
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if force_download:
+        headers["Content-Disposition"] = (
+            f'attachment; filename="{_download_filename_from_key(file_path)}"'
+        )
+        headers["Cache-Control"] = "private, max-age=0, no-store"
     return FileResponse(
         str(target),
-        media_type=media_type or "application/octet-stream",
-        headers={
-            "Cross-Origin-Resource-Policy": "cross-origin",
-            "X-Content-Type-Options": "nosniff",
-        },
+        media_type=(
+            "application/octet-stream" if force_download
+            else (media_type or "application/octet-stream")
+        ),
+        headers=headers,
     )
 
 
@@ -126,8 +149,30 @@ def _redirect_to_public_r2(key: str) -> RedirectResponse:
     )
 
 
-def _redirect_to_presigned_r2(key: str) -> RedirectResponse:
+def _download_filename_from_key(key: str) -> str:
+    """A human-readable filename for a forced download.
+
+    Keys are ``{prefix}/{id}/{uuid}_{sanitised-name}``, so the basename
+    with its uuid prefix removed is the name the creator uploaded. No
+    database read: the key already carries it, and a download path
+    should not pay for a second query to label a file.
+    """
+    base = key.rsplit("/", 1)[-1]
+    name = base.split("_", 1)[1] if "_" in base else base
+    return name or "download"
+
+
+def _redirect_to_presigned_r2(
+    key: str, *, force_download: bool = False,
+) -> RedirectResponse:
     """Private-bucket redirect via a short-lived pre-signed URL.
+
+    ``force_download`` adds ``ResponseContentDisposition`` to the
+    signed parameters. That matters because the bytes are served by R2,
+    not by this app: a header set on *this* 302 says nothing about what
+    the browser does with the response it is redirected to. Signing the
+    disposition is the only way to guarantee a purchased file arrives as
+    a download rather than rendering inline on a storage domain.
 
     Two callers, and the difference matters. ``serve_upload`` calls it
     after verifying the session and the per-namespace rule, so the
@@ -141,9 +186,21 @@ def _redirect_to_presigned_r2(key: str) -> RedirectResponse:
     assert settings.r2_bucket_private is not None
     # Attribute lookup at call time (via the module reference) so tests
     # that monkeypatch ``storage_module._r2_client`` are observed here.
+    params: dict[str, str] = {
+        "Bucket": settings.r2_bucket_private,
+        "Key": key,
+    }
+    if force_download:
+        filename = _download_filename_from_key(key)
+        params["ResponseContentDisposition"] = (
+            f'attachment; filename="{filename}"'
+        )
+        # Signed alongside the disposition so the storage layer cannot be
+        # talked into serving a purchased document as, say, HTML.
+        params["ResponseContentType"] = "application/octet-stream"
     url = storage_module._r2_client().generate_presigned_url(
         "get_object",
-        Params={"Bucket": settings.r2_bucket_private, "Key": key},
+        Params=params,
         ExpiresIn=_PRESIGNED_URL_EXPIRY_SECONDS,
     )
     return RedirectResponse(
@@ -208,6 +265,12 @@ def serve_upload(
     # the full rule matrix. Runs BEFORE the R2 / filesystem branch so
     # both modes are equally gated.
     authorize_upload(file_path, current_user, db)
+    # Purchased Offering files are the one namespace served as a forced
+    # download. Everything else here is imagery the app renders inline
+    # (covers, avatars, artwork, step resources), and attaching those
+    # would break the pages that display them. Offering *covers* are
+    # imagery too, and deliberately not in this set.
+    force_download = file_path.startswith(f"{OFFERING_FILES_PREFIX}/")
     if settings.is_r2_enabled:
-        return _redirect_to_presigned_r2(file_path)
-    return _serve_from_filesystem(file_path)
+        return _redirect_to_presigned_r2(file_path, force_download=force_download)
+    return _serve_from_filesystem(file_path, force_download=force_download)

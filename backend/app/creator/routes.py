@@ -159,6 +159,7 @@ from app.creator.schemas import (
     AccessPassAdminOut,
 )
 from app.models.access_pass import AccessPass, AccessPassStatus
+from app.models.offering import Offering
 from app.models.creator_billing import (
     CreatorPlan,
     CreatorSubscription,
@@ -1916,6 +1917,25 @@ def delete_space(
     )
     if purchase_plan_count:
         blockers.append(f"{purchase_plan_count} subscription plan(s)")
+
+    # Offerings. The database already refuses this deletion —
+    # ``offerings.space_id`` is ON DELETE RESTRICT, deliberately unlike
+    # the cascading child tables, because an Offering can be somebody's
+    # paid property. Counting it here turns what would be a 500 from a
+    # foreign-key violation into the same 409 every other blocker
+    # produces, with a sentence the creator can act on.
+    #
+    # Deleting the Offerings first is NOT offered. A draft Collective
+    # with an Offering in it is a creator who has started building
+    # something, and silently discarding it to permit a delete is the
+    # kind of helpfulness nobody asks for twice. If that is wanted
+    # later it belongs with archive semantics, alongside the R2 cleanup
+    # that ``_collect_space_r2_keys`` would then need to learn about.
+    offering_count = (
+        db.query(Offering).filter(Offering.space_id == space.id).count()
+    )
+    if offering_count:
+        blockers.append(f"{offering_count} offering(s)")
 
     if blockers:
         raise HTTPException(
