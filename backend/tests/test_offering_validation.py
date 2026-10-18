@@ -756,9 +756,28 @@ class TestFeatureFlagSeparation:
             ast.dump(n) for n in cbody
         ), "covers are presentation and should stay behind the flag"
 
-    def test_no_offering_route_exists_yet(self):
+    def test_every_offering_route_is_gated_by_the_feature_flag(self):
+        """**Updated in B4.** This asserted that no Offering route
+        existed at all, which was true while the phase shipped no
+        endpoints. B4 adds the creator API, so the guarantee it was
+        really protecting — nothing reachable while Offerings is off —
+        moves from "no routes" to "every route gated".
+
+        Rewritten rather than deleted, so the change of fact is visible
+        in the suite's history.
+        """
+        from fastapi.routing import APIRoute
         from app.main import app
-        assert [r.path for r in app.routes if "offering" in r.path.lower()] == []
+        routes = [
+            r for r in app.routes
+            if isinstance(r, APIRoute) and "offerings" in r.path
+        ]
+        assert routes, "B4 ships the creator API; expected routes"
+        for r in routes:
+            names = [
+                getattr(d.call, "__name__", "") for d in r.dependant.dependencies
+            ]
+            assert "require_offerings_enabled" in names, r.path
 
 
 # ---------------------------------------------------------------------------
