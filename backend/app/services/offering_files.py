@@ -87,22 +87,17 @@ MAX_OFFERING_FILE_COUNT = 25
 OFFERING_ALLOWED_TYPES: dict[str, frozenset[str]] = {
     # Documents
     ".pdf": frozenset({"application/pdf"}),
-    ".doc": frozenset({"application/msword"}),
     ".docx": frozenset({
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
-    ".rtf": frozenset({"application/rtf", "text/rtf"}),
     ".txt": frozenset({"text/plain"}),
     ".md": frozenset({"text/markdown", "text/plain"}),
-    ".epub": frozenset({"application/epub+zip"}),
     # Spreadsheets
-    ".xls": frozenset({"application/vnd.ms-excel"}),
     ".xlsx": frozenset({
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
     ".csv": frozenset({"text/csv", "application/csv", "text/plain"}),
     # Presentations
-    ".ppt": frozenset({"application/vnd.ms-powerpoint"}),
     ".pptx": frozenset({
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
@@ -129,6 +124,23 @@ OFFERING_FORBIDDEN_EXTENSIONS: frozenset[str] = frozenset({
     ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".mjs", ".jse", ".wsf",
     ".wsh", ".hta", ".reg", ".lnk", ".scf", ".inf", ".apk", ".deb",
     ".rpm", ".dmg", ".pkg", ".py", ".pyc", ".rb", ".pl", ".php",
+})
+
+
+#: Macro-enabled Office extensions. Named rather than merely unlisted so
+#: the creator is told to save as the non-macro variant — "unsupported
+#: format" would leave them guessing at a one-click fix.
+MACRO_EXTENSIONS: frozenset[str] = frozenset({
+    ".docm", ".xlsm", ".pptm", ".dotm", ".xltm", ".potm", ".xlam", ".ppam",
+})
+
+#: Legacy binary Office, removed from the allow-list by approval. These
+#: are OLE compound files that can carry a VBA project with no outward
+#: signal, so "is this safe?" is unanswerable without much heavier
+#: machinery — and "save as .xlsx" is a one-click fix for a creator.
+#: Named for the same reason as the macro set.
+LEGACY_OFFICE_EXTENSIONS: frozenset[str] = frozenset({
+    ".doc", ".xls", ".ppt", ".dot", ".xlt", ".pot",
 })
 
 
@@ -241,6 +253,24 @@ def validate_offering_upload(
             )
 
     extension = exts[-1]
+
+    # Named before the allow-list is consulted, so these two get a
+    # message that tells the creator what to do instead of a generic
+    # "unsupported format".
+    if extension in MACRO_EXTENSIONS:
+        raise OfferingFileRejected(
+            "macro_document",
+            "This file includes macros, which we can't accept. Saving it "
+            "as .docx, .xlsx or .pptx usually works — macros are rarely "
+            "needed in a template.",
+        )
+    if extension in LEGACY_OFFICE_EXTENSIONS:
+        raise OfferingFileRejected(
+            "legacy_office",
+            "This is an older Office format. Please save it as .docx, "
+            ".xlsx or .pptx and upload again.",
+        )
+
     accepted = OFFERING_ALLOWED_TYPES.get(extension)
     if accepted is None:
         raise OfferingFileRejected(
@@ -331,6 +361,8 @@ __all__ = [
     "MAX_OFFERING_FILE_COUNT",
     "OFFERING_ALLOWED_TYPES",
     "OFFERING_FORBIDDEN_EXTENSIONS",
+    "MACRO_EXTENSIONS",
+    "LEGACY_OFFICE_EXTENSIONS",
     "OfferingFileRejected",
     "ValidatedOfferingFile",
     "sanitise_filename",

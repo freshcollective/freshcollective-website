@@ -72,6 +72,18 @@ def _offering(db, space, **overrides) -> Offering:
 
 
 def _file(db, offering, *, name="workbook.pdf", **overrides) -> OfferingFile:
+    """A file that has passed validation.
+
+    Phase B added a validation gate, so a row left at its ``pending``
+    default is correctly undownloadable. The tests in this file are
+    about *ownership* — who may read what they paid for — so their
+    fixtures are files that have cleared their checks. Validation
+    itself is exercised in ``test_offering_validation.py``, including
+    that a pending file is refused even an entitled purchaser.
+    """
+    from app.services.offering_validation import (
+        REQUIRED_CHECKS, VALIDATION_POLICY_VERSION,
+    )
     defaults = dict(
         id=_uid("ofl"),
         offering_id=offering.id,
@@ -80,6 +92,12 @@ def _file(db, offering, *, name="workbook.pdf", **overrides) -> OfferingFile:
         content_type="application/pdf",
         byte_size=2048,
         sort_order=0,
+        validation_status="passed",
+        checks_performed=[
+            {"id": c.id, "version": c.version, "outcome": "pass"}
+            for c in REQUIRED_CHECKS
+        ],
+        validation_policy_version=VALIDATION_POLICY_VERSION,
     )
     defaults.update(overrides)
     row = OfferingFile(**defaults)
@@ -723,13 +741,23 @@ class TestFeatureFlag:
         from app.core.config import Settings
         assert Settings().offerings_enabled is False
 
-    def test_downloads_are_refused_while_disabled(
+    def test_an_owner_can_still_download_while_the_feature_is_disabled(
         self, db, make_space, make_user,
     ):
-        """A route cannot bypass the gate. Note the caller here is a
-        fully entitled purchaser — the flag refuses even them, which is
-        safe only because nothing can be owned yet and is flagged in
-        the resolver for revisiting before the first real purchase."""
+        """**Reversed in Phase B, deliberately.**
+
+        Phase A had the flag refuse even a fully entitled purchaser,
+        and flagged that for revisiting before the first real purchase.
+        Revisited and approved: feature availability and existing
+        download entitlements are separate concerns. Turning Offerings
+        off stops new activity; it must not reach back and take away a
+        file somebody paid for.
+
+        This test previously asserted the opposite — and, once the
+        validation gate landed, kept passing for a different reason
+        than it claimed, which is its own argument for rewriting it
+        rather than adjusting it.
+        """
         off = _offering(db, make_space())
         f = _file(db, off)
         buyer = make_user()
@@ -737,7 +765,7 @@ class TestFeatureFlag:
         db.flush()
         from app.core.config import settings
         assert settings.offerings_enabled is False
-        assert _authorise(f.storage_key, buyer, db) == 403
+        assert _authorise(f.storage_key, buyer, db) is None
 
     def test_covers_are_refused_while_disabled(self, db, make_space):
         off = _offering(db, make_space())
@@ -839,14 +867,30 @@ class TestFileValidation:
         ("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
         ("meditation.mp3", "audio/mpeg"),
         ("reading.m4a", "audio/mp4"),
-        ("legacy.doc", "application/msword"),
-        ("legacy.xls", "application/vnd.ms-excel"),
     ])
     def test_every_approved_format_is_accepted(self, name, ctype):
         out = of.validate_offering_upload(
             filename=name, content_type=ctype, byte_size=1024,
         )
         assert out.content_type == ctype.split(";")[0]
+
+    @pytest.mark.parametrize("name,ctype", [
+        ("legacy.doc", "application/msword"),
+        ("legacy.xls", "application/vnd.ms-excel"),
+        ("legacy.ppt", "application/vnd.ms-powerpoint"),
+    ])
+    def test_legacy_office_formats_are_now_refused(self, name, ctype):
+        """These were accepted in Phase A and removed by approval in
+        Phase B: they are OLE containers that can carry a VBA project
+        with no outward signal. Rewritten rather than deleted, so the
+        change of policy is visible in the suite's history.
+        """
+        with pytest.raises(of.OfferingFileRejected) as exc:
+            of.validate_offering_upload(
+                filename=name, content_type=ctype, byte_size=1024,
+            )
+        assert exc.value.reason == "legacy_office"
+        assert ".xlsx" in exc.value.message, "tell the creator the fix"
 
     @pytest.mark.parametrize("name", [
         "installer.exe", "script.sh", "macro.vbs", "app.apk",

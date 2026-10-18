@@ -54,6 +54,7 @@ from app.models.offering import (
     OfferingEntitlement,
     OfferingEntitlementStatus,
     OfferingFile,
+    OfferingFileValidationStatus,
 )
 from app.models.user import User
 
@@ -330,46 +331,64 @@ def _has_active_entitlement(user: User, offering_id: str, db: Session) -> bool:
 def _authorise_offering_file(user: User, file_path: str, db: Session) -> None:
     """``offering-files/{offering_id}/{uuid}_{name}`` — paid downloads.
 
-    Four things must hold, and the order matters because each earlier
-    answer must not leak information the caller has not earned:
+    Four things must hold, and the order matters because no earlier
+    answer may leak information the caller has not earned:
 
-      1. The feature is enabled. While Offerings is unreleased there is
-         no legitimate download, so the flag is a real gate rather than
-         decoration — ``settings.offerings_enabled`` defaults to False.
-      2. The key's shape resolves an Offering that exists. A key that
+      1. The key's shape resolves an Offering that exists. A key that
          does not is **404**, matching every other resolver here, so
          the route cannot be used to probe which ids are real.
-      3. The caller is entitled, or manages the Collective, or is an
+      2. The caller is entitled, or manages the Collective, or is an
          admin. Anyone else is 403.
-      4. The file row exists, belongs to *this* Offering, and is in the
-         current bundle. A purchaser gets today's files — the approved
-         behaviour — and cannot reach a superseded version simply
-         because they bought the Offering before it was replaced.
+      3. The file has **passed validation**. This applies to
+         *everyone*, managers included — see below.
+      4. The file belongs to *this* Offering and, for a purchaser, is
+         the current version.
 
-    Step 4 is why the Offering id is a whole path segment: an entitled
-    buyer of Offering A must not be able to read Offering B's file by
-    pasting its key, and that is checked here rather than assumed from
-    the fact that they are entitled to something.
+    Step 1/4 is why the Offering id is a whole path segment: an
+    entitled buyer of Offering A must not be able to read Offering B's
+    file by pasting its key, and that is checked here rather than
+    assumed from the fact that the caller is entitled to something.
 
-    Creators and admins are allowed past the current-bundle check, so
-    a superseded file stays reachable for recovery and audit. That is
-    the controlled historical access Phase A was asked for; a creator
-    UI for it is Phase B.
+    No feature flag here, deliberately
+    ----------------------------------
+
+    Phase A gated this on ``settings.offerings_enabled`` and flagged it
+    for revisiting. It is revisited now, because the gate was wrong in
+    a way that only becomes dangerous once files are owned: a release
+    switch must never be able to take away a file somebody paid for.
+
+    The required separation, stated so it is not re-litigated:
+
+      * **Feature availability** — whether Offerings can be browsed,
+        created or acquired — is the flag's job. It gates the
+        creator surfaces, the member surfaces and (later) acquisition.
+        It also still gates ``offering-covers``, which are
+        presentation rather than property.
+      * **Existing download entitlements** are the entitlement row's
+        job, and nothing else's. Turning Offerings off stops new
+        activity; it does not reach back into what members already own.
+
+    So this resolver asks "do you own it, and has it passed?" and
+    never "is the feature switched on?".
+
+    Unvalidated files are not downloadable by anyone
+    -----------------------------------------------
+
+    Managers may read a *superseded* file — Phase A's recovery and
+    audit access, preserved — but they may **not** read one that is
+    ``pending``, ``rejected``, ``error`` or ``quarantined`` through
+    this route. The reason is narrow and worth stating: this route
+    mints a pre-signed URL that behaves exactly like an approved
+    download and can be pasted anywhere. Letting a manager obtain one
+    for an unchecked file would be precisely the bypass that
+    distributes unvalidated content as though it were approved.
+
+    A creator previewing their own pending upload is a legitimate need
+    and belongs in a controlled Creator Studio surface that is clearly
+    labelled and does not hand out a durable URL. That is Phase B
+    editor work, not a relaxation here.
     """
-    # 1. Feature gate.
-    #
-    # Safe today because no entitlement can exist yet. It must be
-    # revisited before the first real purchase: once somebody owns a
-    # file, turning the flag off would take away something they paid
-    # for, and a release switch should never be able to do that.
-    # Flagged for Phase D.
-    from app.core.config import settings
-    if not settings.offerings_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
-        )
-
-    # 2. Resolve the Offering from the key's own structure.
+    # 1. Resolve the Offering from the key's own structure.
     from app.services.offering_files import offering_id_from_storage_key
     offering_id = offering_id_from_storage_key(file_path)
     if offering_id is None:
@@ -382,16 +401,16 @@ def _authorise_offering_file(user: User, file_path: str, db: Session) -> None:
             status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
         )
 
-    # 3. Who is asking.
+    # 2. Who is asking.
     is_manager = _offering_manager(user, offering, db)
     if not is_manager and not _has_active_entitlement(user, offering.id, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
         )
 
-    # 4. Which file. Matched on the key, scoped to this Offering, so a
-    #    key belonging to another Offering is a 404 even for a caller
-    #    who is legitimately entitled to this one.
+    # 3/4. Which file. Matched on the key, scoped to this Offering, so
+    #      a key belonging to another Offering is a 404 even for a
+    #      caller legitimately entitled to this one.
     row = (
         db.query(OfferingFile)
         .filter(
@@ -404,6 +423,18 @@ def _authorise_offering_file(user: User, file_path: str, db: Session) -> None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
         )
+
+    # Validation gate — applies to everyone, including managers.
+    #
+    # One line, in the single place that already decides what may be
+    # fetched, so there is no second gate to keep in step. A file that
+    # has not passed is not downloadable: not for a purchaser, not for
+    # the creator who uploaded it, not for an admin.
+    if row.validation_status != OfferingFileValidationStatus.passed.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
+        )
+
     if row.superseded_at is not None and not is_manager:
         # Owned, but not this version. 403 rather than 404: the file
         # genuinely exists and the caller may legitimately know of it,
@@ -424,6 +455,12 @@ def _authorise_offering_cover(user: User, file_path: str, db: Session) -> None:
     It is emphatically **not** a download grant. Keeping covers in
     their own namespace is what guarantees that a future change making
     covers cheaper to serve cannot widen access to the paid assets.
+
+    This resolver **does** check the feature flag, where
+    ``_authorise_offering_file`` deliberately does not. A cover is
+    presentation — part of whether the feature is available — while a
+    purchased file is property. Turning Offerings off should hide the
+    shopfront and must not reach into what members already own.
     """
     from app.core.config import settings
     if not settings.offerings_enabled:

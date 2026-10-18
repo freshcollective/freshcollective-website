@@ -325,11 +325,17 @@ class Settings(BaseSettings):
     # purchase — so with this False the migration and the storage
     # infrastructure deploy safely without activating anything.
     #
-    # The download authoriser checks this flag rather than trusting that
-    # no entitlements exist, so a route cannot bypass the gate. That is
-    # safe precisely because nothing can be owned yet; **before the
-    # first real purchase it must be revisited**, since a release switch
-    # must never be able to take away a file somebody paid for.
+    # **Resolved in Phase B — the required separation.** This flag
+    # governs *feature availability*: the creator surfaces, the member
+    # surfaces, Offering covers, and (later) acquisition. It does
+    # **not** govern access to files a member already owns.
+    #
+    # Phase A gated downloads on it and flagged that for revisiting.
+    # Revisited: the download authoriser no longer reads this flag at
+    # all, because a release switch must never be able to take away a
+    # file somebody paid for. Entitlement decides downloads; this flag
+    # decides whether anything new can happen. Turning Offerings off
+    # stops new activity and leaves existing ownership intact.
     offerings_enabled: bool = False
 
     # Ways to Connect — gated separately from Discover Places. The two

@@ -84,6 +84,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -123,6 +124,31 @@ class OfferingFulfilmentKind(str, enum.Enum):
     digital_download = "digital_download"
 
 
+class OfferingFileValidationStatus(str, enum.Enum):
+    """Where a file stands in structural validation.
+
+    **Not a malware verdict.** ``passed`` means every check currently
+    required by ``offering_validation.REQUIRED_CHECKS`` ran and
+    succeeded. It does not mean clean, safe or scanned — nothing in
+    this system scans for malware, and ``checks_performed`` records
+    exactly what did run so the distinction is auditable rather than
+    assumed.
+
+    ``rejected`` and ``quarantined`` are deliberately separate states.
+    ``rejected`` is "failed its checks at upload"; ``quarantined`` is
+    "was approved, and a problem was found later" — by an operator, or
+    by a revalidation that a previous approval must not override.
+    Collapsing them would erase the difference between a file that was
+    never accepted and one whose approval was withdrawn.
+    """
+
+    pending = "pending"
+    passed = "passed"
+    rejected = "rejected"
+    error = "error"
+    quarantined = "quarantined"
+
+
 class OfferingEntitlementSource(str, enum.Enum):
     """How ownership came about. Mirrors ``AccessPassSource`` so the two
     read the same way in reports and neither needs translating."""
@@ -151,6 +177,11 @@ OFFERING_STATUSES: tuple[str, ...] = tuple(s.value for s in OfferingStatus)
 #: Values accepted by the ``offerings.fulfilment_kind`` CHECK constraint.
 OFFERING_FULFILMENT_KINDS: tuple[str, ...] = tuple(
     k.value for k in OfferingFulfilmentKind
+)
+
+#: Values accepted by the ``offering_files.validation_status`` CHECK.
+OFFERING_FILE_VALIDATION_STATUSES: tuple[str, ...] = tuple(
+    s.value for s in OfferingFileValidationStatus
 )
 
 #: Values accepted by the entitlement CHECK constraints.
@@ -367,6 +398,62 @@ class OfferingFile(Base):
         DateTime(timezone=False), server_default=func.now(), nullable=False,
     )
 
+    # ── Structural validation (Phase B) ────────────────────────────────
+    #
+    # Deliberately a SEPARATE axis from ``superseded_at``. That
+    # separation is what lets a replacement be validated while the
+    # previously approved version stays downloadable: the old row is
+    # still ``passed`` and still current until the new one passes.
+    # Collapsing the two would force a gap in purchaser access.
+    #
+    # The field is named ``validation_*`` and never ``scan_*``: a later
+    # reader must not be able to infer a malware scan from a column
+    # name. See ``OfferingFileValidationStatus``.
+
+    #: Defaults to ``pending``, which is what makes the safe state the
+    #: automatic one — a row written by any code path, now or later, is
+    #: not downloadable until something deliberately passes it.
+    validation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        default=OfferingFileValidationStatus.pending.value,
+        server_default=OfferingFileValidationStatus.pending.value,
+    )
+
+    #: One record per check that actually ran:
+    #: ``{id, version, outcome, reason?, detail?}``. The factual answer
+    #: to "what was this file checked for?" — queryable, so finding
+    #: every file that has never seen a given check is a WHERE clause
+    #: rather than an inference.
+    checks_performed: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]",
+    )
+
+    #: Which required-check set was in force. Lets "passed under policy
+    #: 1" be told from "passed under policy 2" without guessing from
+    #: dates, and drives the revalidation sweep.
+    validation_policy_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+    )
+
+    #: Machine-readable failing-check reason. Null when passed.
+    validation_reason: Mapped[str | None] = mapped_column(
+        String(60), nullable=True,
+    )
+
+    validated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
+    #: Bounded retries, so an unreadable file does not loop forever.
+    validation_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+
+    #: Set when a previously approved file has its approval withdrawn.
+    quarantined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
     offering: Mapped["Offering"] = relationship(
         "Offering", back_populates="files",
     )
@@ -392,12 +479,44 @@ class OfferingFile(Base):
             "offering_id", "sort_order",
             postgresql_where=superseded_at.is_(None),
         ),
+        CheckConstraint(
+            "validation_status IN "
+            "('pending', 'passed', 'rejected', 'error', 'quarantined')",
+            name="ck_offering_files_validation_status",
+        ),
+        CheckConstraint(
+            "quarantined_at IS NULL OR validation_status = 'quarantined'",
+            name="ck_offering_files_quarantine_shape",
+        ),
+        # The sweep's query: files awaiting or retrying validation.
+        Index(
+            "ix_offering_files_validation_pending",
+            "validation_status",
+            postgresql_where=validation_status.in_(("pending", "error")),
+        ),
     )
 
     @property
     def is_current(self) -> bool:
-        """In the current downloadable bundle."""
+        """In the current *version* of the bundle.
+
+        Version only. Says nothing about validation — ask
+        :attr:`is_downloadable` for that, because a brand-new unchecked
+        row is the current version and must not be served.
+        """
         return self.superseded_at is None
+
+    @property
+    def is_validated(self) -> bool:
+        """Passed every check required when it was validated."""
+        return self.validation_status == (
+            OfferingFileValidationStatus.passed.value
+        )
+
+    @property
+    def is_downloadable(self) -> bool:
+        """Both axes, which is the only question a download route has."""
+        return self.is_current and self.is_validated
 
     def __repr__(self) -> str:  # pragma: no cover — debugging aid
         state = "current" if self.is_current else "superseded"
@@ -566,6 +685,8 @@ __all__ = [
     "OfferingEntitlement",
     "OfferingStatus",
     "OfferingFulfilmentKind",
+    "OfferingFileValidationStatus",
+    "OFFERING_FILE_VALIDATION_STATUSES",
     "OfferingEntitlementSource",
     "OfferingEntitlementStatus",
     "OFFERING_STATUSES",
