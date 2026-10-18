@@ -9,6 +9,14 @@ data (``_user_manages_space``, ``_check_pathway_access``), so a user
 cannot fetch a private image if they wouldn't be allowed to see it
 rendered on the page that references it.
 
+Offerings are the one exception to the sentence above, and it is
+deliberate. Every other namespace here grants on *membership* — if you
+could see the page, you can fetch its image. A purchased Offering file
+grants on *entitlement*: the member who bought it keeps it when they
+leave the Collective, when the Collective closes, and when the product
+is retired. Membership is neither necessary nor sufficient. See
+``_authorise_offering_file``.
+
 Not in this module:
   * Path traversal — enforced upstream in ``uploads/routes.py``.
   * R2 presigning / filesystem serving — the route handler still owns
@@ -40,6 +48,12 @@ from app.models.platform import (
     PostComment,
     Space,
     SpaceMembership,
+)
+from app.models.offering import (
+    Offering,
+    OfferingEntitlement,
+    OfferingEntitlementStatus,
+    OfferingFile,
 )
 from app.models.user import User
 
@@ -276,6 +290,166 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Offerings
+# ---------------------------------------------------------------------------
+
+
+def _offering_manager(user: User, offering: Offering, db: Session) -> bool:
+    """May this user manage the Offering's Collective?
+
+    Admin, or the Collective's owner. Deliberately **not**
+    ``_user_can_view_space_media`` — that accepts any active member,
+    and a member of a Collective has no business reading a paid file
+    they did not buy.
+    """
+    if _is_admin(user):
+        return True
+    space = db.query(Space).filter(Space.id == offering.space_id).first()
+    return space is not None and _is_space_owner(user, space)
+
+
+def _has_active_entitlement(user: User, offering_id: str, db: Session) -> bool:
+    """Does this user own this Offering right now?
+
+    One question, one row. No membership join, no Offering-status
+    check, no look at whether the payment was later refunded — those
+    are all deliberately absent, and their absence is what implements
+    the approved ownership decisions.
+    """
+    return (
+        db.query(OfferingEntitlement.id)
+        .filter(
+            OfferingEntitlement.user_id == user.id,
+            OfferingEntitlement.offering_id == offering_id,
+            OfferingEntitlement.status == OfferingEntitlementStatus.active.value,
+        )
+        .first()
+    ) is not None
+
+
+def _authorise_offering_file(user: User, file_path: str, db: Session) -> None:
+    """``offering-files/{offering_id}/{uuid}_{name}`` — paid downloads.
+
+    Four things must hold, and the order matters because each earlier
+    answer must not leak information the caller has not earned:
+
+      1. The feature is enabled. While Offerings is unreleased there is
+         no legitimate download, so the flag is a real gate rather than
+         decoration — ``settings.offerings_enabled`` defaults to False.
+      2. The key's shape resolves an Offering that exists. A key that
+         does not is **404**, matching every other resolver here, so
+         the route cannot be used to probe which ids are real.
+      3. The caller is entitled, or manages the Collective, or is an
+         admin. Anyone else is 403.
+      4. The file row exists, belongs to *this* Offering, and is in the
+         current bundle. A purchaser gets today's files — the approved
+         behaviour — and cannot reach a superseded version simply
+         because they bought the Offering before it was replaced.
+
+    Step 4 is why the Offering id is a whole path segment: an entitled
+    buyer of Offering A must not be able to read Offering B's file by
+    pasting its key, and that is checked here rather than assumed from
+    the fact that they are entitled to something.
+
+    Creators and admins are allowed past the current-bundle check, so
+    a superseded file stays reachable for recovery and audit. That is
+    the controlled historical access Phase A was asked for; a creator
+    UI for it is Phase B.
+    """
+    # 1. Feature gate.
+    #
+    # Safe today because no entitlement can exist yet. It must be
+    # revisited before the first real purchase: once somebody owns a
+    # file, turning the flag off would take away something they paid
+    # for, and a release switch should never be able to do that.
+    # Flagged for Phase D.
+    from app.core.config import settings
+    if not settings.offerings_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
+        )
+
+    # 2. Resolve the Offering from the key's own structure.
+    from app.services.offering_files import offering_id_from_storage_key
+    offering_id = offering_id_from_storage_key(file_path)
+    if offering_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+    offering = db.query(Offering).filter(Offering.id == offering_id).first()
+    if offering is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+
+    # 3. Who is asking.
+    is_manager = _offering_manager(user, offering, db)
+    if not is_manager and not _has_active_entitlement(user, offering.id, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
+        )
+
+    # 4. Which file. Matched on the key, scoped to this Offering, so a
+    #    key belonging to another Offering is a 404 even for a caller
+    #    who is legitimately entitled to this one.
+    row = (
+        db.query(OfferingFile)
+        .filter(
+            OfferingFile.storage_key == file_path,
+            OfferingFile.offering_id == offering.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+    if row.superseded_at is not None and not is_manager:
+        # Owned, but not this version. 403 rather than 404: the file
+        # genuinely exists and the caller may legitimately know of it,
+        # having downloaded it before it was replaced.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
+        )
+
+
+def _authorise_offering_cover(user: User, file_path: str, db: Session) -> None:
+    """``offering-covers/{offering_id}/{uuid}_{name}`` — cover artwork.
+
+    A separate namespace from the files, and a separate rule: a cover
+    is part of how an Offering is presented, so it follows the
+    Collective's ordinary visibility — public Collective, or member /
+    owner / admin — exactly as a Pathway cover does.
+
+    It is emphatically **not** a download grant. Keeping covers in
+    their own namespace is what guarantees that a future change making
+    covers cheaper to serve cannot widen access to the paid assets.
+    """
+    from app.core.config import settings
+    if not settings.offerings_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL,
+        )
+
+    parts = file_path.split("/", 2)
+    if len(parts) < 3 or not parts[1]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+    offering = db.query(Offering).filter(Offering.id == parts[1]).first()
+    if offering is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+    space = db.query(Space).filter(Space.id == offering.space_id).first()
+    if space is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL,
+        )
+    _allow_if_publicly_visible_else_member(user, space, db)
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -298,6 +472,9 @@ _DISPATCH = {
     "event-thumbnails": _authorise_event_thumbnail,
     "steps":            _authorise_step_resource,
     "media":            _authorise_media,
+    # Offerings. Two namespaces on purpose — see the resolvers above.
+    "offering-files":   _authorise_offering_file,
+    "offering-covers":  _authorise_offering_cover,
 }
 
 

@@ -317,6 +317,21 @@ class Settings(BaseSettings):
     # See docs/foundations/discovery-connection-belonging-v1.1.md.
     discovery_pillar_enabled: bool = False
 
+    # Offerings — digital products sold inside a Collective.
+    #
+    # Phase A ships the data foundation only: three tables, the private
+    # ``offering-files`` storage namespace, and the download authoriser.
+    # Nothing user-visible exists yet — no navigation, no browse, no
+    # purchase — so with this False the migration and the storage
+    # infrastructure deploy safely without activating anything.
+    #
+    # The download authoriser checks this flag rather than trusting that
+    # no entitlements exist, so a route cannot bypass the gate. That is
+    # safe precisely because nothing can be owned yet; **before the
+    # first real purchase it must be revisited**, since a release switch
+    # must never be able to take away a file somebody paid for.
+    offerings_enabled: bool = False
+
     # Ways to Connect — gated separately from Discover Places. The two
     # shipped behind one flag because they were built as one pillar;
     # they are not ready at the same time, and turning the pillar on
