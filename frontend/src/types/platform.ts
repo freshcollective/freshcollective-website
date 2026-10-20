@@ -1962,3 +1962,131 @@ export interface CreatorSeriesPaymentOption {
   created_at: string
   updated_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Offerings — digital products a Collective sells (B4–B7)
+// ---------------------------------------------------------------------------
+
+import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
+
+/** ``draft`` | ``published`` | ``retired``. */
+export type OfferingStatus = 'draft' | 'published' | 'retired'
+
+/** ``free`` | ``one_time``. Null until the creator reaches Pricing. */
+export type OfferingPricingKind = 'free' | 'one_time'
+
+/** The machine-readable validation state of one file. */
+export type OfferingFileValidationStatus =
+  | 'pending' | 'passed' | 'rejected' | 'error' | 'quarantined'
+
+export interface CreatorOffering {
+  id: string
+  slug: string
+  title: string
+  summary: string | null
+  description: string | null
+  cover_image_url: string | null
+  status: OfferingStatus
+  pricing_kind: OfferingPricingKind | null
+  price_cents: number | null
+  fulfilment_kind?: string | null
+  file_count: number
+  files_passed: number
+  acquisition_count?: number
+  published_at: string | null
+  retired_at: string | null
+  created_at?: string | null
+  updated_at: string | null
+}
+
+export interface OfferingRequirement {
+  id: string
+  met: boolean
+  message: string
+}
+
+export interface OfferingReadiness {
+  ready: boolean
+  requirements: OfferingRequirement[]
+  offering_limit: number | null
+}
+
+/** One curated default cover. */
+export interface OfferingCover {
+  key: string
+  label: string
+  description: string
+  url: string
+  thumbnail_url: string
+}
+
+export interface OfferingFile {
+  id: string
+  filename: string
+  content_type: string
+  byte_size: number
+  description: string | null
+  sort_order: number
+  resource_count: number
+  validation_status: OfferingFileValidationStatus
+  /** Checking | Ready | Not accepted | On hold — the only one to show. */
+  status_label: string
+  rejection_reason: string | null
+  available_to_purchasers: boolean
+  replacement_pending: boolean
+  replaces_file_id: string | null
+  created_at: string | null
+  validated_at: string | null
+}
+
+/** The Files tab payload: the bundle plus the room left in the plan. */
+export interface OfferingFileList {
+  files: OfferingFile[]
+  resources_used: number
+  resources_allowed: number
+  bytes_used: number
+  bytes_allowed: number
+  max_file_bytes: number
+  zip_bundles_allowed: boolean
+  plan_name: string
+}
+
+/** One file as a member sees it — never a storage key unless they own it. */
+export interface MemberOfferingFile {
+  id: string
+  name: string
+  type_label: string
+  size_label: string
+  byte_size: number
+  description: string | null
+  resource_count: number
+  download_url: string | null
+}
+
+export interface MemberOffering {
+  id: string
+  slug: string
+  title: string
+  summary: string | null
+  description: string | null
+  cover_image_url: string | null
+  status: OfferingStatus
+  pricing_kind: OfferingPricingKind | null
+  price_cents: number | null
+  fulfilment_kind: string | null
+  published_at: string | null
+  retired_at: string | null
+  collective: {
+    slug: string
+    name: string
+    logo_url: string | null
+    colour_palette: CollectivePaletteMeta | null
+  }
+  creator: { name: string } | null
+  about_blocks: PathwayAboutBlock[]
+  files: MemberOfferingFile[]
+  file_count: number
+  total_resources: number
+  viewer_owns: boolean
+  viewer_manages: boolean
+}

@@ -79,7 +79,11 @@ from app.models.offering import (
     OfferingFileValidationStatus as FVS,
 )
 from app.models.user import User
-from app.services.offering_files import build_storage_key, sanitise_filename
+from app.services.offering_files import (
+    OFFERING_COVERS_PREFIX,
+    build_storage_key,
+    sanitise_filename,
+)
 from app.services.offering_limits import (
     bundle_usage,
     guard_upload,
@@ -463,6 +467,100 @@ def _get_file(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Cover image
+# ---------------------------------------------------------------------------
+
+#: Covers are chrome, not product. 5 MB is generous for a 1200px image
+#: and small enough that the upload is over before a creator wonders.
+MAX_COVER_BYTES = 5 * 1024 * 1024
+
+#: Raster formats only. No SVG: it is a document that can carry script,
+#: and a cover is rendered on member-facing pages.
+_COVER_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
+@router.post(
+    "/spaces/{slug}/offerings/{offering_slug}/cover",
+    response_model=OfferingFileResponse | dict,
+    summary="Upload a custom cover image for this Offering",
+)
+def upload_offering_cover(
+    slug: str,
+    offering_slug: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Replace the Offering's cover with the creator's own image.
+
+    Lives in this module rather than beside the other Details fields
+    because it is an *upload*, and everything upload-shaped — the
+    concurrency slot, the streaming receive, the bounded transfer — is
+    already here. A second upload path written next to the PATCH handler
+    would be a second place to get those wrong.
+
+    Written into ``offering-covers/{offering_id}/…``, which is a
+    different namespace from the downloadable files on purpose: a cover
+    is shown to anyone who can see the Offering, a file only to someone
+    who owns it. ``_authorise_offering_cover`` reads the Offering id out
+    of the second path segment, so the shape matters.
+
+    Choosing one of the five curated covers does **not** come through
+    here — that is a PATCH storing a URL, with no bytes copied anywhere.
+    """
+    space = _get_owned_space(slug, current_user, db)
+    offering = _get_offering(space, offering_slug, db)
+
+    declared = (file.content_type or "").split(";")[0].strip().lower()
+    if declared not in _COVER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "reason": "unsupported_type",
+                "message": "Cover images need to be a JPG, PNG or WebP.",
+            },
+        )
+
+    previous = offering.cover_image_url
+
+    with upload_slot():
+        with received(file, max_bytes=MAX_COVER_BYTES) as got:
+            # The extension comes from the *declared type we accepted*,
+            # not from the filename, so a cover cannot be stored under a
+            # suffix that disagrees with its content type.
+            name = f"{sanitise_filename(got.filename).rsplit('.', 1)[0]}"
+            key = (
+                f"{OFFERING_COVERS_PREFIX}/{offering.id}/"
+                f"{uuid4().hex}_{name}{_COVER_TYPES[declared]}"
+            )
+            with got.open() as fh:
+                storage.upload_stream(key, fh, declared)
+            try:
+                offering.cover_image_url = f"/api/uploads/{key}"
+                db.commit()
+                db.refresh(offering)
+            except Exception:
+                db.rollback()
+                storage.delete_file(key)
+                raise
+
+    # The previous custom cover is now unreferenced. Curated defaults are
+    # shared platform assets and must never be deleted — the prefix check
+    # is what tells the two apart.
+    if previous and previous.startswith(f"/api/uploads/{OFFERING_COVERS_PREFIX}/"):
+        storage.delete_file(previous.removeprefix("/api/uploads/"))
+
+    logger.info(
+        "offering cover uploaded: offering=%s by=%s", offering.id, current_user.id,
+    )
+    return {"cover_image_url": offering.cover_image_url}
 
 
 @router.get(

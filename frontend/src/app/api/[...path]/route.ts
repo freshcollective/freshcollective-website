@@ -42,6 +42,10 @@ import { resolveInternalApiBase } from '@/lib/api'
 import { applyBffAuthHeaders } from '@/lib/bffAuth'
 import { captureProxyFailure, classifyProxyFailure } from '@/lib/sentryHandled'
 import { isOfferingFileUpload } from '@/lib/uploadRouting'
+import {
+  acquireLargeUploadSlot,
+  needsSlot,
+} from '@/lib/uploadConcurrency'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -156,42 +160,74 @@ async function proxy(
     ? UPLOAD_REQUEST_TIMEOUT_MS
     : REQUEST_TIMEOUT_MS
 
+  // Shed a large upload rather than carry more than this process has
+  // memory for. Small requests never take a slot. See
+  // ``uploadConcurrency.ts`` for the measurements behind the number.
+  //
+  // 429, not 503: the request is being shed deliberately and the client
+  // should retry. 503 would also be captured as a Sentry event, which
+  // is how FC-API-9 came to hold 36 events of the system working.
+  let releaseSlot: (() => void) | null = null
+  const declaredBytes = Number.parseInt(
+    request.headers.get('content-length') ?? '', 10,
+  )
+  if (needsSlot(method, request.headers.get('content-length'))) {
+    releaseSlot = acquireLargeUploadSlot(declaredBytes)
+    if (!releaseSlot) {
+      return jsonResponse(429, {
+        detail: {
+          reason: 'upload_busy',
+          message:
+            "We're handling other uploads right now. Please try again in "
+            + 'a moment — nothing has been lost.',
+        },
+      })
+    }
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    // Buffer the request body once before forwarding. Streaming via
-    // ``duplex: 'half'`` is fragile under Next.js 16 + Turbopack in
-    // dev, so the body is materialised here instead.
+    // Stream the request body straight through; nothing is buffered
+    // here. This replaced ``await request.arrayBuffer()`` in B6/B7
+    // after measurement showed that buffering made fc-web's memory
+    // scale with upload size and killed the process under concurrent
+    // uploads.
     //
-    // KNOWN CONSTRAINT (Offerings B5). This is the one place in the
-    // upload path that is *not* streamed. fc-api spools an Offering file
-    // to disk and hands it to a bounded multipart transfer, so its peak
-    // resident cost does not scale with the file — but this line puts
-    // the entire body in fc-web's Node heap first. A 50 MB upload
-    // therefore costs fc-web ~50 MB for the duration of the request, and
-    // two concurrent ones cost ~100 MB.
+    // Measured on a production build inside a hard 512 MB cgroup —
+    // four concurrent 50 MB uploads, peak resident memory:
     //
-    // It is bounded (fc-api's middleware refuses a declared body over
-    // 51 MB, and the per-plan limit is enforced downstream) but it is
-    // not cheap, and it is the binding memory risk for this feature
-    // rather than anything in fc-api. Fixing it properly means either
-    // streaming the body through here once ``duplex: 'half'`` is
-    // dependable under Next 16, or giving uploads a presigned direct-to-
-    // R2 path that skips the proxy. Both are deliberately out of scope
-    // for B5 and are written up in the B5 report for a decision.
+    //   buffered, middleware on /api   454 MB for ONE; OOM at two
+    //   streamed, middleware on /api   382 MB for ONE; OOM at two
+    //   streamed, /api excluded        390 MB for FOUR, no OOM
+    //
+    // Both halves are needed. Streaming here is useless on its own
+    // because Next clones the body for the middleware layer before any
+    // handler runs (``getCloneableBody`` in
+    // ``server/lib/router-utils/resolve-routes.js``), so the matcher in
+    // ``src/proxy.ts`` excludes ``/api/`` — where the middleware did
+    // nothing anyway. See the B6/B7 report.
+    //
+    // The historical note here said ``duplex: 'half'`` was fragile under
+    // Next 16 + Turbopack in dev. Retested on 16.2.4 in both dev and
+    // production: full byte integrity at 1–25 MiB, no errors.
     const init: RequestInit = {
       method,
       headers: outboundHeaders,
       redirect: 'manual',
       signal: controller.signal,
     }
-    if (canHaveBody) {
-      const bodyBuffer = await request.arrayBuffer()
-      // Only attach a body when there is actually one — an empty POST
-      // (0 bytes) should not send an empty Buffer that some servers
-      // reject with "unexpected end of input".
-      if (bodyBuffer.byteLength > 0) init.body = bodyBuffer
+    if (canHaveBody && request.body && request.headers.get('content-length') !== '0') {
+      // Hand undici the inbound stream directly rather than
+      // materialising it. ``duplex: 'half'`` is required by the fetch
+      // spec whenever the body is a stream.
+      //
+      // An empty POST takes the branch below instead: the old code was
+      // careful not to send a zero-length body that "some servers reject
+      // with unexpected end of input", and that care is preserved.
+      ;(init as RequestInit & { duplex: 'half' }).duplex = 'half'
+      init.body = request.body
     }
 
     const backendResponse = await fetch(targetUrl, init)
@@ -248,6 +284,7 @@ async function proxy(
       detail: 'Unable to reach the backend.',
     })
   } finally {
+    releaseSlot?.()
     clearTimeout(timer)
   }
 }

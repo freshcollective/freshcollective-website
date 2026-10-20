@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 import threading
 import zipfile
 from contextlib import contextmanager
@@ -48,6 +47,11 @@ from typing import Iterator
 from fastapi import HTTPException, UploadFile, status
 
 from app.services.offering_validation import InspectionBudget
+from app.services.streaming_upload import (
+    EmptyUpload,
+    UploadTooLarge,
+    stream_to_temp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +136,19 @@ class ReceivedUpload:
 def received(
     upload: UploadFile, *, max_bytes: int,
 ) -> Iterator[ReceivedUpload]:
-    """Materialise ``upload`` on local disk and measure it.
+    """Materialise ``upload`` on local disk, measure it, and count it.
 
-    Yields a :class:`ReceivedUpload`; always removes the temporary file
-    on the way out, whether the caller succeeded, refused the upload or
-    raised. That ``finally`` is the whole answer to "temporary files are
-    cleaned up": there is no success path and no failure path, only one
-    exit.
+    The copy itself is :func:`streaming_upload.stream_to_temp`, shared
+    with the Media Library and resource endpoints so there is one
+    chunked-copy loop in the codebase rather than one per surface. What
+    stays here is the Offerings-specific part: mapping the generic
+    refusals onto this surface's wording, and counting the downloadable
+    resources a ZIP contributes.
+
+    Always removes the temporary file on the way out, whether the caller
+    succeeded, refused the upload or raised — that ``finally`` lives in
+    the shared primitive and is the whole answer to "temporary files are
+    cleaned up".
 
     ``max_bytes`` is enforced **as the bytes are copied**, so an
     oversized upload is abandoned part-way instead of being written out
@@ -147,53 +157,30 @@ def received(
     that sent no Content-Length or lied about it, and the one that is
     actually authoritative because it counts what arrived.
     """
-    src = upload.file
     try:
-        src.seek(0)
-    except (OSError, ValueError):   # pragma: no cover — unseekable stream
-        pass
-
-    fd, path = tempfile.mkstemp(prefix="fc-offering-", suffix=".upload")
-    size = 0
-    try:
-        with os.fdopen(fd, "wb") as out:
-            while True:
-                chunk = src.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > max_bytes:
-                    # Stop here. Nothing is stored, nothing is charged,
-                    # and the partial temp file goes in the ``finally``.
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail={
-                            "reason": "file_too_large",
-                            "message": (
-                                "That file is larger than your plan allows."
-                            ),
-                        },
-                    )
-                out.write(chunk)
-
-        if size == 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"reason": "empty_file", "message": "That file is empty."},
+        with stream_to_temp(
+            upload, max_bytes=max_bytes, prefix="fc-offering-",
+        ) as spooled:
+            yield ReceivedUpload(
+                path=spooled.path,
+                byte_size=spooled.byte_size,
+                resource_count=count_resources(spooled.path, spooled.filename),
+                filename=spooled.filename,
+                content_type=spooled.content_type,
             )
-
-        yield ReceivedUpload(
-            path=path,
-            byte_size=size,
-            resource_count=count_resources(path, upload.filename or ""),
-            filename=upload.filename or "upload",
-            content_type=upload.content_type,
+    except UploadTooLarge:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "reason": "file_too_large",
+                "message": "That file is larger than your plan allows.",
+            },
         )
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:   # pragma: no cover — already gone
-            pass
+    except EmptyUpload:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "empty_file", "message": "That file is empty."},
+        )
 
 
 # ---------------------------------------------------------------------------

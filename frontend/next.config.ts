@@ -60,6 +60,29 @@ const nextConfig: NextConfig = {
       dynamic: 0,
       static: 300,
     },
+
+    // ── Request-body ceiling for proxied requests ────────────────────
+    //
+    // Next.js caps the body it will carry through the proxy/middleware
+    // layer at **10 MiB by default** (`proxyClientMaxBodySize`, applied
+    // in `server/lib/router-utils/resolve-routes.js`). This app has
+    // middleware matching `/api/*`, so every API request passes through
+    // that layer and inherits the cap.
+    //
+    // The failure mode is the dangerous one: a larger body is **silently
+    // truncated and the request still succeeds**. Measured on this
+    // build — 10 MiB arrives intact, 11 MiB arrives as 10,469,501 bytes,
+    // and the response is still `200`. A creator uploading a 25 MB PDF
+    // would have a corrupt file stored and be told it worked.
+    //
+    // 64 MiB clears the Offerings ceiling (50 MB per file plus multipart
+    // framing; fc-api's own middleware refuses a declared body over
+    // 51 MB) with room to spare, and still bounds what fc-web will hold.
+    // It is deliberately *not* raised to cover the Media Library's
+    // 250 MB video allowance: buffering 250 MB in a 512 MB container is
+    // its own hazard, and that surface needs a streaming fix rather than
+    // a bigger buffer. See the B6/B7 report.
+    proxyClientMaxBodySize: 64 * 1024 * 1024,
   },
 
   // Release identity for the browser bundle.

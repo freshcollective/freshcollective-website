@@ -110,16 +110,31 @@ def is_acceptable_cover(url: str | None) -> bool:
 
     The two shapes are matched precisely rather than by prefix alone, so
     a creator cannot set an arbitrary deep path under either namespace.
-    What this does **not** check is existence: until the curated set
-    ships there is nothing to check against. When it does, the right
-    tightening is a manifest constant listing the real filenames —
-    recorded here so it is a known gap rather than an oversight.
+
+    The curated gap is now closed (B6)
+    ----------------------------------
+
+    This used to accept *any* hyphenated filename under the default
+    prefix, and said so: "until the curated set ships there is nothing
+    to check against. When it does, the right tightening is a manifest
+    constant listing the real filenames." The curated set has shipped,
+    so a default cover is now checked against
+    :data:`offering_covers.DEFAULT_COVER_URLS` by exact membership — a
+    creator can store a cover that exists and nothing else.
+
+    That is a **narrowing**. The filename regex is kept as a cheap
+    structural pre-check so a malformed value is rejected before a set
+    lookup, and because it documents the shape the manifest must keep.
+    An uploaded cover is unchanged: its existence is already guaranteed
+    by the upload having happened.
     """
     if not url:
         return False
     if url.startswith(_DEFAULT_COVER_PREFIX):
-        return bool(
-            _DEFAULT_COVER_NAME.match(url[len(_DEFAULT_COVER_PREFIX):])
+        from app.services.offering_covers import is_default_cover
+        return (
+            bool(_DEFAULT_COVER_NAME.match(url[len(_DEFAULT_COVER_PREFIX):]))
+            and is_default_cover(url)
         )
     if url.startswith(_UPLOADED_COVER_PREFIX):
         return bool(

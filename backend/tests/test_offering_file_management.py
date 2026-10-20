@@ -47,6 +47,7 @@ from app.models.offering import (
     OfferingStatus,
 )
 from app.services import offering_files as of
+from app.services.offering_covers import DEFAULT_COVERS
 from app.services import offering_limits as ol
 from app.services import offering_upload as ou
 from app.services import offering_validation_worker as worker
@@ -658,7 +659,7 @@ class TestDowngrade:
         space, owner = owner_space("creator")
         off = offering(
             space,
-            cover_image_url="/api/uploads/platform-artwork/offering-covers/w.png",
+            cover_image_url=DEFAULT_COVERS[0].url,
             pricing_kind=OfferingPricingKind.free.value,
         )
         for i in range(2):
