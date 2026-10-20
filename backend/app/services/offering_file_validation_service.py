@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -33,7 +34,9 @@ from app.models.offering import (
     OfferingFileValidationStatus as VS,
 )
 from app.services.offering_files import (
+    PLATFORM_LIMITS,
     OfferingFileRejected,
+    OfferingLimits,
     validate_offering_upload,
 )
 from app.services.offering_validation import (
@@ -85,6 +88,7 @@ def validate_bytes(
     existing_bundle_bytes: int = 0,
     existing_bundle_count: int = 0,
     budget: InspectionBudget | None = None,
+    limits: OfferingLimits | None = None,
 ) -> ValidationReport:
     """Run every required check over one file's bytes.
 
@@ -92,9 +96,93 @@ def validate_bytes(
     whole policy testable against genuine fixtures without standing
     anything up, and it is why this returns a report rather than
     writing one.
+
+    Convenient for tests and small files. The worker uses
+    :func:`validate_path` instead, which never materialises the file.
+    """
+    return _run_checks(
+        filename=filename,
+        declared_type=declared_type,
+        byte_size=len(data),
+        head=data[:512],
+        stream=io.BytesIO(data),
+        existing_bundle_bytes=existing_bundle_bytes,
+        existing_bundle_count=existing_bundle_count,
+        budget=budget,
+        limits=limits,
+    )
+
+
+def validate_path(
+    *,
+    path: str,
+    filename: str,
+    declared_type: str | None,
+    budget: InspectionBudget | None = None,
+    limits: OfferingLimits | None = None,
+) -> ValidationReport:
+    """Run every required check over a file **on disk**.
+
+    The entry point the validation worker uses, and the reason it exists:
+    ``validate_bytes`` needs the whole file as a ``bytes`` object, which
+    on a 512 MB instance is exactly what must not happen for a 50 MB
+    download. Here the only thing read into memory is the 512-byte
+    signature header; every check that needs more is handed the open file
+    object and reads it in chunks, which they were already written to do.
+
+    The size and the limits
+    -----------------------
+
+    ``byte_size`` comes from the filesystem, not from a stored column, so
+    a row whose recorded size disagrees with its object is judged on what
+    is actually there.
+
+    ``limits`` defaults to the **platform ceiling**, deliberately. This
+    runs after upload, and the creator's plan may have changed in
+    between: re-applying a plan allowance here would let a downgrade
+    reject a file that was within allowance when it was accepted, which
+    the approved rules forbid. The plan check belongs at upload, under a
+    lock; this check is about the file's own properties.
+    """
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        head = fh.read(512)
+        fh.seek(0)
+        return _run_checks(
+            filename=filename,
+            declared_type=declared_type,
+            byte_size=size,
+            head=head,
+            stream=fh,
+            existing_bundle_bytes=0,
+            existing_bundle_count=0,
+            budget=budget,
+            limits=limits,
+        )
+
+
+def _run_checks(
+    *,
+    filename: str,
+    declared_type: str | None,
+    byte_size: int,
+    head: bytes,
+    stream,
+    existing_bundle_bytes: int,
+    existing_bundle_count: int,
+    budget: InspectionBudget | None,
+    limits: OfferingLimits | None,
+) -> ValidationReport:
+    """The check sequence, over any seekable binary stream.
+
+    Shared by :func:`validate_bytes` and :func:`validate_path` so there
+    is exactly one ordering of checks and one place that decides a
+    status. Two callers with two copies of this sequence is how a file
+    comes to pass on one path and fail on the other.
     """
     budget = budget or InspectionBudget()
     budget.restart_clock()
+    limits = limits or PLATFORM_LIMITS
     checks: list[CheckOutcome] = []
 
     def fail(check: str, ver: int, exc: ValidationFailure) -> ValidationReport:
@@ -115,16 +203,14 @@ def validate_bytes(
         validate_offering_upload(
             filename=filename,
             content_type=declared_type,
-            byte_size=len(data),
+            byte_size=byte_size,
+            limits=limits,
             existing_bundle_bytes=existing_bundle_bytes,
             existing_bundle_count=existing_bundle_count,
         )
     except OfferingFileRejected as exc:
         return fail("declared", 1, ValidationFailure(exc.reason, exc.message))
     checks.append(CheckOutcome("declared", 1, "pass"))
-
-    stream = io.BytesIO(data)
-    head = data[:512]
 
     # ── signature ───────────────────────────────────────────────────
     try:
@@ -273,13 +359,24 @@ def record_inconclusive(
     A worker crash, an OOM, an unreachable store. Status becomes
     ``error`` — **never** ``passed`` — and the attempt is counted so
     retries are bounded.
+
+    Logged at **WARNING**, not ERROR, and that is a deliberate change
+    from Phase B. ``LoggingIntegration`` turns an ERROR log into a Sentry
+    event, so logging here meant every transient blip produced one —
+    three per file, two of which were followed by a successful retry
+    nobody needed to be told about. The approved rule is to report
+    *persistent* failures, so the decision moved to the one place that
+    knows whether retries are exhausted:
+    ``offering_validation_worker._record_failure`` logs ERROR once, when
+    the file is finally given up on. This function stays quiet about an
+    attempt that is about to be retried.
     """
     now = now or datetime.utcnow()
     file.validation_status = VS.error.value
     file.validation_reason = "inconclusive"
     file.validated_at = now
     file.validation_attempts = (file.validation_attempts or 0) + 1
-    logger.error(
+    logger.warning(
         "offering validation inconclusive: file=%s attempt=%s detail=%s",
         file.id, file.validation_attempts, detail,
     )
@@ -380,6 +477,7 @@ __all__ = [
     "MAX_VALIDATION_ATTEMPTS",
     "ValidationReport",
     "validate_bytes",
+    "validate_path",
     "apply_report",
     "record_inconclusive",
     "should_retry",

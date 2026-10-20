@@ -83,6 +83,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -439,6 +440,39 @@ class OfferingFile(Base):
         Integer, nullable=False, default=0, server_default="0",
     )
 
+    #: Downloadable resources this row contributes to the plan's file
+    #: allowance (Phase B5). 1 for a plain file. 1 for an Office package
+    #: — its internal parts are machinery, not resources a member
+    #: receives. The number of member files for a ZIP bundle, counted
+    #: once at upload from the central directory.
+    #:
+    #: Stored rather than derived because the limit check must not have
+    #: to open an R2 object to count to fifty, and because it is the
+    #: mechanism that stops an archive being an unlimited container
+    #: inside a one-file allowance.
+    resource_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1",
+    )
+
+    #: The row this **pending replacement** will supersede, if it passes.
+    #:
+    #: The counterpart to ``superseded_by_id``, which points forward and
+    #: is only written once a replacement has succeeded. That leaves the
+    #: in-flight window unmodelled: during it the old approved file and
+    #: its unvalidated replacement are both current, and the allowance
+    #: would charge for both. On Community, whose allowance is one file,
+    #: that made replacement arithmetically impossible. This pointer lets
+    #: the replacement occupy the old file's slot instead of taking a new
+    #: one — see ``app.services.offering_limits.bundle_usage``.
+    #:
+    #: A partial unique index permits at most one live pending
+    #: replacement per target.
+    replaces_file_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("offering_files.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     #: NULL means "in the current bundle". Any value means it is not,
     #: whatever the reason.
     superseded_at: Mapped[datetime | None] = mapped_column(
@@ -514,6 +548,34 @@ class OfferingFile(Base):
         DateTime(timezone=False), nullable=True,
     )
 
+    # ── Worker lease (Phase B5) ────────────────────────────────────────
+    #
+    # Claiming is a short committed transaction that stamps these two and
+    # releases its row lock immediately, so the long part — downloading
+    # and inspecting the file — holds no lock and no open transaction. A
+    # claim older than the lease is reclaimable, which is what makes
+    # recovery after a process restart automatic. See
+    # ``app.services.offering_validation_worker``.
+    validation_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    validation_claimed_by: Mapped[str | None] = mapped_column(
+        String(80), nullable=True,
+    )
+
+    #: The R2 object behind this row has been deleted while the
+    #: validation record stays (Phase B5 retention). A rejected file's
+    #: *contents* go after 24 hours; the record of what it was and why it
+    #: was refused remains for troubleshooting.
+    #:
+    #: ``ck_offering_files_content_deleted_shape`` refuses this on a
+    #: ``passed`` row, so "never automatically delete a valid current
+    #: file" is a property of the schema rather than a rule the cleanup
+    #: sweep has to remember.
+    content_deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
     offering: Mapped["Offering"] = relationship(
         "Offering", back_populates="files",
     )
@@ -553,6 +615,33 @@ class OfferingFile(Base):
             "ix_offering_files_validation_pending",
             "validation_status",
             postgresql_where=validation_status.in_(("pending", "error")),
+        ),
+        # Phase B5.
+        CheckConstraint("resource_count >= 1", name="ck_offering_files_resource_count"),
+        CheckConstraint(
+            "replaces_file_id IS NULL OR replaces_file_id <> id",
+            name="ck_offering_files_no_self_replace",
+        ),
+        # At most one live pending replacement per target. Two would both
+        # claim one slot, and whichever passed second would supersede a
+        # row already superseded.
+        Index(
+            "ux_offering_files_pending_replacement",
+            "replaces_file_id",
+            unique=True,
+            postgresql_where=text(
+                "replaces_file_id IS NOT NULL AND superseded_at IS NULL"
+            ),
+        ),
+        # The worker's claim query: unclaimed or expired work, oldest first.
+        Index(
+            "ix_offering_files_validation_claim",
+            "validation_claimed_at", "created_at",
+            postgresql_where=validation_status.in_(("pending", "error")),
+        ),
+        CheckConstraint(
+            "content_deleted_at IS NULL OR validation_status <> 'passed'",
+            name="ck_offering_files_content_deleted_shape",
         ),
     )
 

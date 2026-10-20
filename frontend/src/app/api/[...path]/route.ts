@@ -41,11 +41,33 @@ import { NextRequest } from 'next/server'
 import { resolveInternalApiBase } from '@/lib/api'
 import { applyBffAuthHeaders } from '@/lib/bffAuth'
 import { captureProxyFailure, classifyProxyFailure } from '@/lib/sentryHandled'
+import { isOfferingFileUpload } from '@/lib/uploadRouting'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const REQUEST_TIMEOUT_MS = 30_000
+
+// Offerings B5 — a longer budget for the two Offering file-upload paths,
+// and nothing else.
+//
+// The 30 s default is right for JSON and small images, and it is not
+// survivable for an Offering file. The timer starts when this proxy
+// issues its outbound fetch, so the budget has to cover fc-api spooling
+// the body to disk, counting it, transferring it to R2 as a bounded
+// multipart upload, and only then replying. Creator Portfolio allows a
+// 50 MB file; a 50 MB multipart transfer out of Render Singapore does
+// not reliably finish inside 30 s, and when it does not, the creator
+// sees a network error for an upload that actually succeeded.
+//
+// 120 s is deliberately generous rather than tuned: this is a ceiling
+// that prevents a false failure, not a target. Render allows an HTTP
+// response to take far longer, so nothing upstream contradicts it.
+//
+// Scoped by path so no other endpoint's failure behaviour changes — a
+// hung JSON call still gives up after 30 s, which is what keeps a
+// genuinely stuck backend from holding browser connections open.
+const UPLOAD_REQUEST_TIMEOUT_MS = 120_000
 
 // Path segments (after ``/api/``) that this proxy refuses to forward.
 // Matching is a prefix on the joined path — ``webhooks`` catches
@@ -127,18 +149,37 @@ async function proxy(
     process.env.INTERNAL_BFF_SECRET,
   )
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
   const method = request.method.toUpperCase()
   const canHaveBody = method !== 'GET' && method !== 'HEAD'
+
+  const timeoutMs = isOfferingFileUpload(method, joined)
+    ? UPLOAD_REQUEST_TIMEOUT_MS
+    : REQUEST_TIMEOUT_MS
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     // Buffer the request body once before forwarding. Streaming via
     // ``duplex: 'half'`` is fragile under Next.js 16 + Turbopack in
-    // dev, and the endpoints this proxy serves (JSON, small avatars,
-    // creator library uploads) all fit comfortably in memory. Node's
-    // default request-size limits still apply upstream.
+    // dev, so the body is materialised here instead.
+    //
+    // KNOWN CONSTRAINT (Offerings B5). This is the one place in the
+    // upload path that is *not* streamed. fc-api spools an Offering file
+    // to disk and hands it to a bounded multipart transfer, so its peak
+    // resident cost does not scale with the file — but this line puts
+    // the entire body in fc-web's Node heap first. A 50 MB upload
+    // therefore costs fc-web ~50 MB for the duration of the request, and
+    // two concurrent ones cost ~100 MB.
+    //
+    // It is bounded (fc-api's middleware refuses a declared body over
+    // 51 MB, and the per-plan limit is enforced downstream) but it is
+    // not cheap, and it is the binding memory risk for this feature
+    // rather than anything in fc-api. Fixing it properly means either
+    // streaming the body through here once ``duplex: 'half'`` is
+    // dependable under Next 16, or giving uploads a presigned direct-to-
+    // R2 path that skips the proxy. Both are deliberately out of scope
+    // for B5 and are written up in the B5 report for a decision.
     const init: RequestInit = {
       method,
       headers: outboundHeaders,
@@ -193,7 +234,7 @@ async function proxy(
       method,
       path: joined,
       kind: classifyProxyFailure(err),
-      timeoutMs: REQUEST_TIMEOUT_MS,
+      timeoutMs,
     })
     if (err instanceof Error && err.name === 'AbortError') {
       return jsonResponse(504, {

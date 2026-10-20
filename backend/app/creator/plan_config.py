@@ -109,6 +109,38 @@ class PlanCapability:
     # the two readings diverge and this becomes a real decision.
     offerings_max_per_collective: Optional[int] = None
 
+    # ── Offering file allowances ───────────────────────────────────────
+    #
+    # `None` on these four means "no plan-specific cap — the platform
+    # ceiling applies", matching `pathways_max_per_collective` and
+    # `offerings_max_per_collective` above rather than the "unresolved,
+    # awaiting a decision" reading in the module docstring. The
+    # distinction matters because a byte limit is not only a commercial
+    # choice: fc-api runs on a 0.5-CPU / 512 MB instance, so there is an
+    # *infrastructure* ceiling that no plan may exceed and no account may
+    # bypass. See `app.services.offering_limits`, which resolves a plan
+    # against `MAX_OFFERING_*` in `app.services.offering_files` by taking
+    # the smaller of the two. An unrestricted plan therefore lands on the
+    # platform ceiling, never on "no limit at all".
+
+    #: Downloadable resources in one Offering's current bundle. Files
+    #: inside a ZIP count individually; an Office package counts once.
+    #: Community 1, Creator / Portfolio 50.
+    offering_files_max: Optional[int] = None
+
+    #: Largest single upload. Community 10 MB, Creator 25 MB,
+    #: Portfolio 50 MB.
+    offering_file_max_bytes: Optional[int] = None
+
+    #: Largest total for one Offering's current bundle. Community 10 MB,
+    #: Creator 75 MB, Portfolio 150 MB.
+    offering_bundle_max_bytes: Optional[int] = None
+
+    #: May this plan sell a ZIP bundle at all? Community may not — a
+    #: single file is its whole allowance, so an archive would be a way
+    #: to ship fifty resources inside the one permitted upload.
+    offering_zip_bundles_enabled: bool = False
+
     # Categorical capabilities
     location_scope: LocationScope = "atlas_full"
     analytics_level: AnalyticsLevel = "basic"
@@ -151,6 +183,14 @@ COMMUNITY = PlanCapability(
     caretaker_limit_per_collective=1,
     pathways_max_per_collective=5,   # capped at five Pathways
     offerings_max_per_collective=5,  # capped at five Offerings
+    # One downloadable resource, 10 MB, no archives. The three work
+    # together: without the ZIP prohibition, "one file" would mean "one
+    # archive containing as many files as you like", and the file
+    # allowance would enforce nothing.
+    offering_files_max=1,
+    offering_file_max_bytes=10 * 1024 * 1024,
+    offering_bundle_max_bytes=10 * 1024 * 1024,
+    offering_zip_bundles_enabled=False,
     location_scope="community_only",
     analytics_level="basic",
     paid_offers_enabled=False,
@@ -191,6 +231,11 @@ CREATOR = PlanCapability(
     active_collective_limit=1,
     member_allowance_per_collective=500,
     caretaker_limit_per_collective=1,
+    # No cap on how many Offerings, but a real cap on each one's bundle.
+    offering_files_max=50,
+    offering_file_max_bytes=25 * 1024 * 1024,
+    offering_bundle_max_bytes=75 * 1024 * 1024,
+    offering_zip_bundles_enabled=True,
     location_scope="atlas_full",
     analytics_level="standard",
     paid_offers_enabled=True,
@@ -227,6 +272,13 @@ PRO = PlanCapability(
     member_allowance_per_collective=None,   # pooled instead
     pooled_member_allowance=None,           # TBD
     caretaker_limit_per_collective=None,    # TBD — multiple
+    # Same file count as Creator; double the per-file and total size.
+    # Customer-facing this plan is "Creator Portfolio" — see
+    # ``frontend/src/lib/creatorPlanDisplay.ts``. The slug stays ``pro``.
+    offering_files_max=50,
+    offering_file_max_bytes=50 * 1024 * 1024,
+    offering_bundle_max_bytes=150 * 1024 * 1024,
+    offering_zip_bundles_enabled=True,
     location_scope="atlas_full",
     analytics_level="advanced",
     paid_offers_enabled=True,
@@ -273,6 +325,16 @@ FOUNDING_CREATOR = PlanCapability(
     caretaker_limit_per_collective=None,    # unrestricted
     pathways_max_per_collective=None,       # unrestricted
     offerings_max_per_collective=None,      # unrestricted
+    # Unrestricted by plan. The four Offering allowances stay None, which
+    # resolves to the *platform* ceiling rather than to no limit — a
+    # founder's upload runs on the same 512 MB instance as everyone
+    # else's, so the infrastructure bound is not a commercial perk to
+    # waive. In practice this plan therefore gets the Portfolio
+    # allowance; see ``app.services.offering_limits``.
+    offering_files_max=None,
+    offering_file_max_bytes=None,
+    offering_bundle_max_bytes=None,
+    offering_zip_bundles_enabled=True,
     storage_allowance_mb=None,              # unrestricted
     location_scope="atlas_full",
     analytics_level="advanced",
@@ -313,6 +375,12 @@ ORGANISATION = PlanCapability(
     member_allowance_per_collective=None,
     pooled_member_allowance=None,
     caretaker_limit_per_collective=None,
+    # Tailored terms, so no plan-specific Offering caps are asserted
+    # here; these resolve to the platform ceiling like Founding Creator's.
+    offering_files_max=None,
+    offering_file_max_bytes=None,
+    offering_bundle_max_bytes=None,
+    offering_zip_bundles_enabled=True,
     location_scope="atlas_full",
     analytics_level="advanced",
     paid_offers_enabled=True,

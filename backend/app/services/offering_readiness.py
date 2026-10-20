@@ -206,6 +206,35 @@ def evaluate(
                 )
     reqs.append(Requirement("plan_allows_pricing", plan_ok, plan_msg))
 
+    # ── Within the plan's file allowance (Phase B5) ────────────────────
+    #
+    # Publishing is a new action, so it is held to the *current* plan —
+    # the same treatment uploading gets. A creator who downgrades keeps
+    # every Offering and every file they have (nothing is deleted and no
+    # purchaser loses a download), and is simply refused the next new
+    # thing until they are back inside the allowance. Publishing an
+    # over-allowance Offering would be exactly that next new thing.
+    #
+    # Already-published Offerings are untouched by this: ``evaluate`` is
+    # only consulted when a creator asks to publish, never on a schedule,
+    # so nothing here can retroactively unpublish anything.
+    from app.services.offering_limits import bundle_usage, resolve_offering_limits
+
+    limits = resolve_offering_limits(owner, db)
+    usage = bundle_usage(db, offering=offering)
+    within = not usage.over(limits)
+    reqs.append(Requirement(
+        "within_plan_limits",
+        within,
+        "" if within else (
+            f"This Offering uses {usage.resources} file"
+            f"{'s' if usage.resources != 1 else ''} and "
+            f"{usage.bytes_used // (1024 * 1024)} MB. Your "
+            f"{limits.plan_name} plan allows {limits.max_files} and "
+            f"{limits.bundle_mb} MB. Remove something, or upgrade."
+        ),
+    ))
+
     return Readiness(ready=all(r.met for r in reqs), requirements=reqs)
 
 
