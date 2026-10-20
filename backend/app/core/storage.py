@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import pathlib
 import re
+import shutil
 from functools import lru_cache
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -709,3 +710,108 @@ def save_image_with_thumbnail(
             pass
         raise
     return hero_rel, thumb_rel
+
+
+# ---------------------------------------------------------------------------
+# Streaming transfers (Offerings Phase B5)
+# ---------------------------------------------------------------------------
+#
+# Everything above this line is byte-oriented: ``save_file`` takes
+# ``data: bytes`` and ``_r2_put`` hands that whole buffer to
+# ``put_object``. That is fine for an avatar and wrong for a 50 MB
+# Offering file on a 512 MB instance — the bytes object, the multipart
+# frame it was parsed from, and boto3's own copy can be resident at once.
+#
+# These two helpers never materialise a whole object. They take and
+# return *file objects*, so the caller can pass a disk-backed temporary
+# file and the peak resident cost is one transfer chunk per worker
+# thread rather than one whole file.
+#
+# Deliberately additive: no existing caller changes, because changing
+# ``save_file``'s signature would touch every upload surface in the
+# platform for the benefit of one new one.
+
+#: Multipart tuning, chosen for a 0.5-CPU / 512 MB instance.
+#:
+#: 8 MB parts with at most 3 concurrent parts bounds boto3's in-flight
+#: buffers at ~24 MB regardless of file size — so a 50 MB upload and a
+#: 10 MB upload have the same memory profile, and the ceiling does not
+#: move when the plan allowances do. ``multipart_threshold`` matches the
+#: chunk size so anything under 8 MB takes the cheaper single-part path.
+_OFFERING_TRANSFER_CHUNK = 8 * 1024 * 1024
+_OFFERING_TRANSFER_CONCURRENCY = 3
+
+
+def _offering_transfer_config():
+    """boto3 ``TransferConfig`` for bounded multipart transfers."""
+    from boto3.s3.transfer import TransferConfig
+    return TransferConfig(
+        multipart_threshold=_OFFERING_TRANSFER_CHUNK,
+        multipart_chunksize=_OFFERING_TRANSFER_CHUNK,
+        max_concurrency=_OFFERING_TRANSFER_CONCURRENCY,
+        use_threads=True,
+    )
+
+
+def upload_stream(
+    key: str, fileobj, content_type: str | None = None,
+) -> None:
+    """Store ``fileobj``'s contents at ``key`` without buffering it.
+
+    ``fileobj`` must be a readable binary stream positioned at the start;
+    the caller owns it and is responsible for closing it.
+
+    R2 mode uses ``upload_fileobj``, which reads in bounded chunks and —
+    this is the part that matters for orphan avoidance — aborts its own
+    multipart upload if any part fails, so a failed transfer does not
+    leave an incomplete upload accruing storage. On success the object
+    exists in full or not at all; there is no partially-visible state for
+    a reader to catch.
+
+    Raises on failure. Unlike ``delete_file``, this is **not**
+    best-effort: a caller that has not yet written its database row needs
+    to know the bytes did not land.
+    """
+    if settings.is_r2_enabled:
+        _r2_client().upload_fileobj(
+            Fileobj=fileobj,
+            Bucket=_bucket_for_key(key),
+            Key=key,
+            ExtraArgs={
+                "ContentType": content_type or "application/octet-stream",
+            },
+            Config=_offering_transfer_config(),
+        )
+        return
+
+    # Filesystem mode — local dev and tests. Copied in chunks for the
+    # same reason, so the two modes have the same memory profile and a
+    # test cannot pass on a path production would not take.
+    dest = UPLOAD_DIR / key
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as out:
+        shutil.copyfileobj(fileobj, out, length=1024 * 1024)
+
+
+def download_to_fileobj(key: str, fileobj) -> None:
+    """Fetch ``key`` into ``fileobj`` without buffering it.
+
+    The read side of :func:`upload_stream`, used by the validation worker
+    to pull a stored file onto local disk before inspecting it. Raises if
+    the object is missing — the worker treats that as inconclusive rather
+    than as a verdict on the file.
+    """
+    if settings.is_r2_enabled:
+        _r2_client().download_fileobj(
+            Bucket=_bucket_for_key(key),
+            Key=key,
+            Fileobj=fileobj,
+            Config=_offering_transfer_config(),
+        )
+        return
+
+    src = UPLOAD_DIR / key
+    if not src.is_file():
+        raise FileNotFoundError(key)
+    with open(src, "rb") as inp:
+        shutil.copyfileobj(inp, fileobj, length=1024 * 1024)

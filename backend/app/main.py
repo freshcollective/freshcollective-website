@@ -19,6 +19,10 @@ from app.services.finite_plan_reconciler import (
     start_reconciler as start_finite_plan_reconciler,
     stop_reconciler as stop_finite_plan_reconciler,
 )
+from app.services.offering_validation_worker import (
+    start_offering_validation_worker,
+    stop_offering_validation_worker,
+)
 
 from app.auth.routes import router as auth_router
 from app.notifications.routes import router as notifications_router
@@ -60,6 +64,9 @@ from app.creator.routes import router as creator_router
 # feature-flag dependency is attached once, at the router, rather than
 # remembered in each handler.
 from app.creator._offering_routes import router as creator_offerings_router
+from app.creator._offering_file_routes import (
+    router as creator_offering_files_router,
+)
 from app.creator.attendance import router as creator_attendance_router
 from app.creator.build_your_collective import router as build_your_collective_router
 from app.creator.community_start import router as creator_community_start_router
@@ -116,6 +123,15 @@ async def lifespan(_: FastAPI):
     # is idempotent and safe under duplicate execution. See
     # app/services/finite_plan_reconciler.py.
     start_finite_plan_reconciler()
+    # Offerings B5 — structural validation of uploaded Offering files.
+    # The third in-process loop, on the same pattern as the two above.
+    # A Render cron would cost $1/month minimum per service and start
+    # work no sooner; this costs nothing and picks a file up within
+    # ~20 seconds. Inspection runs via ``asyncio.to_thread`` so it
+    # never blocks the event loop serving API requests. See
+    # app/services/offering_validation_worker.py for the claim,
+    # lease and retry contract.
+    start_offering_validation_worker()
     # Stripe status at boot — makes Render logs the source of truth
     # when verifying a deploy. Boot-time config guards
     # (``_check_stripe_configuration`` in ``core/config.py``) already
@@ -156,6 +172,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        await stop_offering_validation_worker()
         await stop_finite_plan_reconciler()
         await stop_publisher()
 
@@ -217,6 +234,92 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Offerings B5 — refuse an oversized upload before the body is parsed
+# ---------------------------------------------------------------------------
+#
+# This has to be middleware, and that is the only reason it is not a
+# route dependency: FastAPI parses a multipart body when it resolves the
+# route's ``UploadFile`` parameter, and it resolves dependencies *after*
+# that. A ``Depends`` guard would therefore run once the whole body had
+# already been spooled to disk — too late to be a defence.
+#
+# Starlette spools a request body past 1 MB to a temporary file, so an
+# unbounded upload is a disk-exhaustion vector rather than a memory one:
+# the handler's own limit check (``offering_upload.received``) counts
+# bytes as they are copied and is authoritative, but it only runs once
+# Starlette has finished receiving. This closes that window by reading
+# one header.
+#
+# Content-Length is client-supplied and therefore not trusted as proof of
+# anything — a client that omits it or lies gets through here and is
+# caught by the counting check downstream. What this stops is the honest
+# large upload, which is the common case.
+#
+# 413, not 503: a refusal outside Sentry's captured 500–599 range, and
+# the status that actually means "your request body is too big".
+
+#: The platform ceiling plus room for multipart framing (boundaries, part
+#: headers, the description field). Not a plan limit — plans are enforced
+#: per creator downstream; this is the absolute maximum any upload
+#: request may be.
+_MAX_UPLOAD_REQUEST_BYTES = (50 * 1024 * 1024) + (1024 * 1024)
+
+
+def _is_offering_file_upload(method: str, path: str) -> bool:
+    """A POST to any Offering file endpoint.
+
+    Deliberately not "any upload endpoint": every other upload surface in
+    the platform enforces its own smaller limit in its handler, and
+    widening this to them would be a behaviour change nobody asked for in
+    this phase.
+
+    Deliberately *broader*, though, than the matching rule in
+    ``frontend/src/lib/uploadRouting.ts``, which covers only the two
+    endpoints that actually carry a file. The asymmetry is intentional
+    and the two rules are solving opposite problems:
+
+      * There, a loose match would extend a 30-second timeout to 120
+        seconds for a small JSON call, so the cost of over-matching is a
+        browser connection held open four times too long. Precision is
+        the safe direction.
+      * Here, a loose match only refuses an absurdly large body on an
+        endpoint that should never receive one — ``…/files/reorder``
+        takes a list of ids. Over-matching costs nothing, and
+        *under*-matching would leave a path on which a 5 GB body is
+        spooled to disk before any handler sees it. Generosity is the
+        safe direction.
+    """
+    if method != "POST":
+        return False
+    return "/offerings/" in path and (
+        path.endswith("/files") or "/files/" in path
+    )
+
+
+@app.middleware("http")
+async def limit_offering_upload_size(request, call_next):
+    if _is_offering_file_upload(request.method.upper(), request.url.path):
+        raw = request.headers.get("content-length")
+        try:
+            declared = int(raw) if raw else 0
+        except ValueError:
+            declared = 0
+        if declared > _MAX_UPLOAD_REQUEST_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "detail": {
+                        "reason": "file_too_large",
+                        "message": (
+                            "That upload is too large. Each file must be "
+                            "50 MB or smaller, and your plan may allow less."
+                        ),
+                    }
+                },
+            )
+    return await call_next(request)
+
 _TRANSPORT_SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
     ("Strict-Transport-Security", "max-age=31536000"),
     ("X-Content-Type-Options", "nosniff"),
@@ -272,6 +375,7 @@ app.include_router(members_router)
 app.include_router(profiles_router)
 app.include_router(creator_router)
 app.include_router(creator_offerings_router)
+app.include_router(creator_offering_files_router)
 app.include_router(creator_attendance_router)
 app.include_router(build_your_collective_router)
 app.include_router(creator_community_start_router)

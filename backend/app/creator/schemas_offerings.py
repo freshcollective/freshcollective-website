@@ -15,6 +15,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.offering_files import MAX_OFFERING_FILE_COUNT
+
 
 class OfferingCreateRequest(BaseModel):
     """Create a draft. Title only — everything else is set by editing.
@@ -109,6 +111,117 @@ class OfferingReadinessResponse(BaseModel):
     offering_limit: int | None = None
 
 
+# ---------------------------------------------------------------------------
+# Files
+# ---------------------------------------------------------------------------
+
+
+class OfferingFileUpdateRequest(BaseModel):
+    """Edit the one editable property of a stored file.
+
+    Not the filename, not the type, not the bytes. Replacing content is a
+    separate endpoint because it starts a validation cycle, and letting
+    a PATCH do it quietly would be how an unvalidated file inherits an
+    approved row's status.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: One sentence explaining this resource. ``None`` clears it.
+    description: str | None = Field(default=None, max_length=300)
+
+
+class OfferingFileReorderRequest(BaseModel):
+    """The current bundle's ids, in the order the creator wants them.
+
+    The ceiling is the platform file ceiling rather than a second copy of
+    the number 50 — the one rule this phase holds to is that a limit is
+    written down once. The *plan's* allowance is enforced at upload; this
+    only bounds the request body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_ids: list[str] = Field(
+        min_length=1, max_length=MAX_OFFERING_FILE_COUNT,
+    )
+
+
+class OfferingFileResponse(BaseModel):
+    """One file, as the Files tab needs to render it.
+
+    Shaped for the approved creator experience: a name, a size, a status
+    word a person understands, and — when something is wrong — a reason
+    they can act on. Deliberately says nothing about *how* a file was
+    checked: no check names, no detection techniques, and never a word
+    implying a malware scan, because none was performed.
+    """
+
+    id: str
+    filename: str
+    content_type: str
+    byte_size: int
+    description: str | None = None
+    sort_order: int = 0
+
+    #: Downloadable resources this file contributes to the plan's file
+    #: allowance: 1 for a plain file or an Office document, the member
+    #: count for a ZIP bundle. Surfaced so the creator can see why a
+    #: three-row bundle is using twelve of their fifty files.
+    resource_count: int = 1
+
+    #: Machine-readable: ``pending`` | ``passed`` | ``rejected`` |
+    #: ``error`` | ``quarantined``. For the UI to branch on.
+    validation_status: str
+
+    #: Human-readable, and the only one to put on screen:
+    #: **Checking** → **Ready** / **Not accepted** / **On hold**.
+    status_label: str
+
+    #: Why it was not accepted, in words a creator can act on. Null
+    #: unless something is actually wrong.
+    rejection_reason: str | None = None
+
+    #: Can a purchaser download this right now? The same two conditions
+    #: the download route enforces — current version, passed validation
+    #: — so the creator sees the truth rather than an approximation.
+    available_to_purchasers: bool = False
+
+    #: A replacement for this file is uploaded and still being checked.
+    #: Until it passes, this file stays the one purchasers receive.
+    replacement_pending: bool = False
+
+    #: Set on a replacement: the file it will supersede once it passes.
+    replaces_file_id: str | None = None
+
+    created_at: datetime | None = None
+    validated_at: datetime | None = None
+
+
+class OfferingFileListResponse(BaseModel):
+    """The Files tab's whole payload: the files, and the room left.
+
+    The allowance travels with the list so the tab can say "3 of 50
+    files, 12 MB of 75 MB" without a second request and without
+    computing it from a copy of the plan table held in the frontend.
+    """
+
+    files: list[OfferingFileResponse]
+
+    #: Resources used and allowed, under the approved counting rules —
+    #: ZIP members counted individually, a pending replacement sharing
+    #: its target's slot.
+    resources_used: int
+    resources_allowed: int
+    bytes_used: int
+    bytes_allowed: int
+    #: The largest single upload this plan accepts.
+    max_file_bytes: int
+    zip_bundles_allowed: bool
+    #: Customer-facing plan name, so a refusal and the tab agree.
+    plan_name: str
+
+
 __all__ = [
     "OfferingCreateRequest",
     "OfferingUpdateRequest",
@@ -116,4 +229,8 @@ __all__ = [
     "OfferingDetailResponse",
     "RequirementResponse",
     "OfferingReadinessResponse",
+    "OfferingFileUpdateRequest",
+    "OfferingFileReorderRequest",
+    "OfferingFileResponse",
+    "OfferingFileListResponse",
 ]

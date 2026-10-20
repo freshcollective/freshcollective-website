@@ -1124,7 +1124,23 @@ class TestFeatureFlag:
                 ]
                 assert "require_offerings_enabled" in names, r.path
                 gated += 1
-        assert gated == 7, gated
+
+        # The loop above is the assertion; these two stop it passing
+        # vacuously. Counting against the routers themselves rather than
+        # against a hard-coded number means adding an endpoint cannot
+        # make this test stale — it either inherits the gate and is
+        # counted, or the loop fails on it.
+        from app.creator import _offering_file_routes, _offering_routes
+        declared = sum(
+            1
+            for mod in (_offering_routes, _offering_file_routes)
+            for route in mod.router.routes
+            if isinstance(route, APIRoute)
+        )
+        assert gated == declared, (gated, declared)
+        # A floor, so deleting every route does not make this pass.
+        # Phase B4 shipped 7; Phase B5 adds 6 file endpoints.
+        assert gated >= 13, gated
 
     def test_there_is_no_admin_or_owner_bypass(self):
         """A bypass is how unfinished functionality reaches production.

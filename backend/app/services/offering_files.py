@@ -53,21 +53,48 @@ OFFERING_COVERS_PREFIX = "offering-covers"
 # Limits
 # ---------------------------------------------------------------------------
 
-#: Per file. Below the platform-wide 200 MB in ``core.storage`` on
-#: purpose: a workbook, a guide, a recording or a template bundle fits
-#: comfortably, and the ceiling bounds both a single upload and the
-#: blast radius of a mistake. Raise it with evidence, not in advance.
-MAX_OFFERING_FILE_BYTES = 100 * 1024 * 1024  # 100 MB
+# ---------------------------------------------------------------------------
+# These three are the *platform* ceiling: the absolute maximum, which no
+# plan may exceed and no account may bypass — not a Platform Owner, not
+# an admin, not the unrestricted Founding Creator plan. They exist
+# because fc-api runs on a 0.5-CPU / 512 MB Render instance, and that
+# bound is a property of the infrastructure rather than of anybody's
+# subscription.
+#
+# Per-plan allowances live in ``app.creator.plan_config`` and are
+# resolved against these by ``app.services.offering_limits``, which
+# always takes the smaller of the two. Every value below is therefore
+# equal to the most generous approved plan value: the ceiling is real,
+# but today no creator meets it before meeting their plan limit first.
+# ---------------------------------------------------------------------------
 
-#: Across one Offering's current bundle. Without this, "multiple files
-#: supported" has no ceiling at all — ten 100 MB files is a gigabyte
-#: per product and an egress bill nobody predicted.
-MAX_OFFERING_BUNDLE_BYTES = 500 * 1024 * 1024  # 500 MB
+#: Per file. Matches the Creator Portfolio allowance.
+#:
+#: Lowered from 100 MB when the approved per-plan limits landed. Phase A
+#: picked 100 MB before the plan table existed and before the request
+#: path had been measured; the measured path (see the B5 report) will not
+#: carry 100 MB inside the BFF proxy's timeout, so a ceiling above the
+#: highest plan allowance would only have described a request that
+#: cannot succeed. No production rows exist, so nothing is grandfathered.
+MAX_OFFERING_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
+
+#: Across one Offering's current bundle. Matches the Creator Portfolio
+#: allowance. Lowered from 500 MB for the same reason.
+MAX_OFFERING_BUNDLE_BYTES = 150 * 1024 * 1024  # 150 MB
 
 #: Count limit as well as byte limit. A bundle of 200 tiny files is a
 #: usability problem for the buyer and a pathological case for the
 #: download UI, even though it is well inside the byte ceiling.
-MAX_OFFERING_FILE_COUNT = 25
+#:
+#: **Raised** from 25, which is the one place the approved limits
+#: genuinely conflicted with the Phase A design: Creator and Creator
+#: Portfolio are both allowed 50 files, and a 25-file platform ceiling
+#: would have silently capped a paid plan at half its stated allowance.
+#: Resolved upwards rather than by weakening anything — a file *count*
+#: is not a security control, and the inspection budget that is one
+#: (``InspectionBudget.max_entries``, 2000 entries per archive) is
+#: untouched.
+MAX_OFFERING_FILE_COUNT = 50
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +198,54 @@ class ValidatedOfferingFile:
 
 
 # ---------------------------------------------------------------------------
+# Resolved limits
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OfferingLimits:
+    """The four numbers that govern one creator's uploads.
+
+    Already resolved: a plan's allowance reduced by the platform ceiling,
+    so every consumer enforces one set of values and none of them repeats
+    the lookup. Built by
+    :func:`app.services.offering_limits.resolve_offering_limits` — the
+    only place that reads a plan — and carried from there into the upload
+    endpoint, the replacement endpoint and the publication check.
+
+    ``plan_name`` is here so a refusal can say *which* plan's limit was
+    hit without the message being assembled from a second plan lookup.
+    """
+
+    max_files: int
+    max_file_bytes: int
+    max_bundle_bytes: int
+    zip_bundles_allowed: bool
+    plan_name: str = "current"
+
+    @property
+    def file_mb(self) -> int:
+        return self.max_file_bytes // (1024 * 1024)
+
+    @property
+    def bundle_mb(self) -> int:
+        return self.max_bundle_bytes // (1024 * 1024)
+
+
+#: The ceiling as a limits object, for callers with no plan in hand
+#: (tests of the pure rules, and the structural revalidation path, which
+#: re-checks a stored file's *contents* and must not fail it because the
+#: creator has since downgraded).
+PLATFORM_LIMITS = OfferingLimits(
+    max_files=MAX_OFFERING_FILE_COUNT,
+    max_file_bytes=MAX_OFFERING_FILE_BYTES,
+    max_bundle_bytes=MAX_OFFERING_BUNDLE_BYTES,
+    zip_bundles_allowed=True,
+    plan_name="platform",
+)
+
+
+# ---------------------------------------------------------------------------
 # Filename handling
 # ---------------------------------------------------------------------------
 
@@ -211,10 +286,17 @@ def validate_offering_upload(
     filename: str,
     content_type: str | None,
     byte_size: int,
+    limits: OfferingLimits | None = None,
     existing_bundle_bytes: int = 0,
     existing_bundle_count: int = 0,
+    resource_count: int = 1,
 ) -> ValidatedOfferingFile:
     """Accept or refuse one Offering file.
+
+    ``limits`` is the creator's resolved plan allowance. It defaults to
+    :data:`PLATFORM_LIMITS` so the pure rules stay testable without a
+    plan, and so a caller that forgets to pass one gets the ceiling
+    rather than no limit at all — the safe direction for an omission.
 
     ``existing_bundle_bytes`` / ``existing_bundle_count`` describe the
     Offering's **current** bundle, so the caller counts superseded rows
@@ -222,18 +304,26 @@ def validate_offering_upload(
     to everything ever uploaded — otherwise replacing a file five times
     would exhaust the budget for a bundle that never grew.
 
+    ``resource_count`` is how many downloadable resources *this* upload
+    contributes: 1 for a plain file or an Office package, and the number
+    of member files for a ZIP bundle. Passing it is what stops an archive
+    being a way around the file allowance; the caller counts the entries
+    (cheaply, from the central directory) before calling.
+
     Raises :class:`OfferingFileRejected`. Returns the normalised values
     to persist on success.
     """
+    limits = limits or PLATFORM_LIMITS
+
     if byte_size <= 0:
         raise OfferingFileRejected(
             "empty_file", "That file is empty.",
         )
-    if byte_size > MAX_OFFERING_FILE_BYTES:
-        mb = MAX_OFFERING_FILE_BYTES // (1024 * 1024)
+    if byte_size > limits.max_file_bytes:
         raise OfferingFileRejected(
             "file_too_large",
-            f"Each file must be {mb} MB or smaller.",
+            f"Your {limits.plan_name} plan allows files up to "
+            f"{limits.file_mb} MB. This one is larger.",
         )
 
     exts = all_extensions(filename)
@@ -278,6 +368,19 @@ def validate_offering_upload(
             "That file type is not supported for Offerings.",
         )
 
+    # ZIP bundles are a plan capability, refused before the archive is
+    # inspected or stored. Community's allowance is a single file, so an
+    # archive would let one upload carry fifty resources and make the
+    # file limit meaningless — the prohibition is what gives that limit
+    # its meaning rather than a separate restriction on top of it.
+    if extension == ".zip" and not limits.zip_bundles_allowed:
+        raise OfferingFileRejected(
+            "zip_not_permitted",
+            f"Your {limits.plan_name} plan doesn't include ZIP bundles. "
+            "Upload the file on its own, or upgrade to Creator to sell a "
+            "bundle.",
+        )
+
     declared = (content_type or "").split(";")[0].strip().lower()
     if not declared:
         raise OfferingFileRejected(
@@ -293,16 +396,25 @@ def validate_offering_upload(
             "That file's type does not match its extension.",
         )
 
-    if existing_bundle_count + 1 > MAX_OFFERING_FILE_COUNT:
-        raise OfferingFileRejected(
-            "too_many_files",
-            f"An Offering can include up to {MAX_OFFERING_FILE_COUNT} files.",
-        )
-    if existing_bundle_bytes + byte_size > MAX_OFFERING_BUNDLE_BYTES:
-        mb = MAX_OFFERING_BUNDLE_BYTES // (1024 * 1024)
+    # Resource count, not row count: a ZIP contributes its member files.
+    if existing_bundle_count + max(1, resource_count) > limits.max_files:
+        if limits.max_files == 1:
+            detail = (
+                f"Your {limits.plan_name} plan includes one downloadable "
+                "file per Offering. Upgrade to Creator to add more."
+            )
+        else:
+            detail = (
+                f"Your {limits.plan_name} plan allows up to "
+                f"{limits.max_files} files per Offering."
+            )
+        raise OfferingFileRejected("too_many_files", detail)
+
+    if existing_bundle_bytes + byte_size > limits.max_bundle_bytes:
         raise OfferingFileRejected(
             "bundle_too_large",
-            f"An Offering's files must total {mb} MB or less.",
+            f"Your {limits.plan_name} plan allows {limits.bundle_mb} MB "
+            "of files per Offering. This upload would go over.",
         )
 
     return ValidatedOfferingFile(
@@ -365,6 +477,8 @@ __all__ = [
     "LEGACY_OFFICE_EXTENSIONS",
     "OfferingFileRejected",
     "ValidatedOfferingFile",
+    "OfferingLimits",
+    "PLATFORM_LIMITS",
     "sanitise_filename",
     "all_extensions",
     "validate_offering_upload",
