@@ -44,6 +44,7 @@ import { captureProxyFailure, classifyProxyFailure } from '@/lib/sentryHandled'
 import { isOfferingFileUpload } from '@/lib/uploadRouting'
 import {
   acquireLargeUploadSlot,
+  isLargeBody,
   needsSlot,
 } from '@/lib/uploadConcurrency'
 
@@ -189,45 +190,47 @@ async function proxy(
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    // Stream the request body straight through; nothing is buffered
-    // here. This replaced ``await request.arrayBuffer()`` in B6/B7
-    // after measurement showed that buffering made fc-web's memory
-    // scale with upload size and killed the process under concurrent
-    // uploads.
+    // Body forwarding: buffer small requests, stream large ones.
     //
-    // Measured on a production build inside a hard 512 MB cgroup —
-    // four concurrent 50 MB uploads, peak resident memory:
+    // Streaming everything was wrong, and production caught it within
+    // minutes. With ``duplex: 'half'`` undici is still writing the body
+    // when an upstream answers early — an auth rejection, a permission
+    // failure, a validation error raised before the body is consumed —
+    // and the failed write rejects the whole fetch, discarding a
+    // response that had already arrived. Every such request became a
+    // 502 "Unable to reach the backend". Reproduced deterministically
+    // against an upstream that replies without reading the body.
     //
-    //   buffered, middleware on /api   454 MB for ONE; OOM at two
-    //   streamed, middleware on /api   382 MB for ONE; OOM at two
-    //   streamed, /api excluded        390 MB for FOUR, no OOM
+    // Buffering is correct for small requests and always was: a few
+    // kilobytes of JSON costs nothing, and an early response is handled
+    // normally because the body is already in the socket.
     //
-    // Both halves are needed. Streaming here is useless on its own
-    // because Next clones the body for the middleware layer before any
-    // handler runs (``getCloneableBody`` in
-    // ``server/lib/router-utils/resolve-routes.js``), so the matcher in
-    // ``src/proxy.ts`` excludes ``/api/`` — where the middleware did
-    // nothing anyway. See the B6/B7 report.
+    // Streaming is correct for large ones, and necessary: measured
+    // inside a hard 512 MB cgroup, buffering made ONE 50 MB upload peak
+    // at 454 MB and TWO kill the process. Upload endpoints also consume
+    // their body as a matter of course — that is what they are for — so
+    // the early-response pattern does not arise there.
     //
-    // The historical note here said ``duplex: 'half'`` was fragile under
-    // Next 16 + Turbopack in dev. Retested on 16.2.4 in both dev and
-    // production: full byte integrity at 1–25 MiB, no errors.
+    // The threshold is the same one the concurrency gate uses, so
+    // "large" means one thing in this file.
     const init: RequestInit = {
       method,
       headers: outboundHeaders,
       redirect: 'manual',
       signal: controller.signal,
     }
-    if (canHaveBody && request.body && request.headers.get('content-length') !== '0') {
-      // Hand undici the inbound stream directly rather than
-      // materialising it. ``duplex: 'half'`` is required by the fetch
-      // spec whenever the body is a stream.
-      //
-      // An empty POST takes the branch below instead: the old code was
-      // careful not to send a zero-length body that "some servers reject
-      // with unexpected end of input", and that care is preserved.
-      ;(init as RequestInit & { duplex: 'half' }).duplex = 'half'
-      init.body = request.body
+    if (canHaveBody && request.headers.get('content-length') !== '0') {
+      if (isLargeBody(request.headers.get('content-length')) && request.body) {
+        // ``duplex: 'half'`` is required whenever the body is a stream.
+        ;(init as RequestInit & { duplex: 'half' }).duplex = 'half'
+        init.body = request.body
+      } else {
+        const bodyBuffer = await request.arrayBuffer()
+        // Only attach a body when there is actually one — an empty POST
+        // (0 bytes) should not send an empty Buffer that some servers
+        // reject with "unexpected end of input".
+        if (bodyBuffer.byteLength > 0) init.body = bodyBuffer
+      }
     }
 
     const backendResponse = await fetch(targetUrl, init)

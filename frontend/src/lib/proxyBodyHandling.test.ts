@@ -89,19 +89,30 @@ describe('the middleware does not run on /api', () => {
 describe('the BFF proxy streams request bodies', () => {
   const route = codeOnly('app/api/[...path]/route.ts')
 
-  test('it does not buffer the whole body', () => {
+  test('large bodies are streamed, not buffered', () => {
     assert.ok(
-      !route.includes('await request.arrayBuffer()'),
-      'the proxy buffers the entire upload again — fc-web memory will '
-      + 'scale with file size and OOM under concurrent uploads',
+      route.includes('isLargeBody('),
+      'the proxy no longer distinguishes large bodies — if it buffers '
+      + 'everything, fc-web memory scales with upload size and OOMs '
+      + 'under concurrent uploads',
     )
-  })
-
-  test('it forwards the stream with duplex: half', () => {
     assert.ok(route.includes('init.body = request.body'))
     assert.ok(
       route.includes("duplex: 'half'"),
       'a streamed fetch body requires duplex: half',
+    )
+  })
+
+  test('small bodies are still buffered', () => {
+    // Streaming everything broke production: with duplex half, undici
+    // is still writing when an upstream answers early (a 401, a 403, a
+    // validation error raised before the body is read), the failed
+    // write rejects the whole fetch, and an already-received response
+    // is lost as a 502. Buffering small requests keeps that working.
+    assert.ok(
+      route.includes('await request.arrayBuffer()'),
+      'small requests are no longer buffered — an upstream early '
+      + 'response will be lost as a 502',
     )
   })
 

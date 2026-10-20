@@ -93,6 +93,21 @@ export function resetLargeUploadGate(): void {
  * actually arrive. This only has to catch the honest large upload,
  * which is every real one.
  */
+/**
+ * Is this body large enough to stream rather than buffer?
+ *
+ * The same threshold the concurrency gate uses, so "large" means one
+ * thing. Below it the proxy buffers, which keeps an upstream's early
+ * response (a 401, a 403, a validation error raised before the body is
+ * read) working — streaming such a request makes the failed body write
+ * reject the whole fetch and lose the response.
+ */
+export function isLargeBody(contentLength: string | null): boolean {
+  if (!contentLength) return false
+  const bytes = Number.parseInt(contentLength, 10)
+  return Number.isFinite(bytes) && bytes >= LARGE_UPLOAD_BYTES
+}
+
 export function needsSlot(method: string, contentLength: string | null): boolean {
   const m = method.toUpperCase()
   if (m === 'GET' || m === 'HEAD') return false
