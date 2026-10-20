@@ -1272,3 +1272,74 @@ export const getPeerThread = cache(async (threadId: string) => {
   if (!res.ok) return null
   return res.json()
 })
+
+// ---------------------------------------------------------------------------
+// Offerings (B6 / B7)
+// ---------------------------------------------------------------------------
+//
+// Same shape as the Pathway helpers above: ``cache``-wrapped, session
+// cookie forwarded, a null/empty fallback rather than a throw so a page
+// renders its own empty state instead of a 500. Every one of these
+// returns nothing while the feature flag is off — the backend answers
+// 404 — which is what keeps the Creator Studio pages inert in
+// production without the frontend needing its own copy of the flag.
+
+export const getCreatorOfferings = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/offerings`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorOffering = cache(async (slug: string, offeringSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/offerings/${offeringSlug}`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorOfferingReadiness = cache(async (
+  slug: string, offeringSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/offerings/${offeringSlug}/readiness`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorOfferingFiles = cache(async (
+  slug: string, offeringSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/offerings/${offeringSlug}/files`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorOfferingAboutBlocks = cache(async (
+  slug: string, offeringSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/offerings/${offeringSlug}/about-blocks`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
+/** The five curated default covers. Platform-wide, so no Collective. */
+export const getOfferingCovers = cache(async () => {
+  const res = await fetchWithSession('/api/creator/offering-covers')
+  if (!res.ok) return []
+  return res.json()
+})
+
+/** The member detail page — and the creator's Preview target. */
+export const getMemberOffering = cache(async (
+  slug: string, offeringSlug: string,
+) => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/offerings/${offeringSlug}`)
+  if (!res.ok) return null
+  return res.json()
+})

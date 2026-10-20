@@ -100,6 +100,11 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/creator-studio/pathways',   label: 'Pathways',   activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
       { href: '/creator-studio/gatherings', label: 'Gatherings', activeOnPath: /^\/creator\/spaces\/[^/]+\/events/,    requiresCollective: true },
+      // Digital products (B6/B7). The group comment above anticipated
+      // this surface; it lands here rather than under COMMERCE because
+      // an Offering is something the Creator *makes*, and the money
+      // question is one tab inside it.
+      { href: '/creator-studio/offerings',  label: 'Offerings',  activeOnPath: /^\/creator\/spaces\/[^/]+\/offerings/, requiresCollective: true },
     ],
   },
   {

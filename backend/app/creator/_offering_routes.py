@@ -275,6 +275,29 @@ def _detail(offering: Offering, db: Session) -> dict:
 
 
 @router.get(
+    "/offering-covers",
+    summary="The curated default cover images a creator may choose",
+)
+def list_offering_covers(
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    """The cover picker's payload.
+
+    Not scoped to a Collective — the five are platform assets, identical
+    for every creator, so there is nothing per-Collective to resolve and
+    no reason to make the picker wait on one.
+
+    Each entry carries a hero URL and a thumbnail URL. The thumbnail is
+    what the picker renders; the hero is what gets stored. Choosing a
+    cover stores the **URL**, so one object serves every Offering that
+    picks it — a default cover is referenced, never copied into a
+    creator's own storage.
+    """
+    from app.services.offering_covers import manifest
+    return manifest()
+
+
+@router.get(
     "/spaces/{slug}/offerings",
     response_model=list[OfferingSummaryResponse],
     summary="List this Collective's Offerings (all statuses)",

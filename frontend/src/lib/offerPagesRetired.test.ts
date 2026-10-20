@@ -89,9 +89,24 @@ describe('no Offer Pages code remains in the frontend', () => {
 
   test('no Offer Page types are declared', () => {
     const src = codeOnly('types/platform.ts')
+    // Anchored on "OfferPage", not on the prefix "Offer".
+    //
+    // The looser pattern this replaces matched `CreatorOffering`,
+    // `OfferingCover` and every other Offerings type added in B6/B7 —
+    // a different, live feature. It would have failed on any future
+    // type merely beginning with those letters, which is the classic
+    // ban-the-word-instead-of-the-thing mistake: the retirement being
+    // guarded is Offer *Pages*, so that is what the pattern names.
     assert.ok(
-      !/export (?:type|interface) (?:Offer|PublicOffer|CreatorOffer)/.test(src),
+      !/export (?:type|interface) (?:Public|Creator)?OfferPage/.test(src),
       'an Offer Page type is back in types/platform.ts',
+    )
+    // And the guard must still be capable of failing.
+    assert.ok(
+      /export (?:type|interface) (?:Public|Creator)?OfferPage/.test(
+        'export interface CreatorOfferPage {',
+      ),
+      'the pattern no longer detects an Offer Page type at all',
     )
   })
 

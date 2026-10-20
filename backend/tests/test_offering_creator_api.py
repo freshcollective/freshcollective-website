@@ -36,7 +36,12 @@ from app.services import offering_files as of
 from app.services import offering_readiness as readiness
 from app.services import offering_validation as ov
 
-DEFAULT_COVER = "/api/uploads/platform-artwork/offering-covers/workbook.png"
+# Taken from the manifest rather than written out, so the curated set
+# and the tests cannot drift apart: ``is_acceptable_cover`` now checks
+# exact membership of ``DEFAULT_COVER_URLS`` (B6), so a hard-coded
+# placeholder would simply be refused.
+from app.services.offering_covers import DEFAULT_COVERS
+DEFAULT_COVER = DEFAULT_COVERS[0].url
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +599,38 @@ class TestCoverImages:
         )
         assert out["cover_image_url"] == url
 
+    def test_a_default_cover_that_is_not_in_the_manifest_is_refused(
+        self, db, owner_space,
+    ):
+        """B6 narrowed this. The prefix used to admit any hyphenated
+        filename, which meant a creator could store a cover that does not
+        exist and publish an Offering whose card renders a broken image.
+        Membership of the curated set is now exact."""
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.flush()
+        url = "/api/uploads/platform-artwork/offering-covers/not-a-real-cover.webp"
+        assert _status(
+            api.update_offering, space.slug, off.slug,
+            OfferingUpdateRequest(cover_image_url=url),
+            db=db, current_user=owner,
+        ) == 422
+
+    def test_every_manifest_cover_is_accepted(self, db, owner_space):
+        """The positive control: all five curated covers are usable."""
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        space, owner = owner_space()
+        for cover in DEFAULT_COVERS:
+            off = _offering(db, space)
+            db.flush()
+            out = api.update_offering(
+                space.slug, off.slug,
+                OfferingUpdateRequest(cover_image_url=cover.url),
+                db=db, current_user=owner,
+            )
+            assert out["cover_image_url"] == cover.url, cover.key
+
     @pytest.mark.parametrize("url", [
         "https://evil.example.com/tracker.png",
         "http://example.com/x.png",
@@ -632,7 +669,7 @@ class TestCoverImages:
         monkeypatch.setattr(settings, "r2_bucket_public", "fc-public")
         monkeypatch.setattr(settings, "r2_bucket_private", "fc-private")
 
-        key = "platform-artwork/offering-covers/workbook.png"
+        key = DEFAULT_COVERS[0].storage_key
         assert storage._bucket_for_key(key) == "fc-public"
 
         scope = {
@@ -1113,34 +1150,68 @@ class TestFeatureFlag:
         assert "require_offerings_enabled" in names
 
     def test_every_offering_route_inherits_the_gate(self):
+        """Every mounted Offering route carries the flag dependency.
+
+        Matched on the **path**, not on a list of routers, so a route
+        added in a module nobody remembered to list here is still caught.
+        ``offering`` singular rather than ``offerings`` so
+        ``/offering-covers`` is included.
+        """
         from app.main import app
         from fastapi.routing import APIRoute
-        gated = 0
-        for r in app.routes:
-            if isinstance(r, APIRoute) and "offerings" in r.path:
-                names = [
-                    getattr(d.call, "__name__", "")
-                    for d in r.dependant.dependencies
-                ]
-                assert "require_offerings_enabled" in names, r.path
-                gated += 1
+
+        mounted = [
+            r for r in app.routes
+            if isinstance(r, APIRoute) and "offering" in r.path.lower()
+        ]
+        for r in mounted:
+            names = [
+                getattr(d.call, "__name__", "")
+                for d in r.dependant.dependencies
+            ]
+            assert "require_offerings_enabled" in names, r.path
 
         # The loop above is the assertion; these two stop it passing
-        # vacuously. Counting against the routers themselves rather than
-        # against a hard-coded number means adding an endpoint cannot
-        # make this test stale — it either inherits the gate and is
-        # counted, or the loop fails on it.
-        from app.creator import _offering_file_routes, _offering_routes
+        # vacuously. Counting against the routers themselves means
+        # adding an endpoint cannot make this test stale — it either
+        # inherits the gate and is counted, or the loop fails on it.
+        from app.creator import (
+            _offering_about_routes, _offering_file_routes, _offering_routes,
+        )
+        from app.spaces import _offering_member_routes
         declared = sum(
             1
-            for mod in (_offering_routes, _offering_file_routes)
+            for mod in (
+                _offering_routes, _offering_file_routes,
+                _offering_about_routes, _offering_member_routes,
+            )
             for route in mod.router.routes
             if isinstance(route, APIRoute)
         )
-        assert gated == declared, (gated, declared)
+        assert len(mounted) == declared, (len(mounted), declared)
         # A floor, so deleting every route does not make this pass.
-        # Phase B4 shipped 7; Phase B5 adds 6 file endpoints.
-        assert gated >= 13, gated
+        # B4 shipped 7; B5 added 6 file endpoints; B6/B7 add the cover
+        # manifest, 5 About-block endpoints and the member detail page.
+        assert len(mounted) >= 20, len(mounted)
+
+    def test_the_member_detail_route_uses_the_same_gate_function(self):
+        """Not a second function with the same behaviour.
+
+        A copied gate is a gate that can be changed in one place and not
+        the other — and the structural test above matches on the
+        function's name, so a near-duplicate would silently stop being
+        checked.
+        """
+        from app.creator._offering_routes import require_offerings_enabled
+        from app.spaces import _offering_member_routes as member
+        from fastapi.routing import APIRoute
+
+        route = next(
+            r for r in member.router.routes
+            if isinstance(r, APIRoute) and "offerings" in r.path
+        )
+        calls = [d.call for d in route.dependant.dependencies]
+        assert require_offerings_enabled in calls
 
     def test_there_is_no_admin_or_owner_bypass(self):
         """A bypass is how unfinished functionality reaches production.
