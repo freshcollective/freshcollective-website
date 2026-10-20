@@ -147,12 +147,8 @@ def resolve_creator_plan(user: User, db: Session) -> PlanCapability | None:
         return get_plan_capability(subscription.plan.slug)
 
     # No subscription row yet — fall back to the cheapest active plan.
-    fallback = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
-    )
+    # See ``fallback_creator_plan`` for why the ordering is explicit.
+    fallback = fallback_creator_plan(db)
     if fallback:
         return get_plan_capability(fallback.slug)
     return None
@@ -161,6 +157,65 @@ def resolve_creator_plan(user: User, db: Session) -> PlanCapability | None:
 # ---------------------------------------------------------------------------
 # Managed-collective count (matches billing usage counter)
 # ---------------------------------------------------------------------------
+
+
+
+def fallback_creator_plan(db: Session) -> CreatorPlan | None:
+    """The plan a creator with **no subscription row** resolves to.
+
+    One function, because there were two copies of this query and they
+    could disagree — which is exactly what happened.
+
+    The non-determinism it fixes
+    ----------------------------
+
+    Both copies were ``ORDER BY monthly_price_cents`` with no tiebreak,
+    and **three** active plans cost zero: Community, Founding Creator
+    and Organisation. With a three-way tie SQL may return any of them,
+    so the fallback was decided by physical row order — stable only
+    until something rewrote a row.
+
+    That matters because a free Community creator has no subscription
+    row at all (writing one would break the paid upgrade path), so
+    *every* Community creator goes through this fallback. Resolving to
+    Founding Creator would have handed them unrestricted Collectives,
+    unrestricted members, paid Offerings and a 0% transaction fee.
+
+    The ordering is now explicit rather than lucky
+    ----------------------------------------------
+
+    Among plans at the cheapest price, prefer one that is actually
+    **purchasable** — the self-service tier a creator could have chosen
+    for themselves. Founding Creator and Organisation are assigned
+    manually (``is_purchasable=False`` in ``plan_config``) and are not
+    somewhere anybody should silently land. Slug order breaks any
+    remaining tie so the answer is stable across runs and rewrites.
+
+    Deliberately reads purchasability from ``plan_config`` rather than
+    the ``creator_plans`` table: the table has no such column, and the
+    capability dataclass is already the single source of truth for what
+    a plan allows.
+    """
+    active = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .order_by(CreatorPlan.monthly_price_cents, CreatorPlan.slug)
+        .all()
+    )
+    if not active:
+        return None
+
+    cheapest_price = active[0].monthly_price_cents
+    tied = [p for p in active if p.monthly_price_cents == cheapest_price]
+
+    for plan in tied:
+        capability = get_plan_capability(plan.slug)
+        if capability is not None and capability.is_purchasable:
+            return plan
+    # No purchasable plan at the cheapest price. Return the first by
+    # slug rather than an arbitrary row: a deterministic wrong answer
+    # can be noticed, an arbitrary one cannot.
+    return tied[0]
 
 
 def count_managed_collectives(user: User, db: Session) -> int:
@@ -549,6 +604,7 @@ def allowed_location_query(user: User, db: Session):
 __all__ = [
     "is_platform_owner",
     "resolve_creator_plan",
+    "fallback_creator_plan",
     "count_managed_collectives",
     "effective_collective_allowance",
     "guard_active_collective_limit",

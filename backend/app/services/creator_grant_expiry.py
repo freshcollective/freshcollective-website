@@ -312,12 +312,14 @@ def community_is_the_fallback(db: Session) -> bool:
     subscription remains. This verifies that plan is Community, so the
     downgrade cannot silently resolve somewhere more capable.
     """
-    cheapest = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
-    )
+    # Same helper ``resolve_creator_plan`` uses, so this check and the
+    # resolution it is checking cannot disagree. They previously each
+    # ran their own untie-broken ``ORDER BY monthly_price_cents``, and
+    # three active plans cost zero — so this could answer True while the
+    # resolution landed elsewhere, or halt the whole sweep for no reason.
+    from app.creator.plan_guards import fallback_creator_plan
+
+    cheapest = fallback_creator_plan(db)
     return cheapest is not None and cheapest.slug == "community"
 
 
