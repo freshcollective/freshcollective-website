@@ -30,12 +30,21 @@ from app.core.config import settings
 from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.services.creator_eligibility import is_eligible_creator
+from app.services.streaming_upload import (
+    EmptyUpload,
+    UploadTooLarge,
+    stream_to_temp,
+)
 from app.core.storage import (
+    MAX_UPLOAD_BYTES,
+    MEDIA_EXTENSION_MAP,
     StorageDeleteError,
     delete_file,
     delete_keys,
     save_file,
+    save_file_streaming,
     save_media_file,
+    save_media_file_streaming,
 )
 from app.creator._columns_media import columns_image_asset_columns
 from app.creator.plan_config import (
@@ -925,6 +934,37 @@ def _public_app_url() -> str:
     canonical helper, kept because several call sites below read
     better with it."""
     return public_app_url()
+
+
+
+def _store_media_upload(
+    file: UploadFile, original_name: str, mime_type: str, space_slug: str,
+) -> tuple[str, str, str, str, int]:
+    """Receive a Media Library upload on disk and store it, streaming.
+
+    Shared by the Media Library and Collective-resource handlers, which
+    had identical bodies. The per-type ceiling is read from
+    ``MEDIA_EXTENSION_MAP`` **before** the copy starts, so an oversized
+    video is abandoned part-way instead of being written out in full and
+    measured afterwards.
+
+    An unknown extension gets the limit check it would have had anyway
+    from ``save_media_file_streaming``; passing the global maximum here
+    just means the refusal comes from the one place that owns the
+    allow-list message.
+    """
+    ext = pathlib.Path(original_name).suffix.lower()
+    _kind, max_bytes = MEDIA_EXTENSION_MAP.get(ext, ("other", MAX_UPLOAD_BYTES))
+    try:
+        with stream_to_temp(file, max_bytes=max_bytes) as spooled:
+            return save_media_file_streaming(
+                spooled.path, original_name, mime_type, space_slug,
+            )
+    except UploadTooLarge:
+        mb = max_bytes // (1024 * 1024)
+        raise ValueError(f"File exceeds the {mb} MB limit.")
+    except EmptyUpload:
+        raise ValueError("That file is empty.")
 
 
 @router.post(
@@ -3762,13 +3802,22 @@ def upload_step_resource(
     step = _get_step(pathway, step_slug, db)
 
     try:
-        data = file.file.read()
-        rel_path, resource_type, size = save_file(
-            data=data,
-            original_name=file.filename or "upload",
-            mime_type=file.content_type or "application/octet-stream",
-            subdir=f"steps/{step.id}",
+        # Streamed — ``save_file`` accepts up to 200 MB and this handler
+        # used to hold all of it in memory. Same reasoning as
+        # ``upload_media``.
+        with stream_to_temp(file, max_bytes=MAX_UPLOAD_BYTES) as spooled:
+            rel_path, resource_type, size = save_file_streaming(
+                spooled.path,
+                original_name=file.filename or "upload",
+                mime_type=file.content_type or "application/octet-stream",
+                subdir=f"steps/{step.id}",
+            )
+    except UploadTooLarge:
+        raise HTTPException(
+            status_code=413, detail="File exceeds the 200 MB size limit.",
         )
+    except EmptyUpload:
+        raise HTTPException(status_code=422, detail="That file is empty.")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -5991,8 +6040,16 @@ def list_media(
     return [_serialise_media(a, counts.get(a.id, 0)) for a in assets]
 
 
+# Synchronous on purpose, not an oversight.
+#
+# This handler now does blocking I/O — streaming the body to disk and
+# transferring it to storage. In an ``async def`` that work runs ON the
+# event loop, so a single 250 MB upload would stall every other request
+# the process is serving. Declared ``def``, FastAPI runs it in its
+# threadpool instead, which is where blocking work belongs. It awaits
+# nothing, so there is nothing to give up.
 @router.post("/spaces/{slug}/media", response_model=MediaAssetResponse, status_code=201)
-async def upload_media(
+def upload_media(
     slug: str,
     file: UploadFile = File(...),
     title: str = Form(""),
@@ -6008,13 +6065,18 @@ async def upload_media(
     // TODO: protect private member resources behind authenticated access checks before production.
     """
     space = _get_managed_space(slug, current_user, db)
-    data = await file.read()
     original_name = file.filename or "upload"
     mime = file.content_type or "application/octet-stream"
 
+    # Streamed to disk rather than read into memory. The Media Library
+    # advertises 250 MB video, and ``await file.read()`` put all of it
+    # in fc-api's heap on a 512 MB instance. That exposure was masked
+    # until B6/B7 by Next truncating every proxied body at 10 MiB — so
+    # the file never actually arrived. Fixing the truncation is what
+    # makes streaming here necessary rather than merely tidy.
     try:
-        storage_path, file_url, media_type, stored_filename, size = save_media_file(
-            data, original_name, mime, space.slug,
+        storage_path, file_url, media_type, stored_filename, size = (
+            _store_media_upload(file, original_name, mime, space.slug)
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -6460,7 +6522,12 @@ def create_step_block(
             .filter(PathwayStepBlock.step_id == step.id)
             .scalar()
         )
-        position = (max_pos or -1) + 1
+        # ``max_pos is None`` rather than ``max_pos or -1``: the highest
+        # existing position is legitimately **0**, and ``0 or -1`` is
+        # ``-1``, so the second block landed on position 0 beside the
+        # first — and so did every block after it. Order then fell back
+        # to insertion order and only a manual reorder separated them.
+        position = 0 if max_pos is None else max_pos + 1
 
     block = PathwayStepBlock(
         id=str(uuid4()),
@@ -6737,7 +6804,12 @@ def create_about_block(
             .filter(PathwayAboutBlock.pathway_id == pathway.id)
             .scalar()
         )
-        position = (max_pos or -1) + 1
+        # ``max_pos is None`` rather than ``max_pos or -1``: the highest
+        # existing position is legitimately **0**, and ``0 or -1`` is
+        # ``-1``, so the second block landed on position 0 beside the
+        # first — and so did every block after it. Order then fell back
+        # to insertion order and only a manual reorder separated them.
+        position = 0 if max_pos is None else max_pos + 1
 
     block = PathwayAboutBlock(
         id=str(uuid4()),
@@ -7080,8 +7152,16 @@ def create_space_resource(
     return _serialise_resource(resource, 0)
 
 
+# Synchronous on purpose, not an oversight.
+#
+# This handler now does blocking I/O — streaming the body to disk and
+# transferring it to storage. In an ``async def`` that work runs ON the
+# event loop, so a single 250 MB upload would stall every other request
+# the process is serving. Declared ``def``, FastAPI runs it in its
+# threadpool instead, which is where blocking work belongs. It awaits
+# nothing, so there is nothing to give up.
 @router.post("/spaces/{slug}/resources/upload", response_model=ResourceResponse, status_code=201)
-async def upload_space_resource_file(
+def upload_space_resource_file(
     slug: str,
     title: str = Form(...),
     description: str | None = Form(None),
@@ -7095,11 +7175,11 @@ async def upload_space_resource_file(
     current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
-    data = await file.read()
     filename = file.filename or "resource"
     try:
-        storage_path, file_url, _, stored_filename, file_size = save_media_file(
-            data, filename, file.content_type or "application/octet-stream", space.slug
+        # Streamed — same reasoning as ``upload_media`` above.
+        storage_path, file_url, _, stored_filename, file_size = _store_media_upload(
+            file, filename, file.content_type or "application/octet-stream", space.slug
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

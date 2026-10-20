@@ -25,6 +25,18 @@ interface Upload {
 
 const MB = 1024 * 1024
 
+/** Uploads the browser will run at once.
+ *
+ *  Matched to the proxy's own gate (``MAX_CONCURRENT_LARGE_UPLOADS``)
+ *  and fc-api's ``MAX_CONCURRENT_UPLOADS``, both two. Without this the
+ *  browser happily opens six parallel 50 MB POSTs; the proxy sheds the
+ *  extras to protect its memory, but it has to do so *while the body is
+ *  still being sent*, so the browser sees a broken connection rather
+ *  than the "we're busy" response. Queueing here means a creator who
+ *  drops in six files sees six orderly progress bars instead of two
+ *  uploads and four network errors. */
+const MAX_PARALLEL_UPLOADS = 2
+
 function mb(bytes: number): string {
   if (bytes < MB) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`
@@ -115,7 +127,9 @@ export default function OfferingFilesClient({
   }, [settling, refresh])
 
   // ── Upload ────────────────────────────────────────────────────────
-  const send = useCallback((file: File, replacingId: string | null) => {
+  const send = useCallback((
+    file: File, replacingId: string | null, onSettled?: () => void,
+  ) => {
     const id = `up_${Math.random().toString(36).slice(2)}_${file.name}`
     setUploads((prev) => [
       ...prev,
@@ -140,6 +154,7 @@ export default function OfferingFilesClient({
     }
 
     const finish = (message: string | null) => {
+      onSettled?.()
       if (message) {
         setUploads((prev) =>
           prev.map((u) => (u.id === id ? { ...u, error: message } : u)),
@@ -169,11 +184,27 @@ export default function OfferingFilesClient({
     xhr.send(form)
   }, [base, refresh])
 
+  // Pending uploads waiting for a slot, and how many are running.
+  const queue = useRef<{ file: File; replacingId: string | null }[]>([])
+  const running = useRef(0)
+
+  const pump = useCallback(() => {
+    while (running.current < MAX_PARALLEL_UPLOADS && queue.current.length > 0) {
+      const next = queue.current.shift()!
+      running.current += 1
+      send(next.file, next.replacingId, () => {
+        running.current -= 1
+        pump()
+      })
+    }
+  }, [send])
+
   function addFiles(list: FileList | null, replacingId: string | null = null) {
     if (!list || list.length === 0) return
     // One at a time when replacing — a replacement targets one file.
     const chosen = replacingId ? [list[0]] : Array.from(list)
-    chosen.forEach((f) => send(f, replacingId))
+    chosen.forEach((f) => queue.current.push({ file: f, replacingId }))
+    pump()
   }
 
   // ── Mutations ─────────────────────────────────────────────────────

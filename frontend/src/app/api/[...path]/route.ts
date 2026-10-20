@@ -42,6 +42,10 @@ import { resolveInternalApiBase } from '@/lib/api'
 import { applyBffAuthHeaders } from '@/lib/bffAuth'
 import { captureProxyFailure, classifyProxyFailure } from '@/lib/sentryHandled'
 import { isOfferingFileUpload } from '@/lib/uploadRouting'
+import {
+  acquireLargeUploadSlot,
+  needsSlot,
+} from '@/lib/uploadConcurrency'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -156,6 +160,31 @@ async function proxy(
     ? UPLOAD_REQUEST_TIMEOUT_MS
     : REQUEST_TIMEOUT_MS
 
+  // Shed a large upload rather than carry more than this process has
+  // memory for. Small requests never take a slot. See
+  // ``uploadConcurrency.ts`` for the measurements behind the number.
+  //
+  // 429, not 503: the request is being shed deliberately and the client
+  // should retry. 503 would also be captured as a Sentry event, which
+  // is how FC-API-9 came to hold 36 events of the system working.
+  let releaseSlot: (() => void) | null = null
+  const declaredBytes = Number.parseInt(
+    request.headers.get('content-length') ?? '', 10,
+  )
+  if (needsSlot(method, request.headers.get('content-length'))) {
+    releaseSlot = acquireLargeUploadSlot(declaredBytes)
+    if (!releaseSlot) {
+      return jsonResponse(429, {
+        detail: {
+          reason: 'upload_busy',
+          message:
+            "We're handling other uploads right now. Please try again in "
+            + 'a moment — nothing has been lost.',
+        },
+      })
+    }
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -255,6 +284,7 @@ async function proxy(
       detail: 'Unable to reach the backend.',
     })
   } finally {
+    releaseSlot?.()
     clearTimeout(timer)
   }
 }

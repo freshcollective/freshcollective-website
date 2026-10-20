@@ -1078,7 +1078,12 @@ def create_series_about_block(
             )
             .scalar()
         )
-        position = (max_pos or -1) + 1
+        # ``max_pos is None`` rather than ``max_pos or -1``: the highest
+        # existing position is legitimately **0**, and ``0 or -1`` is
+        # ``-1``, so the second block landed on position 0 beside the
+        # first — and so did every block after it. Order then fell back
+        # to insertion order and only a manual reorder separated them.
+        position = 0 if max_pos is None else max_pos + 1
 
     block = PathwayAboutBlock(
         id=str(uuid4()),

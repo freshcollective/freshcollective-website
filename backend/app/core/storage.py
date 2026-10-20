@@ -40,6 +40,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 import pathlib
 import re
 import shutil
@@ -815,3 +816,98 @@ def download_to_fileobj(key: str, fileobj) -> None:
         raise FileNotFoundError(key)
     with open(src, "rb") as inp:
         shutil.copyfileobj(inp, fileobj, length=1024 * 1024)
+
+
+# ---------------------------------------------------------------------------
+# Streaming variants of the two save helpers (B6/B7)
+# ---------------------------------------------------------------------------
+#
+# ``save_file`` and ``save_media_file`` both take ``data: bytes``. That
+# is fine for an avatar and wrong for the 250 MB video the Media Library
+# advertises: on a 512 MB instance, one such upload is half the box.
+#
+# These two take a **path on local disk** instead and hand it to
+# ``upload_stream``, so peak resident bytes is one transfer chunk rather
+# than one file. Validation, key layout and return shape are identical
+# to the byte-based originals — deliberately, so a caller switches by
+# changing one call and nothing downstream notices.
+#
+# The originals are kept. Every small-upload caller (avatars, covers,
+# logos, artwork, community images) still uses them, and rewriting
+# fifteen working endpoints to prove a point would be a far larger
+# change than the problem justifies.
+
+
+def save_file_streaming(
+    source_path: str,
+    original_name: str,
+    mime_type: str,
+    subdir: str,
+) -> tuple[str, str, int]:
+    """Streaming twin of :func:`save_file`. Same checks, same returns."""
+    ext = pathlib.Path(original_name).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"File type '{ext}' is not permitted. "
+            "Allowed: pdf, mp4, mov, mp3, wav, m4a, docx, png, jpg"
+        )
+
+    size = os.path.getsize(source_path)
+    if size > MAX_UPLOAD_BYTES:
+        raise ValueError("File exceeds the 200 MB size limit.")
+
+    safe_base = _sanitize_filename(pathlib.Path(original_name).stem)
+    stored_name = f"{uuid4().hex}_{safe_base}{ext}"
+    rel_path = f"{subdir}/{stored_name}"
+
+    with open(source_path, "rb") as fh:
+        upload_stream(rel_path, fh, mime_type)
+
+    resource_type = MIME_TO_RESOURCE_TYPE.get(mime_type, "file")
+    return rel_path, resource_type, size
+
+
+def save_media_file_streaming(
+    source_path: str,
+    original_name: str,
+    mime_type: str,
+    space_slug: str,
+) -> tuple[str, str, str, str, int]:
+    """Streaming twin of :func:`save_media_file`.
+
+    The per-type ceiling is still enforced here as well as by the
+    caller's receive limit: the receive limit stops an oversized body
+    reaching disk, and this stops a file that arrived by some other
+    route being stored over the limit. Two guards, because the cost of
+    the wrong answer is a 250 MB object nobody meant to accept.
+    """
+    ext = pathlib.Path(original_name).suffix.lower()
+    if ext not in MEDIA_EXTENSION_MAP:
+        allowed = ", ".join(sorted(MEDIA_EXTENSION_MAP.keys()))
+        raise ValueError(
+            f"File type '{ext}' is not permitted. Allowed: {allowed}"
+        )
+
+    media_type, max_bytes = MEDIA_EXTENSION_MAP[ext]
+    size = os.path.getsize(source_path)
+    if size > max_bytes:
+        mb = max_bytes // (1024 * 1024)
+        raise ValueError(f"File exceeds the {mb} MB limit for {media_type} files.")
+
+    safe_base = _sanitize_filename(pathlib.Path(original_name).stem)
+    stored_filename = f"{uuid4().hex}_{safe_base}{ext}"
+    # Per-segment sanitisation, matching ``save_media_file`` exactly —
+    # see the long note there for why a path-shaped slug must keep its
+    # separator.
+    safe_slug = "/".join(
+        re.sub(r"[^\w\-]", "_", segment)[:50]
+        for segment in space_slug.split("/")
+        if segment
+    )
+    storage_path = f"media/{safe_slug}/{stored_filename}"
+
+    with open(source_path, "rb") as fh:
+        upload_stream(storage_path, fh, mime_type)
+
+    file_url = f"/api/uploads/{storage_path}"
+    return storage_path, file_url, media_type, stored_filename, size
