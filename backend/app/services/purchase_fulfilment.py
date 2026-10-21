@@ -87,7 +87,14 @@ from app.models.payment_option import PaymentOption
 from app.models.payment_option_grant import (
     GRANT_KIND_EVENT_SERIES,
     GRANT_KIND_GATHERING,
+    GRANT_KIND_OFFERING,
     GRANT_KIND_PATHWAY,
+)
+from app.models.offering import (
+    Offering,
+    OfferingEntitlement,
+    OfferingEntitlementSource,
+    OfferingEntitlementStatus,
 )
 from app.models.platform import (
     EntitlementSource,
@@ -103,6 +110,14 @@ from app.services import membership_grant as _membership_grant
 
 
 logger = logging.getLogger(__name__)
+
+
+#: ``PaymentOption.attaches_to_kind`` for an option that sells one
+#: Offering. The column has no CHECK and no FK by design (see the model),
+#: so a new kind needs no migration. Defined here as well as in
+#: ``services.offering_commerce`` would be two copies of one fact, so
+#: that module imports this one.
+OFFERING_ATTACHES_KIND = "offering"
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +199,28 @@ class BookingIntent:
 
 
 @dataclass(frozen=True)
+class OfferingIntent:
+    """An OfferingEntitlement to create on purchase.
+
+    Deliberately the smallest intent of the four. There is no window
+    and no ``ends_at``, because an acquired Offering is owned rather
+    than licensed for a period — the approved decisions are that
+    ownership survives leaving the Collective, the Offering being
+    retired, the creator downgrading their plan, and a refund. A
+    nullable end date here would be the one place any of those could
+    quietly become untrue, so there isn't one.
+
+    ``space_id`` is carried rather than looked up at apply time so the
+    entitlement row records the Collective the purchase belonged to
+    even if the Offering is later moved — the same reasoning
+    ``PathwayEntitlement.space_id`` follows.
+    """
+
+    offering_id: str
+    space_id: str
+
+
+@dataclass(frozen=True)
 class FulfilmentIntent:
     """Everything a successful purchase should produce, in a
     resolver-agnostic shape. Every collection defaults to empty.
@@ -192,6 +229,7 @@ class FulfilmentIntent:
     entitlements: tuple[EntitlementIntent, ...] = ()
     access_passes: tuple[AccessPassIntent, ...] = ()
     bookings: tuple[BookingIntent, ...] = ()
+    offerings: tuple[OfferingIntent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -249,6 +287,7 @@ class FulfilmentResult:
     status: "FulfilmentStatus"
     entitlements: list[PathwayEntitlement] = field(default_factory=list)
     access_passes: list[AccessPass] = field(default_factory=list)
+    offering_entitlements: list[OfferingEntitlement] = field(default_factory=list)
     membership_created: bool = False
     # When status is not ``applied``, ``reason`` explains why — a
     # concatenation of resolver fatal_error / validation errors /
@@ -468,6 +507,10 @@ def resolve_intent_from_grants(
         - ``eligible_series_id`` = ``grant.series_id``
         - ``eligible_pathway_id`` = ``None``
 
+    * ``offering`` grant → one ``OfferingIntent``. No window and no
+      credits are read, because the CHECK constraints forbid an
+      Offering grant from carrying either — ownership is perpetual.
+
     * ``gathering`` grant → **not yet supported at runtime**.
       The resolver returns a fatal error so the webhook marks
       ``fulfilment_status='blocked'`` rather than silently
@@ -511,6 +554,9 @@ def resolve_intent_from_grants(
     ]
     series_grants = [
         g for g in grants if g.grant_kind == GRANT_KIND_EVENT_SERIES
+    ]
+    offering_grants = [
+        g for g in grants if g.grant_kind == GRANT_KIND_OFFERING
     ]
 
     # Batch-load Series rows for window derivation. Missing rows
@@ -589,11 +635,35 @@ def resolve_intent_from_grants(
             grants_pathway_id=shadow_grants_pathway_id,
         ))
 
+    # ── Offerings — one per Offering grant ────────────────────────
+    # ``space_id`` comes from the Offering row rather than from the
+    # Payment Option, because the entitlement records which
+    # Collective's catalogue the thing belongs to. A missing row leaves
+    # the space blank and ``validate_intent`` blocks the bundle before
+    # any write, exactly as it does for a missing Series.
+    offerings: list[OfferingIntent] = []
+    if offering_grants:
+        wanted = [g.offering_id for g in offering_grants if g.offering_id]
+        space_by_offering: dict[str, str] = {}
+        if wanted:
+            for o_id, sp_id in (
+                db.query(Offering.id, Offering.space_id)
+                .filter(Offering.id.in_(wanted))
+                .all()
+            ):
+                space_by_offering[o_id] = sp_id
+        for og in offering_grants:
+            offerings.append(OfferingIntent(
+                offering_id=og.offering_id or "",
+                space_id=space_by_offering.get(og.offering_id or "", ""),
+            ))
+
     return FulfilmentResolution(
         intent=FulfilmentIntent(
             entitlements=tuple(entitlements),
             access_passes=tuple(access_passes),
             bookings=(),
+            offerings=tuple(offerings),
         ),
     )
 
@@ -641,6 +711,18 @@ def option_grant_readiness(
     """
     kind = payment_option.attaches_to_kind
     payment_type = _payment_type_str(payment_option)
+
+    if kind == OFFERING_ATTACHES_KIND:
+        # Grants are the ONLY representation of an Offering purchase.
+        # There are no legacy columns describing one — ``attaches_to_id``
+        # carries the Offering id but the legacy resolver has never
+        # heard of Offerings and would fall through its
+        # "pathway-attached or no option" branch, producing an empty
+        # intent: membership granted, nothing bought. So an
+        # offering-attached option is ready by definition, and
+        # ``resolve_intent_for_option`` refuses outright rather than
+        # falling back when the grant row is missing.
+        return True, None
 
     if kind == "pathway" and payment_type == "term_pass":
         # Pathway grants have no ``sessions_per_week`` /
@@ -716,6 +798,32 @@ def resolve_intent_for_option(
 
     has_grants = len(payment_option.grants) > 0
 
+    # An offering-attached option with no Offering grant is a
+    # provisioning bug, and the legacy resolver's answer for it would be
+    # "nothing" — which fulfilment would then record as a *successful*
+    # purchase that granted only Collective membership. Refuse instead.
+    #
+    # This costs nothing at checkout time: the mandatory snapshot in
+    # ``_create_stripe_session_and_txn`` resolves through here before
+    # Stripe is contacted, so a misprovisioned Offering fails with a
+    # retryable 503 before anybody is charged rather than after.
+    if payment_option.attaches_to_kind == OFFERING_ATTACHES_KIND:
+        offering_grants = [
+            g for g in payment_option.grants
+            if g.grant_kind == GRANT_KIND_OFFERING
+        ]
+        if not offering_grants:
+            return FulfilmentResolution(
+                fatal_error=(
+                    f"PaymentOption {payment_option.id!r} is attached to an "
+                    "Offering but carries no grant of kind='offering'. "
+                    "Refusing to fulfil: the legacy resolver cannot "
+                    "represent an Offering purchase and would grant "
+                    "nothing. Re-provision the Offering's commerce rows."
+                ),
+            )
+        return resolve_intent_from_grants(db, payment_option=payment_option)
+
     if has_grants:
         ready, reason = option_grant_readiness(payment_option)
         if ready:
@@ -757,7 +865,7 @@ def validate_intent(db: Session, intent: FulfilmentIntent) -> ValidationResult:
     """Confirm every referenced target exists in the DB.
 
     Batch-queries by kind so a bundle with N entitlements + M
-    passes issues at most three SELECTs (one per target table).
+    passes issues at most four SELECTs (one per target table).
     Called *before* any writes so a missing target results in
     ``FulfilmentStatus.blocked`` on the whole bundle — never a
     partial application.
@@ -777,6 +885,9 @@ def validate_intent(db: Session, intent: FulfilmentIntent) -> ValidationResult:
             pathway_ids.add(ap.grants_pathway_id)
     for b in intent.bookings:
         event_ids.add(b.event_id)
+    offering_ids: set[str] = set()
+    for off in intent.offerings:
+        offering_ids.add(off.offering_id)
 
     errors: list[str] = []
 
@@ -801,6 +912,24 @@ def validate_intent(db: Session, intent: FulfilmentIntent) -> ValidationResult:
         }
         for missing in sorted(event_ids - found):
             errors.append(f"event {missing!r} referenced by intent does not exist")
+    if offering_ids:
+        found = {
+            o_id for (o_id,) in
+            db.query(Offering.id).filter(Offering.id.in_(offering_ids)).all()
+        }
+        for missing in sorted(offering_ids - found):
+            errors.append(f"offering {missing!r} referenced by intent does not exist")
+        # A resolver that could not find the Offering leaves ``space_id``
+        # empty, and the entitlement's ``space_id`` is NOT NULL. Caught
+        # here rather than at flush so the whole bundle blocks cleanly
+        # instead of raising mid-apply.
+        for off in intent.offerings:
+            if off.offering_id in found and not off.space_id:
+                errors.append(
+                    f"offering {off.offering_id!r} resolved without a "
+                    "Collective — refusing to write an entitlement with no "
+                    "space_id"
+                )
 
     return ValidationResult(errors=tuple(errors))
 
@@ -903,6 +1032,82 @@ def _apply_entitlement(
     logger.info(
         "purchase_fulfilment: created entitlement %s user=%s pathway=%s starts_at=%s ends_at=%s",
         ent.id, payer_user_id, intent.pathway_id, starts_at, intent.ends_at,
+    )
+    return ent
+
+
+def _apply_offering_entitlement(
+    db: Session,
+    *,
+    intent: OfferingIntent,
+    payer_user_id: str,
+    source: str,
+    payment_transaction_id: str | None,
+    now: datetime,
+) -> OfferingEntitlement:
+    """Create the OfferingEntitlement, or return the one already there.
+
+    Idempotency has two layers and both matter.
+
+    The database holds a partial unique index over
+    ``(user_id, offering_id) WHERE status = 'active'``, so a second
+    active row is impossible however many times this runs — a replayed
+    webhook, a double-clicked button, two concurrent requests. That is
+    the guarantee.
+
+    The read below is the courtesy: it turns the second attempt into a
+    quiet no-op rather than an IntegrityError that would roll back an
+    otherwise-good fulfilment. Under a genuine race the loser still
+    raises, the caller rolls back, and Stripe redelivers into the
+    short-circuit — correct, just louder.
+
+    A **revoked** row is deliberately not reactivated. The partial index
+    permits a fresh active row alongside it, which keeps the record of
+    what was revoked and why, and lets someone legitimately acquire
+    again later. Reactivating in place would overwrite that history.
+    """
+    existing = (
+        db.query(OfferingEntitlement)
+        .filter(
+            OfferingEntitlement.user_id == payer_user_id,
+            OfferingEntitlement.offering_id == intent.offering_id,
+            OfferingEntitlement.status
+            == OfferingEntitlementStatus.active.value,
+        )
+        .first()
+    )
+    if existing is not None:
+        # Re-delivery. Link the ledger row if this is the first time we
+        # have had one to link — a free acquisition followed by nothing
+        # else keeps its NULL, and an existing link is never rewritten,
+        # because the first payment is the one that bought it.
+        if payment_transaction_id and existing.payment_transaction_id is None:
+            existing.payment_transaction_id = payment_transaction_id
+            existing.updated_at = now
+        logger.info(
+            "purchase_fulfilment: offering already owned user=%s offering=%s",
+            payer_user_id, intent.offering_id,
+        )
+        return existing
+
+    ent = OfferingEntitlement(
+        id=str(uuid4()),
+        user_id=payer_user_id,
+        offering_id=intent.offering_id,
+        space_id=intent.space_id,
+        source=source,
+        status=OfferingEntitlementStatus.active.value,
+        payment_transaction_id=payment_transaction_id,
+        acquired_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(ent)
+    db.flush()
+    logger.info(
+        "purchase_fulfilment: created offering entitlement %s user=%s "
+        "offering=%s source=%s",
+        ent.id, payer_user_id, intent.offering_id, source,
     )
     return ent
 
@@ -1060,8 +1265,9 @@ def apply_intent(
     1. Every entitlement is applied first (so
        ``pathway_entitlement_id`` on subsequent AccessPass rows
        can point at one).
-    2. Membership is joined once (independent of grants).
-    3. Every AccessPass is applied, each idempotently.
+    2. Every Offering entitlement is applied, each idempotently.
+    3. Membership is joined once (independent of grants).
+    4. Every AccessPass is applied, each idempotently.
 
     Guarantees
     ----------
@@ -1115,6 +1321,32 @@ def apply_intent(
         )
 
     _link_singular_entitlement(txn, result.entitlements)
+
+    # ── Offerings ─────────────────────────────────────────────────
+    # Applied before membership so that an exception here rolls back
+    # without having made anybody a member of a Collective whose
+    # purchase did not complete.
+    #
+    # ``source`` is read from the ledger row rather than passed in,
+    # because the transaction is the authority on whether money moved
+    # and a second parameter saying the same thing could disagree with
+    # it. A zero-gross row means the free path: a discount cannot
+    # produce one, since ``discount_application`` refuses any code that
+    # would leave nothing to charge.
+    offering_source = (
+        OfferingEntitlementSource.free.value
+        if txn is not None and (txn.gross_amount_cents or 0) == 0
+        else OfferingEntitlementSource.one_time_purchase.value
+    )
+    for off_intent in intent.offerings:
+        result.offering_entitlements.append(_apply_offering_entitlement(
+            db,
+            intent=off_intent,
+            payer_user_id=payer_user_id,
+            source=offering_source,
+            payment_transaction_id=txn.id if txn is not None else None,
+            now=now,
+        ))
 
     # ── Auto-join membership (every purchase) ─────────────────────
     result.membership_created = _auto_join_membership(
@@ -1246,6 +1478,17 @@ def serialise_intent(intent: FulfilmentIntent) -> dict:
         "bookings": [
             {"event_id": b.event_id} for b in intent.bookings
         ],
+        # Phase C/D. Added to the version-1 payload rather than bumping
+        # to version 2, because the change is purely additive: an older
+        # snapshot simply has no ``offerings`` key and
+        # ``deserialise_intent`` reads it with a default. Bumping would
+        # have made every snapshot written before this deploy
+        # unreadable, and those are live rows belonging to members who
+        # have already paid.
+        "offerings": [
+            {"offering_id": o.offering_id, "space_id": o.space_id}
+            for o in intent.offerings
+        ],
     }
 
 
@@ -1287,5 +1530,12 @@ def deserialise_intent(payload: dict) -> FulfilmentIntent:
         bookings=tuple(
             BookingIntent(event_id=b["event_id"])
             for b in payload.get("bookings", [])
+        ),
+        offerings=tuple(
+            OfferingIntent(
+                offering_id=o["offering_id"],
+                space_id=o["space_id"],
+            )
+            for o in payload.get("offerings", [])
         ),
     )
