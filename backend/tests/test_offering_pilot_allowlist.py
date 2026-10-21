@@ -152,16 +152,42 @@ class TestTheAllowListParses:
     def test_an_id_matches_as_well_as_a_slug(self):
         """A slug is mutable — ``creator.routes`` lets an owner change
         it — so an operator who wants the entry to survive a rename can
-        use the id instead."""
-        space_id = "7b8d2823-4b77-4ab7-9138-2298e37566be"
+        use the id instead.
+
+        A generated uuid rather than a real Collective's: the mechanism
+        is what is under test, and an earlier version of this file
+        embedded an id that turned out to be from a stale database copy.
+        A literal identifier in a test goes out of date silently.
+        """
+        space_id = str(uuid.uuid4())
         s = pilot._parse(space_id)
         assert s.admits(slug=None, space_id=space_id)
         assert s.admits(slug="anything", space_id=space_id)
 
+    def test_a_uuid_id_matches_whatever_case_it_was_typed_in(self):
+        """Postgres hands back lower-case uuids; an operator pasting one
+        from a console may not. Tokens are lower-cased on parse, so both
+        forms match the stored value."""
+        space_id = str(uuid.uuid4())
+        for typed in (space_id, space_id.upper(), f"  {space_id}  "):
+            assert pilot._parse(typed).admits(
+                slug=None, space_id=space_id,
+            ), typed
+
     def test_slugs_and_ids_can_be_mixed_in_one_list(self):
-        s = pilot._parse("moonlit-circle, 7b8d2823-4b77-4ab7-9138-2298e37566be")
+        space_id = str(uuid.uuid4())
+        s = pilot._parse(f"moonlit-circle, {space_id}")
         assert s.admits(slug="moonlit-circle", space_id="other")
-        assert s.admits(slug="other", space_id="7b8d2823-4b77-4ab7-9138-2298e37566be")
+        assert s.admits(slug="other", space_id=space_id)
+
+    def test_a_wrong_id_admits_nothing_rather_than_the_wrong_collective(self):
+        """The failure mode that matters if an identifier is mistyped or
+        taken from the wrong database: the pilot closes. It does not
+        open somewhere unintended."""
+        intended, mistyped = str(uuid.uuid4()), str(uuid.uuid4())
+        s = pilot._parse(mistyped)
+        assert not s.admits(slug="moonlit-circle", space_id=intended)
+        assert not s.admits(slug="anything-else", space_id="any-other-id")
 
     def test_star_opens_it_to_everything(self):
         s = pilot._parse("*")
