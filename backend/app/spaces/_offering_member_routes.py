@@ -31,6 +31,12 @@ not the page anybody else gets.
 Who may see what
 ----------------
 
+Three things govern who sees what here: the Offering's ``status``, the
+Offerings pilot scope, and whether the caller already owns it.
+**Ownership outranks the other two** — a member who has acquired an
+Offering reaches this page from Your Collection whatever the pilot list
+says, because that is where their downloads are.
+
 ``status`` governs visibility, and only for people who do not manage the
 Collective:
 
@@ -384,9 +390,12 @@ def get_member_offering(
     from app.spaces.routes import _get_space_visible_to
 
     space = _get_space_visible_to(slug, db, current_user)
-    area_access.require_area(
-        db, space, current_user, area_policies.AREA_OFFERINGS,
-    )
+
+    # The Offering is resolved **before** the area gate, because whether
+    # the gate applies depends on whether this caller owns this
+    # Offering. Resolving first leaks nothing: the lookup is scoped to
+    # this Collective, and every refusal below is the same 404 as "no
+    # such Offering".
     offering = (
         db.query(Offering)
         .filter(Offering.space_id == space.id, Offering.slug == offering_slug)
@@ -395,6 +404,41 @@ def get_member_offering(
     if offering is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.",
+        )
+
+    owns = current_user is not None and acq.already_owns(
+        db, user_id=current_user.id, offering_id=offering.id,
+    )
+
+    # ── The area gate, which an owner is exempt from ───────────────
+    #
+    # Public visibility and new acquisitions stay pilot-gated: the
+    # catalogue 404s, acquiring 404s, checkout 409s. But a member who
+    # already owns this Offering reaches it from Your Collection, and
+    # that link must not break because an operator edited a config
+    # value. Their downloads are on this page.
+    #
+    # The exemption is as narrow as it can be:
+    #
+    #   * it requires an **active entitlement for this exact
+    #     Offering** — not membership, not having owned something else,
+    #     not being signed in. A non-owner is refused identically to
+    #     before, so this is not a discovery route;
+    #   * it changes nothing about what the page *offers*.
+    #     ``can_acquire`` is false for an owner anyway, and the
+    #     acquisition endpoints keep their own unexempted gate, so no
+    #     new acquisition becomes possible in a Collective outside the
+    #     pilot;
+    #   * it does not touch download authorisation.
+    #     ``_authorise_offering_file`` consults neither switch and is
+    #     unchanged — it was already the thing protecting the file
+    #     itself, and this only restores the page that links to it.
+    #
+    # ``require_area`` still runs for everybody else, so it continues to
+    # enforce both the feature flag and the pilot list.
+    if not owns:
+        area_access.require_area(
+            db, space, current_user, area_policies.AREA_OFFERINGS,
         )
 
     is_manager = _user_manages_space(current_user, space, db)
@@ -406,10 +450,6 @@ def get_member_offering(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.",
         )
-
-    owns = current_user is not None and acq.already_owns(
-        db, user_id=current_user.id, offering_id=offering.id,
-    )
 
     approved = _current_approved(db, offering.id)
 

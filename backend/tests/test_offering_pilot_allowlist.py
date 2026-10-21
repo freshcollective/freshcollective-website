@@ -747,16 +747,18 @@ class TestYourCollection:
         out = member_api.get_your_collection(db=db, current_user=make_user())
         assert out == {"items": [], "count": 0}
 
-    def test_the_detail_page_of_an_owned_offering_still_opens(
+    def test_an_owners_detail_page_opens_after_their_collective_leaves(
         self, db, two_collectives, offerings_pilot, make_user,
     ):
-        """An owner whose Collective left the pilot can still reach the
-        page their downloads are on.
+        """The adjustment this class exists to pin.
 
-        This currently 404s, and that is a reported limitation rather
-        than a silent one — see the report. The entitlement and the
-        download route are unaffected, which is what protects the
-        resource itself.
+        An owner reaches this page from Your Collection, so the link
+        must not break because an operator edited a config value. Their
+        downloads are listed on it.
+
+        An earlier version of this test asserted the opposite — a 404 —
+        and recorded it as a known limitation. It is now a bug that
+        would fail here.
         """
         inside, _outside, a, _b = two_collectives
         offerings_pilot(inside.slug)
@@ -765,11 +767,161 @@ class TestYourCollection:
             inside.slug, a.slug, db=db, current_user=taker,
         )
         offerings_pilot("somewhere-else-entirely")
+
+        out = member_api.get_member_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        assert out["viewer_owns"] is True
+        assert out["title"] == a.title
+        # And their download is on it.
+        assert out["files"], "an owner must see their files"
+        assert out["files"][0]["download_url"] is not None
+
+    def test_that_page_offers_no_new_acquisition(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """The exemption restores *access*, not the shopfront. The page
+        must not become a way to acquire in a Collective outside the
+        pilot."""
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        offerings_pilot("somewhere-else-entirely")
+
+        out = member_api.get_member_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        assert out["can_acquire"] is False
+        # Owning is not a refusal, so no reason code is reported.
+        assert out["acquire_blocked"] is None
+        # And the endpoint that would acquire is still gated.
+        with pytest.raises(HTTPException) as e:
+            member_api.acquire_offering(
+                inside.slug, a.slug, db=db, current_user=taker,
+            )
+        assert e.value.status_code == 404
+
+    def test_the_exemption_needs_an_entitlement_for_THIS_offering(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """The narrowness is the security property.
+
+        Owning *something else* must not open a non-pilot Offering —
+        otherwise one acquisition would become a key to every
+        Collective's catalogue.
+        """
+        inside, outside, a, b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        # They own ``a``. They do not own ``b``, in the non-pilot
+        # Collective.
+        with pytest.raises(HTTPException) as e:
+            member_api.get_member_offering(
+                outside.slug, b.slug, db=db, current_user=taker,
+            )
+        assert e.value.status_code == 404
+
+    def test_a_signed_in_non_owner_is_still_refused(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot("somewhere-else-entirely")
+        with pytest.raises(HTTPException) as e:
+            member_api.get_member_offering(
+                inside.slug, a.slug, db=db, current_user=make_user(),
+            )
+        assert e.value.status_code == 404
+
+    def test_an_anonymous_visitor_is_still_refused(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """Nobody can own anything without a session, so the exemption
+        can never apply here — and the catalogue stays shut."""
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot("somewhere-else-entirely")
+        for call in (
+            lambda: member_api.get_member_offering(
+                inside.slug, a.slug, db=db, current_user=None),
+            lambda: member_api.list_member_offerings(
+                inside.slug, db=db, current_user=None),
+        ):
+            with pytest.raises(HTTPException) as e:
+                call()
+            assert e.value.status_code == 404
+
+    def test_a_revoked_entitlement_does_not_open_the_page(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """``already_owns`` tests for an *active* row, so a revoked
+        entitlement confers nothing — which is the same rule the
+        download route applies."""
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        ent = db.query(OfferingEntitlement).filter(
+            OfferingEntitlement.user_id == taker.id,
+            OfferingEntitlement.offering_id == a.id,
+        ).one()
+        ent.status = OfferingEntitlementStatus.revoked.value
+        ent.revoked_at = datetime.utcnow()
+        ent.revoked_reason = "disputed"
+        db.flush()
+        offerings_pilot("somewhere-else-entirely")
+
         with pytest.raises(HTTPException) as e:
             member_api.get_member_offering(
                 inside.slug, a.slug, db=db, current_user=taker,
             )
         assert e.value.status_code == 404
+
+    def test_the_whole_route_from_your_collection_to_the_download(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """The journey the adjustment was asked for, end to end, with
+        the Collective outside the pilot the whole way:
+
+            Your Collection → the card's href → the detail page
+                            → the download URL → the file
+        """
+        from app.uploads.authorization import authorize_upload
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        offerings_pilot("somewhere-else-entirely")
+
+        # 1. Your Collection lists it, with a link.
+        coll = member_api.get_your_collection(db=db, current_user=taker)
+        assert coll["count"] == 1
+        href = coll["items"][0]["href"]
+        assert href == f"/spaces/{inside.slug}/offerings/{a.slug}"
+
+        # 2. That link opens.
+        detail = member_api.get_member_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        assert detail["viewer_owns"] is True
+
+        # 3. And the download URL on it authorises.
+        key = detail["files"][0]["download_url"].removeprefix("/api/uploads/")
+        authorize_upload(key, taker, db)   # must not raise
+
+        # 4. While the shopfront stays shut.
+        with pytest.raises(HTTPException):
+            member_api.list_member_offerings(
+                inside.slug, db=db, current_user=taker,
+            )
 
 
 class TestDownloadsAreNeverPilotGated:

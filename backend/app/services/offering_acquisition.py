@@ -270,19 +270,22 @@ def check_acquirable(
     because the price changed thirty seconds ago, and the reverse would
     hand away a paid file.
     """
-    # Pilot scope first, and ahead of the already-owned branch on
-    # purpose. Somebody who already owns an Offering keeps it — that is
-    # the entitlement's job and the download route's, neither of which
-    # consults the pilot — but *acquiring* is new activity, and new
-    # activity in a Collective outside the pilot is refused.
+    # ── Ownership is answered first, ahead of every gate ──────────
     #
-    # Checked here as well as at the route, because this one function is
-    # what both write paths guard with: the free endpoint, the Offering
-    # checkout wrapper and the unified checkout's
-    # ``guard_option_purchase`` all arrive here. One rule, three doors.
-    if not _pilot.offerings_available_for(space):
-        return Acquirability(refusal=REASON_OUTSIDE_PILOT)
-
+    # Somebody who already owns this Offering is not asking to acquire
+    # anything, so none of the refusals below apply to them — and
+    # ``already_owned`` is deliberately not a refusal. Putting this
+    # first is what lets the detail page keep working for an owner
+    # whose Collective has left the pilot: the page reads this result,
+    # and an owner must see their downloads rather than "not available
+    # yet".
+    #
+    # It cannot become a way to acquire twice. ``already_owned`` carries
+    # no permission — ``guard_acquirable`` raises only on ``refusal`` —
+    # and every write path checks ownership explicitly before it gets
+    # here: the Offering checkout wrapper and
+    # ``guard_option_purchase`` both 409 on ``already_owned``, and
+    # ``acquire_free`` returns the existing row without creating one.
     if user is not None and already_owns(
         db, user_id=user.id, offering_id=offering.id,
     ):
@@ -290,6 +293,16 @@ def check_acquirable(
             already_owned=True,
             approved_files=approved_file_count(db, offering.id),
         )
+
+    # ── Pilot scope — for everybody who does NOT already own it ────
+    #
+    # New activity in a Collective outside the pilot is refused. This is
+    # checked here as well as at the routes because this one function is
+    # what all three write paths guard with: the free endpoint, the
+    # Offering checkout wrapper and the unified checkout's
+    # ``guard_option_purchase``. One rule, three doors.
+    if not _pilot.offerings_available_for(space):
+        return Acquirability(refusal=REASON_OUTSIDE_PILOT)
 
     if offering.status == OfferingStatus.retired.value:
         return Acquirability(refusal=REASON_RETIRED)

@@ -59,10 +59,20 @@ Collective leaving the pilot, like the feature being switched off, must
 never reach into what somebody already acquired. There is a test for
 it.
 
-**Your Collection** is handled separately — see
-``_offering_member_routes.get_your_collection``. Filtering it by pilot
-scope would hide a member's own purchase the moment its Collective left
-the pilot, which is the same mistake in a different place.
+**Your Collection**, and **the detail page of an Offering the caller
+owns**. Both are handled in ``_offering_member_routes``, and for the
+same reason: a member's own acquisition must not become unreachable
+because an operator edited a config value.
+
+So the line this module draws is not "Offerings is off outside the
+pilot" but the more precise one:
+
+    public visibility and new acquisitions   →  pilot-gated
+    existing ownership and access to it      →  never pilot-gated
+
+The catalogue 404s, acquiring 404s and checkout 409s for a Collective
+outside the pilot. An owner still reaches their downloads, and still
+reaches the page those downloads are listed on.
 """
 
 from __future__ import annotations
