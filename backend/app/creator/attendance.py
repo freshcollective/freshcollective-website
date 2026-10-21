@@ -83,6 +83,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_verified_creator_user
 from app.core.database import get_db
+from app.models.payment import PaymentTransaction
 from app.models.platform import Event, EventBooking, Space
 from app.models.user import User
 from app.creator.routes import _get_managed_space
@@ -419,17 +420,34 @@ def _payment_label(booking: EventBooking) -> str:
     if booking.access_pass_id:
         return "Included in pass"
     if booking.payment_transaction_id:
-        # The paid ticket amount lives on the transaction. Load lazily to
-        # keep the base query slim.
-        from app.models.platform import PaymentTransaction
+        # The paid ticket amount lives on the transaction, loaded here
+        # rather than joined into the base query to keep that query slim.
+        #
+        # This block carried two faults, both found while fixing Sentry
+        # FC-API-A — the same wrong module, in a third place:
+        #
+        #   * it imported ``PaymentTransaction`` from
+        #     ``app.models.platform``, which does not export it, so the
+        #     whole attendance list raised ImportError for any booking
+        #     with a transaction;
+        #   * it then read ``tx.amount_cents``, which is not a column on
+        #     ``PaymentTransaction`` either. Correcting only the import
+        #     would have turned the ImportError into an AttributeError
+        #     one line later.
+        #
+        # ``gross_amount_cents`` is the amount actually charged — the
+        # ticket price the attendee paid, before the platform fee and
+        # before any Connect split. That is what belongs on an
+        # attendance label; the creator's net share is a Payments
+        # concern and is reported there.
         db = Session.object_session(booking)
         if db is not None:
             tx = db.query(PaymentTransaction).filter(
                 PaymentTransaction.id == booking.payment_transaction_id
             ).first()
-            if tx and tx.amount_cents is not None:
+            if tx and tx.gross_amount_cents is not None:
                 cur = (tx.currency or "AUD").upper()
-                amount = tx.amount_cents / 100
+                amount = tx.gross_amount_cents / 100
                 return f"{cur} {amount:.2f} · Paid"
     if booking.source == "creator_manual":
         return "Complimentary (creator added)"
