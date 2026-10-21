@@ -143,6 +143,10 @@ from app.services.purchase_fulfilment import (
     resolve_intent_for_option,
     validate_intent,
 )
+#: Aliased so the list filter below reads as a reference to the module
+#: that owns the fact, rather than a string literal that could drift
+#: from it.
+from app.services import offering_commerce as _offering_commerce
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +568,17 @@ def list_commerce_payment_options(
     rows (default excludes them)."""
     space = _get_managed_space(slug, current_user, db)
     q = db.query(PaymentOption).filter(PaymentOption.space_id == space.id)
+    # Offering options are derived, not authored. ``offering_commerce``
+    # provisions one per paid Offering so that the Offering can go
+    # through the shared checkout; the creator manages its price on the
+    # Offering's own Pricing tab and never needs to see it here.
+    #
+    # Hidden rather than merely read-only because the panel offers
+    # Archive, and archiving one of these would stop a published
+    # Offering selling with nothing on screen to explain why.
+    q = q.filter(
+        PaymentOption.attaches_to_kind != _offering_commerce.OFFERING_ATTACHES_KIND
+    )
     if not include_archived:
         q = q.filter(PaymentOption.status != "archived")
     opts = q.order_by(

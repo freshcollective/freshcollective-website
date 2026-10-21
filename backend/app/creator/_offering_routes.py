@@ -62,7 +62,7 @@ from app.models.offering import (
 )
 from app.models.platform import Space
 from app.models.user import User
-from app.services import offering_readiness
+from app.services import offering_commerce, offering_readiness
 
 logger = logging.getLogger(__name__)
 
@@ -466,6 +466,17 @@ def update_offering(
             detail="Choose free or one-time purchase before setting a price.",
         )
 
+    # Keep the commerce projection in step with the price the creator
+    # just set. Only reached when pricing was actually in the body, so
+    # editing a summary does not touch commerce rows.
+    #
+    # A price change does not disturb a checkout already in flight: the
+    # Stripe Session carries the amount it was created with, and the
+    # ledger row records what was charged. A member pays the price the
+    # page showed them.
+    if "pricing_kind" in data:
+        offering_commerce.sync(db, offering=offering, space=space)
+
     db.commit()
     db.refresh(offering)
     return _detail(offering, db)
@@ -541,6 +552,14 @@ def publish_offering(
     # it records when the thing first became available, which stays true.
     if offering.published_at is None:
         offering.published_at = datetime.utcnow()
+
+    # Phase C/D — the commerce rows a paid Offering needs in order to be
+    # bought. Inside this transaction on purpose: an Offering that says
+    # "published, $24" with no Payment Option behind it would show a
+    # Purchase button that 400s. Free Offerings provision nothing and
+    # this is a no-op for them.
+    offering_commerce.sync(db, offering=offering, space=space)
+
     db.commit()
     db.refresh(offering)
     logger.info(
@@ -580,6 +599,11 @@ def retire_offering(
 
     offering.status = OfferingStatus.retired.value
     offering.retired_at = datetime.utcnow()
+    # Stop selling: the Payment Option is archived, so checkout refuses
+    # it. Nothing about existing ownership is touched — entitlements are
+    # not read here, let alone revoked, and download authorisation never
+    # consults Offering status.
+    offering_commerce.sync(db, offering=offering, space=space)
     db.commit()
     db.refresh(offering)
     logger.info(
