@@ -315,16 +315,24 @@ def _uid(prefix: str) -> str:
 
 @pytest.fixture
 def offerings_enabled(monkeypatch):
-    """Turn the Offerings feature flag on for one test.
+    """Offerings fully available for one test — feature on, pilot open.
 
     Needed by any test that calls an Offerings handler **directly**
     rather than through the router. ``require_offerings_enabled`` is a
-    route dependency, so a direct call never meets it — but the flag is
-    also read inside the request, by
-    ``area_access.resolve_area_access``, which drops the ``offerings``
-    area while the feature is off. Without this fixture a direct call
-    to a member Offerings endpoint gets the production answer for a
-    disabled feature: 404.
+    route dependency, so a direct call never meets it — but both
+    switches are also read inside the request, by
+    ``area_access.resolve_area_access`` and
+    ``offering_acquisition.check_acquirable``. Without this fixture a
+    direct call to a member Offerings endpoint gets the production
+    answer for a disabled feature: 404.
+
+    **Sets the pilot list to ``*``** as well as the master switch,
+    because these tests are about what the feature *does*, not about
+    which Collectives may use it. Scope is the subject of
+    ``offerings_pilot`` below and of
+    ``test_offering_pilot_allowlist.py``; keeping the two apart means a
+    behaviour test cannot accidentally pass because of a scope rule, or
+    fail because of one.
 
     Scoped per-test via ``monkeypatch`` rather than set globally,
     because turning it on for the whole suite would change what
@@ -332,8 +340,37 @@ def offerings_enabled(monkeypatch):
     Collective's reachable areas.
     """
     from app.core.config import settings
+    from app.services import offering_pilot
     monkeypatch.setattr(settings, "offerings_enabled", True)
+    monkeypatch.setattr(
+        settings, "offerings_pilot_collectives", offering_pilot.ALLOW_ALL,
+    )
     yield
+
+
+@pytest.fixture
+def offerings_pilot(monkeypatch):
+    """Turn Offerings on for *named* Collectives only.
+
+    Returns a callable taking slugs and/or Collective ids:
+
+        offerings_pilot("moonlit-circle")
+        offerings_pilot(space.slug, other.id)
+        offerings_pilot()                      # pilot on, nothing in it
+
+    The master switch is set too, because a pilot list means nothing
+    without it — and a test that wanted the switch off would be
+    testing the switch, not the scope.
+    """
+    from app.core.config import settings
+
+    def _set(*tokens: str) -> None:
+        monkeypatch.setattr(settings, "offerings_enabled", True)
+        monkeypatch.setattr(
+            settings, "offerings_pilot_collectives", ",".join(tokens),
+        )
+
+    return _set
 
 
 @pytest.fixture

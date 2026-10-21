@@ -63,6 +63,7 @@ from app.models.offering import (
 from app.models.platform import Space
 from app.models.user import User
 from app.services import offering_commerce, offering_readiness
+from app.services import offering_pilot as _offering_pilot
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,17 @@ def _get_owned_space(slug: str, user: User, db: Session) -> Space:
     else owns it. Refusing identically to "no such Collective" is what
     stops this endpoint being used to enumerate other people's
     Collectives.
+
+    **Pilot scope is enforced here**, which is why this helper is worth
+    having. Every one of the 21 creator Offering handlers — create,
+    update, publish, retire, covers, files, replacements, reorder,
+    delete, About blocks — resolves its Collective through this one
+    function. Checking the pilot here means none of them can be added
+    later without inheriting the check, and there is no second copy of
+    the rule to drift.
+
+    A creator outside the pilot sees Offerings exactly as they would
+    with the feature switched off: a 404. For them, it is off.
     """
     space = db.query(Space).filter(Space.slug == slug).first()
     if space is None or space.creator_id != user.id:
@@ -153,6 +165,7 @@ def _get_owned_space(slug: str, user: User, db: Session) -> Space:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Collective not found.",
         )
+    _offering_pilot.require_pilot_space(space)
     return space
 
 

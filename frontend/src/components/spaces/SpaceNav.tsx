@@ -93,11 +93,14 @@ export default function SpaceNav({
     // ahead of the Collective's own life would say the wrong thing
     // about what this platform is for.
     //
-    // No flag check here. ``offerings`` is absent from
-    // ``reachableAreas`` while the feature is off — the backend drops it
-    // in ``area_access.resolve_area_access`` — so the filter below hides
-    // the tab for the same reason it hides any area this viewer cannot
-    // reach, and the tab bar does not need to know a flag exists.
+    // No flag check and no pilot check here. ``offerings`` is absent
+    // from ``reachableAreas`` unless the feature is on AND this
+    // Collective is in the Offerings pilot — the backend resolves both
+    // in ``area_access.resolve_area_access`` — so the filter below
+    // hides the tab for the same reason it hides any area this viewer
+    // cannot reach. The tab bar does not need to know either switch
+    // exists, which is why rolling the pilot out needed no frontend
+    // change at all.
     { label: 'Offerings',  href: `${base}/offerings`, icon: '◆' },
   ]
     .filter((tab) => tab.label !== 'Members' || showMemberDirectory)

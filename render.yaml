@@ -339,6 +339,42 @@ services:
       # ``backend/app/core/config.py:creator_plan_guard_enabled``).
       - key: CREATOR_PLAN_GUARD_ENABLED
         sync: false
+      # ── Offerings rollout ────────────────────────────────────────
+      # Two switches, both Dashboard-managed, for the same reason as
+      # the two flags above: the Dashboard is the operational source
+      # of truth and this file must not be able to revert it.
+      #
+      # ``sync: false`` is load-bearing here, not a style choice.
+      # DISCOVERY_PILLAR_ENABLED below is declared with ``value:``,
+      # and that is exactly what silently took the Discover Places
+      # doorway off Your World — a Dashboard change reverted by the
+      # next Blueprint sync. Offerings goes out as a scoped pilot
+      # whose whole operation is flipping these two values, so a
+      # ``value:`` entry here would re-run that incident on a
+      # commerce feature.
+      #
+      # OFFERINGS_ENABLED — the master switch. Application default
+      # when the env var is absent is False (see
+      # ``backend/app/core/config.py:offerings_enabled``), so leaving
+      # it unset in the Dashboard keeps Offerings off. All 25
+      # Offerings routes carry the gate as a declared router
+      # dependency; the download route deliberately does not, because
+      # a release switch must never take away a file somebody paid
+      # for.
+      - key: OFFERINGS_ENABLED
+        sync: false
+      # OFFERINGS_PILOT_COLLECTIVES — the scope. Comma-separated
+      # Collective slugs and/or ids; ``*`` for every Collective.
+      #
+      # **Empty means NO Collective**, not all of them. That is the
+      # deliberate direction: a cleared value turns the pilot off
+      # rather than turning it into a public launch. See
+      # ``backend/app/services/offering_pilot.py`` for the reasoning.
+      #
+      # Both switches must say yes. OFFERINGS_ENABLED=true with an
+      # empty list is a no-op, which is the safe failure.
+      - key: OFFERINGS_PILOT_COLLECTIVES
+        sync: false
       # Discover Places' read API. LIVE — and declared here on purpose:
       # this value is blueprint-managed, so a Dashboard-only change is
       # reverted by the next Blueprint sync. That is what silently took

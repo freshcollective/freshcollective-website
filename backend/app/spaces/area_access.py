@@ -59,16 +59,16 @@ class AreaAccess:
         return self.policies.get(area, ap.AREA_DEFAULTS.get(area, ap.POLICY_MEMBERS))
 
 
-def _offerings_enabled() -> bool:
-    """Read the flag at call time, not at import.
+def _offerings_available_for(space: Space) -> bool:
+    """Both Offerings switches, for this Collective.
 
     Imported inside the function because ``settings`` is built from the
     environment and the test suite swaps it; a module-level read would
     freeze whichever value happened to be live when this module was
     first imported.
     """
-    from app.core.config import settings
-    return bool(settings.offerings_enabled)
+    from app.services.offering_pilot import offerings_available_for
+    return offerings_available_for(space)
 
 
 def resolve_area_access(
@@ -104,18 +104,24 @@ def resolve_area_access(
 
     reachable = set()
     for area, policy in policies.items():
-        # Offerings is a flagged feature. Dropping it here rather than
-        # at each surface means the tab bar, the Collective Home tiles,
-        # the catalogue route and the detail route all stop offering it
-        # from one switch — which is this module's whole reason for
-        # existing ("resolved once per request, threaded down, never
-        # recalculated in a component").
+        # Offerings is a flagged feature *and* a scoped one. Dropping it
+        # here rather than at each surface means the tab bar, the
+        # Collective Home tiles, the catalogue route and the detail
+        # route all stop offering it from one place — which is this
+        # module's whole reason for existing ("resolved once per
+        # request, threaded down, never recalculated in a component").
+        #
+        # ``offerings_available_for`` asks both questions: is the
+        # feature on at all, and is *this* Collective in the pilot. A
+        # Collective outside the pilot is indistinguishable from the
+        # feature being off, which is the intent — for that Collective
+        # it is off.
         #
         # This gates *presentation*. It must never reach a download:
         # ``uploads.authorization._authorise_offering_file`` deliberately
-        # does not consult the flag, because turning a feature off must
-        # not take away a file somebody paid for.
-        if area == ap.AREA_OFFERINGS and not _offerings_enabled():
+        # consults neither the flag nor the pilot list, because a
+        # release switch must not take away a file somebody paid for.
+        if area == ap.AREA_OFFERINGS and not _offerings_available_for(space):
             continue
         if policy == ap.POLICY_PUBLIC:
             reachable.add(area)

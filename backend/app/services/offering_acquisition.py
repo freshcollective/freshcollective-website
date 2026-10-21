@@ -79,6 +79,7 @@ from app.models.offering import (
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
 from app.models.user import User
 from app.services import membership_grant as _membership_grant
+from app.services import offering_pilot as _pilot
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,10 @@ REASON_PLAN_FORBIDS_PAID = "plan_forbids_paid"
 REASON_PRICING_UNSET = "pricing_unset"
 REASON_WRONG_PRICING = "wrong_pricing"
 REASON_NOT_SELLABLE = "not_sellable"
+#: The Collective is outside the Offerings pilot. Member-facing prose is
+#: deliberately the same as "not available yet" — a visitor must not
+#: learn that a feature exists which their Collective is excluded from.
+REASON_OUTSIDE_PILOT = "outside_pilot"
 #: Not a refusal in the usual sense — the member has it already, and the
 #: right response is a way in rather than an error. Carried as a reason
 #: code so the client can tell this 409 from the others.
@@ -105,6 +110,7 @@ REASON_ALREADY_OWNED = "already_owned"
 
 _MESSAGES: dict[str, str] = {
     REASON_NOT_PUBLISHED: "This Offering isn't available yet.",
+    REASON_OUTSIDE_PILOT: "This Offering isn't available yet.",
     REASON_RETIRED: (
         "This Offering is no longer available. People who already have "
         "it keep their files."
@@ -264,6 +270,22 @@ def check_acquirable(
     because the price changed thirty seconds ago, and the reverse would
     hand away a paid file.
     """
+    # ── Ownership is answered first, ahead of every gate ──────────
+    #
+    # Somebody who already owns this Offering is not asking to acquire
+    # anything, so none of the refusals below apply to them — and
+    # ``already_owned`` is deliberately not a refusal. Putting this
+    # first is what lets the detail page keep working for an owner
+    # whose Collective has left the pilot: the page reads this result,
+    # and an owner must see their downloads rather than "not available
+    # yet".
+    #
+    # It cannot become a way to acquire twice. ``already_owned`` carries
+    # no permission — ``guard_acquirable`` raises only on ``refusal`` —
+    # and every write path checks ownership explicitly before it gets
+    # here: the Offering checkout wrapper and
+    # ``guard_option_purchase`` both 409 on ``already_owned``, and
+    # ``acquire_free`` returns the existing row without creating one.
     if user is not None and already_owns(
         db, user_id=user.id, offering_id=offering.id,
     ):
@@ -271,6 +293,16 @@ def check_acquirable(
             already_owned=True,
             approved_files=approved_file_count(db, offering.id),
         )
+
+    # ── Pilot scope — for everybody who does NOT already own it ────
+    #
+    # New activity in a Collective outside the pilot is refused. This is
+    # checked here as well as at the routes because this one function is
+    # what all three write paths guard with: the free endpoint, the
+    # Offering checkout wrapper and the unified checkout's
+    # ``guard_option_purchase``. One rule, three doors.
+    if not _pilot.offerings_available_for(space):
+        return Acquirability(refusal=REASON_OUTSIDE_PILOT)
 
     if offering.status == OfferingStatus.retired.value:
         return Acquirability(refusal=REASON_RETIRED)
@@ -529,6 +561,7 @@ __all__ = [
     "AcquisitionRefused",
     "REASON_ALREADY_OWNED",
     "REASON_NOT_PUBLISHED",
+    "REASON_OUTSIDE_PILOT",
     "REASON_NOT_SELLABLE",
     "REASON_NO_FILES",
     "REASON_PLAN_FORBIDS_PAID",

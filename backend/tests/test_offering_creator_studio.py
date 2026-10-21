@@ -41,6 +41,22 @@ from app.services import offering_files as of
 from app.spaces import _offering_member_routes as member_api
 
 
+@pytest.fixture(autouse=True)
+def _offerings_available(offerings_enabled):
+    """Offerings fully available for every test in this module.
+
+    These call creator handlers **directly**, so they never meet the
+    route's ``require_offerings_enabled`` dependency — but Offerings
+    Phase C/D's pilot allow-list is enforced inside
+    ``_get_owned_space``, which every creator handler resolves through.
+    Without this, each test gets the production answer for a Collective
+    outside the pilot: 404.
+
+    ``offerings_enabled`` opens both switches. Scope itself is the
+    subject of ``test_offering_pilot_allowlist.py``, not of these.
+    """
+
+
 def _uid(p: str) -> str:
     return f"{p}_{uuid.uuid4().hex[:16]}"
 
