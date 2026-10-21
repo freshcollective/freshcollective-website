@@ -675,7 +675,7 @@ class TestDowngrade:
         space, owner = owner_space("creator")
         off = offering(
             space,
-            cover_image_url=DEFAULT_COVERS[0].url,
+            default_cover_key=DEFAULT_COVERS[0].key,
             pricing_kind=OfferingPricingKind.free.value,
         )
         for i in range(2):

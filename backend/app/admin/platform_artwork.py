@@ -1,7 +1,8 @@
 """Platform Artwork — admin endpoints for shared interface artwork.
 
 A small, named collection of images owned by the platform itself
-(dashboard tiles, etc.) — distinct from Atlas Location artwork.
+(dashboard tiles, homepage scenes, member cards, the five shared
+Offering cover categories) — distinct from Atlas Location artwork.
 Only Fresh Collective administrators reach the mutation routes.
 The public read route returns the current image map so unauthenticated
 pages (dashboard tiles) can render the uploaded artwork.
@@ -388,6 +389,50 @@ MEMBER_CARD_ARTWORK_KEYS["member_card_neutral"] = {
 }
 
 PLATFORM_ARTWORK_KEYS.update(MEMBER_CARD_ARTWORK_KEYS)
+
+
+# ---------------------------------------------------------------------------
+# Default Offering artwork — the five shared cover categories
+# ---------------------------------------------------------------------------
+#
+# Offerings B6 shipped these as files committed to the repository and
+# installed into R2 by a script of their own, which was a second artwork
+# system doing what this one already does. Registering the five slots
+# here is the whole of the move: upload, replace, remove, validation,
+# storage routing, admin-only permissions and the public read map all
+# come from the endpoints below unchanged.
+#
+# Generated from ``services.offering_covers`` rather than typed out, so
+# the manager's slots and the categories a creator can choose cannot
+# list different things — and adding a sixth category is one entry in
+# one place.
+#
+# The key shape is ``offering_cover_<category>``; see
+# ``OfferingCover.artwork_key``, which derives it so the two sides
+# cannot disagree.
+def _offering_cover_artwork_keys() -> dict[str, dict[str, str]]:
+    from app.services.offering_covers import DEFAULT_COVERS
+
+    return {
+        cover.artwork_key: {
+            "title": cover.label,
+            "description": (
+                f"The shared cover shown for Offerings in the "
+                f"\u201c{cover.label}\u201d category. {cover.description} "
+                f"Creators may upload their own cover instead, which "
+                f"overrides this one. Replacing this image updates every "
+                f"Offering using the category."
+            ),
+        }
+        for cover in DEFAULT_COVERS
+    }
+
+
+OFFERING_COVER_ARTWORK_KEYS: dict[str, dict[str, str]] = (
+    _offering_cover_artwork_keys()
+)
+
+PLATFORM_ARTWORK_KEYS.update(OFFERING_COVER_ARTWORK_KEYS)
 
 
 admin_router = APIRouter(prefix="/api/admin/platform-artwork", tags=["admin-platform-artwork"])

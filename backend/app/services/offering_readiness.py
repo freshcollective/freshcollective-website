@@ -68,27 +68,19 @@ class Readiness:
         return [r.id for r in self.requirements if not r.met]
 
 
-#: Cover images that are platform-provided rather than creator-uploaded.
-#:
-#: Curated default covers live under the existing ``platform-artwork/``
-#: prefix — the same place brand assets already live, served by the
-#: existing unauthenticated route, because they are platform-owned
-#: imagery shown to anyone who can see the Offering. Using that prefix
-#: means default covers need **no change to media-security rules**: the
-#: public read path already exists for exactly this class of asset.
-#:
 #: Creator-uploaded covers use the private ``offering-covers/`` prefix
 #: and are gated by ``_authorise_offering_cover``.
-_DEFAULT_COVER_PREFIX = "/api/uploads/platform-artwork/offering-covers/"
+#:
+#: This is now the **only** shape a cover URL may take. Shared default
+#: artwork is no longer stored as a URL at all — an Offering records the
+#: category it chose in ``default_cover_key`` and the image is resolved
+#: from World Artwork at read time (see ``services.offering_covers``),
+#: so there is nothing for this validator to allow.
+#:
+#: That is a narrowing, and a welcome one: the retired default shape was
+#: a flat filename under a public prefix, and it is now impossible to
+#: store a cover URL pointing anywhere a creator did not upload to.
 _UPLOADED_COVER_PREFIX = "/api/uploads/offering-covers/"
-
-
-#: A curated default is a single flat filename under its prefix —
-#: ``workbook.png``, not ``a/b/c.png``. Verified against the serving
-#: architecture: such a key routes to the PUBLIC bucket and is served by
-#: ``serve_public_upload``, the same unauthenticated route brand assets
-#: already use, so no media-security rule changes to support it.
-_DEFAULT_COVER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}\.(png|jpg|jpeg|webp)$")
 
 #: A creator upload is ``{offering_id}/{uuid}_{name}`` under its prefix,
 #: which routes to the PRIVATE bucket and through
@@ -99,48 +91,60 @@ _UPLOADED_COVER_PATH = re.compile(
 
 
 def is_acceptable_cover(url: str | None) -> bool:
-    """Is this a cover we are willing to publish?
+    """Is this a creator-uploaded cover we are willing to publish?
 
-    An allow-list of two shapes, not a URL validator.
+    An allow-list of one shape, not a URL validator.
     ``validate_media_url`` accepts any ``https`` URL, which is right for
     a content block and wrong here: a cover is chrome on a member-facing
     card, and letting a creator point it at an arbitrary host would mean
     an off-platform request on every page view — blocked by our CSP in
     practice, but a silently broken image is a poor way to discover that.
 
-    The two shapes are matched precisely rather than by prefix alone, so
-    a creator cannot set an arbitrary deep path under either namespace.
+    The shape is matched precisely rather than by prefix alone, so a
+    creator cannot set an arbitrary deep path under the namespace.
 
-    The curated gap is now closed (B6)
-    ----------------------------------
-
-    This used to accept *any* hyphenated filename under the default
-    prefix, and said so: "until the curated set ships there is nothing
-    to check against. When it does, the right tightening is a manifest
-    constant listing the real filenames." The curated set has shipped,
-    so a default cover is now checked against
-    :data:`offering_covers.DEFAULT_COVER_URLS` by exact membership — a
-    creator can store a cover that exists and nothing else.
-
-    That is a **narrowing**. The filename regex is kept as a cheap
-    structural pre-check so a malformed value is rejected before a set
-    lookup, and because it documents the shape the manifest must keep.
-    An uploaded cover is unchanged: its existence is already guaranteed
-    by the upload having happened.
+    **Shared defaults do not come through here.** They used to: B6
+    stored the chosen default's URL in ``cover_image_url`` and this
+    function checked it against a manifest of filenames. Default artwork
+    now lives in World Artwork and an Offering stores its *category*, so
+    the only URL this column can hold is one the creator uploaded. Use
+    :func:`has_acceptable_cover` to ask the question that matters —
+    "does this Offering have a cover at all" — which considers both.
     """
     if not url:
         return False
-    if url.startswith(_DEFAULT_COVER_PREFIX):
-        from app.services.offering_covers import is_default_cover
-        return (
-            bool(_DEFAULT_COVER_NAME.match(url[len(_DEFAULT_COVER_PREFIX):]))
-            and is_default_cover(url)
-        )
     if url.startswith(_UPLOADED_COVER_PREFIX):
         return bool(
             _UPLOADED_COVER_PATH.match(url[len(_UPLOADED_COVER_PREFIX):])
         )
     return False
+
+
+def has_acceptable_cover(offering: Offering) -> bool:
+    """Has this Offering chosen a cover, by either route?
+
+    A valid shared category counts, **even when an administrator has not
+    uploaded that category's artwork yet**. That is a deliberate product
+    decision and worth stating:
+
+      * the creator has made the choice that is theirs to make;
+      * whether the shared image exists is an administrator's business,
+        invisible to the creator and outside their control;
+      * an empty category renders the same deliberate gradient every
+        surface already uses for a missing cover — a considered
+        presentation, not a broken image.
+
+    Blocking publication on it would stall a creator on work they cannot
+    see, cannot do and would not be told about.
+
+    An unknown key does **not** count: that is a corrupt or
+    hand-written row rather than a choice, and it resolves to no image.
+    """
+    from app.services.offering_covers import is_valid_key
+
+    if is_valid_key(offering.default_cover_key):
+        return True
+    return is_acceptable_cover(offering.cover_image_url)
 
 
 def evaluate(
@@ -170,8 +174,8 @@ def evaluate(
     ))
 
     reqs.append(Requirement(
-        "cover_image", is_acceptable_cover(offering.cover_image_url),
-        "Choose a cover image, or pick one of ours.",
+        "cover_image", has_acceptable_cover(offering),
+        "Choose a cover category, or upload your own image.",
     ))
 
     # Current bundle = not superseded. The same predicate member download
@@ -289,5 +293,6 @@ __all__ = [
     "Requirement",
     "Readiness",
     "evaluate",
+    "has_acceptable_cover",
     "is_acceptable_cover",
 ]

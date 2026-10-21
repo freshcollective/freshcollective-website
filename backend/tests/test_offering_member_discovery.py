@@ -60,7 +60,7 @@ def _offering(db, space, **kw) -> Offering:
         slug=f"o-{uuid.uuid4().hex[:8]}",
         title="Morning Pages Workbook",
         summary="Twelve weeks of gentle daily pages.",
-        cover_image_url=covers.DEFAULT_COVERS[0].url,
+        default_cover_key=covers.DEFAULT_COVERS[0].key,
         status=OfferingStatus.published.value,
         pricing_kind=OfferingPricingKind.free.value,
         price_cents=None,
@@ -123,10 +123,99 @@ class TestTheCatalogueIsPublic:
         card = out[0]
         assert card["title"] == "Morning Pages Workbook"
         assert card["summary"] == "Twelve weeks of gentle daily pages."
-        assert card["cover_image_url"] == covers.DEFAULT_COVERS[0].url
+        # The category was chosen but no administrator has uploaded its
+        # World Artwork in this database, so the resolved cover is null
+        # and the card renders its gradient.
+        assert card["cover_image_url"] is None
         assert card["price_label"] == "Free"
         assert card["category_label"] == "PDF"
         assert card["viewer_owns"] is False
+
+    def test_a_card_shows_the_shared_artwork_once_an_admin_uploads_it(
+        self, db, make_space,
+    ):
+        """The point of moving defaults into World Artwork: an upload
+        reaches every Offering using that category, with nothing stored
+        on the Offering and nothing to backfill."""
+        from app.models.platform import PlatformArtwork
+        space = make_space()
+        chosen = covers.DEFAULT_COVERS[0]
+        off = _offering(db, space, default_cover_key=chosen.key)
+        _file(db, off)
+        db.add(PlatformArtwork(
+            key=chosen.artwork_key,
+            image_url="/api/uploads/platform-artwork/x/hero.webp",
+        ))
+        db.flush()
+        [card] = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert card["cover_image_url"] == (
+            "/api/uploads/platform-artwork/x/hero.webp"
+        )
+
+    def test_replacing_the_shared_artwork_updates_the_card(
+        self, db, make_space,
+    ):
+        """Stated requirement, and the reason the Offering stores a key
+        rather than a URL."""
+        from app.models.platform import PlatformArtwork
+        space = make_space()
+        chosen = covers.DEFAULT_COVERS[0]
+        off = _offering(db, space, default_cover_key=chosen.key)
+        _file(db, off)
+        row = PlatformArtwork(
+            key=chosen.artwork_key,
+            image_url="/api/uploads/platform-artwork/x/first.webp",
+        )
+        db.add(row)
+        db.flush()
+        [card] = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert card["cover_image_url"].endswith("first.webp")
+
+        # An administrator replaces it. The Offering is not touched.
+        row.image_url = "/api/uploads/platform-artwork/x/second.webp"
+        db.flush()
+        [card] = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert card["cover_image_url"].endswith("second.webp")
+        db.refresh(off)
+        assert off.cover_image_url is None, "nothing was written to the Offering"
+
+    def test_a_creator_upload_is_unaffected_by_the_shared_artwork(
+        self, db, make_space,
+    ):
+        """The other half: changing a shared default must not change a
+        creator-customised cover."""
+        from app.models.platform import PlatformArtwork
+        space = make_space()
+        chosen = covers.DEFAULT_COVERS[0]
+        mine = "/api/uploads/offering-covers/off_x/abc_mine.webp"
+        off = _offering(
+            db, space, default_cover_key=chosen.key, cover_image_url=mine,
+        )
+        _file(db, off)
+        row = PlatformArtwork(
+            key=chosen.artwork_key,
+            image_url="/api/uploads/platform-artwork/x/first.webp",
+        )
+        db.add(row)
+        db.flush()
+        [card] = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert card["cover_image_url"] == mine
+        row.image_url = "/api/uploads/platform-artwork/x/second.webp"
+        db.flush()
+        [card] = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert card["cover_image_url"] == mine, (
+            "a shared-artwork change altered a creator's own cover"
+        )
 
     def test_a_paid_offering_states_its_price(self, db, make_space):
         space = make_space()
@@ -318,13 +407,22 @@ class TestCategoryLabels:
         )
         assert card["category_label"] == "Digital download"
 
-    def test_the_cover_image_never_decides_the_category(self, db, make_space):
-        """An audio cover on a PDF Offering still reads PDF."""
+    def test_the_cover_category_never_decides_the_file_category(
+        self, db, make_space,
+    ):
+        """An Offering in the "Audio & meditations" *cover* category whose
+        file is a PDF still reads "PDF".
+
+        Two different notions of category share a word: the shared cover
+        artwork a creator picks, and what the files actually are. The
+        card's label must come from the files — otherwise a creator's
+        choice of picture would misdescribe what a member downloads.
+        """
         audio_cover = next(
             c for c in covers.DEFAULT_COVERS if c.key == "audio"
         )
         space = make_space()
-        off = _offering(db, space, cover_image_url=audio_cover.url)
+        off = _offering(db, space, default_cover_key=audio_cover.key)
         _file(db, off, content_type="application/pdf")
         [card] = member_api.list_member_offerings(
             space.slug, db=db, current_user=None,

@@ -47,9 +47,21 @@ class OfferingUpdateRequest(BaseModel):
     #: and arrives in a later stage; this is the plain detail field on
     #: the Offering row itself.
     description: str | None = None
-    #: Either a curated platform default or a file this platform stored
-    #: — validated against an allow-list of shapes, not a URL validator.
+    #: A cover **the creator uploaded**, validated against an
+    #: allow-list of one shape rather than by a URL validator. Pass
+    #: ``null`` to remove it and fall back to the chosen category's
+    #: shared artwork.
+    #:
+    #: Shared defaults are no longer set through here — they are a
+    #: category choice, below.
     cover_image_url: str | None = Field(default=None, max_length=500)
+    #: The shared cover category, one of the five keys in
+    #: ``services.offering_covers``. Stores the *category*, not an image
+    #: URL, so an administrator replacing that category's artwork in
+    #: World Artwork updates this Offering with nothing to backfill.
+    #:
+    #: Pass ``null`` to clear the choice.
+    default_cover_key: str | None = Field(default=None, max_length=64)
     #: ``free`` or ``one_time``.
     pricing_kind: str | None = None
     #: Minor units. Must be positive when ``pricing_kind='one_time'``.
@@ -63,7 +75,21 @@ class OfferingSummaryResponse(BaseModel):
     slug: str
     title: str
     summary: str | None = None
+    #: The **resolved** cover — the creator's upload if there is one,
+    #: else the chosen category's current World Artwork, else null for
+    #: the gradient. Clients render this and resolve nothing.
     cover_image_url: str | None = None
+    #: The creator's own upload, if any. Null when the cover shown comes
+    #: from the shared category.
+    #:
+    #: Declared alongside the resolved URL rather than left out because
+    #: the editor needs to know *which of the three states* it is in —
+    #: custom, category, or neither — and inferring that from a URL
+    #: shape is exactly what broke when shared artwork moved to World
+    #: Artwork and its filenames started changing.
+    custom_cover_url: str | None = None
+    #: The shared cover category chosen, or null.
+    default_cover_key: str | None = None
     status: str
     pricing_kind: str | None = None
     price_cents: int | None = None

@@ -1990,7 +1990,14 @@ export interface CreatorOffering {
   title: string
   summary: string | null
   description: string | null
+  /** The **resolved** cover: the creator's upload, else the chosen
+   *  category's current World Artwork, else null for the gradient. */
   cover_image_url: string | null
+  /** The creator's own upload, if any. Null when the cover shown
+   *  comes from the shared category. */
+  custom_cover_url: string | null
+  /** The shared category chosen, or null. */
+  default_cover_key: string | null
   status: OfferingStatus
   pricing_kind: OfferingPricingKind | null
   price_cents: number | null
@@ -2017,12 +2024,26 @@ export interface OfferingReadiness {
 }
 
 /** One curated default cover. */
+/**
+ * One shared Offering cover category.
+ *
+ * ``key`` is what choosing it stores on the Offering —
+ * ``default_cover_key`` — not a URL. The image is managed by an
+ * administrator in World Settings → World Artwork and resolved at read
+ * time, so replacing it reaches every Offering using the category.
+ *
+ * ``image_url`` and ``thumbnail_url`` are null for a category whose
+ * artwork has not been uploaded yet, which is a legitimate state:
+ * ``has_artwork`` says so plainly, and the picker shows its own
+ * placeholder rather than an empty frame.
+ */
 export interface OfferingCover {
   key: string
   label: string
   description: string
-  url: string
-  thumbnail_url: string
+  image_url: string | null
+  thumbnail_url: string | null
+  has_artwork: boolean
 }
 
 export interface OfferingFile {

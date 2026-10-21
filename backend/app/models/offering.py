@@ -270,6 +270,28 @@ class Offering(Base):
     #: invite if generalised.
     cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    #: The shared cover category this Offering chose, keyed to
+    #: ``services.offering_covers``. Added in migration 163.
+    #:
+    #: A **key**, not a URL, because the shared artwork is managed in
+    #: World Settings → World Artwork, where replacing an image changes
+    #: its filename. Storing the key means an admin replacing the
+    #: "Audio & meditations" artwork updates every Offering that chose
+    #: it, with nothing to backfill — which is the whole requirement.
+    #:
+    #: ``cover_image_url`` above holds a cover the *creator* uploaded,
+    #: and wins when both are set. Keeping them separate lets an
+    #: Offering remember its category while carrying a custom image, so
+    #: removing the custom image falls back to the category rather than
+    #: to nothing.
+    #:
+    #: Resolve the two with
+    #: ``services.offering_covers.resolve_cover_url`` rather than
+    #: reading either column directly.
+    default_cover_key: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=OfferingStatus.draft.value,
         server_default=OfferingStatus.draft.value,

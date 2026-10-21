@@ -36,12 +36,16 @@ from app.services import offering_files as of
 from app.services import offering_readiness as readiness
 from app.services import offering_validation as ov
 
-# Taken from the manifest rather than written out, so the curated set
-# and the tests cannot drift apart: ``is_acceptable_cover`` now checks
-# exact membership of ``DEFAULT_COVER_URLS`` (B6), so a hard-coded
-# placeholder would simply be refused.
+# Taken from the manifest rather than written out, so the category set
+# and the tests cannot drift apart.
+#
+# Default artwork moved to World Settings → World Artwork, so a cover
+# default is now a **category key** rather than a URL. A URL in
+# ``cover_image_url`` means a creator upload and nothing else.
 from app.services.offering_covers import DEFAULT_COVERS
-DEFAULT_COVER = DEFAULT_COVERS[0].url
+DEFAULT_COVER_KEY = DEFAULT_COVERS[0].key
+#: A creator-upload URL shaped the way the real upload route writes one.
+UPLOADED_COVER = "/api/uploads/offering-covers/off_test/abc123_cover.webp"
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +158,7 @@ def _file(db, off, *, status=FVS.passed.value, **kw) -> OfferingFile:
 def _publishable(db, space, **kw) -> Offering:
     """An Offering that satisfies every requirement."""
     off = _offering(
-        db, space, cover_image_url=DEFAULT_COVER,
+        db, space, default_cover_key=DEFAULT_COVER_KEY,
         pricing_kind=OfferingPricingKind.free.value, **kw,
     )
     _file(db, off)
@@ -674,17 +678,22 @@ class TestPricing:
 
 
 class TestCoverImages:
-    def test_a_platform_default_is_accepted(self, db, owner_space):
+    def test_a_shared_category_is_accepted(self, db, owner_space):
         from app.creator.schemas_offerings import OfferingUpdateRequest
         space, owner = owner_space()
         off = _offering(db, space)
         db.flush()
         out = api.update_offering(
             space.slug, off.slug,
-            OfferingUpdateRequest(cover_image_url=DEFAULT_COVER),
+            OfferingUpdateRequest(default_cover_key=DEFAULT_COVER_KEY),
             db=db, current_user=owner,
         )
-        assert out["cover_image_url"] == DEFAULT_COVER
+        assert out["default_cover_key"] == DEFAULT_COVER_KEY
+        # The *key* is stored; the URL is resolved. Nothing was written
+        # into cover_image_url, which is a creator-upload column now.
+        db.refresh(off)
+        assert off.default_cover_key == DEFAULT_COVER_KEY
+        assert off.cover_image_url is None
 
     def test_a_creator_uploaded_cover_is_accepted(self, db, owner_space):
         from app.creator.schemas_offerings import OfferingUpdateRequest
@@ -716,8 +725,8 @@ class TestCoverImages:
             db=db, current_user=owner,
         ) == 422
 
-    def test_every_manifest_cover_is_accepted(self, db, owner_space):
-        """The positive control: all five curated covers are usable."""
+    def test_every_category_can_be_chosen(self, db, owner_space):
+        """The positive control: all five categories are selectable."""
         from app.creator.schemas_offerings import OfferingUpdateRequest
         space, owner = owner_space()
         for cover in DEFAULT_COVERS:
@@ -725,10 +734,88 @@ class TestCoverImages:
             db.flush()
             out = api.update_offering(
                 space.slug, off.slug,
-                OfferingUpdateRequest(cover_image_url=cover.url),
+                OfferingUpdateRequest(default_cover_key=cover.key),
                 db=db, current_user=owner,
             )
-            assert out["cover_image_url"] == cover.url, cover.key
+            assert out["default_cover_key"] == cover.key, cover.key
+            # No artwork uploaded in a test database, so the resolved
+            # cover is null — and that is the documented state, not a
+            # failure. The gradient renders.
+            assert out["cover_image_url"] is None
+
+    @pytest.mark.parametrize("key,refused", [
+        # Plausible near-misses, each refused rather than stored.
+        ("workbooks", True),
+        ("WORKBOOK-GUIDES", True),          # keys are case-sensitive
+        ("audio ", True),                    # trailing space is not the key
+        ("../etc/passwd", True),
+        ("offering_cover_audio", True),      # the World Artwork key, not the category
+        # And the two legitimate values.
+        ("audio", False),
+        ("", False),                         # clears the choice
+    ])
+    def test_only_a_real_category_can_be_stored(
+        self, db, owner_space, key, refused,
+    ):
+        """The column carries no CHECK (migration 163), so this endpoint
+        is the thing keeping it to real choices.
+
+        The World Artwork key is refused alongside the typos: the two
+        vocabularies are deliberately different strings, and accepting
+        either here would make which one an Offering stores a matter of
+        luck.
+        """
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.flush()
+        code = _status(
+            api.update_offering, space.slug, off.slug,
+            OfferingUpdateRequest(default_cover_key=key),
+            db=db, current_user=owner,
+        )
+        if refused:
+            assert code == 422, key
+            db.refresh(off)
+            assert off.default_cover_key is None, (
+                "a refused key must not reach the column"
+            )
+        else:
+            # ``_status`` returns None when the call succeeded.
+            assert code is None, (key, code)
+            db.refresh(off)
+            assert off.default_cover_key == (key or None)
+
+    def test_a_creator_upload_overrides_the_category(self, db, owner_space):
+        """The stated precedence, and that the category survives it —
+        which is why the two live in separate columns."""
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.flush()
+        api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(default_cover_key=DEFAULT_COVER_KEY),
+            db=db, current_user=owner,
+        )
+        out = api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(cover_image_url=UPLOADED_COVER),
+            db=db, current_user=owner,
+        )
+        assert out["cover_image_url"] == UPLOADED_COVER
+        assert out["custom_cover_url"] == UPLOADED_COVER
+        assert out["default_cover_key"] == DEFAULT_COVER_KEY, (
+            "the category must survive a custom upload"
+        )
+        # Removing the upload falls back to the category, not to nothing.
+        out = api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(cover_image_url=None),
+            db=db, current_user=owner,
+        )
+        assert out["custom_cover_url"] is None
+        assert out["default_cover_key"] == DEFAULT_COVER_KEY
 
     @pytest.mark.parametrize("url", [
         "https://evil.example.com/tracker.png",
@@ -736,9 +823,17 @@ class TestCoverImages:
         "/api/uploads/avatars/someone.png",
         "/api/uploads/platform-artwork/brand/logo.png",
         "javascript:alert(1)",
+        # The retired default shape. Shared artwork is a category now,
+        # so a URL under the old public namespace is no longer a cover a
+        # creator may store — a narrowing worth asserting.
+        "/api/uploads/platform-artwork/offering-covers/audio.webp",
+        # And World Artwork's own namespace, which an Offering must
+        # never point into directly: the image there is resolved from
+        # the category, never stored.
+        "/api/uploads/platform-artwork/offering_cover_audio/x.webp",
     ])
     def test_anything_else_is_refused(self, db, owner_space, url):
-        """An allow-list of two shapes, not a URL validator — an
+        """An allow-list of one shape, not a URL validator — an
         arbitrary host would mean an off-platform request on every
         member page view."""
         from app.creator.schemas_offerings import OfferingUpdateRequest
@@ -756,10 +851,12 @@ class TestCoverImages:
     ):
         """Verified against the real serving architecture, not asserted.
 
-        A curated default is platform-owned imagery shown to anyone who
-        can see the Offering, so it belongs on the same public path
-        brand assets already use — which means supporting it changes no
-        shared media-security rule.
+        Shared category artwork is platform-owned imagery shown to
+        anyone who can see the Offering, and it now lives in World
+        Artwork — which writes under the same ``platform-artwork/``
+        prefix brand assets and dashboard tiles already use. So moving
+        default covers into that manager changes no shared
+        media-security rule; it reuses one that was already there.
         """
         from fastapi.routing import APIRoute
         from app.core import storage
@@ -768,7 +865,11 @@ class TestCoverImages:
         monkeypatch.setattr(settings, "r2_bucket_public", "fc-public")
         monkeypatch.setattr(settings, "r2_bucket_private", "fc-private")
 
-        key = DEFAULT_COVERS[0].storage_key
+        # The key World Artwork writes for this category's upload.
+        # ``save_image_with_thumbnail`` is called with
+        # ``platform-artwork/{artwork_key}``, so this is the shape the
+        # stored object actually has.
+        key = f"platform-artwork/{DEFAULT_COVERS[0].artwork_key}/hero.webp"
         assert storage._bucket_for_key(key) == "fc-public"
 
         scope = {
@@ -822,33 +923,61 @@ class TestCoverImages:
         creator cannot reach another namespace through either one."""
         assert readiness.is_acceptable_cover(url) is False
 
-    def test_a_default_cover_is_referenced_not_copied(self, db, owner_space):
-        """No duplication: selecting a default stores a URL, so N
-        Offerings choosing the same cover share one stored object."""
+    def test_a_shared_category_is_referenced_not_copied(
+        self, db, owner_space,
+    ):
+        """No duplication: choosing a category stores the key, so N
+        Offerings choosing the same one share a single stored object —
+        and nothing is copied into any creator's storage."""
         from app.creator.schemas_offerings import OfferingUpdateRequest
+        from app.services import offering_covers as covers
         space, owner = owner_space()
         a, b = _offering(db, space, slug="a"), _offering(db, space, slug="b")
         db.flush()
         for off in (a, b):
             api.update_offering(
                 space.slug, off.slug,
-                OfferingUpdateRequest(cover_image_url=DEFAULT_COVER),
+                OfferingUpdateRequest(default_cover_key=DEFAULT_COVER_KEY),
                 db=db, current_user=owner,
             )
         db.refresh(a); db.refresh(b)
-        assert a.cover_image_url == b.cover_image_url == DEFAULT_COVER
+        assert a.default_cover_key == b.default_cover_key == DEFAULT_COVER_KEY
+        assert a.cover_image_url is None and b.cover_image_url is None
+        # And they resolve to the same image, whatever it is.
+        shared = covers.artwork_urls(db)
+        assert (covers.resolve_cover_url(db, a, shared=shared)
+                == covers.resolve_cover_url(db, b, shared=shared))
 
-    def test_the_default_prefix_is_the_existing_public_namespace(self):
+    def test_shared_artwork_lives_in_the_existing_public_namespace(self):
         """Default covers need no change to media-security rules: the
         ``platform-artwork/`` prefix already has a public read route for
-        exactly this class of curated, platform-owned image."""
-        assert readiness._DEFAULT_COVER_PREFIX.startswith(
-            "/api/uploads/platform-artwork/"
-        )
-        from app.core import storage
-        assert storage._bucket_for_key.__doc__ is not None
+        exactly this class of platform-owned image, and World Artwork
+        writes there.
+
+        ``is_acceptable_cover`` no longer mentions that prefix at all —
+        shared artwork is a category now, never a stored URL — so the
+        assertion moved to where the artwork actually goes.
+        """
         import inspect
-        assert "platform-artwork/" in inspect.getsource(storage._bucket_for_key)
+        from app.admin import platform_artwork
+        from app.core import storage
+        from app.services import offering_covers as covers
+
+        # Every Offering category occupies a World Artwork slot...
+        for key in covers.ARTWORK_KEYS:
+            assert key in platform_artwork.PLATFORM_ARTWORK_KEYS
+        # ...whose uploads land under the public prefix.
+        upload_src = inspect.getsource(
+            platform_artwork.upload_platform_artwork,
+        )
+        assert 'f"platform-artwork/{key}"' in upload_src
+        assert "platform-artwork/" in inspect.getsource(
+            storage._bucket_for_key,
+        )
+        # And a cover URL may no longer point into that namespace.
+        assert not readiness.is_acceptable_cover(
+            "/api/uploads/platform-artwork/offering_cover_audio/x.webp"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -868,7 +997,7 @@ class TestReadiness:
     @pytest.mark.parametrize("field,value,unmet", [
         ("title", "", "title"),
         ("summary", None, "summary"),
-        ("cover_image_url", None, "cover_image"),
+        ("default_cover_key", None, "cover_image"),
     ])
     def test_each_missing_detail_is_reported(
         self, db, owner_space, field, value, unmet,
@@ -886,7 +1015,7 @@ class TestReadiness:
     def test_no_files_is_reported(self, db, owner_space):
         space, owner = owner_space()
         off = _offering(
-            db, space, cover_image_url=DEFAULT_COVER, pricing_kind="free",
+            db, space, default_cover_key=DEFAULT_COVER_KEY, pricing_kind="free",
         )
         db.flush()
         out = api.get_offering_readiness(
@@ -899,7 +1028,7 @@ class TestReadiness:
     def test_an_unvalidated_file_blocks_readiness(self, db, owner_space, state):
         space, owner = owner_space()
         off = _offering(
-            db, space, cover_image_url=DEFAULT_COVER, pricing_kind="free",
+            db, space, default_cover_key=DEFAULT_COVER_KEY, pricing_kind="free",
         )
         _file(db, off, status=state)
         db.flush()
@@ -926,7 +1055,7 @@ class TestReadiness:
 
     def test_missing_pricing_is_reported(self, db, owner_space):
         space, owner = owner_space()
-        off = _offering(db, space, cover_image_url=DEFAULT_COVER)
+        off = _offering(db, space, default_cover_key=DEFAULT_COVER_KEY)
         _file(db, off)
         db.flush()
         out = api.get_offering_readiness(
@@ -962,7 +1091,7 @@ class TestReadiness:
 
     def test_no_message_implies_a_malware_scan(self, db, owner_space):
         space, owner = owner_space()
-        off = _offering(db, space, cover_image_url=DEFAULT_COVER,
+        off = _offering(db, space, default_cover_key=DEFAULT_COVER_KEY,
                         pricing_kind="free")
         _file(db, off, status="pending")
         db.flush()
@@ -989,7 +1118,7 @@ class TestPublish:
         self, db, owner_space, state,
     ):
         space, owner = owner_space()
-        off = _offering(db, space, cover_image_url=DEFAULT_COVER,
+        off = _offering(db, space, default_cover_key=DEFAULT_COVER_KEY,
                         pricing_kind="free")
         _file(db, off, status=state)
         db.flush()

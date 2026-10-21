@@ -62,7 +62,7 @@ from app.models.offering import (
 )
 from app.models.platform import Space
 from app.models.user import User
-from app.services import offering_commerce, offering_readiness
+from app.services import offering_commerce, offering_covers, offering_readiness
 from app.services import offering_pilot as _offering_pilot
 
 logger = logging.getLogger(__name__)
@@ -243,14 +243,27 @@ def _file_counts(offering: Offering, db: Session) -> tuple[int, int]:
     return len(rows), sum(1 for (s,) in rows if s == "passed")
 
 
-def _summary(offering: Offering, db: Session) -> dict:
+def _summary(
+    offering: Offering, db: Session,
+    *, shared: dict[str, str | None] | None = None,
+) -> dict:
     total, passed = _file_counts(offering, db)
     return {
         "id": offering.id,
         "slug": offering.slug,
         "title": offering.title,
         "summary": offering.summary,
-        "cover_image_url": offering.cover_image_url,
+        # The **resolved** cover: the creator's upload if there is one,
+        # otherwise the chosen category's current World Artwork, otherwise
+        # null for the gradient. Clients render this and resolve nothing.
+        "cover_image_url": offering_covers.resolve_cover_url(
+            db, offering, shared=shared,
+        ),
+        # And the raw two, so the editor can show which of the three
+        # states it is in — custom, category, or neither — without
+        # inferring it from a URL shape.
+        "custom_cover_url": offering.cover_image_url,
+        "default_cover_key": offering.default_cover_key,
         "status": offering.status,
         "pricing_kind": offering.pricing_kind,
         "price_cents": offering.price_cents,
@@ -289,25 +302,47 @@ def _detail(offering: Offering, db: Session) -> dict:
 
 @router.get(
     "/offering-covers",
-    summary="The curated default cover images a creator may choose",
+    summary="The shared cover categories a creator may choose",
 )
 def list_offering_covers(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[dict]:
     """The cover picker's payload.
 
-    Not scoped to a Collective — the five are platform assets, identical
-    for every creator, so there is nothing per-Collective to resolve and
-    no reason to make the picker wait on one.
+    Not scoped to a Collective — the five categories are platform-wide,
+    identical for every creator, so there is nothing per-Collective to
+    resolve and no reason to make the picker wait on one.
 
-    Each entry carries a hero URL and a thumbnail URL. The thumbnail is
-    what the picker renders; the hero is what gets stored. Choosing a
-    cover stores the **URL**, so one object serves every Offering that
-    picks it — a default cover is referenced, never copied into a
-    creator's own storage.
+    Each entry carries the category's ``key`` — which is what choosing
+    it stores — and the artwork currently uploaded for it in World
+    Settings → World Artwork. The thumbnail is what the picker renders;
+    nothing is copied into the creator's storage, and no URL is stored
+    on the Offering.
+
+    ``image_url`` is ``null`` for a category an administrator has not
+    uploaded artwork for yet. The picker still offers it, with its own
+    placeholder: the category is a real choice whether or not the shared
+    image exists, and a creator must not be blocked on an upload they
+    cannot see or perform.
     """
-    from app.services.offering_covers import manifest
-    return manifest()
+    from app.services import offering_covers as covers
+
+    heroes = covers.artwork_urls(db)
+    thumbs = covers.artwork_thumbnail_urls(db)
+    return [
+        {
+            "key": c.key,
+            "label": c.label,
+            "description": c.description,
+            "image_url": heroes.get(c.key),
+            "thumbnail_url": thumbs.get(c.key),
+            # So the picker can say "no shared image yet" rather than
+            # rendering an empty frame and leaving the creator to guess.
+            "has_artwork": heroes.get(c.key) is not None,
+        }
+        for c in covers.DEFAULT_COVERS
+    ]
 
 
 @router.get(
@@ -419,6 +454,12 @@ def update_offering(
     should learn that their plan forbids a paid price when they set it
     rather than when they try to publish.
 
+    Covers arrive as two independent fields and are stored that way:
+    ``default_cover_key`` is the shared category, ``cover_image_url`` is
+    the creator's own upload, and the upload wins when both are set.
+    Clearing the upload therefore falls back to the category rather than
+    to nothing, which is why neither clears the other here.
+
     The slug is **not** updated when the title changes. A published
     Offering's URL is something a creator may have shared, and silently
     moving it would break those links. Renaming the URL would be a
@@ -441,13 +482,26 @@ def update_offering(
     if "cover_image_url" in data:
         url = data["cover_image_url"] or None
         if url is not None and not offering_readiness.is_acceptable_cover(url):
-            # Allow-listed shapes only — a curated platform default or a
-            # file this platform stored. See ``is_acceptable_cover``.
+            # One allow-listed shape: a cover this platform stored for
+            # this creator. See ``is_acceptable_cover``.
             raise HTTPException(
                 status_code=422,
                 detail="That cover image isn't one we can use.",
             )
         offering.cover_image_url = url
+    if "default_cover_key" in data:
+        key = data["default_cover_key"] or None
+        # Validated against the manifest rather than a CHECK constraint,
+        # so a sixth category needs no migration — see migration 163.
+        # An unknown key is refused here so the column only ever holds a
+        # real choice; resolution treats one as "no artwork" for the
+        # benefit of rows this endpoint did not write.
+        if key is not None and not offering_covers.is_valid_key(key):
+            raise HTTPException(
+                status_code=422,
+                detail="That isn't one of the Offering cover categories.",
+            )
+        offering.default_cover_key = key
 
     if "pricing_kind" in data:
         kind = data["pricing_kind"]

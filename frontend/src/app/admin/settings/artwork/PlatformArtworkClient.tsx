@@ -202,6 +202,34 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     placeholderBody: 'Homepage use: the “Maybe you’ve done this before…” friction section — the emotional anchor beside the copy about people opening up when something already feels familiar.',
   },
 }
+// The five shared Offering cover categories. Generated rather than
+// typed out: five near-identical entries invite a typo in exactly the
+// key that would then fall into the "Other" group, and the guidance has
+// to stay identical across them because every Offering surface reserves
+// the same 3:2 box.
+//
+// 1200x800 is what the Offering card, the catalogue grid and the member
+// detail page are all built around. The platform stores the hero's bytes
+// unchanged and derives its own 600px thumbnail, so a larger upload only
+// costs every viewer bytes they do not need.
+const OFFERING_COVER_DISPLAY: Record<string, SlotDisplay> = Object.fromEntries(
+  [
+    ['offering_cover_workbook_guides', 'printable workbooks, guides and written practices'],
+    ['offering_cover_audio', 'recorded practices, meditations and audio courses'],
+    ['offering_cover_spreadsheet', 'planners, trackers and templates people fill in'],
+    ['offering_cover_collections', 'several resources gathered into one Offering'],
+    ['offering_cover_other_resources', 'anything else a member downloads and keeps'],
+  ].map(([key, suits]) => [
+    key,
+    {
+      aspectRatio: '3 / 2',
+      guidance: 'Landscape image · 3:2 · recommended 1200×800 · JPG, PNG or WebP. A thumbnail is generated automatically.',
+      placeholderBody: `The shared cover for Offerings suited to ${suits}. Creators can use this or upload their own. Offerings show a soft teal gradient until an image is added here.`,
+    } satisfies SlotDisplay,
+  ]),
+)
+Object.assign(DISPLAY_BY_KEY, OFFERING_COVER_DISPLAY)
+
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
   guidance: 'Drag & drop a JPG, PNG or WebP onto the preview — or use the buttons below.',
@@ -224,6 +252,22 @@ const GROUPS: Group[] = [
     label: 'Member Dashboard',
     description: 'Artwork on the Your World tiles that members see when they sign in.',
     keys: ['explore_collectives', 'creator_studio', 'discover_places', 'ways_to_connect', 'new_to_fresh_collective'],
+  },
+  {
+    // Deliberately its own section rather than extra slots inside
+    // Member Dashboard: these are not dashboard artwork, and keeping
+    // them apart leaves room for the shared-artwork categories the
+    // platform will accumulate as it grows.
+    key: 'default_offering_artwork',
+    label: 'Default Offering Artwork',
+    description: 'The shared images used for digital Offerings across Fresh Collective. Creators can use these defaults or upload their own.',
+    keys: [
+      'offering_cover_workbook_guides',
+      'offering_cover_audio',
+      'offering_cover_spreadsheet',
+      'offering_cover_collections',
+      'offering_cover_other_resources',
+    ],
   },
   {
     key: 'homepage',

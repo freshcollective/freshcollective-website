@@ -512,8 +512,11 @@ def upload_offering_cover(
     who owns it. ``_authorise_offering_cover`` reads the Offering id out
     of the second path segment, so the shape matters.
 
-    Choosing one of the five curated covers does **not** come through
-    here — that is a PATCH storing a URL, with no bytes copied anywhere.
+    Choosing one of the five shared categories does **not** come through
+    here — that is a PATCH storing the category *key*, with no bytes
+    copied anywhere and no URL stored. The two live in separate columns,
+    so an upload overrides the category without erasing it, and removing
+    the upload falls back to it.
     """
     space = _get_owned_space(slug, current_user, db)
     offering = _get_offering(space, offering_slug, db)
@@ -551,9 +554,12 @@ def upload_offering_cover(
                 storage.delete_file(key)
                 raise
 
-    # The previous custom cover is now unreferenced. Curated defaults are
-    # shared platform assets and must never be deleted — the prefix check
-    # is what tells the two apart.
+    # The previous custom cover is now unreferenced. The prefix check is
+    # kept even though ``cover_image_url`` can now only hold a creator
+    # upload: shared artwork lives in World Artwork under
+    # ``platform-artwork/`` and is owned by administrators, so a delete
+    # that ever reached it would remove an image every Collective uses.
+    # Cheap, and the one guard standing between those two namespaces.
     if previous and previous.startswith(f"/api/uploads/{OFFERING_COVERS_PREFIX}/"):
         storage.delete_file(previous.removeprefix("/api/uploads/"))
 
