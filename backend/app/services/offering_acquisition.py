@@ -79,6 +79,7 @@ from app.models.offering import (
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
 from app.models.user import User
 from app.services import membership_grant as _membership_grant
+from app.services import offering_pilot as _pilot
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,10 @@ REASON_PLAN_FORBIDS_PAID = "plan_forbids_paid"
 REASON_PRICING_UNSET = "pricing_unset"
 REASON_WRONG_PRICING = "wrong_pricing"
 REASON_NOT_SELLABLE = "not_sellable"
+#: The Collective is outside the Offerings pilot. Member-facing prose is
+#: deliberately the same as "not available yet" — a visitor must not
+#: learn that a feature exists which their Collective is excluded from.
+REASON_OUTSIDE_PILOT = "outside_pilot"
 #: Not a refusal in the usual sense — the member has it already, and the
 #: right response is a way in rather than an error. Carried as a reason
 #: code so the client can tell this 409 from the others.
@@ -105,6 +110,7 @@ REASON_ALREADY_OWNED = "already_owned"
 
 _MESSAGES: dict[str, str] = {
     REASON_NOT_PUBLISHED: "This Offering isn't available yet.",
+    REASON_OUTSIDE_PILOT: "This Offering isn't available yet.",
     REASON_RETIRED: (
         "This Offering is no longer available. People who already have "
         "it keep their files."
@@ -264,6 +270,19 @@ def check_acquirable(
     because the price changed thirty seconds ago, and the reverse would
     hand away a paid file.
     """
+    # Pilot scope first, and ahead of the already-owned branch on
+    # purpose. Somebody who already owns an Offering keeps it — that is
+    # the entitlement's job and the download route's, neither of which
+    # consults the pilot — but *acquiring* is new activity, and new
+    # activity in a Collective outside the pilot is refused.
+    #
+    # Checked here as well as at the route, because this one function is
+    # what both write paths guard with: the free endpoint, the Offering
+    # checkout wrapper and the unified checkout's
+    # ``guard_option_purchase`` all arrive here. One rule, three doors.
+    if not _pilot.offerings_available_for(space):
+        return Acquirability(refusal=REASON_OUTSIDE_PILOT)
+
     if user is not None and already_owns(
         db, user_id=user.id, offering_id=offering.id,
     ):
@@ -529,6 +548,7 @@ __all__ = [
     "AcquisitionRefused",
     "REASON_ALREADY_OWNED",
     "REASON_NOT_PUBLISHED",
+    "REASON_OUTSIDE_PILOT",
     "REASON_NOT_SELLABLE",
     "REASON_NO_FILES",
     "REASON_PLAN_FORBIDS_PAID",

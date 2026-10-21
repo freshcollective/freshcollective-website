@@ -63,6 +63,22 @@ from app.models.user import User
 COMMUNITY_ALLOWANCE = PLANS_BY_SLUG["community"].offerings_max_per_collective
 
 
+@pytest.fixture(autouse=True)
+def _offerings_available(offerings_enabled):
+    """Offerings fully available for every test in this module.
+
+    These call creator handlers **directly**, so they never meet the
+    route's ``require_offerings_enabled`` dependency — but Offerings
+    Phase C/D's pilot allow-list is enforced inside
+    ``_get_owned_space``, which every creator handler resolves through.
+    Without this, each test gets the production answer for a Collective
+    outside the pilot: 404.
+
+    ``offerings_enabled`` opens both switches. Scope itself is the
+    subject of ``test_offering_pilot_allowlist.py``, not of these.
+    """
+
+
 def _seed(engine) -> dict:
     """Seed an owner on the Community plan, a Collective, and four
     Offerings — one short of the allowance.

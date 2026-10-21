@@ -49,6 +49,22 @@ DEFAULT_COVER = DEFAULT_COVERS[0].url
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _offerings_available(offerings_enabled):
+    """Offerings fully available for every test in this module.
+
+    These call creator handlers **directly**, so they never meet the
+    route's ``require_offerings_enabled`` dependency — but Offerings
+    Phase C/D's pilot allow-list is enforced inside
+    ``_get_owned_space``, which every creator handler resolves through.
+    Without this, each test gets the production answer for a Collective
+    outside the pilot: 404.
+
+    ``offerings_enabled`` opens both switches. Scope itself is the
+    subject of ``test_offering_pilot_allowlist.py``, not of these.
+    """
+
+
 def _uid(p: str) -> str:
     return f"{p}_{uuid.uuid4().hex[:16]}"
 
@@ -1142,6 +1158,17 @@ class TestRetire:
 
 
 class TestFeatureFlag:
+
+    @pytest.fixture(autouse=True)
+    def _offerings_available(self):
+        """Opt out of the module fixture.
+
+        This class is *about* the switches being off, so it must meet
+        production defaults. Overriding the module-level autouse
+        fixture with one that does nothing is how pytest expresses
+        that — it is resolved by name, nearest scope winning.
+        """
+
     def test_it_is_disabled_by_default(self):
         from app.core.config import Settings
         assert Settings().offerings_enabled is False

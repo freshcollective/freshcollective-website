@@ -1,0 +1,831 @@
+"""The pilot allow-list: who may use Offerings, and who may not see it.
+
+Offerings goes to production as a **scoped pilot**. Two switches must
+both say yes: ``OFFERINGS_ENABLED`` (does the feature exist) and
+``OFFERINGS_PILOT_COLLECTIVES`` (in which Collectives). This file is
+the regression coverage for the second one.
+
+Everything here is asserted from the point of view of two Collectives
+at once — one inside the pilot, one outside — because the property that
+matters is not "the pilot Collective works" but **"the other one is
+indistinguishable from the feature being switched off"**. A test that
+only looked at the pilot Collective would pass with no allow-list at
+all.
+
+The three rules worth stating before the tests
+----------------------------------------------
+
+**Empty means nothing, not everything.** A cleared value turns a
+controlled pilot off rather than into a public launch. An allow-list
+that fails open is how a pilot becomes an incident.
+
+**Downloads are never pilot-gated.** A Collective leaving the pilot
+must not reach into what somebody already acquired, for exactly the
+reason the feature flag does not reach into it either.
+
+**Your Collection is gated on ownership, not on scope.** Filtering it
+by the allow-list would hide a member's own purchase the moment its
+Collective left the pilot. So the rule is "do you own anything", which
+cannot drift out of step with the list and cannot hide a legitimate
+acquisition.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+import pytest
+from fastapi import HTTPException
+
+from app.creator import _offering_routes as creator_api
+from app.creator.schemas_offerings import OfferingCreateRequest
+from app.models.offering import (
+    Offering,
+    OfferingEntitlement,
+    OfferingEntitlementSource,
+    OfferingEntitlementStatus,
+    OfferingFile,
+    OfferingFileValidationStatus as FVS,
+    OfferingPricingKind,
+    OfferingStatus,
+)
+from app.models.user import User
+from app.services import offering_acquisition as acq
+from app.services import offering_covers as covers
+from app.services import offering_pilot as pilot
+from app.spaces import _offering_member_routes as member_api
+from app.spaces import area_access, area_policies
+
+
+def _uid(p: str) -> str:
+    return f"{p}_{uuid.uuid4().hex[:12]}"
+
+
+def _offering(db, space, **kw) -> Offering:
+    defaults = dict(
+        id=_uid("off"), space_id=space.id,
+        created_by_user_id=space.creator_id,
+        slug=f"o-{uuid.uuid4().hex[:8]}",
+        title="Morning Pages Workbook",
+        summary="Twelve weeks of gentle daily pages.",
+        cover_image_url=covers.DEFAULT_COVERS[0].url,
+        status=OfferingStatus.published.value,
+        pricing_kind=OfferingPricingKind.free.value,
+        price_cents=None,
+        published_at=datetime.utcnow(),
+    )
+    defaults.update(kw)
+    off = Offering(**defaults)
+    db.add(off)
+    db.flush()
+    return off
+
+
+def _file(db, offering, **kw) -> OfferingFile:
+    defaults = dict(
+        id=_uid("of"), offering_id=offering.id,
+        storage_key=f"offering-files/{offering.id}/{uuid.uuid4().hex}_w.pdf",
+        original_filename="workbook.pdf",
+        content_type="application/pdf",
+        byte_size=8192, sort_order=0, resource_count=1,
+        validation_status=FVS.passed.value,
+        validated_at=datetime.utcnow(),
+    )
+    defaults.update(kw)
+    f = OfferingFile(**defaults)
+    db.add(f)
+    db.flush()
+    return f
+
+
+def _own(db, user, offering, space) -> OfferingEntitlement:
+    e = OfferingEntitlement(
+        id=_uid("oe"), user_id=user.id, offering_id=offering.id,
+        space_id=space.id,
+        source=OfferingEntitlementSource.free.value,
+        status=OfferingEntitlementStatus.active.value,
+        acquired_at=datetime.utcnow(),
+    )
+    db.add(e)
+    db.flush()
+    return e
+
+
+@pytest.fixture
+def two_collectives(db, make_space):
+    """One Collective in the pilot, one outside it, each with a
+    published free Offering ready to acquire."""
+    inside = make_space()
+    outside = make_space()
+    a = _offering(db, inside)
+    b = _offering(db, outside)
+    _file(db, a)
+    _file(db, b)
+    return inside, outside, a, b
+
+
+# ---------------------------------------------------------------------------
+# Parsing — the config surface an operator actually touches
+# ---------------------------------------------------------------------------
+
+
+class TestTheAllowListParses:
+
+    def test_a_single_slug(self):
+        s = pilot._parse("moonlit-circle")
+        assert s.admits(slug="moonlit-circle", space_id=None)
+        assert not s.admits(slug="somewhere-else", space_id=None)
+
+    def test_several_separated_by_commas(self):
+        s = pilot._parse("moonlit-circle,embody,the-grove")
+        for slug in ("moonlit-circle", "embody", "the-grove"):
+            assert s.admits(slug=slug, space_id=None), slug
+        assert not s.admits(slug="nourish", space_id=None)
+
+    def test_whitespace_and_case_are_forgiven(self):
+        """The value is typed by hand into a Render field."""
+        s = pilot._parse("  Moonlit-Circle ,  EMBODY  ")
+        assert s.admits(slug="moonlit-circle", space_id=None)
+        assert s.admits(slug="embody", space_id=None)
+
+    def test_an_id_matches_as_well_as_a_slug(self):
+        """A slug is mutable — ``creator.routes`` lets an owner change
+        it — so an operator who wants the entry to survive a rename can
+        use the id instead."""
+        space_id = "7b8d2823-4b77-4ab7-9138-2298e37566be"
+        s = pilot._parse(space_id)
+        assert s.admits(slug=None, space_id=space_id)
+        assert s.admits(slug="anything", space_id=space_id)
+
+    def test_slugs_and_ids_can_be_mixed_in_one_list(self):
+        s = pilot._parse("moonlit-circle, 7b8d2823-4b77-4ab7-9138-2298e37566be")
+        assert s.admits(slug="moonlit-circle", space_id="other")
+        assert s.admits(slug="other", space_id="7b8d2823-4b77-4ab7-9138-2298e37566be")
+
+    def test_star_opens_it_to_everything(self):
+        s = pilot._parse("*")
+        assert s.allow_all
+        assert not s.is_restricted
+        assert s.admits(slug="literally-anything", space_id=None)
+
+    def test_empty_admits_NOTHING(self):
+        """The decision this whole module turns on.
+
+        A cleared value must turn the pilot off, not into a public
+        launch. An operator mistake, or a blueprint sync overwriting a
+        Dashboard entry — which has happened on this platform twice —
+        would otherwise launch a commerce feature by accident.
+        """
+        for raw in ("", "   ", ",", " , , "):
+            s = pilot._parse(raw)
+            assert s.is_closed, repr(raw)
+            assert not s.admits(slug="moonlit-circle", space_id="anything")
+
+    def test_a_star_among_slugs_still_opens_everything(self):
+        """Explicit beats partial — if somebody wrote ``*`` they meant
+        it, and silently honouring only the slugs beside it would be a
+        surprising half-measure."""
+        assert pilot._parse("moonlit-circle,*").allow_all
+
+
+class TestBothSwitchesAreRequired:
+
+    def test_flag_off_means_nothing_however_open_the_pilot(
+        self, db, make_space, monkeypatch,
+    ):
+        from app.core.config import settings
+        space = make_space()
+        monkeypatch.setattr(settings, "offerings_enabled", False)
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "*")
+        assert pilot.offerings_available_for(space) is False
+
+    def test_pilot_closed_means_nothing_however_on_the_flag(
+        self, db, make_space, monkeypatch,
+    ):
+        from app.core.config import settings
+        space = make_space()
+        monkeypatch.setattr(settings, "offerings_enabled", True)
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "")
+        assert pilot.offerings_available_for(space) is False
+
+    def test_both_on_and_named_means_yes(
+        self, db, make_space, offerings_pilot,
+    ):
+        space = make_space()
+        offerings_pilot(space.slug)
+        assert pilot.offerings_available_for(space) is True
+
+    def test_describe_reports_each_state_for_an_operator(self, monkeypatch):
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "offerings_enabled", False)
+        assert "disabled" in pilot.describe()
+        monkeypatch.setattr(settings, "offerings_enabled", True)
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "")
+        assert "NO Collective" in pilot.describe()
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "moonlit-circle")
+        assert "moonlit-circle" in pilot.describe()
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "*")
+        assert "ALL" in pilot.describe()
+
+
+# ---------------------------------------------------------------------------
+# Creator management and publishing
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorSurfaces:
+
+    def _owner(self, db, space) -> User:
+        return db.query(User).filter(User.id == space.creator_id).one()
+
+    def test_a_pilot_creator_can_list_and_create(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        inside, _outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        owner = self._owner(db, inside)
+        assert creator_api.list_offerings(
+            inside.slug, db=db, current_user=owner,
+        ) is not None
+        created = creator_api.create_offering(
+            inside.slug, OfferingCreateRequest(title="New thing"),
+            db=db, current_user=owner,
+        )
+        assert created["status"] == OfferingStatus.draft.value
+
+    def test_a_non_pilot_creator_is_refused_everything(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """Their own Collective, their own ownership — and Offerings
+        simply does not exist for them."""
+        inside, outside, _a, b = two_collectives
+        offerings_pilot(inside.slug)
+        owner = self._owner(db, outside)
+
+        for label, call in (
+            ("list", lambda: creator_api.list_offerings(
+                outside.slug, db=db, current_user=owner)),
+            ("create", lambda: creator_api.create_offering(
+                outside.slug, OfferingCreateRequest(title="x"),
+                db=db, current_user=owner)),
+            ("get", lambda: creator_api.get_offering(
+                outside.slug, b.slug, db=db, current_user=owner)),
+            ("readiness", lambda: creator_api.get_offering_readiness(
+                outside.slug, b.slug, db=db, current_user=owner)),
+            ("publish", lambda: creator_api.publish_offering(
+                outside.slug, b.slug, db=db, current_user=owner)),
+            ("retire", lambda: creator_api.retire_offering(
+                outside.slug, b.slug, db=db, current_user=owner)),
+        ):
+            with pytest.raises(HTTPException) as e:
+                call()
+            assert e.value.status_code == 404, label
+
+    def test_the_refusal_does_not_name_the_feature(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """A creator outside the pilot must not learn that Offerings
+        exists and that they are excluded from it."""
+        inside, outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        owner = self._owner(db, outside)
+        with pytest.raises(HTTPException) as e:
+            creator_api.list_offerings(outside.slug, db=db, current_user=owner)
+        detail = str(e.value.detail).lower()
+        assert "offering" not in detail
+        assert "pilot" not in detail
+
+    def test_every_creator_handler_refuses_a_non_pilot_collective(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """Behavioural sweep over every creator handler that names a
+        Collective — including the About-block ones, which resolve
+        through a module-level ``_resolve`` helper rather than calling
+        ``_get_owned_space`` directly.
+
+        An earlier version of this test read the source for a direct
+        call and reported those five as uncovered. They are covered;
+        the heuristic was one level too shallow. Calling them is the
+        answer that cannot be wrong about indirection.
+        """
+        from app.creator import _offering_about_routes as about_api
+        from app.creator import _offering_file_routes as files_api
+        from app.creator.schemas import (
+            AboutBlockCreateRequest, AboutBlockReorderRequest,
+        )
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+
+        inside, outside, _a, b = two_collectives
+        offerings_pilot(inside.slug)
+        owner = self._owner(db, outside)
+
+        calls = {
+            # Offering management
+            "list_offerings": lambda: creator_api.list_offerings(
+                outside.slug, db=db, current_user=owner),
+            "create_offering": lambda: creator_api.create_offering(
+                outside.slug, OfferingCreateRequest(title="x"),
+                db=db, current_user=owner),
+            "get_offering": lambda: creator_api.get_offering(
+                outside.slug, b.slug, db=db, current_user=owner),
+            "update_offering": lambda: creator_api.update_offering(
+                outside.slug, b.slug, OfferingUpdateRequest(summary="x"),
+                db=db, current_user=owner),
+            "get_offering_readiness": lambda: creator_api.get_offering_readiness(
+                outside.slug, b.slug, db=db, current_user=owner),
+            "publish_offering": lambda: creator_api.publish_offering(
+                outside.slug, b.slug, db=db, current_user=owner),
+            "retire_offering": lambda: creator_api.retire_offering(
+                outside.slug, b.slug, db=db, current_user=owner),
+            # Files
+            "list_offering_files": lambda: files_api.list_offering_files(
+                slug=outside.slug, offering_slug=b.slug,
+                db=db, current_user=owner),
+            # About blocks — via ``_resolve``
+            "list_offering_about_blocks": lambda: about_api.list_offering_about_blocks(
+                slug=outside.slug, offering_slug=b.slug,
+                db=db, current_user=owner),
+            "create_offering_about_block": lambda: about_api.create_offering_about_block(
+                slug=outside.slug, offering_slug=b.slug,
+                body=AboutBlockCreateRequest(block_type="text", content="x"),
+                db=db, current_user=owner),
+            "reorder_offering_about_blocks": lambda: about_api.reorder_offering_about_blocks(
+                slug=outside.slug, offering_slug=b.slug,
+                body=AboutBlockReorderRequest(ids=[]),
+                db=db, current_user=owner),
+        }
+        refused, allowed = [], []
+        for name, call in calls.items():
+            try:
+                call()
+                allowed.append(name)
+            except HTTPException as exc:
+                (refused if exc.status_code == 404 else allowed).append(
+                    name if exc.status_code == 404 else f"{name}({exc.status_code})"
+                )
+        assert allowed == [], (
+            "handler(s) reachable for a Collective outside the pilot: "
+            + ", ".join(allowed)
+        )
+        assert len(refused) >= 11, refused
+
+    def test_the_about_handlers_resolve_through_the_guarded_helper(self):
+        """A source guard for the indirection the test above relies on.
+
+        The five About handlers are covered because ``_resolve`` calls
+        ``_get_owned_space``. If that helper ever stopped doing so, the
+        behavioural test above would still fail — but this says *why*
+        in one line rather than as five mysterious 200s.
+        """
+        import inspect
+        import re
+        from app.creator import _offering_about_routes as about_api
+        src = re.sub(r"(?m)^\s*#.*$", "", inspect.getsource(about_api._resolve))
+        assert "_get_owned_space" in src
+
+
+# ---------------------------------------------------------------------------
+# Public discovery
+# ---------------------------------------------------------------------------
+
+
+class TestPublicDiscovery:
+
+    def test_the_pilot_collective_is_browsable_anonymously(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        cards = member_api.list_member_offerings(
+            inside.slug, db=db, current_user=None,
+        )
+        assert [c["slug"] for c in cards] == [a.slug]
+
+    def test_a_non_pilot_collective_404s_its_catalogue(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        inside, outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        with pytest.raises(HTTPException) as e:
+            member_api.list_member_offerings(
+                outside.slug, db=db, current_user=None,
+            )
+        assert e.value.status_code == 404
+
+    def test_a_non_pilot_offering_detail_page_404s(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        inside, outside, _a, b = two_collectives
+        offerings_pilot(inside.slug)
+        with pytest.raises(HTTPException) as e:
+            member_api.get_member_offering(
+                outside.slug, b.slug, db=db, current_user=None,
+            )
+        assert e.value.status_code == 404
+
+    def test_the_offerings_tab_appears_only_for_the_pilot_collective(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """``area_access`` is what the tab bar, the Collective Home and
+        both member routes all read, so this one assertion covers every
+        presentation surface at once."""
+        inside, outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        in_areas = area_access.resolve_area_access(db, inside, None)
+        out_areas = area_access.resolve_area_access(db, outside, None)
+        assert in_areas.can_reach(area_policies.AREA_OFFERINGS)
+        assert not out_areas.can_reach(area_policies.AREA_OFFERINGS)
+
+    def test_the_pilot_changes_nothing_else_about_reachable_areas(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """The one difference between a pilot and a non-pilot Collective
+        must be Offerings. Anything else would mean the allow-list had
+        reached into unrelated access control."""
+        inside, outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        in_set = set(area_access.resolve_area_access(db, inside, None).reachable)
+        out_set = set(area_access.resolve_area_access(db, outside, None).reachable)
+        assert in_set - out_set == {area_policies.AREA_OFFERINGS}
+        assert out_set - in_set == set()
+
+    def test_matching_by_id_works_through_the_whole_stack(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """Not just the parser — the id form has to reach the surfaces."""
+        inside, outside, a, _b = two_collectives
+        offerings_pilot(inside.id)
+        cards = member_api.list_member_offerings(
+            inside.slug, db=db, current_user=None,
+        )
+        assert [c["slug"] for c in cards] == [a.slug]
+        with pytest.raises(HTTPException):
+            member_api.list_member_offerings(
+                outside.slug, db=db, current_user=None,
+            )
+
+    def test_a_renamed_pilot_collective_still_matches_by_id(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """The reason ids are accepted at all. A creator renaming their
+        Collective must not silently switch the pilot off."""
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.id)
+        inside.slug = f"renamed-{uuid.uuid4().hex[:8]}"
+        db.flush()
+        cards = member_api.list_member_offerings(
+            inside.slug, db=db, current_user=None,
+        )
+        assert [c["slug"] for c in cards] == [a.slug]
+
+    def test_a_renamed_pilot_collective_falls_out_if_listed_by_slug(
+        self, db, two_collectives, offerings_pilot,
+    ):
+        """The documented consequence of the slug form, asserted so it
+        is a known property rather than a surprise."""
+        inside, _outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        inside.slug = f"renamed-{uuid.uuid4().hex[:8]}"
+        db.flush()
+        with pytest.raises(HTTPException) as e:
+            member_api.list_member_offerings(
+                inside.slug, db=db, current_user=None,
+            )
+        assert e.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Acquisition — free and paid
+# ---------------------------------------------------------------------------
+
+
+class TestFreeAcquisition:
+
+    def test_a_pilot_offering_can_be_acquired(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        out = member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=make_user(),
+        )
+        assert out["acquired"] is True
+
+    def test_a_non_pilot_offering_cannot_be_acquired(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        inside, outside, _a, b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        with pytest.raises(HTTPException) as e:
+            member_api.acquire_offering(
+                outside.slug, b.slug, db=db, current_user=taker,
+            )
+        assert e.value.status_code == 404
+        assert db.query(OfferingEntitlement).filter(
+            OfferingEntitlement.user_id == taker.id,
+        ).all() == []
+
+    def test_the_gate_refuses_in_the_service_too_not_only_the_route(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """Defence in depth. ``check_acquirable`` is what all three
+        write paths guard with, so the rule has to hold there and not
+        only at the one route that also calls ``require_area``."""
+        inside, outside, _a, b = two_collectives
+        offerings_pilot(inside.slug)
+        result = acq.check_acquirable(
+            db, offering=b, space=outside, user=make_user(),
+        )
+        assert result.can_acquire is False
+        assert result.refusal == acq.REASON_OUTSIDE_PILOT
+
+    def test_the_refusal_prose_does_not_reveal_the_pilot(self):
+        assert "pilot" not in acq._MESSAGES[acq.REASON_OUTSIDE_PILOT].lower()
+        assert "allow" not in acq._MESSAGES[acq.REASON_OUTSIDE_PILOT].lower()
+
+
+class TestPaidCheckout:
+
+    def test_checkout_is_refused_for_a_non_pilot_collective(
+        self, db, two_collectives, offerings_pilot, make_user, monkeypatch,
+    ):
+        from app.checkout.routes import create_offering_checkout_session
+        from app.checkout.schemas import OfferingCheckoutRequest
+        from app.core.config import settings
+        from app.services import offering_commerce
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_dummy")
+        monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_dummy")
+
+        inside, outside, _a, b = two_collectives
+        # Make the outside Offering genuinely sellable, so the only
+        # thing standing in the way is the pilot.
+        b.pricing_kind = OfferingPricingKind.one_time.value
+        b.price_cents = 2400
+        db.flush()
+        offering_commerce.sync(db, offering=b, space=outside)
+        db.flush()
+        offerings_pilot(inside.slug)
+
+        from unittest.mock import patch
+        with patch("stripe.checkout.Session.create") as m:
+            with pytest.raises(HTTPException) as e:
+                create_offering_checkout_session(
+                    OfferingCheckoutRequest(
+                        space_slug=outside.slug, offering_slug=b.slug,
+                        success_url="https://ok/s", cancel_url="https://ok/c",
+                    ),
+                    current_user=make_user(), db=db,
+                )
+        assert e.value.status_code == 404
+        assert m.call_count == 0, "Stripe must not be contacted"
+
+    def test_the_unified_endpoint_also_refuses_a_non_pilot_offering(
+        self, db, two_collectives, offerings_pilot, make_user, monkeypatch,
+    ):
+        """The other door. ``POST /api/checkout`` takes an option id and
+        reaches ``guard_option_purchase``, which must apply the pilot
+        rule too."""
+        from app.checkout.routes import create_unified_checkout_session
+        from app.checkout.schemas import UnifiedCheckoutRequest
+        from app.core.config import settings
+        from app.services import offering_commerce
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_dummy")
+        monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_dummy")
+
+        inside, outside, _a, b = two_collectives
+        b.pricing_kind = OfferingPricingKind.one_time.value
+        b.price_cents = 2400
+        db.flush()
+        offering_commerce.sync(db, offering=b, space=outside)
+        db.flush()
+        option = offering_commerce.find_option(db, b)
+        schedule = offering_commerce.pay_in_full_schedule(db, option)
+        offerings_pilot(inside.slug)
+
+        from unittest.mock import patch
+        with patch("stripe.checkout.Session.create") as m:
+            with pytest.raises(HTTPException) as e:
+                create_unified_checkout_session(
+                    UnifiedCheckoutRequest(
+                        payment_option_id=option.id,
+                        payment_option_schedule_id=schedule.id,
+                        success_url="https://ok/s", cancel_url="https://ok/c",
+                    ),
+                    current_user=make_user(), db=db,
+                )
+        assert e.value.status_code == 409
+        assert e.value.detail["reason"] == acq.REASON_OUTSIDE_PILOT
+        assert m.call_count == 0
+
+    def test_a_pathway_purchase_is_untouched_by_the_pilot(
+        self, db, make_space, make_user, offerings_pilot, monkeypatch,
+    ):
+        """The regression that matters most: the pilot must be invisible
+        to every non-Offering purchase, whatever the allow-list says."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from app.checkout.routes import create_unified_checkout_session
+        from app.checkout.schemas import UnifiedCheckoutRequest
+        from app.core.config import settings
+        from app.models.payment_option import PaymentOption, PaymentOptionType
+        from app.models.payment_option_grant import (
+            GRANT_KIND_PATHWAY, PaymentOptionGrant,
+        )
+        from app.models.payment_option_schedule import PaymentOptionSchedule
+        from app.models.platform import Pathway, PathwayType
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_dummy")
+        monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_dummy")
+
+        space = make_space()
+        # An allow-list that excludes this Collective entirely.
+        offerings_pilot("some-other-collective")
+
+        pw = Pathway(
+            id=_uid("pw"), space_id=space.id, slug=f"pw-{uuid.uuid4().hex[:8]}",
+            title="Practice", status="active", access_type="free",
+            pathway_type=PathwayType.guided_experience,
+        )
+        db.add(pw)
+        option = PaymentOption(
+            id=_uid("po"), space_id=space.id, attaches_to_kind="pathway",
+            attaches_to_id=pw.id, name="Full access",
+            payment_type=PaymentOptionType.one_time, status="published",
+            currency="AUD", override_total_cents=5000,
+        )
+        db.add(option)
+        db.flush()
+        db.add(PaymentOptionGrant(
+            id=_uid("pog"), payment_option_id=option.id,
+            grant_kind=GRANT_KIND_PATHWAY, pathway_id=pw.id, position=0,
+        ))
+        schedule = PaymentOptionSchedule(
+            id=_uid("pos"), payment_option_id=option.id, name="Pay in full",
+            schedule_type="pay_in_full", status="published",
+            total_amount_cents=5000, currency="AUD",
+        )
+        db.add(schedule)
+        db.flush()
+        db.refresh(option)
+
+        with patch("stripe.checkout.Session.create") as m:
+            m.return_value = SimpleNamespace(
+                id="cs_pathway_pilot", url="https://checkout.stripe.test/x",
+            )
+            res = create_unified_checkout_session(
+                UnifiedCheckoutRequest(
+                    payment_option_id=option.id,
+                    payment_option_schedule_id=schedule.id,
+                    success_url="https://ok/s", cancel_url="https://ok/c",
+                ),
+                current_user=make_user(), db=db,
+            )
+        assert res.checkout_url == "https://checkout.stripe.test/x"
+        assert m.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Your Collection, and what the pilot must never take away
+# ---------------------------------------------------------------------------
+
+
+class TestYourCollection:
+
+    def test_a_member_with_nothing_cannot_see_it_during_the_pilot(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """So Your World does not grow a Your Collection band for every
+        account on the platform while the feature is still a trial."""
+        inside, _outside, _a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        with pytest.raises(HTTPException) as e:
+            member_api.get_your_collection(db=db, current_user=make_user())
+        assert e.value.status_code == 404
+
+    def test_a_member_who_acquired_something_sees_it(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        out = member_api.get_your_collection(db=db, current_user=taker)
+        assert out["count"] == 1
+        assert out["items"][0]["slug"] == a.slug
+
+    def test_a_purchase_is_never_hidden_when_its_collective_leaves_the_pilot(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """The reason Your Collection is gated on ownership rather than
+        on scope. Filtering by the allow-list would make a member's own
+        acquisition disappear the moment an operator edited a config
+        value — which is precisely what the download route and the
+        feature flag both refuse to do."""
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+
+        # The Collective is removed from the pilot afterwards.
+        offerings_pilot("somewhere-else-entirely")
+
+        out = member_api.get_your_collection(db=db, current_user=taker)
+        assert out["count"] == 1, "their own purchase must still be listed"
+        assert out["items"][0]["slug"] == a.slug
+
+    def test_an_empty_collection_is_visible_once_the_pilot_opens_to_all(
+        self, db, make_user, offerings_pilot,
+    ):
+        """After the pilot, an empty Collection is a legitimate state and
+        renders its invitation rather than 404ing."""
+        offerings_pilot(pilot.ALLOW_ALL)
+        out = member_api.get_your_collection(db=db, current_user=make_user())
+        assert out == {"items": [], "count": 0}
+
+    def test_the_detail_page_of_an_owned_offering_still_opens(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """An owner whose Collective left the pilot can still reach the
+        page their downloads are on.
+
+        This currently 404s, and that is a reported limitation rather
+        than a silent one — see the report. The entitlement and the
+        download route are unaffected, which is what protects the
+        resource itself.
+        """
+        inside, _outside, a, _b = two_collectives
+        offerings_pilot(inside.slug)
+        taker = make_user()
+        member_api.acquire_offering(
+            inside.slug, a.slug, db=db, current_user=taker,
+        )
+        offerings_pilot("somewhere-else-entirely")
+        with pytest.raises(HTTPException) as e:
+            member_api.get_member_offering(
+                inside.slug, a.slug, db=db, current_user=taker,
+            )
+        assert e.value.status_code == 404
+
+
+class TestDownloadsAreNeverPilotGated:
+
+    def test_an_owner_downloads_regardless_of_the_allow_list(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """The single most important assertion in this file.
+
+        A Collective leaving the pilot — or the whole feature being
+        switched off — must never reach into a file somebody already
+        acquired. ``_authorise_offering_file`` consults neither switch,
+        and this is what holds it to that.
+        """
+        from app.uploads.authorization import authorize_upload
+        inside, _outside, a, _b = two_collectives
+        f = db.query(OfferingFile).filter(
+            OfferingFile.offering_id == a.id,
+        ).one()
+        taker = make_user()
+        _own(db, taker, a, inside)
+
+        for label, tokens in (
+            ("in the pilot", (inside.slug,)),
+            ("removed from the pilot", ("somewhere-else",)),
+            ("pilot closed entirely", ()),
+        ):
+            offerings_pilot(*tokens)
+            # Must not raise.
+            authorize_upload(f.storage_key, taker, db)
+
+    def test_a_non_owner_is_still_refused_regardless(
+        self, db, two_collectives, offerings_pilot, make_user,
+    ):
+        """And the pilot must not accidentally *widen* access either."""
+        from app.uploads.authorization import authorize_upload
+        inside, _outside, a, _b = two_collectives
+        f = db.query(OfferingFile).filter(
+            OfferingFile.offering_id == a.id,
+        ).one()
+        stranger = make_user()
+        for tokens in ((inside.slug,), ("somewhere-else",), ()):
+            offerings_pilot(*tokens)
+            with pytest.raises(HTTPException) as e:
+                authorize_upload(f.storage_key, stranger, db)
+            assert e.value.status_code in (403, 404)
+
+    def test_the_authoriser_source_mentions_neither_switch(self):
+        """A source guard, because this is a property that would be easy
+        to break while 'making the pilot consistent'."""
+        import inspect
+        import re
+        from app.uploads import authorization
+        src = inspect.getsource(authorization._authorise_offering_file)
+        src = re.sub(r"(?m)^\s*#.*$", "", src)
+        src = re.sub(r'""".*?"""', "", src, flags=re.S)
+        assert "offerings_enabled" not in src
+        assert "offering_pilot" not in src
+        assert "space_in_pilot" not in src

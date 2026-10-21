@@ -97,6 +97,7 @@ from app.models.offering import (
 from app.models.platform import PathwayAboutBlock, Space
 from app.models.user import User
 from app.services import offering_acquisition as acq
+from app.services import offering_pilot as _pilot
 from app.spaces import area_access, area_policies
 
 logger = logging.getLogger(__name__)
@@ -675,6 +676,29 @@ def get_your_collection(
 
     Newest first, using ``ix_offering_entitlements_user_acquired`` —
     the index that exists for exactly this query.
+
+    Visibility during the pilot
+    ---------------------------
+
+    While the pilot is scoped to named Collectives, this page is shown
+    to **members who have acquired something**, and to nobody else. A
+    member with nothing gets a 404, so Your World does not grow a
+    Your Collection band for every account on the platform while the
+    feature is still being trialled.
+
+    What this deliberately does **not** do is filter the list by pilot
+    scope. Two reasons, and they are the same reason:
+
+      * a Collective leaving the pilot would otherwise hide a purchase
+        somebody had already made, which is the mistake the feature
+        flag and the download route both exist to avoid;
+      * ownership is ownership. Once the row exists, this page's job is
+        to show it.
+
+    So the gate is "do you own anything at all", which cannot drift out
+    of step with the pilot list and cannot hide a legitimate
+    acquisition. When the pilot opens to everything (``*``), the gate
+    lifts and an empty Collection renders its invitation as normal.
     """
     rows = (
         db.query(OfferingEntitlement, Offering, Space)
@@ -692,6 +716,15 @@ def get_your_collection(
         .all()
     )
     if not rows:
+        # Nothing acquired. While the pilot is scoped, that means this
+        # page is not for this member yet — 404, consistent with every
+        # other out-of-scope Offerings surface. Once the pilot opens to
+        # all Collectives, an empty Collection is a legitimate state and
+        # renders its invitation.
+        if _pilot.current_scope().is_restricted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Not found.",
+            )
         return {"items": [], "count": 0}
 
     offering_ids = [o.id for (_e, o, _s) in rows]

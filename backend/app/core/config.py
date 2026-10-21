@@ -338,6 +338,16 @@ class Settings(BaseSettings):
     # stops new activity and leaves existing ownership intact.
     offerings_enabled: bool = False
 
+    #: Which Collectives may use Offerings while the pilot runs.
+    #: Comma-separated slugs and/or Collective ids; ``*`` for all.
+    #:
+    #: **Empty means NO Collective**, not every Collective. A cleared
+    #: value turns a controlled pilot off rather than turning it into a
+    #: public launch — see ``services.offering_pilot`` for why that
+    #: direction was chosen. Both this and ``offerings_enabled`` must
+    #: say yes.
+    offerings_pilot_collectives: str = ""
+
     # Ways to Connect — gated separately from Discover Places. The two
     # shipped behind one flag because they were built as one pillar;
     # they are not ready at the same time, and turning the pillar on

@@ -160,6 +160,11 @@ async def lifespan(_: FastAPI):
         settings.stripe_enabled, settings.stripe_mode, settings.app_env,
         installed_package_version(), installed_api_version(),
     )
+    # Offerings rollout state, on one line, so "is the pilot on and for
+    # whom?" is answerable from the Render log rather than by reading two
+    # environment variables and inferring how they combine.
+    from app.services.offering_pilot import describe as _offerings_describe
+    logger.info("%s", _offerings_describe())
     for note in stripe_version_notes:
         # Not fatal, but never quiet: a same-major version drift still
         # means this code is running against an API it was not tested
