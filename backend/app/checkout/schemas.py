@@ -129,3 +129,41 @@ class DiscountPreviewResponse(BaseModel):
     discount_amount_cents: int | None = None
     final_amount_cents: int | None = None
     currency: str | None = None
+
+
+class OfferingCheckoutRequest(BaseModel):
+    """Buy one paid Offering.
+
+    The request names the **Offering**, not a Payment Option. That is
+    the difference between this wrapper and
+    ``POST /api/checkout``: a member browsing a Collective's
+    catalogue knows which resource they want and has never heard of a
+    Payment Option, so the server resolves the option from the
+    Offering rather than making the client carry an id it would have
+    to be told. It also means a client cannot name an option that
+    sells something else.
+    """
+
+    space_slug: str
+    offering_slug: str
+    success_url: str
+    cancel_url: str
+    #: Optional. Validated server-side against the resolved option, so
+    #: the existing space-scoped and option-scoped codes both work on
+    #: an Offering with no change to the discount architecture.
+    discount_code: str | None = None
+
+
+class OfferingCheckoutResponse(BaseModel):
+    """Where to send the browser, and what was created.
+
+    ``free`` is always ``False`` here. A free Offering never reaches
+    this endpoint — it has no Payment Option at all — and is claimed
+    through ``POST /api/spaces/{slug}/offerings/{slug}/acquire``. The
+    field exists for shape-compatibility with
+    ``UnifiedCheckoutResponse`` so one client helper can read either.
+    """
+
+    checkout_url: str
+    transaction_id: str
+    free: bool = False

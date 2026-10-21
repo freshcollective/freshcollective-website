@@ -2084,6 +2084,20 @@ class CreatorPaymentTransactionOut(BaseModel):
     payment_option_name: str | None = None
     payment_option_schedule_id: str | None = None
 
+    # Offerings Phase C/D. Populated only on rows that bought an
+    # Offering, so an existing Pathway or Series row is unchanged and
+    # any client that has not been updated simply never sees these.
+    #
+    # ``payment_option_name`` already carries the Offering's title (the
+    # provisioned option is named after it), but a creator reading
+    # their Payments received needs to know *that it is an Offering* —
+    # and a title alone cannot say so. Named explicitly rather than
+    # inferred from the option's ``attaches_to_kind``, which the client
+    # does not receive.
+    offering_id: str | None = None
+    offering_title: str | None = None
+    offering_slug: str | None = None
+
     currency: str
     gross_amount_cents: int
     platform_fee_basis_points: int

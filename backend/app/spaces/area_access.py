@@ -59,6 +59,18 @@ class AreaAccess:
         return self.policies.get(area, ap.AREA_DEFAULTS.get(area, ap.POLICY_MEMBERS))
 
 
+def _offerings_enabled() -> bool:
+    """Read the flag at call time, not at import.
+
+    Imported inside the function because ``settings`` is built from the
+    environment and the test suite swaps it; a module-level read would
+    freeze whichever value happened to be live when this module was
+    first imported.
+    """
+    from app.core.config import settings
+    return bool(settings.offerings_enabled)
+
+
 def resolve_area_access(
     db: Session,
     space: Space,
@@ -92,6 +104,19 @@ def resolve_area_access(
 
     reachable = set()
     for area, policy in policies.items():
+        # Offerings is a flagged feature. Dropping it here rather than
+        # at each surface means the tab bar, the Collective Home tiles,
+        # the catalogue route and the detail route all stop offering it
+        # from one switch — which is this module's whole reason for
+        # existing ("resolved once per request, threaded down, never
+        # recalculated in a component").
+        #
+        # This gates *presentation*. It must never reach a download:
+        # ``uploads.authorization._authorise_offering_file`` deliberately
+        # does not consult the flag, because turning a feature off must
+        # not take away a file somebody paid for.
+        if area == ap.AREA_OFFERINGS and not _offerings_enabled():
+            continue
         if policy == ap.POLICY_PUBLIC:
             reachable.add(area)
         elif policy == ap.POLICY_MEMBERS:

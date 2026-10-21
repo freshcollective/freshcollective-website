@@ -7589,8 +7589,10 @@ def list_creator_payments(
     # Grant-state derivation. Universe per transaction = every
     # AccessPass linked by ``payment_transaction_id`` PLUS every
     # PathwayEntitlement reachable via those passes'
-    # ``pathway_entitlement_id``. Same universe ``revoke_purchase``
-    # touches, so counts match by construction. A row is
+    # ``pathway_entitlement_id`` PLUS every OfferingEntitlement linked
+    # by ``payment_transaction_id`` (Phase C/D, added below). Same
+    # universe ``revoke_purchase`` touches for the first two, so counts
+    # match by construction. A row is
     # "admin-revoked" iff ``revoked_by_user_id IS NOT NULL`` — this
     # distinguishes administrative revoke from natural pass expiry.
     from app.models.access_pass import AccessPass as _AccessPass
@@ -7653,6 +7655,51 @@ def list_creator_payments(
                     if cur is None or ra < cur:
                         grant_revoked_at_by_txn[txn_id] = ra
 
+    # Offerings Phase C/D. An Offering purchase produces neither an
+    # AccessPass nor a PathwayEntitlement, so without this the row read
+    # ``no_grant_records`` — which in this list means "payment taken,
+    # nothing granted", the signal an operator investigates. A sale
+    # that worked perfectly must not look like that.
+    #
+    # Joined on ``payment_transaction_id``, the same key the two loops
+    # above use, so the counts compose rather than being a parallel
+    # tally. ``revoked_at IS NOT NULL`` is the revoked test here:
+    # ``OfferingEntitlement`` has no ``revoked_by_user_id`` column,
+    # because revoking one is always an explicit administrative act —
+    # there is no natural expiry for it to be distinguished from.
+    from app.models.offering import Offering as _Offering
+    from app.models.offering import OfferingEntitlement as _OfferingEnt
+
+    offering_by_txn: dict[str, tuple[str, str, str]] = {}
+    if txn_ids:
+        for (
+            ot_txn_id, _oe_id, oe_revoked_at, o_id, o_title, o_slug,
+        ) in (
+            db.query(
+                _OfferingEnt.payment_transaction_id,
+                _OfferingEnt.id,
+                _OfferingEnt.revoked_at,
+                _Offering.id,
+                _Offering.title,
+                _Offering.slug,
+            )
+            .join(_Offering, _Offering.id == _OfferingEnt.offering_id)
+            .filter(_OfferingEnt.payment_transaction_id.in_(txn_ids))
+            .all()
+        ):
+            grant_totals[ot_txn_id] = grant_totals.get(ot_txn_id, 0) + 1
+            if oe_revoked_at is not None:
+                grant_revoked_counts[ot_txn_id] = (
+                    grant_revoked_counts.get(ot_txn_id, 0) + 1
+                )
+                cur = grant_revoked_at_by_txn.get(ot_txn_id)
+                if cur is None or oe_revoked_at < cur:
+                    grant_revoked_at_by_txn[ot_txn_id] = oe_revoked_at
+            # What was bought, for the row's own label. One Offering per
+            # transaction today — the provisioned option carries exactly
+            # one Offering grant — so the last write wins harmlessly.
+            offering_by_txn[ot_txn_id] = (o_id, o_title, o_slug)
+
     def _grant_state_for(txn_id: str) -> str:
         total = grant_totals.get(txn_id, 0)
         if total == 0:
@@ -7694,6 +7741,9 @@ def list_creator_payments(
             payment_option_id=r.payment_option_id,
             payment_option_name=(option.name if option else None),
             payment_option_schedule_id=r.payment_option_schedule_id,
+            offering_id=offering_by_txn.get(r.id, (None, None, None))[0],
+            offering_title=offering_by_txn.get(r.id, (None, None, None))[1],
+            offering_slug=offering_by_txn.get(r.id, (None, None, None))[2],
             currency=r.currency,
             gross_amount_cents=r.gross_amount_cents,
             platform_fee_basis_points=r.platform_fee_basis_points,

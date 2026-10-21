@@ -94,6 +94,26 @@ def _member_url_for_option(db: Session, option: PaymentOption | None) -> str:
         if series is None:
             return fallback
         return f"{origin}/spaces/{space.slug}/gathering-series/{series.slug}"
+    if kind == "offering":
+        # Offerings Phase C/D. Without this branch a member who had just
+        # bought a workbook was sent to ``/dashboard`` by their own
+        # purchase confirmation — technically true, and no help at all
+        # in finding the thing they paid for.
+        #
+        # Narrow by construction: the branch is reached only for an
+        # option whose ``attaches_to_kind`` is ``offering``, which
+        # nothing but ``offering_commerce`` ever writes. Pathway and
+        # Series options take their existing branches above and are
+        # untouched.
+        from app.models.offering import Offering
+        offering = (
+            db.query(Offering)
+            .filter(Offering.id == option.attaches_to_id)
+            .one_or_none()
+        )
+        if offering is None:
+            return fallback
+        return f"{origin}/spaces/{space.slug}/offerings/{offering.slug}"
     # Any other attach kind (future: standalone gathering bundle,
     # etc.) — fall back to dashboard rather than invent a URL.
     return fallback

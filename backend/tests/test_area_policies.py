@@ -88,12 +88,28 @@ class TestVocabulary:
     def test_defaults_are_todays_behaviour(self):
         """Pathways stay public. Quietly privatising every Collective's
         Pathway list would be a worse regression than the
-        inconsistency it tidies."""
+        inconsistency it tidies.
+
+        ``offerings`` joined the vocabulary in Offerings Phase C/D,
+        public and fixed, for the same reason About is: it is the page
+        where somebody buys their way in, so gating it on having
+        bought your way in is a circle. Its visibility is additionally
+        governed by the Offerings feature flag — see
+        ``test_area_access`` — which is a separate gate and not a
+        policy."""
         assert ap.AREA_DEFAULTS == {
             "about": "public", "home": "members", "gatherings": "members",
             "pathways": "public", "conversations": "members",
             "members": "members", "messages": "members",
+            "offerings": "public",
         }
+
+    def test_offerings_is_fixed_public_and_not_configurable(self):
+        assert ap.AREA_ALLOWED[ap.AREA_OFFERINGS] == (ap.POLICY_PUBLIC,)
+        assert ap.AREA_OFFERINGS not in ap.CONFIGURABLE_AREAS
+        # A creator naming it in a saved document cannot move it.
+        with pytest.raises(ap.AreaPolicyError):
+            ap.validate({"areas": {"offerings": "members"}})
 
 
 class TestStorage:

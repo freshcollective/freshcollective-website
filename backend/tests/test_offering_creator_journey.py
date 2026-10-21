@@ -129,7 +129,9 @@ def clean_storage():
                 pass
 
 
-def test_the_whole_creator_journey(db, creator_collective, make_user):
+def test_the_whole_creator_journey(
+    db, creator_collective, make_user, offerings_enabled,
+):
     space, owner = creator_collective
     sf = lambda: _KeepOpen(db)   # noqa: E731 — the worker's session factory
 

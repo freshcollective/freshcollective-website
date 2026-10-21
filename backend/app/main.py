@@ -72,6 +72,7 @@ from app.creator._offering_about_routes import (
 )
 from app.spaces._offering_member_routes import (
     router as member_offerings_router,
+    me_router as member_collection_router,
 )
 from app.creator.attendance import router as creator_attendance_router
 from app.creator.build_your_collective import router as build_your_collective_router
@@ -384,6 +385,7 @@ app.include_router(creator_offerings_router)
 app.include_router(creator_offering_files_router)
 app.include_router(creator_offering_about_router)
 app.include_router(member_offerings_router)
+app.include_router(member_collection_router)
 app.include_router(creator_attendance_router)
 app.include_router(build_your_collective_router)
 app.include_router(creator_community_start_router)
