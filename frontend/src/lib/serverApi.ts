@@ -1343,3 +1343,27 @@ export const getMemberOffering = cache(async (
   if (!res.ok) return null
   return res.json()
 })
+
+/**
+ * A Collective's published Offerings catalogue.
+ *
+ * Answers for anonymous visitors, so there is no session to require —
+ * ``fetchWithSession`` forwards the cookie when there is one and the
+ * backend decides what each caller sees.
+ *
+ * Returns ``null`` rather than an empty list when the request fails, so
+ * the page can tell "no Offerings yet" apart from "this area is closed"
+ * (feature off, or a Collective the viewer cannot see → 404).
+ */
+export const getMemberOfferings = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/offerings`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+/** Your Collection — everything this member has acquired, anywhere. */
+export const getYourCollection = cache(async () => {
+  const res = await fetchWithSession('/api/me/collection')
+  if (!res.ok) return null
+  return res.json()
+})

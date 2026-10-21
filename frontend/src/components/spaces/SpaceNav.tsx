@@ -49,6 +49,7 @@ const AREA_FOR_TAB: Record<string, string> = {
   Gatherings: 'gatherings',
   Members: 'members',
   About: 'about',
+  Offerings: 'offerings',
 }
 
 export default function SpaceNav({
@@ -87,6 +88,17 @@ export default function SpaceNav({
     { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
     { label: 'Members',    href: `${base}/members`,   icon: '◉' },
+    // Last, after the member destinations. An Offering is something you
+    // take away rather than somewhere you go, and putting the shopfront
+    // ahead of the Collective's own life would say the wrong thing
+    // about what this platform is for.
+    //
+    // No flag check here. ``offerings`` is absent from
+    // ``reachableAreas`` while the feature is off — the backend drops it
+    // in ``area_access.resolve_area_access`` — so the filter below hides
+    // the tab for the same reason it hides any area this viewer cannot
+    // reach, and the tab bar does not need to know a flag exists.
+    { label: 'Offerings',  href: `${base}/offerings`, icon: '◆' },
   ]
     .filter((tab) => tab.label !== 'Members' || showMemberDirectory)
     // Area policy decides which doorways exist for this viewer. The

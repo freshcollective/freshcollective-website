@@ -1053,6 +1053,11 @@ export type JoinPolicy = 'open' | 'purchase_required'
 export type CollectiveArea =
   | 'about' | 'home' | 'gatherings' | 'pathways'
   | 'conversations' | 'members' | 'messages'
+  // Fixed public like 'about' — it is a purchasing surface. Also gated
+  // by the Offerings feature flag, which the backend applies when it
+  // builds ``area_access``, so while the feature is off this value
+  // simply never appears and every surface hides together.
+  | 'offerings'
 
 export type AreaPolicy = 'public' | 'members' | 'active_access'
 
@@ -2089,4 +2094,77 @@ export interface MemberOffering {
   total_resources: number
   viewer_owns: boolean
   viewer_manages: boolean
+  /** A word for what this is, derived from the files — never from the
+   *  cover image, which is an illustration. */
+  category_label: string
+  /** "$24", "Free", or "" when pricing has not been chosen. */
+  price_label: string
+  // ── Acquisition (Phase C/D) ────────────────────────────────────────
+  /** Resolved server-side by the same function the write paths guard
+   *  with, so the page cannot offer a button the endpoint refuses. */
+  can_acquire: boolean
+  /** A stable reason code when ``can_acquire`` is false and the viewer
+   *  does not already own it. Null otherwise — owning is not a
+   *  refusal. */
+  acquire_blocked: string | null
+  acquire_message: string | null
+  /** The viewer has no session. They are shown the real action with an
+   *  account step in front of it, never a disabled button. */
+  requires_account: boolean
+  /** Whether acquiring would change this person's membership. Drives
+   *  the transparency notice, and is false for somebody who already
+   *  belongs — no unnecessary messaging. */
+  will_join_collective: boolean
+}
+
+/** One card in a Collective's Offerings catalogue. */
+export interface OfferingCard {
+  id: string
+  slug: string
+  title: string
+  summary: string | null
+  cover_image_url: string | null
+  category_label: string
+  pricing_kind: OfferingPricingKind | null
+  price_cents: number | null
+  price_label: string
+  file_count: number
+  total_resources: number
+  fulfilment_kind: string | null
+  viewer_owns: boolean
+  has_downloadable_files: boolean
+}
+
+/** One Offering in Your Collection. */
+export interface CollectionItem {
+  entitlement_id: string
+  offering_id: string
+  slug: string
+  title: string
+  summary: string | null
+  cover_image_url: string | null
+  category_label: string
+  acquired_at: string
+  offering_status: OfferingStatus
+  collective: { slug: string; name: string } | null
+  creator_name: string | null
+  file_count: number
+  total_resources: number
+  files_available: boolean
+  href: string | null
+}
+
+export interface YourCollection {
+  items: CollectionItem[]
+  count: number
+}
+
+/** What ``POST .../acquire`` returns on success. */
+export interface AcquireResult {
+  acquired: boolean
+  already_owned: boolean
+  joined_collective: boolean
+  collective_name: string
+  offering_slug: string
+  collective_slug: string
 }

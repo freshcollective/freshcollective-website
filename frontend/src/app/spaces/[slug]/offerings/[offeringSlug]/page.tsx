@@ -4,19 +4,15 @@ import { getMemberOffering } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import type { MemberOffering } from '@/types/platform'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
+import AcquireOffering from '@/components/offerings/AcquireOffering'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 
 interface Props {
   params: Promise<{ slug: string; offeringSlug: string }>
-}
-
-function priceLabel(o: MemberOffering): string {
-  if (o.pricing_kind === 'free') return 'Free'
-  if (o.pricing_kind === 'one_time' && o.price_cents) {
-    const d = o.price_cents / 100
-    return `$${d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)}`
-  }
-  return ''
+  /** Stripe sends the browser back here with ``?purchased=true`` (or
+   *  ``?cancelled=true``). Neither is evidence of anything — see the
+   *  return banner below. */
+  searchParams: Promise<{ purchased?: string; cancelled?: string }>
 }
 
 /**
@@ -38,15 +34,22 @@ function priceLabel(o: MemberOffering): string {
  *   * an explicit line stating that nothing is posted;
  *   * a caption under the cover naming it as an illustration.
  *
- * No purchase controls
- * --------------------
- * Acquisition does not exist yet (Phase D), so this page shows the
- * price and no way to pay it. A disabled "Buy" button would still be a
- * promise; the honest answer is a sentence saying buying is not open.
- * A member who already owns the Offering sees their downloads instead.
+ * Acquisition
+ * -----------
+ * ``AcquireOffering`` is the single control, for free and paid alike.
+ * Whether it offers anything is the server's decision, carried on
+ * ``can_acquire`` — this page renders the answer and computes nothing.
+ * A member who already owns the Offering sees their downloads and a way
+ * into Your Collection instead of a price.
+ *
+ * The membership notice sits above the button rather than below it: the
+ * person is agreeing to join the Collective as well as to acquire the
+ * resource, and for a paid Offering that has to be visible before the
+ * payment, not after it.
  */
-export default async function MemberOfferingPage({ params }: Props) {
+export default async function MemberOfferingPage({ params, searchParams }: Props) {
   const { slug, offeringSlug } = await params
+  const { purchased, cancelled } = await searchParams
   const offering: MemberOffering | null = await getMemberOffering(slug, offeringSlug)
 
   // Covers both "no such Offering" and "a draft somebody else owns" —
@@ -55,14 +58,63 @@ export default async function MemberOfferingPage({ params }: Props) {
   if (!offering) notFound()
 
   const cover = resolveMediaUrl(offering.cover_image_url ?? undefined)
-  const price = priceLabel(offering)
+  // Formatted server-side, so the catalogue card and this page
+  // cannot disagree about how a price reads.
+  const price = offering.price_label
   const isDraft = offering.status === 'draft'
   const isRetired = offering.status === 'retired'
   const palette: CollectivePaletteMeta | null =
     offering.collective.colour_palette ?? null
 
+  // Back from Stripe. The redirect is **not** evidence of payment — the
+  // webhook is — so the two states are reported separately and
+  // truthfully. ``viewer_owns`` already answers "did it land?", because
+  // it is read from the entitlement the webhook writes.
+  const justPaidAndConfirmed = purchased === 'true' && offering.viewer_owns
+  const justPaidAwaitingWebhook = purchased === 'true' && !offering.viewer_owns
+
   return (
     <div className="mx-auto w-full max-w-[1100px] px-5 py-8 md:px-8 md:py-12">
+
+      {justPaidAndConfirmed && (
+        <div className="mb-6 rounded-xl border border-teal-200 bg-teal-50/70 px-4 py-3">
+          <p className="text-[14px] font-semibold text-teal-800">
+            ✨ It&rsquo;s yours!
+          </p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-teal-900/80">
+            Your Offering has been added to Your Collection. Your
+            downloads are below.
+          </p>
+        </div>
+      )}
+
+      {justPaidAwaitingWebhook && (
+        /* Payment confirmed by Stripe to the browser, not yet to us.
+           This window is normally under a second and occasionally
+           longer. Claiming access here would be a lie we would then
+           have to take back, so the copy says exactly where things
+           stand and reloading is the whole remedy. */
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <p className="text-[14px] font-semibold text-[#7A5A00]">
+            Payment received — just confirming it
+          </p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-[#6B4F00]">
+            This usually takes a moment. Refresh the page and your
+            downloads will appear, and it will be waiting in Your
+            Collection.
+          </p>
+        </div>
+      )}
+
+      {cancelled === 'true' && !offering.viewer_owns && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-[13.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.72)' }}>
+            Checkout was cancelled — nothing has been charged. You can
+            pick it up again whenever you like.
+          </p>
+        </div>
+      )}
+
       {/* Manager-only banner. A member never sees this. */}
       {offering.viewer_manages && (isDraft || isRetired) && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
@@ -250,33 +302,25 @@ export default async function MemberOfferingPage({ params }: Props) {
               )}
             </p>
 
-            {offering.viewer_owns ? (
-              <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2.5">
-                <p className="text-[13.5px] font-semibold text-teal-800">
-                  You have this
-                </p>
-                <p className="mt-0.5 text-[12.5px] leading-relaxed text-teal-900/80">
-                  Your downloads are listed on this page. If the creator
-                  updates a file, you get the new version at no extra cost.
-                </p>
-              </div>
-            ) : (
-              /* No purchase control. Acquisition is not built, and a
-                 disabled button would still read as a promise. */
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="text-[13px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.7)' }}>
-                  {isRetired
-                    ? 'This Offering is no longer available.'
-                    : 'Buying isn’t open yet. Check back soon.'}
-                </p>
-              </div>
-            )}
+            {/* Acquisition. One control for free and paid, and the
+                server decided which states it may show — see
+                ``AcquireOffering``. A manager previewing a draft gets
+                it too, and the endpoint refuses them, which is the
+                point of a preview being the real page. */}
+            <AcquireOffering offering={offering} spaceSlug={slug} />
 
             <dl className="mt-4 space-y-2 border-t border-slate-100 pt-4">
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-[12.5px]" style={{ color: 'rgba(12,24,38,0.55)' }}>Format</dt>
                 <dd className="text-[12.5px] font-medium text-navy-900">
                   Digital download
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-[12.5px]" style={{ color: 'rgba(12,24,38,0.55)' }}>Type</dt>
+                <dd className="text-[12.5px] font-medium text-navy-900">
+                  {/* From the files, not the cover image. */}
+                  {offering.category_label}
                 </dd>
               </div>
               <div className="flex items-baseline justify-between gap-3">
