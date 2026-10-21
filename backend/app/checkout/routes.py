@@ -1,11 +1,17 @@
 """Checkout endpoints.
 
-Three routes today, all built on top of the shared checkout
+Four routes today, all built on top of the shared checkout
 orchestration in ``app/services/checkout_orchestration.py``:
 
   * ``POST /api/checkout``               — unified, kind-agnostic (B4B).
   * ``POST /api/checkout/pathway``        — legacy compat wrapper.
   * ``POST /api/checkout/gathering-series`` — legacy compat wrapper.
+  * ``POST /api/checkout/offering``       — one paid Offering (C/D).
+
+The Offering route is a wrapper over the unified endpoint rather than
+a parallel implementation: it resolves the Offering's Payment Option
+from slugs, applies the Offering-specific acquisition rules, and then
+delegates. Nothing about charging a card is reimplemented there.
 
 Everything that was inline in the pre-B4B endpoints — fee
 resolution, Stripe Checkout Session creation, PaymentTransaction
@@ -37,6 +43,8 @@ from app.checkout.schemas import (
     DiscountPreviewResponse,
     GatheringSeriesCheckoutRequest,
     GatheringSeriesCheckoutResponse,
+    OfferingCheckoutRequest,
+    OfferingCheckoutResponse,
     PathwayCheckoutRequest,
     PathwayCheckoutResponse,
     UnifiedCheckoutRequest,
@@ -81,6 +89,13 @@ from app.services.finite_plan_orchestration import (
     resolve_option_and_schedule_for_plan,
     start_finite_plan_setup,
 )
+#: The one Offerings feature gate, imported rather than re-implemented
+#: so the structural "every Offering route is gated" test keeps matching
+#: on a single name.
+from app.creator._offering_routes import (
+    require_offerings_enabled as _require_offerings_enabled,
+)
+from app.services import offering_acquisition as _offering_acq
 
 
 logger = logging.getLogger(__name__)
@@ -449,6 +464,24 @@ def create_unified_checkout_session(
         db, user=current_user,
         payment_option=resolved.payment_option, now=now,
     )
+    # Offerings carry rules the two guards above do not know about —
+    # retired, nothing downloadable, already owned, the creator's plan
+    # no longer permits paid selling. ``POST /api/checkout/offering``
+    # checks all of them before delegating here; this is the same check
+    # at this entrance, so the rules belong to the purchase rather than
+    # to whichever door was used.
+    #
+    # A no-op for every Pathway and Gathering option — it returns
+    # immediately unless ``attaches_to_kind == 'offering'``.
+    try:
+        _offering_acq.guard_option_purchase(
+            db, payment_option=resolved.payment_option, user=current_user,
+        )
+    except _offering_acq.AcquisitionRefused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": exc.message},
+        ) from exc
 
     # ── Free path: skip Stripe, apply grants directly ─────────────
     if resolved.price_cents == 0:
@@ -1099,3 +1132,140 @@ def create_gathering_series_checkout_session(
         product_name=f"{series.title} — {resolved.payment_option.name}",
     )
     return GatheringSeriesCheckoutResponse(checkout_url=session.url)
+
+
+# ---------------------------------------------------------------------------
+# Offerings: POST /api/checkout/offering
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/offering",
+    response_model=OfferingCheckoutResponse,
+    # Declared as a route dependency, not called in the body. The
+    # structural guard in ``test_offering_creator_api`` requires every
+    # Offering route to carry the gate where the router can see it, and
+    # it is right to: a dependency cannot be skipped by an early return
+    # and shows up in the route table, where an in-body call is
+    # invisible to anything auditing which routes are flagged.
+    #
+    # Per-route rather than router-level, because this router also
+    # serves Pathway and Gathering checkout, which must keep working
+    # while Offerings is off.
+    dependencies=[Depends(_require_offerings_enabled)],
+)
+def create_offering_checkout_session(
+    body: OfferingCheckoutRequest,
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
+    db: Session = Depends(get_db),
+) -> OfferingCheckoutResponse:
+    """Buy one paid Offering.
+
+    A thin wrapper, and thin on purpose. Everything that charges money
+    — the discount revalidation and slot reservation, the fee basis
+    points, the Connect payout model, the mandatory fulfilment
+    snapshot, the Stripe Session, the ledger row, the idempotency keys
+    — is the unified endpoint's, unchanged. This function does three
+    things the unified endpoint cannot do for itself and then hands
+    over:
+
+      1. **Resolves the Offering from its slugs.** The member knows
+         which resource they want; they have never heard of a Payment
+         Option. Resolving server-side also means a client cannot name
+         an option that sells something else.
+
+      2. **Applies the Offering's own acquisition rules**, through the
+         same ``check_acquirable`` the free path and the detail page
+         use: published, not retired, has files a buyer could actually
+         download, the creator's plan permits paid selling, and the
+         commerce rows can take a payment at the price the page
+         stated.
+
+      3. **Refuses a repurchase of something already owned.**
+         ``check_same_option_not_active`` cannot see this: it looks for
+         an active AccessPass or PathwayEntitlement, and an Offering
+         purchase produces neither. Without this guard a member could
+         be charged twice for the same file.
+
+    Access is not granted here. It is granted when Stripe confirms the
+    payment, by ``checkout.session.completed`` → the shared fulfilment
+    service → the option's ``grant_kind='offering'`` grant. Starting
+    checkout grants nothing: no entitlement, no Collective membership.
+    An abandoned or failed payment therefore leaves no trace beyond a
+    ``pending`` ledger row, which is what Stripe's own expiry and the
+    existing reconciliation sweeps already handle.
+    """
+    from app.services import offering_acquisition as acq
+    from app.services import offering_commerce
+    from app.models.offering import Offering, OfferingPricingKind, OfferingStatus
+    from app.spaces import area_access, area_policies
+    from app.spaces.routes import _get_space_visible_to
+
+    space = _get_space_visible_to(body.space_slug, db, current_user)
+    area_access.require_area(
+        db, space, current_user, area_policies.AREA_OFFERINGS,
+    )
+    offering = (
+        db.query(Offering)
+        .filter(
+            Offering.space_id == space.id,
+            Offering.slug == body.offering_slug,
+        )
+        .first()
+    )
+    # A draft is a 404 here as everywhere else, managers included:
+    # previewing an unreleased Offering must not be able to produce a
+    # real charge in real purchase history.
+    if offering is None or offering.status == OfferingStatus.draft.value:
+        raise HTTPException(status_code=404, detail="Offering not found.")
+
+    # Already theirs. 409 with the reason, so the client can switch the
+    # button to "Open in Your Collection" rather than showing an error.
+    if acq.already_owns(
+        db, user_id=current_user.id, offering_id=offering.id,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "already_owned",
+                "message": "This Offering is already in Your Collection.",
+            },
+        )
+
+    try:
+        acq.guard_acquirable(
+            db, offering=offering, space=space, user=current_user,
+            for_pricing=OfferingPricingKind.one_time.value,
+        )
+    except acq.AcquisitionRefused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": exc.message},
+        ) from exc
+
+    # ``guard_acquirable`` has already established that these resolve
+    # and are sellable at the Offering's stated price — it refuses with
+    # ``not_sellable`` otherwise — so neither can be None here.
+    option = offering_commerce.find_option(db, offering)
+    schedule = offering_commerce.pay_in_full_schedule(db, option)
+
+    logger.info(
+        "Offering checkout: offering=%s option=%s user=%s price=%s",
+        offering.id, option.id, current_user.id, offering.price_cents,
+    )
+    unified = create_unified_checkout_session(
+        UnifiedCheckoutRequest(
+            payment_option_id=option.id,
+            payment_option_schedule_id=schedule.id,
+            discount_code=body.discount_code,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+        ),
+        current_user=current_user,
+        db=db,
+    )
+    return OfferingCheckoutResponse(
+        checkout_url=unified.checkout_url,
+        transaction_id=unified.transaction_id,
+        free=unified.free,
+    )

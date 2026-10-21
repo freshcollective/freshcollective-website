@@ -44,17 +44,38 @@ describe('the Collective tab bar', () => {
     // Guards against a reorder that quietly drops one.
     assert.deepEqual(
       [...tabOrder()].sort(),
-      ['About', 'Conversations', 'Gatherings', 'Members', 'Pathways'],
+      [
+        'About', 'Conversations', 'Gatherings', 'Members', 'Offerings',
+        'Pathways',
+      ],
     )
   })
 
   test('the remaining order is unchanged behind About', () => {
-    // Only About moved. Asserting the rest pins that this was a
-    // reorder of one tab and not a reshuffle of the whole bar.
+    // About leads; Offerings was appended at the end by Offerings
+    // Phase C/D. Asserting the whole tail pins that adding a tab did
+    // not become an excuse to reshuffle the bar.
     assert.deepEqual(
       tabOrder().slice(1),
-      ['Conversations', 'Pathways', 'Gatherings', 'Members'],
+      ['Conversations', 'Pathways', 'Gatherings', 'Members', 'Offerings'],
     )
+  })
+
+  test('Offerings is last', () => {
+    // An Offering is something you take away rather than somewhere you
+    // go. Putting the shopfront ahead of the Collective's own life
+    // would say the wrong thing about what this platform is for.
+    const order = tabOrder()
+    assert.equal(order[order.length - 1], 'Offerings')
+  })
+
+  test('Offerings keeps its area-policy mapping', () => {
+    // Without this the tab renders for every viewer, including while
+    // the Offerings feature is switched off — the backend expresses
+    // that by omitting ``offerings`` from ``area_access``, and the
+    // mapping is what makes the tab bar honour it.
+    const source = read('components/spaces/SpaceNav.tsx')
+    assert.match(source, /Offerings:\s*'offerings'/)
   })
 
   test('there is still exactly one array feeding both navs', () => {

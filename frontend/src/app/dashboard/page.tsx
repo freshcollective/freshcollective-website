@@ -12,18 +12,20 @@ import {
   getSpace,
   getSpaceEvents,
   getUnseenCounts,
+  getYourCollection,
 } from '@/lib/serverApi'
 import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
 import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
-import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
+import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile, YourCollection } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
 import CountBadge from '@/components/platform/CountBadge'
 import FirstCollectiveOrientation from './FirstCollectiveOrientation'
 import RecentMomentsSection from './RecentMomentsSection'
+import CollectionCard from '@/components/offerings/CollectionCard'
 import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
 
 import { captureDegradedSurface } from '@/lib/sentryHandled'
@@ -199,18 +201,27 @@ export default async function DashboardPage({
   const { creator_onboarding: onboardingFlag } = await searchParams
   const justFinishedFirstCollective = onboardingFlag === 'complete'
 
-  const [user, memberships, publicSpaces, platformArtwork, creatorSpaces]: [
+  const [
+    user, memberships, publicSpaces, platformArtwork, creatorSpaces,
+    collection,
+  ]: [
     UserProfile | null,
     SpaceMembership[],
     PublicSpaceCard[],
     Awaited<ReturnType<typeof getPublicPlatformArtwork>>,
     SpaceSummary[],
+    YourCollection | null,
   ] = await Promise.all([
     _safe(getUser(), 'getUser', null),
     _safe(getMyMemberships(), 'getMyMemberships', []),
     _safe(getPublicSpaces(), 'getPublicSpaces', []),
     _safe(getPublicPlatformArtwork(), 'getPublicPlatformArtwork', []),
     _safe(getCreatorSpaces() as Promise<SpaceSummary[]>, 'getCreatorSpaces', []),
+    // ``null`` means the Offerings area is closed — the feature is off
+    // — and the whole band below is then absent. An empty ``items``
+    // means a member who has not acquired anything yet, which still
+    // gets the doorway. The two are deliberately different answers.
+    _safe(getYourCollection(), 'getYourCollection', null),
   ])
   const artworkByKey = new Map(platformArtwork.map((a) => [a.key, a]))
   const exploreArt = artworkByKey.get('explore_collectives') ?? null
@@ -422,6 +433,66 @@ export default async function DashboardPage({
               )}
             </Section>
           </div>
+        )}
+
+        {/* ─────── Your Collection — full-width band ───────
+            Placed after the member region and before "Elsewhere",
+            because this is *theirs* rather than a doorway to be
+            curious about.
+
+            Rendered whenever the Offerings area is open, empty or not.
+            An empty band would be clutter on most people's Your World,
+            so the empty case is one quiet line rather than the full
+            invitation — that lives on the Collection page itself,
+            which is where somebody arrives wanting it.
+
+            ``collection === null`` means the feature is off, and the
+            whole band is absent. */}
+        {collection !== null && (
+          <Section
+            title="Your Collection"
+            subtitle="Resources you&rsquo;ve gathered, yours to keep."
+            className="mt-14"
+            noSpacing
+            action={
+              collection.count > 0 ? (
+                <Link
+                  href="/dashboard/collection"
+                  className="text-[13px] font-medium text-teal-700 underline-offset-2 hover:underline"
+                >
+                  View all ({collection.count})
+                </Link>
+              ) : null
+            }
+          >
+            {collection.count > 0 ? (
+              <div className={FULL_WIDTH_CARD_GRID}>
+                {/* The newest few. The full list is one click away, and
+                    a member with forty Offerings should not meet all of
+                    them on their home page. */}
+                {collection.items.slice(0, 3).map((item) => (
+                  <CollectionCard key={item.entitlement_id} item={item} />
+                ))}
+              </div>
+            ) : (
+              <div
+                className="rounded-2xl border bg-white px-6 py-7"
+                style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+              >
+                <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.70)' }}>
+                  Nothing here yet. The workbooks, guides and audio
+                  experiences you choose from Collectives will collect
+                  here.{' '}
+                  <Link
+                    href="/dashboard/collection"
+                    className="font-medium text-teal-700 underline-offset-2 hover:underline"
+                  >
+                    Open Your Collection
+                  </Link>
+                </p>
+              </div>
+            )}
+          </Section>
         )}
 
         {/* ─────── Elsewhere in the world — full-width band ───────

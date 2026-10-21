@@ -552,21 +552,104 @@ class TestPricing:
             db.flush()
         db.rollback()
 
-    def test_setting_pricing_creates_no_payment_option(self, db, owner_space):
-        """Phase D's job. A Payment Option now would be a commerce row
-        nothing can fulfil."""
+    def test_setting_a_price_provisions_a_draft_payment_option(
+        self, db, owner_space,
+    ):
+        """Phase D's job, now done — and the status is the point.
+
+        B4 asserted that no Payment Option was created, because one
+        would have been a commerce row nothing could fulfil. Phase C/D
+        can fulfil it, so the row is created. It is created **draft**,
+        though: a draft Offering must not be purchasable, and
+        ``resolve_option_and_schedule`` refuses a non-published option.
+
+        Provisioning at pricing time rather than at publish means
+        publishing is a status flip instead of a multi-row insert —
+        one less thing to half-succeed at the moment a creator is
+        watching."""
         from app.creator.schemas_offerings import OfferingUpdateRequest
         from app.models.payment_option import PaymentOption
+        from app.models.payment_option_grant import (
+            GRANT_KIND_OFFERING, PaymentOptionGrant,
+        )
+        from app.services import offering_commerce
         space, owner = owner_space("creator")
         off = _offering(db, space)
         db.flush()
-        before = db.query(PaymentOption).count()
         api.update_offering(
             space.slug, off.slug,
             OfferingUpdateRequest(pricing_kind="one_time", price_cents=3000),
             db=db, current_user=owner,
         )
-        assert db.query(PaymentOption).count() == before
+        option = offering_commerce.find_option(db, off)
+        assert option is not None, "a paid Offering needs a Payment Option"
+        assert option.status.value == "draft", (
+            "a draft Offering must not be purchasable"
+        )
+        assert option.attaches_to_kind == "offering"
+        assert option.attaches_to_id == off.id
+        assert option.is_joining_option is False, (
+            "an Offering is not a way into the Collective"
+        )
+        schedule = offering_commerce.pay_in_full_schedule(db, option)
+        assert schedule is not None
+        assert schedule.total_amount_cents == 3000
+        assert schedule.status == "draft"
+        grants = (
+            db.query(PaymentOptionGrant)
+            .filter(PaymentOptionGrant.payment_option_id == option.id)
+            .all()
+        )
+        assert [g.grant_kind for g in grants] == [GRANT_KIND_OFFERING]
+        assert grants[0].offering_id == off.id
+        # Ownership is perpetual, and the grant has nowhere to say
+        # otherwise — the CHECK constraints forbid both.
+        assert grants[0].valid_from_override is None
+        assert grants[0].valid_until_override is None
+        assert grants[0].total_sessions is None
+
+    def test_a_free_offering_provisions_nothing(self, db, owner_space):
+        """A price tag on a free thing is the kind of contradiction
+        that eventually charges somebody."""
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        from app.services import offering_commerce
+        space, owner = owner_space("creator")
+        off = _offering(db, space)
+        db.flush()
+        api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(pricing_kind="free"),
+            db=db, current_user=owner,
+        )
+        assert offering_commerce.find_option(db, off) is None
+
+    def test_switching_from_paid_to_free_archives_the_option(
+        self, db, owner_space,
+    ):
+        from app.creator.schemas_offerings import OfferingUpdateRequest
+        from app.services import offering_commerce
+        space, owner = owner_space("creator")
+        off = _offering(db, space)
+        db.flush()
+        api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(pricing_kind="one_time", price_cents=3000),
+            db=db, current_user=owner,
+        )
+        option = offering_commerce.find_option(db, off)
+        assert option is not None
+        api.update_offering(
+            space.slug, off.slug,
+            OfferingUpdateRequest(pricing_kind="free"),
+            db=db, current_user=owner,
+        )
+        db.refresh(option)
+        # Archived, never deleted: a row that has taken a payment is
+        # referenced by that payment, and deleting it would detach a
+        # member's receipt from what they bought.
+        assert option.status.value == "archived"
+        schedule = offering_commerce.pay_in_full_schedule(db, option)
+        assert schedule.status == "archived"
 
 
 # ---------------------------------------------------------------------------
@@ -1160,9 +1243,40 @@ class TestFeatureFlag:
         from app.main import app
         from fastapi.routing import APIRoute
 
+        # Every router that declares an Offerings endpoint. Named
+        # explicitly because two Phase C/D routes cannot be found by
+        # matching the path: ``/api/me/collection`` does not contain the
+        # word, and ``/api/checkout/offering`` lives on a router that
+        # also serves Pathway and Gathering checkout and must keep
+        # working while Offerings is off.
+        from app.creator import (
+            _offering_about_routes, _offering_file_routes, _offering_routes,
+        )
+        from app.spaces import _offering_member_routes
+        from app.checkout import routes as checkout_routes
+
+        declared_paths: set[tuple[str, str]] = set()
+        for router in (
+            _offering_routes.router,
+            _offering_file_routes.router,
+            _offering_about_routes.router,
+            _offering_member_routes.router,
+            _offering_member_routes.me_router,
+        ):
+            for route in router.routes:
+                if isinstance(route, APIRoute):
+                    for method in route.methods:
+                        declared_paths.add((method, route.path))
+        # The one Offerings route on a shared router.
+        for route in checkout_routes.router.routes:
+            if isinstance(route, APIRoute) and route.path.endswith("/offering"):
+                for method in route.methods:
+                    declared_paths.add((method, route.path))
+
         mounted = [
             r for r in app.routes
-            if isinstance(r, APIRoute) and "offering" in r.path.lower()
+            if isinstance(r, APIRoute)
+            and any((m, r.path) in declared_paths for m in r.methods)
         ]
         for r in mounted:
             names = [
@@ -1171,28 +1285,30 @@ class TestFeatureFlag:
             ]
             assert "require_offerings_enabled" in names, r.path
 
-        # The loop above is the assertion; these two stop it passing
-        # vacuously. Counting against the routers themselves means
-        # adding an endpoint cannot make this test stale — it either
-        # inherits the gate and is counted, or the loop fails on it.
-        from app.creator import (
-            _offering_about_routes, _offering_file_routes, _offering_routes,
-        )
-        from app.spaces import _offering_member_routes
-        declared = sum(
-            1
-            for mod in (
-                _offering_routes, _offering_file_routes,
-                _offering_about_routes, _offering_member_routes,
-            )
-            for route in mod.router.routes
-            if isinstance(route, APIRoute)
-        )
-        assert len(mounted) == declared, (len(mounted), declared)
+        # The loop above is the assertion; what follows stops it passing
+        # vacuously. Checking against the routers themselves means
+        # adding an endpoint cannot make this test stale — a new route
+        # is declared, therefore collected, therefore either gated or a
+        # failure.
+        mounted_keys = {(m, r.path) for r in mounted for m in r.methods}
+        assert declared_paths <= mounted_keys, declared_paths - mounted_keys
         # A floor, so deleting every route does not make this pass.
-        # B4 shipped 7; B5 added 6 file endpoints; B6/B7 add the cover
-        # manifest, 5 About-block endpoints and the member detail page.
-        assert len(mounted) >= 20, len(mounted)
+        # B4 shipped 7; B5 added 6 file endpoints; B6/B7 added the cover
+        # manifest, 5 About-block endpoints and the member detail page;
+        # C/D adds the catalogue, free acquisition, Your Collection and
+        # paid checkout.
+        assert len(mounted) >= 24, len(mounted)
+
+        # And the four Phase C/D routes by name, so a refactor that
+        # dropped one would fail here rather than quietly lowering a
+        # count.
+        for method, path in (
+            ("GET",  "/api/spaces/{slug}/offerings"),
+            ("POST", "/api/spaces/{slug}/offerings/{offering_slug}/acquire"),
+            ("GET",  "/api/me/collection"),
+            ("POST", "/api/checkout/offering"),
+        ):
+            assert (method, path) in mounted_keys, (method, path)
 
     def test_the_member_detail_route_uses_the_same_gate_function(self):
         """Not a second function with the same behaviour.
@@ -1303,9 +1419,14 @@ class TestExistingBehaviourUnchanged:
         sql = str(CAPACITY_USED_SQL)
         assert "pending_payment" in sql and "hold_expires_at" not in sql
 
-    def test_payment_option_grant_kinds_are_still_unchanged(self):
+    def test_the_original_grant_kinds_keep_their_values(self):
+        """Migration 162 widened the kinds with ``offering``; the three
+        that carry live production rows must keep their values."""
         from app.models import payment_option_grant as pog
-        assert not hasattr(pog, "GRANT_KIND_OFFERING")
+        assert pog.GRANT_KIND_PATHWAY == "pathway"
+        assert pog.GRANT_KIND_EVENT_SERIES == "event_series"
+        assert pog.GRANT_KIND_GATHERING == "gathering"
+        assert pog.GRANT_KIND_OFFERING == "offering"
 
     def test_the_offer_pages_schema_is_untouched(self):
         from app.db.base import Base
@@ -1314,11 +1435,20 @@ class TestExistingBehaviourUnchanged:
         versions = pathlib.Path(__file__).parent.parent / "alembic" / "versions"
         assert (versions / "104_offer_pages.py").exists()
 
-    def test_only_the_three_offering_tables_carry_offering_columns(self):
+    def test_offering_columns_stay_where_they_belong(self):
+        """Phase C/D adds exactly one Offering column to an existing
+        table — ``payment_option_grants.offering_id``, migration 162 —
+        and it is named here rather than the rule being relaxed. See
+        the sibling test in ``test_offerings_foundation``."""
         from app.db.base import Base
         allowed = {"offerings", "offering_files", "offering_entitlements"}
+        permitted = {"payment_option_grants": {"offering_id"}}
         for name, table in Base.metadata.tables.items():
             if name in allowed:
                 continue
-            bad = [c.name for c in table.columns if "offering" in c.name]
+            bad = [
+                c.name for c in table.columns
+                if "offering" in c.name
+                and c.name not in permitted.get(name, set())
+            ]
             assert bad == [], f"{name}: {bad}"

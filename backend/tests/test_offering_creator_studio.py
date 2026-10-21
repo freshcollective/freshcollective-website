@@ -516,6 +516,13 @@ class TestOfferingAboutBlocks:
 
 class TestMemberOfferingPage:
 
+    @pytest.fixture(autouse=True)
+    def _flag_on(self, offerings_enabled):
+        """These call the member handler directly, bypassing the route
+        dependency — but Phase C/D added an in-request flag check (the
+        ``offerings`` area is dropped from ``area_access`` while the
+        feature is off), so the flag has to be genuinely on."""
+
     def _published(self, db, space, **kw) -> Offering:
         off = Offering(
             id=_uid("off"), space_id=space.id,
@@ -675,11 +682,22 @@ class TestMemberOfferingPage:
         )
         assert out["fulfilment_kind"] == "digital_download"
 
-    def test_there_is_no_purchase_affordance_in_the_payload(
+    def test_the_payload_never_names_the_commerce_rows(
         self, db, owner_space, make_user,
     ):
-        """Acquisition does not exist. A field like ``can_acquire`` would
-        invite a button; its absence is deliberate."""
+        """``can_acquire`` arrived in Phase C/D — acquisition exists now,
+        and a field saying whether this viewer may use it is the point.
+
+        What has *not* changed, and is the half of the original B7 test
+        worth keeping, is that the payload still names no commerce row.
+        That is a real boundary, not tidiness: ``POST /api/checkout``
+        takes a Payment Option id and applies the generic option guards,
+        while the Offering-specific ones — already owned, retired, no
+        downloadable files, the creator's plan no longer permits paid
+        selling, the price has moved — live in
+        ``POST /api/checkout/offering``. Handing a client the option id
+        would hand it a documented way round all five.
+        """
         space, _owner = owner_space()
         off = self._published(db, space)
         out = member_api.get_member_offering(
@@ -687,10 +705,24 @@ class TestMemberOfferingPage:
             db=db, current_user=make_user(),
         )
         for forbidden in (
-            "can_acquire", "checkout_url", "purchase_url", "stripe",
-            "payment_option_id",
+            "checkout_url", "purchase_url", "stripe",
+            "payment_option_id", "payment_option_schedule_id",
         ):
             assert forbidden not in out, forbidden
+        # Nor nested anywhere inside it.
+        import json
+        blob = json.dumps(out, default=str)
+        assert "payment_option" not in blob
+
+        # And the affordance that replaced them is present, and
+        # answering honestly. ``_published`` builds the row directly
+        # with no files, so the right answer here is "no" with a reason
+        # — which is also the useful assertion: a published, priced
+        # Offering with nothing downloadable must not be acquirable.
+        from app.services import offering_acquisition as _acq
+        assert out["can_acquire"] is False
+        assert out["acquire_blocked"] == _acq.REASON_NO_FILES
+        assert out["acquire_message"]
 
     def test_rich_content_travels_with_the_page(
         self, db, owner_space, make_user,

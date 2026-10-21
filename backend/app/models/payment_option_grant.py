@@ -8,6 +8,8 @@ Collective-level Payment Option can grant any combination of:
   * one or more Pathways (``grant_kind='pathway'``)
   * one or more Gathering Series (``grant_kind='event_series'``)
   * one or more standalone Gatherings (``grant_kind='gathering'``)
+  * one Offering — a digital download (``grant_kind='offering'``,
+    added in migration 162)
 
 Backfill from the legacy columns lands in B2; nothing reads from
 this table yet in B1. The legacy columns on ``PaymentOption`` stay
@@ -61,6 +63,12 @@ if TYPE_CHECKING:
 GRANT_KIND_PATHWAY = "pathway"
 GRANT_KIND_EVENT_SERIES = "event_series"
 GRANT_KIND_GATHERING = "gathering"
+#: Added in migration 162 (Offerings Phase C/D). A one-time purchase of
+#: a digital download. Unlike the other three kinds an Offering grant
+#: carries no window and no credits — ownership is perpetual by product
+#: decision, and the two CHECK constraints below enforce that rather
+#: than leaving it to the resolver.
+GRANT_KIND_OFFERING = "offering"
 
 
 class PaymentOptionGrant(Base):
@@ -77,7 +85,7 @@ class PaymentOptionGrant(Base):
     )
     grant_kind: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    # Exactly one of these three is populated per row, matched to
+    # Exactly one of these four is populated per row, matched to
     # ``grant_kind`` by the CHECK constraint below. Application code
     # can rely on the invariant.
     pathway_id: Mapped[str | None] = mapped_column(
@@ -93,6 +101,11 @@ class PaymentOptionGrant(Base):
     event_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("events.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    offering_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("offerings.id", ondelete="RESTRICT"),
         nullable=True,
     )
 
@@ -155,22 +168,31 @@ class PaymentOptionGrant(Base):
         # gets a hard IntegrityError.
         CheckConstraint(
             "(grant_kind = 'pathway'      AND pathway_id IS NOT NULL "
-            "  AND series_id IS NULL AND event_id IS NULL)"
+            "  AND series_id IS NULL AND event_id IS NULL AND offering_id IS NULL)"
             " OR (grant_kind = 'event_series' AND series_id IS NOT NULL "
-            "  AND pathway_id IS NULL AND event_id IS NULL)"
+            "  AND pathway_id IS NULL AND event_id IS NULL AND offering_id IS NULL)"
             " OR (grant_kind = 'gathering'    AND event_id IS NOT NULL "
-            "  AND pathway_id IS NULL AND series_id IS NULL)",
+            "  AND pathway_id IS NULL AND series_id IS NULL AND offering_id IS NULL)"
+            " OR (grant_kind = 'offering'     AND offering_id IS NOT NULL "
+            "  AND pathway_id IS NULL AND series_id IS NULL AND event_id IS NULL)",
             name="payment_option_grants_target_matches_kind",
         ),
-        # Credits are Series-only. Pathway / Gathering grants must
-        # never carry ``sessions_per_week`` or ``total_sessions``.
+        # Credits are Series-only. Pathway / Gathering / Offering
+        # grants must never carry ``sessions_per_week`` or
+        # ``total_sessions``.
         CheckConstraint(
             "(grant_kind = 'event_series')"
             " OR (sessions_per_week IS NULL AND total_sessions IS NULL)",
             name="payment_option_grants_credits_only_for_series",
         ),
-        # Windows are allowed on Series and Pathway grants but not
-        # on Gathering grants (see column-level docstring above).
+        # Windows are allowed on Series and Pathway grants only (see
+        # the column-level docstring above). For an ``offering`` grant
+        # this is the rule that makes ownership permanent: there is no
+        # column in which an expiry could be written, so a purchased
+        # download cannot be given one by accident. Leaving the
+        # Collective, the Offering being retired and the creator
+        # downgrading all leave the entitlement untouched because none
+        # of them has anywhere to record an end.
         CheckConstraint(
             "(grant_kind IN ('event_series', 'pathway'))"
             " OR (valid_from_override IS NULL AND valid_until_override IS NULL)",
@@ -198,6 +220,12 @@ class PaymentOptionGrant(Base):
             unique=True,
             postgresql_where=(event_id.isnot(None)),
         ),
+        Index(
+            "uq_payment_option_grants_option_offering",
+            "payment_option_id", "offering_id",
+            unique=True,
+            postgresql_where=(offering_id.isnot(None)),
+        ),
         # Reverse-lookup indexes: "which Options grant this Pathway /
         # Series / Event?" is a hot query for the Creator UI (Pathway
         # settings "referenced by these Payment Options" panel) and the
@@ -216,5 +244,10 @@ class PaymentOptionGrant(Base):
             "ix_payment_option_grants_event",
             "event_id",
             postgresql_where=(event_id.isnot(None)),
+        ),
+        Index(
+            "ix_payment_option_grants_offering",
+            "offering_id",
+            postgresql_where=(offering_id.isnot(None)),
         ),
     )

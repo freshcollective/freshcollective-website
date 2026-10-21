@@ -944,11 +944,14 @@ class TestExistingBehaviourUnchanged:
         assert "pending_payment" in sql and "confirmed" in sql
         assert "hold_expires_at" not in sql
 
-    def test_payment_option_grant_kinds_are_unchanged(self):
+    def test_the_original_grant_kinds_keep_their_values(self):
+        """Migration 162 widened the kinds with ``offering``. The three
+        that existed before carry live production rows, so their values
+        must not move."""
         from app.models import payment_option_grant as pog
         assert (pog.GRANT_KIND_PATHWAY, pog.GRANT_KIND_EVENT_SERIES,
                 pog.GRANT_KIND_GATHERING) == ("pathway", "event_series", "gathering")
-        assert not hasattr(pog, "GRANT_KIND_OFFERING")
+        assert pog.GRANT_KIND_OFFERING == "offering"
 
     def test_the_offer_pages_table_and_migration_survive(self):
         from app.db.base import Base

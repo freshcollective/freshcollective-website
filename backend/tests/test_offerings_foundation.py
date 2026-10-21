@@ -1057,23 +1057,41 @@ class TestExistingBehaviourUnchanged:
         assert "pending_payment" in sql and "confirmed" in sql
         assert "hold_expires_at" not in sql
 
-    def test_payment_option_grant_kinds_are_unchanged(self):
-        """Phase A deliberately did NOT add an Offering grant kind —
-        that needs the live CHECK constraint altered, and it is raised
-        for approval as Phase D work."""
+    def test_the_three_original_grant_kinds_still_mean_what_they_did(self):
+        """Phase A deliberately did not add an Offering grant kind,
+        because it needed the live CHECK constraint altered — approved
+        and done in migration 162.
+
+        What this guards now is that widening it did not disturb the
+        three that were already there. Their *values* are the part that
+        matters: every ``payment_option_grants`` row in production
+        carries one of these strings, so a rename would orphan live
+        commerce rows from the resolver that reads them."""
         from app.models import payment_option_grant as pog
         assert pog.GRANT_KIND_PATHWAY == "pathway"
         assert pog.GRANT_KIND_EVENT_SERIES == "event_series"
         assert pog.GRANT_KIND_GATHERING == "gathering"
-        assert not hasattr(pog, "GRANT_KIND_OFFERING")
+        assert pog.GRANT_KIND_OFFERING == "offering"
 
-    def test_no_existing_table_gained_an_offering_column(self):
-        """Additive means additive: three new tables, and nothing
-        bolted onto a table that already holds production rows."""
+    def test_only_payment_option_grants_gained_an_offering_column(self):
+        """Phase A was purely additive — three new tables and nothing
+        bolted onto a table holding production rows.
+
+        Phase C/D adds exactly one column to one existing table:
+        ``payment_option_grants.offering_id``, which is how a Payment
+        Option comes to sell an Offering and therefore how Offerings
+        reach the existing checkout at all. Named here rather than the
+        rule being dropped, so the *next* column on a live table still
+        has to be a deliberate decision rather than an accident."""
         from app.db.base import Base
         new = {"offerings", "offering_files", "offering_entitlements"}
+        permitted = {"payment_option_grants": {"offering_id"}}
         for name, table in Base.metadata.tables.items():
             if name in new:
                 continue
-            offenders = [c.name for c in table.columns if "offering" in c.name]
+            offenders = [
+                c.name for c in table.columns
+                if "offering" in c.name
+                and c.name not in permitted.get(name, set())
+            ]
             assert offenders == [], f"{name}: {offenders}"

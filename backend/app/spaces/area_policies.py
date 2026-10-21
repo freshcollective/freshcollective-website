@@ -23,7 +23,7 @@ pass allows — those stay with ``compute_pathway_access``,
 reach the Gatherings list and still be unable to book the Thursday
 session; that is correct and is not this module's business.
 
-Three areas are fixed rather than configurable, each for a reason:
+Four areas are fixed rather than configurable, each for a reason:
 
 * **About** is always public. It is the joining and purchasing
   surface, and gating it would mean needing access in order to reach
@@ -34,6 +34,18 @@ Three areas are fixed rather than configurable, each for a reason:
   most likely reason a lapsed member needs to write to the people
   running the Collective is the very access problem that would lock
   them out.
+* **Offerings** is always public, for the same reason as About: it is
+  a purchasing surface, and gating it would mean needing membership in
+  order to reach the page where you buy your way in. Acquiring still
+  requires an account — that is the acquisition endpoint's rule, not
+  this one — and a draft Offering is still invisible to everyone but
+  the people running the Collective.
+
+  Note that "public area" is not the only gate on this one. Offerings
+  is a flagged feature, and ``area_access.resolve_area_access`` drops
+  it from every viewer's reachable set while the flag is off, so the
+  tab, the catalogue route and the Collective Home all disappear
+  together from one switch.
 
 Defaults preserve what each area does today, including Pathways
 staying public — quietly privatising every Collective's Pathway list
@@ -61,6 +73,7 @@ AREA_PATHWAYS: Final = "pathways"
 AREA_CONVERSATIONS: Final = "conversations"
 AREA_MEMBERS: Final = "members"
 AREA_MESSAGES: Final = "messages"
+AREA_OFFERINGS: Final = "offerings"
 
 #: Every area the platform knows, and what each may be set to. An area
 #: whose tuple holds a single value is fixed: a creator cannot change
@@ -73,6 +86,7 @@ AREA_ALLOWED: Final[dict[str, tuple[str, ...]]] = {
     AREA_CONVERSATIONS: (POLICY_MEMBERS, POLICY_ACTIVE_ACCESS),
     AREA_MEMBERS:       (POLICY_MEMBERS, POLICY_ACTIVE_ACCESS),
     AREA_MESSAGES:      (POLICY_MEMBERS,),
+    AREA_OFFERINGS:     (POLICY_PUBLIC,),
 }
 
 #: What each area does today, so ``NULL`` changes nothing.
@@ -84,6 +98,7 @@ AREA_DEFAULTS: Final[dict[str, str]] = {
     AREA_CONVERSATIONS: POLICY_MEMBERS,
     AREA_MEMBERS:       POLICY_MEMBERS,
     AREA_MESSAGES:      POLICY_MEMBERS,
+    AREA_OFFERINGS:     POLICY_PUBLIC,
 }
 
 #: Areas a creator may actually set, in the order the panel shows them.

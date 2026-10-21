@@ -314,6 +314,29 @@ def _uid(prefix: str) -> str:
 
 
 @pytest.fixture
+def offerings_enabled(monkeypatch):
+    """Turn the Offerings feature flag on for one test.
+
+    Needed by any test that calls an Offerings handler **directly**
+    rather than through the router. ``require_offerings_enabled`` is a
+    route dependency, so a direct call never meets it — but the flag is
+    also read inside the request, by
+    ``area_access.resolve_area_access``, which drops the ``offerings``
+    area while the feature is off. Without this fixture a direct call
+    to a member Offerings endpoint gets the production answer for a
+    disabled feature: 404.
+
+    Scoped per-test via ``monkeypatch`` rather than set globally,
+    because turning it on for the whole suite would change what
+    ``area_access`` reports to every test that asserts on a
+    Collective's reachable areas.
+    """
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "offerings_enabled", True)
+    yield
+
+
+@pytest.fixture
 def make_user(db: Session):
     """Create a minimal User row. Password hash is a bcrypt placeholder."""
     from app.models.user import User  # local import so app modules load post-env-swap
