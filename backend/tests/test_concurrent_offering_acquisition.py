@@ -98,7 +98,7 @@ def _seed(engine) -> dict:
         """), {
             "id": ids["offering"], "space": ids["space"],
             "owner": ids["owner"], "slug": ids["offering_slug"],
-            "cover": covers.DEFAULT_COVERS[0].url,
+            "cover": covers.DEFAULT_COVERS[0].key,
         })
         c.execute(text("""
             INSERT INTO offering_files (id, offering_id, storage_key,

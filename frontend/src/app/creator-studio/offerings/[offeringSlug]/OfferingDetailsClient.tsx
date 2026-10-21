@@ -32,7 +32,13 @@ export default function OfferingDetailsClient({
   const router = useRouter()
   const [title, setTitle] = useState(offering.title)
   const [summary, setSummary] = useState(offering.summary ?? '')
+  // Three pieces of cover state, because there are three things to
+  // know: what is shown, whether the creator uploaded it, and which
+  // shared category is selected. Collapsing them would make "remove my
+  // upload and fall back to the category" unexpressible.
   const [cover, setCover] = useState(offering.cover_image_url)
+  const [customCover, setCustomCover] = useState(offering.custom_cover_url)
+  const [categoryKey, setCategoryKey] = useState(offering.default_cover_key)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const base = apiUrl(`/api/creator/spaces/${spaceSlug}/offerings/${offering.slug}`)
@@ -64,15 +70,22 @@ export default function OfferingDetailsClient({
     onSaved: () => router.refresh(),
   })
 
-  async function chooseCover(url: string) {
-    setCover(url)
+  async function chooseCategory(key: string, previewUrl: string | null) {
+    // Optimistic: the category is selected immediately and the preview
+    // follows. A custom upload still wins, so the shown cover only
+    // changes when there isn't one.
+    setCategoryKey(key)
+    if (!customCover) setCover(previewUrl)
     setSaveError(null)
     try {
       const res = await fetch(base, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ cover_image_url: url }),
+        // The **key**, not a URL. The image is World Artwork's, and an
+        // administrator replacing it updates this Offering with nothing
+        // stored here to go stale.
+        body: JSON.stringify({ default_cover_key: key }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -152,9 +165,15 @@ export default function OfferingDetailsClient({
         spaceSlug={spaceSlug}
         offeringSlug={offering.slug}
         covers={covers}
-        current={cover}
-        onChoose={chooseCover}
-        onUploaded={(url) => { setCover(url); router.refresh() }}
+        shown={cover}
+        customCover={customCover}
+        categoryKey={categoryKey}
+        onChoose={chooseCategory}
+        onUploaded={(url) => {
+          setCustomCover(url)
+          setCover(url)
+          router.refresh()
+        }}
         onError={setSaveError}
       />
     </div>
@@ -183,28 +202,43 @@ function SaveStatus({ status }: { status: string }) {
 /**
  * The cover selector.
  *
- * Five curated choices plus "upload your own". Choosing a curated cover
- * stores its **URL** — one shared object serves every Offering that
- * picks it, so a default is referenced rather than copied into each
- * creator's storage.
+ * Five shared categories plus "upload your own".
+ *
+ * Choosing a category stores its **key**. The image it shows is managed
+ * by an administrator in World Settings → World Artwork, so one object
+ * serves every Offering in that category and replacing it reaches all
+ * of them — nothing is copied into a creator's storage and nothing on
+ * the Offering goes stale.
+ *
+ * A category whose artwork has not been uploaded yet is still
+ * selectable, and says so. The choice is the creator's to make; whether
+ * the shared image exists is an administrator's, and a creator must not
+ * be blocked on something they cannot see or do.
  */
 function CoverPicker({
-  spaceSlug, offeringSlug, covers, current, onChoose, onUploaded, onError,
+  spaceSlug, offeringSlug, covers, shown, customCover, categoryKey,
+  onChoose, onUploaded, onError,
 }: {
   spaceSlug: string
   offeringSlug: string
   covers: OfferingCover[]
-  current: string | null
-  onChoose: (url: string) => void
+  /** The cover currently displayed, whatever its source. */
+  shown: string | null
+  /** The creator's own upload, if any — it wins over the category. */
+  customCover: string | null
+  /** The shared category selected, if any. */
+  categoryKey: string | null
+  onChoose: (key: string, previewUrl: string | null) => void
   onUploaded: (url: string) => void
   onError: (msg: string | null) => void
 }) {
   const fileInput = useRef<HTMLInputElement | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  const isCustom = Boolean(
-    current && !covers.some((c) => c.url === current),
-  )
+  // Read from the field rather than inferred by comparing URLs, which
+  // is how this used to work and could not survive the shared image
+  // being replaced.
+  const isCustom = Boolean(customCover)
 
   async function upload(file: File) {
     setUploading(true)
@@ -243,12 +277,13 @@ function CoverPicker({
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {covers.map((c) => {
-          const selected = current === c.url
+          const selected = categoryKey === c.key
+          const preview = c.thumbnail_url ?? c.image_url
           return (
             <button
               key={c.key}
               type="button"
-              onClick={() => onChoose(c.url)}
+              onClick={() => onChoose(c.key, c.image_url)}
               aria-pressed={selected}
               className="group overflow-hidden rounded-xl text-left transition-shadow hover:shadow-md"
               style={{
@@ -259,13 +294,30 @@ function CoverPicker({
               }}
             >
               <div style={{ aspectRatio: '3 / 2', background: '#F4F7F6' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={resolveMediaUrl(c.thumbnail_url) ?? c.thumbnail_url}
-                  alt=""
-                  loading="lazy"
-                  className="h-full w-full object-cover"
-                />
+                {preview ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={resolveMediaUrl(preview) ?? preview}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  /* No shared artwork uploaded yet. The same gradient an
+                     Offering itself shows, so the picker previews the
+                     real outcome rather than an empty box. */
+                  <div
+                    className="flex h-full w-full items-end p-2"
+                    style={{ background: 'linear-gradient(135deg, rgba(56,160,158,0.16) 0%, rgba(85,184,182,0.08) 100%)' }}
+                  >
+                    <span
+                      className="text-[10.5px] leading-tight"
+                      style={{ color: 'rgba(12,24,38,0.52)' }}
+                    >
+                      No shared image yet
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="px-3 py-2">
                 <p className="text-[12.5px] font-semibold text-navy-900">
@@ -296,11 +348,11 @@ function CoverPicker({
             minHeight: 140,
           }}
         >
-          {isCustom && current ? (
+          {isCustom && shown ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={resolveMediaUrl(current) ?? current}
+                src={resolveMediaUrl(shown) ?? shown}
                 alt=""
                 className="mb-2 h-16 w-full rounded object-cover"
               />

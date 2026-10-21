@@ -131,7 +131,7 @@ def _offering(db, space, **kw) -> Offering:
         slug=f"o-{uuid.uuid4().hex[:8]}",
         title="Deep Rest Audio Course",
         summary="Six recorded practices.",
-        cover_image_url=covers.DEFAULT_COVERS[0].url,
+        default_cover_key=covers.DEFAULT_COVERS[0].key,
         status=OfferingStatus.published.value,
         pricing_kind=OfferingPricingKind.one_time.value,
         price_cents=2400,

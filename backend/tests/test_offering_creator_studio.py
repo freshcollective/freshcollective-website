@@ -167,24 +167,60 @@ class TestDefaultCovers:
             limit = 200 if not key.endswith("-thumb.webp") else 80
             assert kb < limit, f"{key} is {kb:.0f} KB"
 
-    def test_covers_live_in_the_public_namespace(self):
-        """``platform-artwork/`` routes to the public bucket and an
-        unauthenticated route, so a cover renders for a signed-out
-        visitor on a public Collective card."""
-        for cover in covers.DEFAULT_COVERS:
-            assert cover.storage_key.startswith("platform-artwork/")
-            assert cover.url.startswith(
-                "/api/uploads/platform-artwork/offering-covers/",
-            )
+    def test_each_category_occupies_a_world_artwork_slot(self):
+        """Shared covers are managed in World Settings → World Artwork
+        now, which writes under ``platform-artwork/`` — the public
+        bucket and an unauthenticated route — so a cover still renders
+        for a signed-out visitor on a public Collective card.
 
-    def test_the_endpoint_returns_what_the_picker_needs(self, make_user):
-        out = api.list_offering_covers(current_user=make_user(role="creator"))
+        The slot keys are derived from the category keys, so this also
+        pins that the manager and the picker cannot list different
+        things."""
+        from app.admin.platform_artwork import PLATFORM_ARTWORK_KEYS
+        for cover in covers.DEFAULT_COVERS:
+            assert cover.artwork_key.startswith("offering_cover_")
+            assert cover.artwork_key in PLATFORM_ARTWORK_KEYS, cover.key
+        assert set(covers.ARTWORK_KEYS) == {
+            c.artwork_key for c in covers.DEFAULT_COVERS
+        }
+
+    def test_the_endpoint_returns_what_the_picker_needs(self, db, make_user):
+        out = api.list_offering_covers(
+            db=db, current_user=make_user(role="creator"),
+        )
         assert len(out) == 5
         for entry in out:
             assert set(entry) == {
-                "key", "label", "description", "url", "thumbnail_url",
+                "key", "label", "description", "image_url",
+                "thumbnail_url", "has_artwork",
             }
             assert entry["label"] and entry["description"]
+            # No artwork uploaded in a test database, so every category
+            # reports itself as empty — which the picker shows as its own
+            # placeholder rather than an empty frame.
+            assert entry["image_url"] is None
+            assert entry["has_artwork"] is False
+
+    def test_the_picker_reports_uploaded_artwork(self, db, make_user):
+        """And once an administrator uploads, the picker shows it — which
+        is the whole point of moving this into World Artwork."""
+        from app.models.platform import PlatformArtwork
+        chosen = covers.DEFAULT_COVERS[1]
+        db.add(PlatformArtwork(
+            key=chosen.artwork_key,
+            image_url="/api/uploads/platform-artwork/x/hero.webp",
+            thumbnail_url="/api/uploads/platform-artwork/x/hero-thumb.webp",
+        ))
+        db.flush()
+        out = api.list_offering_covers(
+            db=db, current_user=make_user(role="creator"),
+        )
+        entry = next(e for e in out if e["key"] == chosen.key)
+        assert entry["has_artwork"] is True
+        assert entry["image_url"] == "/api/uploads/platform-artwork/x/hero.webp"
+        assert entry["thumbnail_url"].endswith("hero-thumb.webp")
+        # The other four are still empty.
+        assert sum(1 for e in out if e["has_artwork"]) == 1
 
     def test_labels_describe_what_is_sold_not_what_is_photographed(self):
         """A creator looking for somewhere to put a meditation should
@@ -206,10 +242,10 @@ class TestDefaultCovers:
 
         out = api.update_offering(
             space.slug, off.slug,
-            OfferingUpdateRequest(cover_image_url=chosen.url),
+            OfferingUpdateRequest(default_cover_key=chosen.key),
             db=db, current_user=owner,
         )
-        assert out["cover_image_url"] == chosen.url
+        assert out["default_cover_key"] == chosen.key
         # Nothing under the per-Offering cover namespace.
         root = storage.UPLOAD_DIR / of.OFFERING_COVERS_PREFIX / off.id
         assert not root.exists() or not any(root.iterdir())
@@ -222,10 +258,10 @@ class TestDefaultCovers:
             off = offering(space)
             out = api.update_offering(
                 space.slug, off.slug,
-                OfferingUpdateRequest(cover_image_url=chosen.url),
+                OfferingUpdateRequest(default_cover_key=chosen.key),
                 db=db, current_user=owner,
             )
-            assert out["cover_image_url"] == chosen.url
+            assert out["default_cover_key"] == chosen.key
 
 
 class TestCoverUpload:
@@ -329,18 +365,38 @@ class TestCoverUpload:
         assert not old.is_file(), "the superseded cover was left behind"
         storage.delete_file(second.removeprefix("/api/uploads/"))
 
-    def test_switching_to_a_default_never_deletes_the_shared_asset(
+    def test_uploading_a_cover_never_touches_the_shared_artwork(
         self, db, owner_space, offering,
     ):
-        """The prefix check is what stops a creator's cover change
-        deleting a platform asset every other Offering depends on."""
+        """The prefix check is what stops a creator's cover upload
+        deleting World Artwork every other Collective depends on.
+
+        Structurally this is now much harder to get wrong —
+        ``cover_image_url`` can only hold a creator upload, so the
+        delete can only reach a creator's own namespace. The guard and
+        this test are kept because the consequence of losing them is a
+        shared image disappearing platform-wide.
+        """
         from app.creator.schemas_offerings import OfferingUpdateRequest
+        from app.models.platform import PlatformArtwork
         space, owner = owner_space()
         off = offering(space)
         shared = covers.DEFAULT_COVERS[0]
+
+        # A real World Artwork object for this category, in the public
+        # namespace the manager writes to.
+        shared_key = f"platform-artwork/{shared.artwork_key}/hero.webp"
+        shared_path = storage.UPLOAD_DIR / shared_key
+        shared_path.parent.mkdir(parents=True, exist_ok=True)
+        shared_path.write_bytes(self._png())
+        db.add(PlatformArtwork(
+            key=shared.artwork_key, image_url=f"/api/uploads/{shared_key}",
+        ))
+        db.flush()
+
         api.update_offering(
             space.slug, off.slug,
-            OfferingUpdateRequest(cover_image_url=shared.url),
+            OfferingUpdateRequest(default_cover_key=shared.key),
             db=db, current_user=owner,
         )
         out = files_api.upload_offering_cover(
@@ -348,10 +404,16 @@ class TestCoverUpload:
             file=self._upload(self._png(), "mine.png", "image/png"),
             db=db, current_user=owner,
         )
-        assert (storage.UPLOAD_DIR / shared.storage_key).is_file(), (
-            "uploading a custom cover deleted a shared platform asset"
+        assert shared_path.is_file(), (
+            "uploading a custom cover deleted shared World Artwork"
         )
+        # And the category choice survived the upload, so removing the
+        # custom cover falls back to it.
+        db.refresh(off)
+        assert off.default_cover_key == shared.key
+
         storage.delete_file(out["cover_image_url"].removeprefix("/api/uploads/"))
+        shared_path.unlink()
 
     def test_only_the_owner_may_upload_a_cover(
         self, db, owner_space, offering, make_user,
@@ -514,7 +576,7 @@ class TestOfferingAboutBlocks:
         from app.services import offering_readiness
         space, owner = owner_space()
         off = offering(
-            space, cover_image_url=covers.DEFAULT_COVERS[0].url,
+            space, default_cover_key=covers.DEFAULT_COVERS[0].key,
             pricing_kind=OfferingPricingKind.free.value,
         )
         _passed_file(db, off)
@@ -545,7 +607,7 @@ class TestMemberOfferingPage:
             created_by_user_id=space.creator_id,
             slug=f"p-{uuid.uuid4().hex[:8]}", title="Morning Pages",
             summary="A gentle daily practice.",
-            cover_image_url=covers.DEFAULT_COVERS[0].url,
+            default_cover_key=covers.DEFAULT_COVERS[0].key,
             status=OfferingStatus.published.value,
             pricing_kind=OfferingPricingKind.one_time.value,
             price_cents=1500, published_at=datetime.utcnow(),

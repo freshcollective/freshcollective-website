@@ -103,6 +103,7 @@ from app.models.offering import (
 from app.models.platform import PathwayAboutBlock, Space
 from app.models.user import User
 from app.services import offering_acquisition as acq
+from app.services import offering_covers as _covers
 from app.services import offering_pilot as _pilot
 from app.spaces import area_access, area_policies
 
@@ -302,6 +303,10 @@ def list_member_offerings(
 
     offering_ids = [o.id for o in offerings]
 
+    # The shared cover artwork, once for the page rather than once per
+    # card. Five rows, whatever the catalogue's size.
+    shared_covers = _covers.artwork_urls(db)
+
     # Batch the two per-card questions rather than asking them per row:
     # "what files would a buyer get?" and "does this viewer own it?".
     files_by_offering: dict[str, list[OfferingFile]] = {
@@ -341,7 +346,9 @@ def list_member_offerings(
             "slug": o.slug,
             "title": o.title,
             "summary": o.summary,
-            "cover_image_url": o.cover_image_url,
+            "cover_image_url": _covers.resolve_cover_url(
+                db, o, shared=shared_covers,
+            ),
             "category_label": _category_label(files),
             "file_count": len(files),
             "total_resources": sum((f.resource_count or 1) for f in files),
@@ -482,7 +489,9 @@ def get_member_offering(
         "title": offering.title,
         "summary": offering.summary,
         "description": offering.description,
-        "cover_image_url": offering.cover_image_url,
+        # Resolved: the creator's upload, else the chosen category's
+        # current World Artwork, else null for the gradient.
+        "cover_image_url": _covers.resolve_cover_url(db, offering),
         "status": offering.status,
         "category_label": _category_label(approved),
         # Fixed for Phase 1 and sent explicitly rather than inferred by
@@ -785,6 +794,8 @@ def get_your_collection(
     ):
         files_by_offering[f.offering_id].append(f)
 
+    shared_covers = _covers.artwork_urls(db)
+
     creators: dict[str, str] = {}
     if creator_ids:
         for u_id, name in (
@@ -801,7 +812,9 @@ def get_your_collection(
             "slug": offering.slug,
             "title": offering.title,
             "summary": offering.summary,
-            "cover_image_url": offering.cover_image_url,
+            "cover_image_url": _covers.resolve_cover_url(
+                db, offering, shared=shared_covers,
+            ),
             "category_label": _category_label(files),
             "acquired_at": ent.acquired_at,
             # Shown nowhere by default. Present so the page can

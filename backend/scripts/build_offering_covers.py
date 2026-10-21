@@ -14,6 +14,27 @@ replaced, that had to be reconstructed by measuring the existing files.
 This script records it as code so the next replacement is one command
 and produces assets indistinguishable from their siblings.
 
+What it is for now
+------------------
+
+Default Offering artwork is managed in **World Settings → World
+Artwork**, where an administrator uploads an image through the browser
+and the platform generates the thumbnail. So this script no longer
+prepares anything for installation — it prepares the **hero an
+administrator uploads**, at the dimensions the Offering surfaces are
+built around (1200x800, 3:2).
+
+That still earns its place: World Artwork stores the hero's bytes
+unchanged, so uploading a 4000px original would ship four times the
+bytes every card needs. Run this on an approved original, then upload
+``app/assets/offering-covers/<category>.webp``.
+
+The ``-thumb`` outputs are no longer used by anything at runtime —
+``storage.save_image_with_thumbnail`` derives a 600px thumbnail from
+whatever is uploaded, at the same width. They are still produced and
+still committed, because they are approved artwork and because a future
+delivery path may want them; nothing reads them today.
+
 What it does, and what it refuses to do
 ---------------------------------------
 

@@ -159,13 +159,21 @@ def test_the_whole_creator_journey(
         db=db, current_user=owner,
     )
 
-    # ── 3. Cover — one of the five curated images ────────────────────
+    # ── 3. Cover — one of the five shared categories ─────────────────
+    # A *category*, not a URL. The image it shows is managed in World
+    # Settings → World Artwork; nothing is uploaded here and nothing is
+    # copied into the Collective's storage.
     cover = covers.COVERS_BY_KEY["workbook-guides"]
     detail = api.update_offering(
-        space.slug, slug, OfferingUpdateRequest(cover_image_url=cover.url),
+        space.slug, slug,
+        OfferingUpdateRequest(default_cover_key=cover.key),
         db=db, current_user=owner,
     )
-    assert detail["cover_image_url"] == cover.url
+    assert detail["default_cover_key"] == cover.key
+    # No artwork uploaded for it in this database, so the resolved cover
+    # is null and the gradient renders — the documented empty state, and
+    # deliberately not a blocker on publishing.
+    assert detail["cover_image_url"] is None
     assert "cover_image" not in {
         r["id"] for r in readiness()["requirements"] if not r["met"]
     }
@@ -224,7 +232,7 @@ def test_the_whole_creator_journey(
     assert preview["status"] == OfferingStatus.draft.value
     assert preview["viewer_manages"] is True
     assert preview["title"] == "Morning Pages Workbook"
-    assert preview["cover_image_url"] == cover.url
+    assert preview["cover_image_url"] is None   # no shared artwork uploaded
     assert preview["price_cents"] == 2400
     assert len(preview["about_blocks"]) == 1
     assert preview["files"][0]["type_label"] == "PDF"
