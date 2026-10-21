@@ -2602,7 +2602,13 @@ def revoke_pathway_access(
 # ---------------------------------------------------------------------------
 
 def _invitation_response(inv: "SpaceInvitation", db: Session) -> InvitationResponse:
-    from app.models.platform import PaymentOption
+    # ``PaymentOption`` is imported at module level (see the imports at
+    # the top of this file). A function-level ``from
+    # app.models.platform import PaymentOption`` used to sit here and
+    # was wrong twice over: that module has never exported the name, and
+    # the correct one was already in scope. It raised ImportError on
+    # every call — above the guard below, so an invitation with no
+    # payment option failed identically (Sentry FC-API-A).
     data = InvitationResponse.model_validate(inv)
     if inv.payment_option_id:
         opt = db.query(PaymentOption).filter_by(id=inv.payment_option_id).first()
@@ -9498,7 +9504,11 @@ def _manual_member_response(m: ManualMember, db: Session | None = None) -> Manua
     display = f"{m.first_name} {m.last_name}".strip() if m.last_name else m.first_name
     payment_option_name: str | None = None
     if m.payment_option_id and db is not None:
-        from app.models.platform import PaymentOption
+        # Same broken import as the one removed from
+        # ``_invitation_response``; ``PaymentOption`` is already in scope
+        # from the module-level import. This one was guarded, so it only
+        # raised for a manual member who had a Payment Option attached —
+        # latent rather than reported, and the same defect.
         opt = db.query(PaymentOption.name).filter_by(id=m.payment_option_id).scalar()
         payment_option_name = opt
     return ManualMemberResponse(
