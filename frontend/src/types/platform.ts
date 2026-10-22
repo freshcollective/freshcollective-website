@@ -760,6 +760,20 @@ export interface GuidancePanel {
 }
 
 export interface CreatorSpaceDetail extends GuidancePanel {
+  /**
+   * Whether Offerings is available to this creator in THIS Collective.
+   *
+   * Resolved entirely server-side: the ``OFFERINGS_ENABLED`` master
+   * switch AND the ``OFFERINGS_PILOT_COLLECTIVES`` allow-list, answered
+   * by the same `offering_pilot.offerings_available_for` predicate the
+   * member side already uses. There is deliberately no corresponding
+   * list, slug or Collective id anywhere in the frontend — this field
+   * is the only thing the UI knows about the pilot.
+   *
+   * Optional on the type because an older cached payload may not carry
+   * it; every reader must treat a missing value as `false`.
+   */
+  offerings_available?: boolean
   id: string
   slug: string
   name: string

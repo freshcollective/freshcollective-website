@@ -12,7 +12,6 @@ import type {
   CreatorMediaAsset, CreatorOffering, CreatorResource, CreatorSpaceDetail,
   OfferingReadiness, PathwayAboutBlock,
 } from '@/types/platform'
-import { apiUrl } from '@/lib/api'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import AboutPageEditor from '../../../pathways/[pathwaySlug]/AboutPageEditor'
 import OfferingHeader from '../OfferingHeader'
@@ -77,9 +76,23 @@ export default async function OfferingAboutPage({ params }: Props) {
         initialBlocks={blocks}
         mediaAssets={mediaAssets}
         resources={resources}
-        blocksApiUrl={apiUrl(
-          `/api/creator/spaces/${activeSpace.slug}/offerings/${offering.slug}/about-blocks`,
-        )}
+        // A PATH, deliberately not ``apiUrl(...)``.
+        //
+        // This is a server component, so ``apiUrl`` would resolve to
+        // the absolute ``API_INTERNAL_URL`` — in production Render's
+        // private ``host:port`` — and that string would be serialised
+        // into the client editor's props. Every block operation is a
+        // browser fetch, so all four of them went to a host the browser
+        // cannot resolve and failed with the editor's generic
+        // "Please try again." It worked in local dev only because
+        // ``API_INTERNAL_URL`` is ``localhost:8000`` there.
+        //
+        // The editor normalises this through ``browserApiPath`` as
+        // well, so the fix holds even if someone resolves it here
+        // again; both are intentional.
+        blocksApiUrl={
+          `/api/creator/spaces/${activeSpace.slug}/offerings/${offering.slug}/about-blocks`
+        }
         previewHref={`/spaces/${activeSpace.slug}/offerings/${offering.slug}`}
         headingTitle="About this Offering"
         headingBody="Optional. Add anything that helps someone decide — what's inside, who it's for, how to use it."

@@ -293,6 +293,22 @@ def _space_detail_response(space: Space, db: Session) -> dict:
         area: list(_area_policies.AREA_ALLOWED[area])
         for area in _area_policies.CONFIGURABLE_AREAS
     }
+    # Whether this creator may use Offerings in *this* Collective —
+    # the master switch AND the pilot allow-list, answered by the same
+    # ``offering_pilot.offerings_available_for`` predicate that
+    # ``area_access.resolve_area_access`` already uses to drop the
+    # member-side Offerings area. One authority, two surfaces.
+    #
+    # Derived rather than stored, and per-Collective rather than
+    # global: Creator Studio asks this for the Collective the creator
+    # currently has selected, so switching Collectives re-answers it.
+    # The sidebar hides its Offerings entry when this is false, which
+    # is what stops a non-pilot creator entering a workflow whose
+    # every write would 404. The 404s themselves are unchanged — this
+    # field only lets the UI stop offering a door that was already
+    # locked.
+    from app.services import offering_pilot as _offering_pilot
+    data["offerings_available"] = _offering_pilot.offerings_available_for(space)
     data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
     data['location_id'] = space.location_id
     data['atmosphere_keys'] = list(space.atmosphere_keys or [])

@@ -3,7 +3,7 @@
 import { useState, useTransition, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, browserApiPath } from '@/lib/api'
 import { AddBlockPicker, BlockRow } from '@/components/creator/BlockEditorShared'
 import type { PathwayAboutBlock, StepBlockType, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 
@@ -57,9 +57,15 @@ export default function AboutPageEditor({
   const [addError, setAddError] = useState<string | null>(null)
   const [newBlockId, setNewBlockId] = useState<string | null>(null)
 
-  const blocksUrl = blocksApiUrl ?? apiUrl(
+  // ``browserApiPath`` because this value may arrive from a *server*
+  // component, where ``apiUrl`` returns an absolute internal URL the
+  // browser cannot reach. Every block operation below is a browser
+  // fetch and must be same-origin against the BFF. Passing an
+  // already-correct path through is a no-op, so the Pathway, Series and
+  // Event callers are unaffected.
+  const blocksUrl = browserApiPath(blocksApiUrl ?? apiUrl(
     `/api/creator/spaces/${spaceSlug}/pathways/${pathway!.slug}/about-blocks`,
-  )
+  ))
   const memberPreviewHref = previewHref ?? (pathway
     ? `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
     : null

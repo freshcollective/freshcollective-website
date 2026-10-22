@@ -49,6 +49,18 @@ interface NavItem {
    *  paid offers (Creator / Pro / Organisation / Platform Owner).
    *  Community-plan sidebar therefore doesn't include it at all. */
   requiresPaidOffers?: boolean
+  /** When set, the item only renders when the server says Offerings is
+   *  available for the *currently selected* Collective — the
+   *  ``OFFERINGS_ENABLED`` master switch AND the pilot allow-list,
+   *  both resolved by the backend and delivered as
+   *  ``SpaceDetail.offerings_available``.
+   *
+   *  Deliberately separate from ``requiresPaidOffers``: that one is a
+   *  plan capability and is the same answer for every Collective a
+   *  creator owns, while this one changes as they switch between
+   *  them. Collapsing the two would make the pilot look like a
+   *  billing tier. */
+  requiresOfferings?: boolean
   /** Feature intentionally on hold. Item still renders — visibly
    *  muted with a "Coming later" suffix and non-navigable — so
    *  Creators know the surface exists without being encouraged to
@@ -104,7 +116,7 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // this surface; it lands here rather than under COMMERCE because
       // an Offering is something the Creator *makes*, and the money
       // question is one tab inside it.
-      { href: '/creator-studio/offerings',  label: 'Offerings',  activeOnPath: /^\/creator\/spaces\/[^/]+\/offerings/, requiresCollective: true },
+      { href: '/creator-studio/offerings',  label: 'Offerings',  activeOnPath: /^\/creator\/spaces\/[^/]+\/offerings/, requiresCollective: true, requiresOfferings: true },
     ],
   },
   {
@@ -194,10 +206,16 @@ interface Props {
    *  are included. Community plan → false → entry is not rendered
    *  at all. Platform Owner → always true. */
   paidOffersEnabled?: boolean
+  /** Whether Offerings is available for the selected Collective.
+   *  Comes from ``SpaceDetail.offerings_available`` — the backend's
+   *  own pilot answer — never from a list in this file. Defaults to
+   *  false so a failed or stale fetch hides the entry rather than
+   *  exposing a workflow every write of which would 404. */
+  offeringsAvailable?: boolean
 }
 
 export default function CreatorStudioSidebar({
-  user, hasCollective, paidOffersEnabled = false,
+  user, hasCollective, paidOffersEnabled = false, offeringsAvailable = false,
 }: Props) {
   const pathname = usePathname()
 
@@ -302,6 +320,13 @@ export default function CreatorStudioSidebar({
           // a bare section heading with an empty list under it.
           const visible = items.filter(
             ({ requiresPaidOffers }) => !requiresPaidOffers || paidOffersEnabled,
+          ).filter(
+            // A second pass rather than another term in the predicate
+            // above: that one is pinned by
+            // ``communityStudioCapabilities.test.ts`` as the plan gate,
+            // and folding a per-Collective pilot check into it would
+            // blur two different questions into one line.
+            ({ requiresOfferings }) => !requiresOfferings || offeringsAvailable,
           )
           if (visible.length === 0) return null
           return (

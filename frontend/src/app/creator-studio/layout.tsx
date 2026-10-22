@@ -43,10 +43,28 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   // the active-space cookie; the next navigation re-fetches with the
   // new slug so palette leakage between collectives is not possible.
   let palette: CollectivePaletteMeta | null = null
+  // Whether Offerings is available for the Collective currently
+  // selected. The backend answers this — ``OFFERINGS_ENABLED`` plus the
+  // pilot allow-list, resolved in ``_space_detail_response`` by the
+  // same predicate that drops the member-side Offerings area — and it
+  // rides on the detail fetch above rather than costing a second
+  // request.
+  //
+  // Per-Collective, which is the whole point: the active-space cookie
+  // changes when a creator switches collectives, and the next
+  // navigation re-fetches with the new slug, so the sidebar re-answers
+  // the question instead of caching one Collective's verdict. Same
+  // mechanism the palette comment above describes.
+  //
+  // False on any failure, and false when there is no active Collective
+  // at all. Hiding a surface a creator could have used is recoverable;
+  // showing one whose every write 404s is the bug being fixed.
+  let offeringsAvailable = false
   if (activeSpace) {
     try {
       const detail = await getCreatorSpace(activeSpace.slug) as CreatorSpaceDetail | null
       palette = detail?.colour_palette ?? null
+      offeringsAvailable = detail?.offerings_available === true
     } catch (err) {
       captureDegradedSurface(err, 'creator-studio-layout', 'palette')
       console.error(`[creator-studio/layout] palette fetch failed for ${activeSpace.slug}:`, err)
@@ -86,6 +104,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
         user={profile}
         hasCollective={!!activeSpace}
         paidOffersEnabled={paidOffersEnabled}
+        offeringsAvailable={offeringsAvailable}
       >
         {children}
       </CreatorStudioShell>

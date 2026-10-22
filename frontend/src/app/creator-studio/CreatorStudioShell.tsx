@@ -31,10 +31,14 @@ interface Props {
    *  unlocks commercial surfaces such as Offer Pages. Controls which
    *  sidebar entries render. Hidden entirely on Community. */
   paidOffersEnabled?: boolean
+  /** Whether Offerings is available for the selected Collective —
+   *  passed straight through to the sidebar. See its prop docs. */
+  offeringsAvailable?: boolean
 }
 
 export default function CreatorStudioShell({
   children, user, hasCollective, paidOffersEnabled = false,
+  offeringsAvailable = false,
 }: Props) {
   return (
     <AppShell
@@ -44,6 +48,7 @@ export default function CreatorStudioShell({
           user={user}
           hasCollective={hasCollective}
           paidOffersEnabled={paidOffersEnabled}
+          offeringsAvailable={offeringsAvailable}
         />
       }
       mobileBrand={

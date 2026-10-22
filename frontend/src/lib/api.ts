@@ -75,6 +75,36 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * Force a URL back to a same-origin API path for a browser fetch.
+ *
+ * ``apiUrl`` answers differently on the server and in the browser, and
+ * that is correct for a caller that does its own fetching. It is a trap
+ * for a value that *crosses* the boundary: a server component that
+ * computes ``apiUrl('/api/…')`` and passes the result to a client
+ * component hands the browser an absolute ``API_INTERNAL_URL``. In
+ * production that is Render's **private** ``host:port``, which the
+ * browser cannot resolve, so the ``fetch`` rejects and the component
+ * shows its generic catch-branch error. In local dev
+ * ``API_INTERNAL_URL`` is ``http://localhost:8000``, which a dev
+ * browser *can* reach — so the bug works locally and only appears in
+ * production.
+ *
+ * That is exactly how the Offering About editor shipped broken: every
+ * block operation — add, edit, reorder, delete — went to the private
+ * host and failed with "Couldn't add text block. Please try again."
+ *
+ * This takes either shape and returns the path, so a browser fetch is
+ * always same-origin against the BFF proxy and the ``fc_session``
+ * cookie still travels under ``SameSite=Lax`` (SEC-002). Pass a path
+ * and you get it back unchanged, which makes it safe to apply to a
+ * value that is already correct.
+ */
+export function browserApiPath(pathOrUrl: string): string {
+  const absolute = /^https?:\/\/[^/]+(\/.*)$/i.exec(pathOrUrl)
+  return absolute ? absolute[1] : pathOrUrl
+}
+
+/**
  * Same-origin URL for a browser-visible asset (``<img src>``,
  * ``<audio src>``, download links, etc.).
  *

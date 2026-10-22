@@ -212,6 +212,19 @@ class SpaceDetail(BaseModel):
     # Home settings tab can render the toggle without a second fetch.
     show_member_directory: bool = False
     join_policy: str = "open"
+    # Whether Offerings is available to this creator in this
+    # Collective: ``OFFERINGS_ENABLED`` and the pilot allow-list,
+    # resolved server-side in ``_space_detail_response`` by the same
+    # predicate ``area_access`` uses for the member side. Creator
+    # Studio hides its Offerings nav entry and 404s the Offerings
+    # routes when this is false, so a creator outside the pilot is
+    # never shown a workflow the backend will refuse.
+    #
+    # Defaults to False, so a client reading an older payload — or a
+    # response built by something that forgot to derive it — hides the
+    # feature rather than exposing it. Same stance as the pilot's own
+    # empty-list-admits-nothing rule.
+    offerings_available: bool = False
     # Every area's effective policy, defaults filled in — so the panel
     # shows what is actually in force even when nothing is stored.
     #
