@@ -532,6 +532,14 @@ class FulfilOutcome:
     booking: EventBooking | None
     access_pass: AccessPass | None
     transaction: PaymentTransaction
+    #: True when buying this seat made the payer a member of the
+    #: Collective for the FIRST time — not a reactivation, and not an
+    #: existing member buying another ticket. Reported rather than acted
+    #: on: the webhook emits the Collective's welcome, alongside the
+    #: purchase events it already emits, because this function runs
+    #: inside the caller's transaction and the dedupe insert opens a
+    #: SAVEPOINT that cannot.
+    membership_first_time: bool = False
 
 
 def fulfil_ticket_purchase(
@@ -716,6 +724,7 @@ def fulfil_ticket_purchase(
         booking=booking,
         access_pass=access_pass,
         transaction=txn_obj,
+        membership_first_time=membership_outcome.created,
     )
 
 

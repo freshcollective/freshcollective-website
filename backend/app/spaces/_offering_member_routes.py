@@ -103,6 +103,10 @@ from app.models.offering import (
 from app.models.platform import PathwayAboutBlock, Space
 from app.models.user import User
 from app.services import offering_acquisition as acq
+from app.services.collective_welcome_emit import (
+    emit_collective_welcome as _emit_collective_welcome,
+    schedule_welcome as _schedule_welcome,
+)
 from app.services import offering_covers as _covers
 from app.services import offering_pilot as _pilot
 from app.spaces import area_access, area_policies
@@ -670,7 +674,22 @@ def acquire_offering(
                 detail={"reason": exc.reason, "message": exc.message},
             ) from exc
 
+    # A free Offering brings its claimant into the Collective exactly as
+    # a paid one does, so it earns the same welcome. Emitted here rather
+    # than inside ``acquire_free`` because that function does not own
+    # the transaction — and because the retry path above calls it twice,
+    # while a welcome is owed once. ``None`` whenever they were already
+    # a member, were reactivated, or the Collective has welcomes off.
+    _welcome = (
+        _emit_collective_welcome(
+            db, space=space, member=current_user, join_source="purchase",
+        )
+        if outcome.membership_first_time else None
+    )
     db.commit()
+    # After the commit, like every other welcome: nothing may be sent
+    # describing a membership that could still roll back.
+    _schedule_welcome(_welcome)
     logger.info(
         "offering acquired (free): offering=%s user=%s created=%s joined=%s",
         offering.id, current_user.id, outcome.created,

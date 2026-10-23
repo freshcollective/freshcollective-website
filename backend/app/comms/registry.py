@@ -75,6 +75,17 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
 
     # Collective membership
     EventDefinition("collective.membership.joined",       TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
+    # The Collective's own welcome, sent once to each person the first
+    # time they become an active member — however they arrived. Distinct
+    # from ``membership.joined`` above, which stays silent and exists for
+    # the activity record rather than for mail.
+    #
+    # Deliberately NOT in TRANSACTIONAL_EVENT_TYPES. It is a greeting,
+    # not a receipt, a deadline or a security instruction, so a member
+    # who has quietened Collective updates should not be forced to
+    # receive it. Same stance as ``account.welcome_after_signup``, which
+    # is likewise immediate and likewise preference-controlled.
+    EventDefinition("collective.membership.welcome",      TOPIC_COLLECTIVE_UPDATES, PRIORITY_IMMEDIATE),
     EventDefinition("collective.membership.left",         TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     EventDefinition("collective.membership.role_changed", TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     # A creator has sent an invitation email to a prospective member.

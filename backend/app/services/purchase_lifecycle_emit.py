@@ -418,6 +418,29 @@ def _money(amount_cents: int | None, currency: str | None) -> str:
     return f"{symbol}{rendered}" if symbol else f"{rendered} {code}"
 
 
+#: How each kind of purchase reads in the creator's notification.
+#: ``attaches_to_kind`` values on the left; the verb that is true of
+#: them on the right.
+_PURCHASE_VERBS: dict[str, str] = {
+    "offering":     "purchased",
+    "pathway":      "joined",
+    "event_series": "joined",
+    "gathering":    "booked",
+    "event":        "booked",
+}
+
+
+def _purchase_verb(experience_kind: str | None) -> str:
+    """The verb for this kind of purchase.
+
+    Defaults to ``joined`` for anything unrecognised — the wording that
+    shipped, and correct for the Pathway and Series purchases that were
+    the only kinds when it was written. An unknown future kind therefore
+    reads as it always did rather than as something worse.
+    """
+    return _PURCHASE_VERBS.get((experience_kind or "").strip(), "joined")
+
+
 @_safe_emit
 def emit_purchase_received_creator(
     db: Session,
@@ -430,6 +453,7 @@ def emit_purchase_received_creator(
     currency: str | None,
     dedupe_key: str,
     session_count: int | None = None,
+    experience_kind: str | None = None,
 ) -> "CommunicationEvent | None":
     """Tell the Collective's leaders that a paid signup succeeded.
 
@@ -472,6 +496,13 @@ def emit_purchase_received_creator(
         "amount_cents":    amount_cents,
         "currency":        currency,
         "session_count":   session_count,
+        # What KIND of thing was bought, so the copy can use the right
+        # verb. A workbook is purchased, a Pathway is joined, a
+        # Gathering is booked — one verb for all three read wrongly for
+        # two of them. Empty when the caller cannot tell, which falls
+        # back to the original "joined" wording rather than guessing.
+        "experience_kind": (experience_kind or ""),
+        "purchase_verb":   _purchase_verb(experience_kind),
         "cta_url":         f"{origin}/creator-studio/people",
     }
     return comms_emit(

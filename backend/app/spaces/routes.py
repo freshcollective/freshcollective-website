@@ -41,6 +41,10 @@ from app.models.platform import (
     StepResource,
 )
 from app.models.user import User
+from app.services.collective_welcome_emit import (
+    emit_collective_welcome as _emit_collective_welcome,
+    schedule_welcome as _schedule_welcome,
+)
 from app.spaces import home_config
 from app.spaces import join_policy
 from app.spaces import joining_doors
@@ -1135,7 +1139,15 @@ def join_space(
         status=SpaceMembershipStatus.active,
         source="joined",
     ))
+    # First-time membership → the Collective's welcome. Emitted inside
+    # this transaction, routed after the commit below. The
+    # already-a-member return above means a repeat press cannot reach
+    # here, and the dedupe key would refuse a second one anyway.
+    _welcome = _emit_collective_welcome(
+        db, space=space, member=current_user, join_source="joined",
+    )
     db.commit()
+    _schedule_welcome(_welcome)
     return {"joined": True, "already_member": False}
 
 
@@ -1264,6 +1276,7 @@ def accept_invite(
         .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == current_user.id)
         .first()
     )
+    _welcome = None
     if not existing:
         role_value = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
         # An invitation does not exempt the Collective from its plan's
@@ -1280,10 +1293,19 @@ def accept_invite(
             status=SpaceMembershipStatus.active,
             source="invited",
         ))
+        # Accepting is the moment a person actually becomes a member —
+        # issuing the invitation is not, and must not welcome anybody.
+        # Inside the ``if not existing`` branch, so somebody who was
+        # already a member and merely consumes a stray invite is not
+        # welcomed a second time.
+        _welcome = _emit_collective_welcome(
+            db, space=space, member=current_user, join_source="invited",
+        )
 
     # Delete the invite — consumed
     db.delete(invite)
     db.commit()
+    _schedule_welcome(_welcome)
     return {"accepted": True, "space_slug": space.slug}
 
 

@@ -70,6 +70,9 @@ from app.creator._offering_file_routes import (
 from app.creator._offering_about_routes import (
     router as creator_offering_about_router,
 )
+from app.creator._welcome_email_routes import (
+    router as creator_welcome_email_router,
+)
 from app.spaces._offering_member_routes import (
     router as member_offerings_router,
     me_router as member_collection_router,
@@ -389,6 +392,7 @@ app.include_router(creator_router)
 app.include_router(creator_offerings_router)
 app.include_router(creator_offering_files_router)
 app.include_router(creator_offering_about_router)
+app.include_router(creator_welcome_email_router)
 app.include_router(member_offerings_router)
 app.include_router(member_collection_router)
 app.include_router(creator_attendance_router)

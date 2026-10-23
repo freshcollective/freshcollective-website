@@ -170,6 +170,13 @@ class AcquisitionOutcome:
     created: bool
     #: True when this acquisition also made them a member.
     joined_collective: bool
+    #: True only when the membership was created FOR THE FIRST TIME —
+    #: False for a reactivation and False for somebody who was already
+    #: a member. The route turns this into the Collective's welcome, so
+    #: it has to tell those apart; ``joined_collective`` cannot, because
+    #: it answers the different question the response body asks ("are
+    #: they in the Collective now because of this?").
+    membership_first_time: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +512,7 @@ def acquire_free(
         return AcquisitionOutcome(
             entitlement=existing, created=False,
             joined_collective=outcome.changed,
+            membership_first_time=outcome.created,
         )
 
     ent = OfferingEntitlement(
@@ -552,6 +560,7 @@ def acquire_free(
     return AcquisitionOutcome(
         entitlement=ent, created=True,
         joined_collective=membership.changed,
+        membership_first_time=membership.created,
     )
 
 

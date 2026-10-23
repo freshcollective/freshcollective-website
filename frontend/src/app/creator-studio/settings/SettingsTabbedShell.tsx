@@ -11,6 +11,7 @@ import DangerZone from './DangerZone'
 import AreaPolicyForm from './AreaPolicyForm'
 import JoinPolicyForm from './JoinPolicyForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
+import WelcomeEmailForm from './WelcomeEmailForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
 
@@ -174,6 +175,13 @@ export default function SettingsTabbedShell({
         <div className="mb-5 space-y-5">
           <JoinPolicyForm slug={spaceDetail.slug} />
           <AreaPolicyForm slug={spaceDetail.slug} />
+          {/* The welcome a first-time member receives. It sits with
+              joining rather than with Details because that is what it
+              is about: the moment somebody gets in. Excluded for
+              auto-managed Collectives for the same reason the joining
+              policy is — their membership is computed, not chosen, and
+              nobody "joins" one. */}
+          <WelcomeEmailForm slug={spaceDetail.slug} />
         </div>
       )}
 

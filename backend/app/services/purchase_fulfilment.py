@@ -289,6 +289,17 @@ class FulfilmentResult:
     access_passes: list[AccessPass] = field(default_factory=list)
     offering_entitlements: list[OfferingEntitlement] = field(default_factory=list)
     membership_created: bool = False
+    # True when this purchase produced a FIRST-TIME membership — not a
+    # reactivation, and not an existing member buying again.
+    #
+    # A flag rather than the event itself, deliberately. Emitting from
+    # inside ``apply_intent`` opens a SAVEPOINT (``comms.emit`` wraps
+    # the dedupe insert in ``begin_nested``) within the caller's own
+    # transaction context, which raises "Can't operate on closed
+    # transaction inside context manager". So fulfilment reports the
+    # fact and the webhook emits it, alongside the two purchase events
+    # that already emit there.
+    membership_first_time: bool = False
     # When status is not ``applied``, ``reason`` explains why — a
     # concatenation of resolver fatal_error / validation errors /
     # any operational note. Consumed by the webhook for logs and
@@ -1118,8 +1129,13 @@ def _auto_join_membership(
     space_id: str,
     now: datetime,
 ) -> bool:
-    """Make the buyer a member. Returns ``True`` when the membership
-    changed (created or reactivated).
+    """Make the buyer a member. Returns the ``MembershipOutcome``.
+
+    The outcome rather than a bool because ``created`` and
+    ``reactivated`` must be told apart: only a first-time membership
+    earns the Collective's welcome email. A returning member is
+    deliberately silent — a "welcome back" is a separate decision
+    nobody has taken yet.
 
     Delegates to ``services.membership_grant`` so the standalone
     Gathering-ticket path — which fulfils outside this module — reaches
@@ -1140,7 +1156,7 @@ def _auto_join_membership(
             "purchase_fulfilment: membership unchanged user=%s space=%s reason=%s",
             payer_user_id, space_id, outcome.skipped_reason,
         )
-    return outcome.changed
+    return outcome
 
 
 def _apply_access_pass(
@@ -1349,12 +1365,18 @@ def apply_intent(
         ))
 
     # ── Auto-join membership (every purchase) ─────────────────────
-    result.membership_created = _auto_join_membership(
+    _membership_outcome = _auto_join_membership(
         db,
         payer_user_id=payer_user_id,
         space_id=space_id,
         now=now,
     )
+    result.membership_created = _membership_outcome.changed
+    # Reported, not acted on. ``created`` is precisely "first-time
+    # member": False for a reactivation and False for an existing
+    # active member buying something else. The webhook turns this into
+    # the Collective's welcome.
+    result.membership_first_time = _membership_outcome.created
 
     # ── AccessPasses ──────────────────────────────────────────────
     if intent.access_passes and not payment_option_id:  # pragma: no cover

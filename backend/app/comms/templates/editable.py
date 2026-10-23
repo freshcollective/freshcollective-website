@@ -618,23 +618,56 @@ class SlotResolver:
         )
 
 
-def load_overrides(db: Any, template_key: str) -> dict[str, str]:
-    """Read every stored override for a template. Never raises — a
-    database problem must not stop an email going out."""
+def load_overrides(
+    db: Any, template_key: str, space_id: str | None = None,
+) -> dict[str, str]:
+    """Stored overrides for a template, resolved for one scope.
+
+    Two layers, read in one query and merged slot by slot:
+
+        platform (space_id IS NULL)  →  this Collective (space_id = …)
+
+    A Collective that has customised only its subject therefore still
+    inherits the platform's heading — the overlay is per slot, not
+    all-or-nothing. With ``space_id=None`` the behaviour is exactly what
+    it was before migration 164: platform rows only.
+
+    Never raises. A database problem must not stop an email going out,
+    so a failure falls back to the Fresh Collective defaults rather than
+    propagating.
+    """
     try:
         from app.models.communication_template_override import (
             CommunicationTemplateOverride,
         )
+        from sqlalchemy import or_
+
+        scope_filter = CommunicationTemplateOverride.space_id.is_(None)
+        if space_id is not None:
+            scope_filter = or_(
+                scope_filter,
+                CommunicationTemplateOverride.space_id == space_id,
+            )
         rows = (
             db.query(CommunicationTemplateOverride)
-            .filter(CommunicationTemplateOverride.template_key == template_key)
+            .filter(
+                CommunicationTemplateOverride.template_key == template_key,
+                scope_filter,
+            )
             .all()
         )
-        return {r.slot_id: r.value for r in rows}
+        # Platform first, then the Collective's rows land on top. Sorting
+        # rather than two queries keeps it one round trip, and the
+        # partial unique indexes guarantee at most one row per (slot,
+        # scope) so the overlay is unambiguous.
+        merged: dict[str, str] = {}
+        for r in sorted(rows, key=lambda r: r.space_id is not None):
+            merged[r.slot_id] = r.value
+        return merged
     except Exception:
         logger.exception(
-            "editable copy: could not load overrides for %s — using Fresh "
-            "Collective defaults", template_key,
+            "editable copy: could not load overrides for %s (space=%s) — "
+            "using Fresh Collective defaults", template_key, space_id,
         )
         return {}
 
@@ -674,12 +707,18 @@ def resolver_for(
     db: Any,
     template_key: str,
     context: Mapping[str, Any],
+    space_id: str | None = None,
 ) -> SlotResolver:
     """The entry point templates call.
 
     ``db`` may be ``None`` — several templates are rendered in tests and
     in preview without a session, and they must still produce the code
     defaults.
+
+    ``space_id`` scopes the lookup to one Collective's customisation,
+    layered over the platform default. Templates that are platform-wide
+    by nature simply omit it and behave exactly as they did before
+    migration 164.
     """
     decl = get_declaration(template_key)
     if decl is None:
@@ -694,7 +733,9 @@ def resolver_for(
             overrides=dict(drafts.get(template_key, {})),
         )
 
-    overrides = load_overrides(db, template_key) if db is not None else {}
+    overrides = (
+        load_overrides(db, template_key, space_id) if db is not None else {}
+    )
     return SlotResolver(decl=decl, context=context, overrides=overrides)
 
 

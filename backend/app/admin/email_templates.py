@@ -305,13 +305,26 @@ def _is_transactional(
     return category_for_topic(definition.topic) in locked_categories
 
 
-def _stored(db: Session, template_key: str) -> dict[str, CommunicationTemplateOverride]:
-    rows = (
-        db.query(CommunicationTemplateOverride)
-        .filter(CommunicationTemplateOverride.template_key == template_key)
-        .all()
+def _stored(
+    db: Session, template_key: str, space_id: str | None = None,
+) -> dict[str, CommunicationTemplateOverride]:
+    """Stored overrides for exactly one scope.
+
+    ``space_id=None`` means the PLATFORM rows and only those. Since
+    migration 164 the table also holds per-Collective copy, and an
+    administrator must neither see nor overwrite a creator's wording —
+    so the filter is ``IS NULL`` rather than "every row for this key",
+    which is what it meant when platform was the only scope.
+    """
+    q = db.query(CommunicationTemplateOverride).filter(
+        CommunicationTemplateOverride.template_key == template_key,
     )
-    return {r.slot_id: r for r in rows}
+    q = q.filter(
+        CommunicationTemplateOverride.space_id.is_(None)
+        if space_id is None
+        else CommunicationTemplateOverride.space_id == space_id
+    )
+    return {r.slot_id: r for r in q.all()}
 
 
 def _detail(
