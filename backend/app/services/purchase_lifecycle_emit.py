@@ -418,6 +418,52 @@ def _money(amount_cents: int | None, currency: str | None) -> str:
     return f"{symbol}{rendered}" if symbol else f"{rendered} {code}"
 
 
+#: How each kind of purchase reads in the creator's notification.
+#: ``attaches_to_kind`` values on the left; the verb that is true of
+#: them on the right.
+_PURCHASE_VERBS: dict[str, str] = {
+    "offering":     "purchased",
+    "pathway":      "joined",
+    "event_series": "joined",
+    "gathering":    "booked",
+    "event":        "booked",
+}
+
+
+def _purchase_verb(experience_kind: str | None) -> str:
+    """The verb for this kind of purchase.
+
+    Defaults to ``joined`` for anything unrecognised — the wording that
+    shipped, and correct for the Pathway and Series purchases that were
+    the only kinds when it was written. An unknown future kind therefore
+    reads as it always did rather than as something worse.
+    """
+    return _PURCHASE_VERBS.get((experience_kind or "").strip(), "joined")
+
+
+def _purchase_phrase(
+    experience_kind: str | None, *, free: bool,
+) -> tuple[str, str]:
+    """``(verb, suffix)`` — the predicate wrapped around the name.
+
+    Two parts rather than one because the name sits in the middle of
+    the sentence: *purchased* **Test Workbook**, but *added* **Test
+    Workbook** *to their collection*. A verb alone cannot say the
+    second, and moving the name out of the slot default would silently
+    rewrite every override an admin has already saved.
+
+    The suffix is empty for every paid purchase, so the paid wording is
+    byte-identical to what it was before free acquisitions existed.
+    """
+    if free and (experience_kind or "").strip() == "offering":
+        # Nothing was paid, so "purchased" would be false and
+        # "acquired" is not how anybody speaks. What actually happened
+        # is that it is now in their collection — the same words the
+        # member sees on their own side of it.
+        return "added", " to their collection"
+    return _purchase_verb(experience_kind), ""
+
+
 @_safe_emit
 def emit_purchase_received_creator(
     db: Session,
@@ -425,11 +471,13 @@ def emit_purchase_received_creator(
     space_id: str,
     buyer: User,
     experience_name: str,
-    payment_mode: str,            # 'single' | 'plan'
+    payment_mode: str,            # 'single' | 'plan' | 'free'
     amount_cents: int | None,
     currency: str | None,
     dedupe_key: str,
     session_count: int | None = None,
+    experience_kind: str | None = None,
+    free: bool = False,
 ) -> "CommunicationEvent | None":
     """Tell the Collective's leaders that a paid signup succeeded.
 
@@ -450,6 +498,12 @@ def emit_purchase_received_creator(
 
     Recipients are resolved by ``routing/resolvers/collective.py`` —
     owner plus active leader memberships, minus the buyer.
+
+    ``free=True`` is a free Offering acquisition. It is the same news
+    to a creator — somebody now has their work — so it travels as the
+    same event through the same recipient rules and the same
+    preferences, and differs only in wording: no amount, no revenue
+    claim, and no payment transaction anywhere behind it.
     """
     from app.comms import Source, emit as comms_emit
     from app.models.platform import Space
@@ -460,6 +514,7 @@ def emit_purchase_received_creator(
         return None
 
     origin = _origin()
+    _verb, _suffix = _purchase_phrase(experience_kind, free=free)
     payload = {
         "space_id":        space.id,
         "collective_name": space.name,
@@ -472,6 +527,19 @@ def emit_purchase_received_creator(
         "amount_cents":    amount_cents,
         "currency":        currency,
         "session_count":   session_count,
+        # What KIND of thing was bought, so the copy can use the right
+        # verb. A workbook is purchased, a Pathway is joined, a
+        # Gathering is booked — one verb for all three read wrongly for
+        # two of them. Empty when the caller cannot tell, which falls
+        # back to the original "joined" wording rather than guessing.
+        "experience_kind": (experience_kind or ""),
+        "purchase_verb":   _verb,
+        "purchase_suffix": _suffix,
+        # True for a free acquisition. Carried so the copy can say that
+        # plainly instead of leaving a creator to infer it from a
+        # missing amount — and so nothing downstream reads the absent
+        # amount as revenue that failed to record.
+        "is_free":         bool(free),
         "cta_url":         f"{origin}/creator-studio/people",
     }
     return comms_emit(

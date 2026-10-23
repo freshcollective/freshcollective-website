@@ -117,6 +117,10 @@ class CollectivePurchaseReceivedResolver:
         keys = (
             "buyer_name", "collective_name", "experience_name",
             "amount_display", "payment_mode", "session_count", "cta_url",
+            # Resolved at emit time from the option's attaches_to_kind,
+            # so the template does not re-query to learn what was sold.
+            "experience_kind", "purchase_verb", "purchase_suffix",
+            "is_free",
         )
         context = {k: payload.get(k) for k in keys}
         return [
@@ -130,4 +134,48 @@ class CollectivePurchaseReceivedResolver:
                 template_context=context,
             )
             for leader_id in leader_ids
+        ]
+
+
+@resolver_for("collective.membership.welcome")
+class CollectiveMembershipWelcomeResolver:
+    """One recipient: the person who just became a member.
+
+    ``actor_user_id`` is the new member — set by
+    ``emit_collective_welcome``, which is the only emitter. Everything
+    the template needs was resolved at emit time and travels on the
+    payload, so this does not re-query the domain graph; that keeps the
+    rendered copy identical to what the creator previewed.
+
+    No leader fan-out here. The Collective's leaders hear about a *sale*
+    through ``collective.purchase.received``; this is the member's own
+    greeting and goes to them alone.
+    """
+
+    event_type = "collective.membership.welcome"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        if not event.actor_user_id:
+            return []
+        p = event.payload or {}
+        return [
+            ResolvedRecipient(
+                user_id=event.actor_user_id,
+                role_in_event="new_member",
+                human_reason=(
+                    "You joined "
+                    f"{p.get('collective_name') or 'a Collective'} "
+                    "on Fresh Collective."
+                ),
+                template_context={
+                    "space_id":           p.get("space_id") or "",
+                    "collective_name":    p.get("collective_name") or "",
+                    "member_first_name":  p.get("member_first_name") or "",
+                    "creator_name":       p.get("creator_name") or "",
+                    "collective_url":     p.get("collective_url") or "",
+                    "join_source":        p.get("join_source") or "",
+                },
+            ),
         ]

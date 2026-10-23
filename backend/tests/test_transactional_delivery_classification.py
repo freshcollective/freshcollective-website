@@ -102,6 +102,14 @@ AUDITED: dict[str, str] = {
     # since migration 133 removed the Account category lock, nothing
     # else locks it either. Declining a welcome is now possible.
     "account.welcome_after_signup":                  PREFERENCE,
+    # The Collective's own greeting, sent the first time somebody
+    # joins one. A greeting for the same reason the signup welcome is:
+    # nothing in it is a receipt, an access change or a security
+    # message, so a member who would rather not hear from Collectives
+    # keeps that choice. The creator has a separate switch — theirs
+    # decides whether the Collective sends at all, the member's decides
+    # whether they receive it.
+    "collective.membership.welcome":                 PREFERENCE,
 
     # ── Gatherings ───────────────────────────────────────────────────
     "gathering.booking.confirmed":                   LOCKED,
@@ -177,6 +185,9 @@ CONTEXT = {
     "pathway_title": "Beginning",
     "schedule": [],
     "cancellation_reason": None,
+    "member_first_name": "Ada",
+    "creator_name": "Sarah",
+    "collective_url": "https://fc.test/spaces/still-water",
 }
 
 
@@ -552,6 +563,7 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     "purchase.plan_completed":                     "system",
     "purchase.refunded":                           "system",
     "collective.purchase.received":                "editable",
+    "collective.membership.welcome":               "editable",
 }
 
 

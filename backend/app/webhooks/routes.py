@@ -594,6 +594,8 @@ def _handle_gathering_ticket_completed(
                     amount_cents=amount_total,
                     currency=currency,
                     dedupe_key=f"purchase_received:txn:{txn_id}",
+                    # A standalone ticket is booked, not joined.
+                    experience_kind="gathering",
                 )
             # Commit the emit, then route it. Both halves were missing
             # here, and the second hid the first: the row survived only
@@ -607,6 +609,33 @@ def _handle_gathering_ticket_completed(
                 schedule_routing_if_needed(
                     None, creator_event, "collective.purchase.received",
                 )
+            # The Collective's welcome. Buying a seat brings the payer
+            # into the Collective (``gathering_tickets`` step 7), so a
+            # standalone ticket is a joining path like any other and
+            # owes the same greeting. Only for a first-time membership —
+            # ``already_fulfilled`` has returned above, and the emit's
+            # dedupe key is the second guard against a redelivery.
+            if outcome.membership_first_time and _buyer is not None:
+                from app.models.platform import Space as _Space
+                from app.services.collective_welcome_emit import (
+                    emit_collective_welcome as _emit_welcome,
+                    schedule_welcome as _schedule_welcome,
+                )
+                _space = (
+                    db.query(_Space)
+                    .filter(_Space.id == outcome.transaction.space_id)
+                    .first()
+                )
+                if _space is not None:
+                    _welcome = _emit_welcome(
+                        db, space=_space, member=_buyer,
+                        join_source="ticket_purchase",
+                    )
+                    # Fulfilment committed above, so this commit covers
+                    # the welcome row alone and cannot affect the sale.
+                    if _welcome is not None:
+                        db.commit()
+                        _schedule_welcome(_welcome)
             # Comms — member booking confirmation. No BackgroundTasks in a
             # webhook, so routing dispatches synchronously. Commits and
             # routes itself; left exactly as it was.
@@ -997,6 +1026,7 @@ def _handle_checkout_completed(
         _member = db.query(_User).filter(_User.id == payer_user_id).first()
         purchase_completed_event = None
         creator_event = None
+        welcome_event = None
         if _member is not None:
             purchase_completed_event = _r3.emit_purchase_completed(
                 db, user=_member, payment_option=payment_option,
@@ -1022,7 +1052,31 @@ def _handle_checkout_completed(
                 currency=txn.currency,
                 dedupe_key=f"purchase_received:txn:{txn.id}",
                 session_count=len(resolution.intent.bookings) or None,
+                # What the option attaches to decides the verb: an
+                # Offering is purchased, a Pathway joined, a Series
+                # joined. ``None`` when there is no option, which falls
+                # back to the original wording.
+                experience_kind=(
+                    payment_option.attaches_to_kind
+                    if payment_option is not None else None
+                ),
             )
+            # The Collective's welcome, for a first-time member only.
+            # Emitted here beside the other two rather than inside
+            # ``apply_intent``: the dedupe insert opens a SAVEPOINT, and
+            # that cannot run inside fulfilment's own transaction
+            # context. Routed after the commit below.
+            if getattr(result, "membership_first_time", False):
+                from app.models.platform import Space as _Space
+                from app.services.collective_welcome_emit import (
+                    emit_collective_welcome as _emit_welcome,
+                )
+                _space = db.query(_Space).filter(_Space.id == space_id).first()
+                if _space is not None:
+                    welcome_event = _emit_welcome(
+                        db, space=_space, member=_member,
+                        join_source="purchase",
+                    )
         db.commit()
     except Exception:
         # Unexpected DB error during apply → roll back the whole
@@ -1054,6 +1108,13 @@ def _handle_checkout_completed(
         schedule_routing_if_needed(
             None, creator_event, "collective.purchase.received",
         )
+    # Routed only after the commit — a welcome must never describe a
+    # membership that then rolled back. ``None`` whenever the buyer was
+    # already a member, was reactivated rather than created, or the
+    # Collective has welcomes switched off.
+    if welcome_event is not None:
+        from app.services.collective_welcome_emit import schedule_welcome
+        schedule_welcome(welcome_event)
 
     # Singular ``entitlement`` field in the summary line is kept
     # for log-scraping compatibility with the pre-B3 format.

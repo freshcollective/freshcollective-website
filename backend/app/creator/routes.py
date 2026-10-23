@@ -54,6 +54,10 @@ from app.creator.plan_config import (
     get_plan_capability,
 )
 from app.services.creator_paid_content import derived_has_paid_content
+from app.services.collective_welcome_emit import (
+    emit_collective_welcome as _emit_collective_welcome,
+    schedule_welcome as _schedule_welcome,
+)
 from app.creator.plan_guards import (
     CURRENT_SUBSCRIPTION_STATUSES,
     current_subscription_order,
@@ -2854,6 +2858,11 @@ def approve_access_request(
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Approve a pending access request — creates membership with learner role."""
     space = _get_managed_space(slug, current_user, db)
@@ -2872,6 +2881,7 @@ def approve_access_request(
         .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == req.user_id)
         .first()
     )
+    _welcome = None
     if not existing:
         # Approving an access request admits a new learner, so the plan's
         # member allowance applies. The creator is the caller here, so the
@@ -2885,11 +2895,23 @@ def approve_access_request(
             status=SpaceMembershipStatus.active,
             source="joined",
         ))
+        # Approval is the moment the person becomes a member; the
+        # pending request before it is not, and welcomes nobody. Inside
+        # ``if not existing`` so re-approving someone already in the
+        # Collective cannot produce a second welcome.
+        _approved_user = (
+            db.query(User).filter(User.id == req.user_id).first()
+        )
+        if _approved_user is not None:
+            _welcome = _emit_collective_welcome(
+                db, space=space, member=_approved_user, join_source="joined",
+            )
 
     req.status = "approved"
     from datetime import datetime as _dt
     req.updated_at = _dt.utcnow()
     db.commit()
+    _schedule_welcome(_welcome, background_tasks)
     return {"approved": True}
 
 
@@ -5188,6 +5210,11 @@ def add_or_invite_member(
     body: AddMemberRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> AddMemberResponse:
     """Add an existing user directly as a member, or create a draft invitation if not found.
 
@@ -5247,7 +5274,15 @@ def add_or_invite_member(
             source="invited",
         )
         db.add(membership)
+        # Added directly as an ACTIVE member, so they are a member now
+        # and the welcome is due. The ``else`` branch below creates a
+        # draft invitation instead — nobody has joined there, and it
+        # deliberately welcomes no one until the invitation is accepted.
+        _welcome = _emit_collective_welcome(
+            db, space=space, member=user, join_source="invited",
+        )
         db.commit()
+        _schedule_welcome(_welcome, background_tasks)
         display = user.name or email
         return AddMemberResponse(
             result="added_as_member",

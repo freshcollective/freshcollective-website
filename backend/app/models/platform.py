@@ -334,6 +334,17 @@ class Space(Base):
     show_member_directory: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Does this Collective send its welcome email to first-time members?
+    #
+    # NOT NULL default true, so every Collective — existing and new —
+    # starts enabled (migration 164). Nothing retrospective follows:
+    # the email is emitted only when a first-time active membership is
+    # created, and this flag is read at that moment, not at delivery.
+    # Switching it on later therefore cannot release a backlog, because
+    # no event was ever written for members who joined while it was off.
+    welcome_email_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
 
     # ---- Platform-managed auto-grant --------------------------------------
     # When set, users whose ``users.role`` matches this value receive an

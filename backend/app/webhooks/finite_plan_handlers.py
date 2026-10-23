@@ -1256,7 +1256,22 @@ def _do_invoice_succeeded(
             currency=plan.currency,
             dedupe_key=f"purchase_received:plan:{plan.id}",
             session_count=len(intent.bookings) or None,
+            experience_kind=(
+                payment_option.attaches_to_kind
+                if payment_option is not None else None
+            ),
         )
+        welcome_event = None
+        if getattr(result, "membership_first_time", False):
+            from app.models.platform import Space as _Space
+            from app.services.collective_welcome_emit import (
+                emit_collective_welcome as _emit_welcome,
+            )
+            _space = db.query(_Space).filter(_Space.id == plan.space_id).first()
+            if _space is not None:
+                welcome_event = _emit_welcome(
+                    db, space=_space, member=member, join_source="purchase",
+                )
 
     db.commit()
 
@@ -1275,6 +1290,13 @@ def _do_invoice_succeeded(
         schedule_routing_if_needed(
             None, creator_event, "collective.purchase.received",
         )
+    # Same post-commit welcome as the single-payment path. A finite plan
+    # grants access at its FIRST successful payment, which is where the
+    # membership is created, so the welcome belongs here and not at
+    # checkout.
+    if welcome_event is not None:
+        from app.services.collective_welcome_emit import schedule_welcome
+        schedule_welcome(welcome_event)
 
 
 # ---------------------------------------------------------------------------

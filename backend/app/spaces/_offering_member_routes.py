@@ -79,7 +79,13 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    status,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -103,6 +109,10 @@ from app.models.offering import (
 from app.models.platform import PathwayAboutBlock, Space
 from app.models.user import User
 from app.services import offering_acquisition as acq
+from app.services.collective_welcome_emit import (
+    emit_collective_welcome as _emit_collective_welcome,
+    schedule_welcome as _schedule_welcome,
+)
 from app.services import offering_covers as _covers
 from app.services import offering_pilot as _pilot
 from app.spaces import area_access, area_policies
@@ -581,6 +591,13 @@ def acquire_offering(
     # Collective membership, and both are things an unverified signup
     # should not be able to mint.
     current_user: User = Depends(get_verified_current_user),
+    # Comms are handed to FastAPI to run after the response, the same
+    # as every other HTTP trigger site. Routing dispatches to the email
+    # provider inline, and a member claiming a free workbook should not
+    # wait on that — nor have their acquisition look like a failure if
+    # it goes wrong. Defaulted so the direct-call tests, which pass no
+    # request context, still work; those route synchronously.
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Free Offerings only. Idempotent. One transaction.
 
@@ -670,7 +687,56 @@ def acquire_offering(
                 detail={"reason": exc.reason, "message": exc.message},
             ) from exc
 
+    # A free Offering brings its claimant into the Collective exactly as
+    # a paid one does, so it earns the same welcome. Emitted here rather
+    # than inside ``acquire_free`` because that function does not own
+    # the transaction — and because the retry path above calls it twice,
+    # while a welcome is owed once. ``None`` whenever they were already
+    # a member, were reactivated, or the Collective has welcomes off.
+    _welcome = (
+        _emit_collective_welcome(
+            db, space=space, member=current_user, join_source="purchase",
+        )
+        if outcome.membership_first_time else None
+    )
+    # And the Collective's leaders hear that somebody now has their
+    # work. The same event, the same recipient rules and the same
+    # preferences as a paid acquisition — a creator wants to know
+    # either way, and a free Offering is not a lesser kind of news.
+    #
+    # Only on a first acquisition. ``created`` is False when they
+    # already owned it, so pressing the button twice notifies nobody a
+    # second time; the dedupe key on the entitlement id is the second
+    # guard, and it is the entitlement rather than a transaction
+    # because no transaction exists — nothing was paid and nothing may
+    # be recorded as revenue.
+    _creator_event = None
+    if outcome.created:
+        from app.services.purchase_lifecycle_emit import (
+            emit_purchase_received_creator,
+        )
+        _creator_event = emit_purchase_received_creator(
+            db,
+            space_id=space.id,
+            buyer=current_user,
+            experience_name=offering.title,
+            payment_mode="free",
+            amount_cents=None,
+            currency=None,
+            dedupe_key=f"purchase_received:entitlement:{outcome.entitlement.id}",
+            experience_kind="offering",
+            free=True,
+        )
     db.commit()
+    # After the commit, like every other welcome: nothing may be sent
+    # describing a membership that could still roll back.
+    _schedule_welcome(_welcome, background_tasks)
+    if _creator_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            background_tasks, _creator_event,
+            "collective.purchase.received",
+        )
     logger.info(
         "offering acquired (free): offering=%s user=%s created=%s joined=%s",
         offering.id, current_user.id, outcome.created,

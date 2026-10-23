@@ -95,6 +95,33 @@ F_BUYER = MergeField(
     "\u201cMember\u201d.",
 )
 
+F_MEMBER_FIRST_NAME = MergeField(
+    "member_first_name", "member_first_name", "Tom",
+    "The new member's first name. Reads \u201cthere\u201d when they have "
+    "not set one, so a greeting never addresses an empty space.",
+)
+
+F_CREATOR_NAME = MergeField(
+    "creator_name", "creator_name", "Sarah",
+    "Who runs this Collective. Empty when the Collective is "
+    "platform-owned.",
+)
+
+F_PURCHASE_VERB = MergeField(
+    "purchase_verb", "purchase_verb", "purchased",
+    "How this kind of purchase reads \u2014 \u201cpurchased\u201d for an "
+    "Offering, \u201cjoined\u201d for a Pathway or Series, "
+    "\u201cbooked\u201d for a Gathering, \u201cadded\u201d for a free "
+    "Offering. Resolved by Fresh Collective from what was bought.",
+)
+
+F_PURCHASE_SUFFIX = MergeField(
+    "purchase_suffix", "purchase_suffix", "",
+    "Finishes the sentence when the verb alone cannot \u2014 "
+    "\u201c\u2026 to their collection\u201d for a free Offering. Empty "
+    "for every paid purchase.",
+)
+
 F_AMOUNT = MergeField(
     "amount", "amount_display", "A$250",
     "What they paid, already formatted with its currency symbol. Empty "
@@ -351,18 +378,27 @@ declare(TemplateDeclaration(
     category=CATEGORY_MONEY_LABEL,
     audience="The Collective's leaders — owner, creators and moderators",
     classification=EDITABLE,
-    merge_fields=(F_COLLECTIVE, F_EXPERIENCE, F_BUYER, F_AMOUNT),
+    merge_fields=(
+        F_COLLECTIVE, F_EXPERIENCE, F_BUYER, F_AMOUNT, F_PURCHASE_VERB,
+        F_PURCHASE_SUFFIX,
+    ),
     slots=(
+        # The subject carries the Collective because the real send
+        # always did (``f"{headline} — {collective}"``) while this
+        # default did not — so the admin preview and the delivered email
+        # disagreed. Stating it here is what makes them match.
         EditableSlot("subject", "Subject",
-                     "{{buyer_name}} joined {{purchase_name}}",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}} \u2014 {{collective_name}}",
                      multiline=False, max_length=120,
                      required_fields=("buyer_name",)),
         EditableSlot("heading", "Heading",
-                     "{{buyer_name}} joined {{purchase_name}}",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}}",
                      multiline=False, required_fields=("buyer_name",)),
         EditableSlot("body.opening", "Opening",
-                     "{{buyer_name}} joined {{purchase_name}} in "
-                     "{{collective_name}}.",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}} in {{collective_name}}.",
                      required_fields=("buyer_name", "collective_name")),
         EditableSlot("cta_label", "Button label", "Open Creator Studio",
                      multiline=False),
@@ -765,3 +801,58 @@ _system(
     "a member email.",
     internal=True,
 )
+
+
+declare(TemplateDeclaration(
+    template_key="collective.membership.welcome.email_transactional",
+    event_type="collective.membership.welcome",
+    display_name="Welcome to the Collective",
+    category=CATEGORY_COMMUNITY_LABEL,
+    audience="A member, the first time they join a Collective",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_MEMBER_FIRST_NAME, F_CREATOR_NAME),
+    slots=(
+        EditableSlot(
+            "subject", "Subject",
+            "Welcome to {{collective_name}} \u2728",
+            multiline=False, max_length=120,
+            required_fields=("collective_name",),
+            help_text="What the member sees in their inbox.",
+        ),
+        EditableSlot(
+            "heading", "Welcome heading",
+            "Welcome to {{collective_name}}!",
+            multiline=False,
+            required_fields=("collective_name",),
+        ),
+        EditableSlot(
+            "body.message", "Main message",
+            "Hello {{member_first_name}},\n\n"
+            "We\u2019re so glad you\u2019re here.\n\n"
+            "You\u2019ve just become part of a space created for "
+            "connection, discovery and shared experiences.\n\n"
+            "Take a little time to explore your Collective. Discover "
+            "Pathways, join Gatherings, connect with other members and "
+            "see what\u2019s waiting for you.",
+            required_fields=("member_first_name",),
+            help_text=(
+                "Blank lines separate paragraphs. Write in your "
+                "Collective\u2019s own voice."
+            ),
+        ),
+        EditableSlot(
+            "cta_label", "Button label",
+            "Explore {{collective_name}}",
+            multiline=False, max_length=60,
+            help_text=(
+                "The button\u2019s wording. Its destination is always "
+                "your Collective and is generated by Fresh Collective."
+            ),
+        ),
+        EditableSlot(
+            "signature", "Signature",
+            "With warmth,\nThe {{collective_name}} Team",
+            help_text="How the message signs off.",
+        ),
+    ),
+))

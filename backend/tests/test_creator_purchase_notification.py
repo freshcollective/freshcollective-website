@@ -226,6 +226,109 @@ class TestWhatTheNotificationCarries:
 # Who hears it
 # ---------------------------------------------------------------------------
 
+class TestHowItReads:
+    """The verb, and the one case where a verb is not enough.
+
+    One wording said "joined" for everything, so a workbook read as
+    something somebody joined. These pin each kind — including the free
+    acquisition, where nothing was purchased and the sentence has to
+    finish differently.
+    """
+
+    def _render(self, db, space, buyer, **kw):
+        from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL
+        from app.comms.routing.resolvers.collective import (
+            CollectivePurchaseReceivedResolver,
+        )
+        from app.comms.templates.registry import get_template_for
+
+        args = dict(
+            space_id=space.id, buyer=buyer, experience_name="Test Workbook",
+            payment_mode="single", amount_cents=2500, currency="AUD",
+            dedupe_key=f"purchase_received:txn:{uuid.uuid4()}",
+        )
+        args.update(kw)
+        event = emit_purchase_received_creator(db, **args)
+        db.flush()
+        [recipient] = CollectivePurchaseReceivedResolver().resolve(db, event)
+        tpl = get_template_for(EVENT, CHANNEL_EMAIL_TRANSACTIONAL)
+        return tpl.render(db, event, recipient)
+
+    def test_a_paid_offering_was_purchased(self, db, collective):
+        space, _creator, buyer = collective
+        out = self._render(db, space, buyer, experience_kind="offering")
+        assert out.subject == (
+            f"{buyer.name} purchased Test Workbook \u2014 {space.name}"
+        )
+
+    def test_a_free_offering_was_added_to_their_collection(
+        self, db, collective,
+    ):
+        space, _creator, buyer = collective
+        out = self._render(
+            db, space, buyer, experience_kind="offering", free=True,
+            payment_mode="free", amount_cents=None, currency=None,
+        )
+        assert out.subject == (
+            f"{buyer.name} added Test Workbook to their collection "
+            f"\u2014 {space.name}"
+        )
+
+    def test_a_free_offering_claims_no_revenue(self, db, collective):
+        space, _creator, buyer = collective
+        out = self._render(
+            db, space, buyer, experience_kind="offering", free=True,
+            payment_mode="free", amount_cents=None, currency=None,
+        )
+        assert "no payment was taken" in out.body_text.lower()
+        # No amount anywhere, and nothing that reads as money.
+        assert "$" not in out.body_text
+
+    def test_a_pathway_is_still_joined(self, db, collective):
+        space, _creator, buyer = collective
+        out = self._render(
+            db, space, buyer, experience_kind="pathway",
+            experience_name="Beginning",
+        )
+        assert out.subject == (
+            f"{buyer.name} joined Beginning \u2014 {space.name}"
+        )
+
+    def test_a_gathering_is_booked(self, db, collective):
+        space, _creator, buyer = collective
+        out = self._render(
+            db, space, buyer, experience_kind="gathering",
+            experience_name="Morning Sit",
+        )
+        assert out.subject == (
+            f"{buyer.name} booked Morning Sit \u2014 {space.name}"
+        )
+
+    def test_an_unknown_kind_reads_as_it_always_did(self, db, collective):
+        """The shipped wording is the fallback, so a future kind that
+        nobody has mapped cannot read as something worse."""
+        space, _creator, buyer = collective
+        out = self._render(
+            db, space, buyer, experience_kind="something_new_in_2027",
+        )
+        assert " joined " in out.subject
+
+    def test_the_paid_suffix_is_empty(self, db, collective):
+        """Adding ``purchase_suffix`` to the slot defaults must not have
+        changed one character of the paid wording."""
+        space, _creator, buyer = collective
+        event = emit_purchase_received_creator(
+            db, space_id=space.id, buyer=buyer,
+            experience_name="Term 4 2026", payment_mode="single",
+            amount_cents=25000, currency="AUD",
+            dedupe_key=f"purchase_received:txn:{uuid.uuid4()}",
+            experience_kind="event_series",
+        )
+        db.flush()
+        assert event.payload["purchase_suffix"] == ""
+        assert event.payload["is_free"] is False
+
+
 class TestWhoIsNotified:
     def _resolve(self, db, space, buyer, **kw):
         emit_purchase_received_creator(
