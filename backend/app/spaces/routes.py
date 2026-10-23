@@ -1074,6 +1074,11 @@ def join_space(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_current_user),  # SEC-009
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Join a public Space as a learner."""
     space = _get_space_or_404(slug, db)
@@ -1147,7 +1152,7 @@ def join_space(
         db, space=space, member=current_user, join_source="joined",
     )
     db.commit()
-    _schedule_welcome(_welcome)
+    _schedule_welcome(_welcome, background_tasks)
     return {"joined": True, "already_member": False}
 
 
@@ -1239,6 +1244,11 @@ def accept_invite(
     token: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_current_user),  # SEC-009
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Accept a space invite by token.
 
@@ -1305,7 +1315,7 @@ def accept_invite(
     # Delete the invite — consumed
     db.delete(invite)
     db.commit()
-    _schedule_welcome(_welcome)
+    _schedule_welcome(_welcome, background_tasks)
     return {"accepted": True, "space_slug": space.slug}
 
 

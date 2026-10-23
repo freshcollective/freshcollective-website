@@ -2858,6 +2858,11 @@ def approve_access_request(
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Approve a pending access request — creates membership with learner role."""
     space = _get_managed_space(slug, current_user, db)
@@ -2906,7 +2911,7 @@ def approve_access_request(
     from datetime import datetime as _dt
     req.updated_at = _dt.utcnow()
     db.commit()
-    _schedule_welcome(_welcome)
+    _schedule_welcome(_welcome, background_tasks)
     return {"approved": True}
 
 
@@ -5205,6 +5210,11 @@ def add_or_invite_member(
     body: AddMemberRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
+    # Routing dispatches to the email provider inline, so the
+    # welcome is handed to FastAPI to run after the response
+    # rather than made part of it. Defaulted for the tests that
+    # call this function directly with no request context.
+    background_tasks: BackgroundTasks = None,
 ) -> AddMemberResponse:
     """Add an existing user directly as a member, or create a draft invitation if not found.
 
@@ -5272,7 +5282,7 @@ def add_or_invite_member(
             db, space=space, member=user, join_source="invited",
         )
         db.commit()
-        _schedule_welcome(_welcome)
+        _schedule_welcome(_welcome, background_tasks)
         display = user.name or email
         return AddMemberResponse(
             result="added_as_member",

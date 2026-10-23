@@ -201,6 +201,119 @@ class TestAFreeAcquisition:
         assert db.query(PaymentTransaction).count() == before
 
 
+class TestTheCreatorHearsAboutIt:
+    """A free acquisition is news a creator wants.
+
+    It travels as ``collective.purchase.received`` — the same event,
+    the same recipient rules and the same preferences as a paid one —
+    because "somebody now has my work" is the same fact either way.
+    What differs is the wording and the absence of any money.
+    """
+
+    def _events(self, db, space):
+        from app.comms.models import CommunicationEvent
+        return (
+            db.query(CommunicationEvent)
+            .filter(
+                CommunicationEvent.event_type == "collective.purchase.received",
+                CommunicationEvent.source_id == space.id,
+            )
+            .all()
+        )
+
+    def test_a_free_acquisition_notifies_the_creator(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        off = _offering(db, space, title="Test Workbook")
+        _file(db, off)
+
+        _acquire(db, space, off, make_user())
+
+        [event] = self._events(db, space)
+        assert event.payload["experience_name"] == "Test Workbook"
+        assert event.payload["purchase_verb"] == "added"
+        assert event.payload["purchase_suffix"] == " to their collection"
+        assert event.payload["is_free"] is True
+
+    def test_it_records_no_amount_and_no_revenue(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        off = _offering(db, space)
+        _file(db, off)
+
+        _acquire(db, space, off, make_user())
+
+        [event] = self._events(db, space)
+        assert event.payload["amount_cents"] is None
+        assert event.payload["currency"] is None
+        assert event.payload["amount_display"] == ""
+        assert event.payload["payment_mode"] == "free"
+
+    def test_pressing_it_twice_notifies_once(
+        self, db, make_space, make_user,
+    ):
+        """Two guards, and this exercises both: the second call never
+        reaches the emit because ``created`` is False, and the dedupe
+        key on the entitlement id would refuse it if it did."""
+        space = make_space()
+        off = _offering(db, space)
+        _file(db, off)
+        taker = make_user()
+
+        _acquire(db, space, off, taker)
+        _acquire(db, space, off, taker)
+
+        assert len(self._events(db, space)) == 1
+
+    def test_the_dedupe_key_names_the_entitlement_not_a_transaction(
+        self, db, make_space, make_user,
+    ):
+        """No payment happened, so there is no transaction id to key
+        on — and inventing one would put a non-sale in the ledger."""
+        space = make_space()
+        off = _offering(db, space)
+        _file(db, off)
+
+        _acquire(db, space, off, make_user())
+
+        [event] = self._events(db, space)
+        assert event.dedupe_key.startswith("purchase_received:entitlement:")
+
+    def test_two_people_acquiring_produce_two_notifications(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        off = _offering(db, space)
+        _file(db, off)
+
+        _acquire(db, space, off, make_user())
+        _acquire(db, space, off, make_user())
+
+        assert len(self._events(db, space)) == 2
+
+    def test_a_refused_acquisition_notifies_nobody(
+        self, db, make_space, make_user,
+    ):
+        """Only a successful acquisition is news. A priced Offering is
+        refused before anything is created, so nothing is announced —
+        and in particular a creator is never told about a sale that did
+        not happen."""
+        space = make_space()
+        off = _offering(
+            db, space,
+            pricing_kind=OfferingPricingKind.one_time.value,
+            price_cents=2400,
+        )
+        _file(db, off)
+
+        with pytest.raises(HTTPException):
+            _acquire(db, space, off, make_user())
+
+        assert self._events(db, space) == []
+
+
 class TestPressingItTwice:
 
     def test_the_second_press_is_a_no_op(self, db, make_space, make_user):

@@ -95,10 +95,21 @@ def _purchase_lines(ctx: dict) -> tuple[str, str]:
     collective = (ctx.get("collective_name") or "").strip() or "your Collective"
 
     what = f"“{experience}”" if experience else f"access to {collective}"
-    headline = f"{buyer} joined {what}"
+    # The same verb the email uses, so the in-app notification and the
+    # email do not describe one event two different ways. Falls back to
+    # "joined" for an event emitted before the verb existed on the
+    # payload, which is exactly what those events used to say.
+    verb = (ctx.get("purchase_verb") or "joined").strip() or "joined"
+    suffix = ctx.get("purchase_suffix") or ""
+    headline = f"{buyer} {verb} {what}{suffix}"
 
     amount = (ctx.get("amount_display") or "").strip()
-    if ctx.get("payment_mode") == "plan":
+    if ctx.get("is_free"):
+        # Said plainly. A creator reading "their access is open" with no
+        # amount beside it would be left to work out whether a payment
+        # failed to record; nothing was owed, and the line says so.
+        detail = "It was free, so no payment was taken. Their access is open."
+    elif ctx.get("payment_mode") == "plan":
         detail = (
             f"Their first payment{f' of {amount}' if amount else ''} has gone "
             "through and their access is open."
@@ -144,6 +155,9 @@ class CollectivePurchaseReceivedEmailTemplate:
             "collective_name": collective,
             "purchase_name": (ctx.get("experience_name") or "").strip(),
             "purchase_verb": (ctx.get("purchase_verb") or "joined"),
+            # Empty for every paid purchase, which is why adding it to
+            # the slot defaults changed no paid wording.
+            "purchase_suffix": (ctx.get("purchase_suffix") or ""),
         })
         subject = r.text("subject")
         headline = r.text("heading")

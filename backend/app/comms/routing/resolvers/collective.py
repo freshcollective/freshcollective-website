@@ -119,7 +119,8 @@ class CollectivePurchaseReceivedResolver:
             "amount_display", "payment_mode", "session_count", "cta_url",
             # Resolved at emit time from the option's attaches_to_kind,
             # so the template does not re-query to learn what was sold.
-            "experience_kind", "purchase_verb",
+            "experience_kind", "purchase_verb", "purchase_suffix",
+            "is_free",
         )
         context = {k: payload.get(k) for k in keys}
         return [

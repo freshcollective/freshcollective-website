@@ -25,6 +25,19 @@ an in-transaction simulation of the race passes without it.
 Collective. ``SpaceMembership`` has its own uniqueness, and the point
 here is that a double acquisition does not produce a duplicate or
 leave the member half-joined.
+
+A note on email
+---------------
+
+A successful acquisition now also tells the Collective's leaders, and
+these threads call the route function directly with no request context
+— so routing dispatches synchronously inside the thread instead of
+being handed to FastAPI's BackgroundTasks as it is in a real request.
+``_no_real_email`` therefore stubs the provider for this module. What
+is under test here is the database race; reaching a provider at all is
+incidental to it, and the suite-wide tripwire is a ``BaseException``
+that would otherwise kill the winning thread and make a passing race
+look like a failed one.
 """
 
 from __future__ import annotations
@@ -40,6 +53,21 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models.user import User
 from app.services import offering_covers as covers
 from app.spaces import _offering_member_routes as member_api
+
+
+@pytest.fixture(autouse=True)
+def _no_real_email(monkeypatch):
+    """Stub the provider for every test in this module.
+
+    A stub is not a send — the tripwire guards the network, and this
+    replaces it for the duration rather than disabling it.
+    """
+    import resend
+
+    monkeypatch.setattr(
+        resend.Emails, "send",
+        staticmethod(lambda *a, **k: {"id": "stub-concurrency"}),
+    )
 
 
 def _session(engine) -> Session:

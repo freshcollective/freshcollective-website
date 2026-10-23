@@ -222,7 +222,10 @@ def _creator_name(db: "Session", space: "Space") -> str:
     return (display_name(owner) or "").strip() if owner else ""
 
 
-def schedule_welcome(event: "CommunicationEvent | None") -> None:
+def schedule_welcome(
+    event: "CommunicationEvent | None",
+    background_tasks: object | None = None,
+) -> None:
     """Hand a welcome event to routing. Call **after** ``db.commit()``.
 
     A no-op for ``None``, so a call site can pass the emitter's result
@@ -230,9 +233,16 @@ def schedule_welcome(event: "CommunicationEvent | None") -> None:
     here rather than being retyped at each call site, because a typo
     there would route nothing and look exactly like "no welcome was
     due".
+
+    ``background_tasks`` is the request's ``BackgroundTasks`` where
+    there is one. Routing dispatches to the email provider inline, so
+    an HTTP route should hand it over and return rather than make the
+    member wait on an SMTP round trip. Webhooks have no such object
+    and pass nothing, which routes synchronously — correct there,
+    because a webhook has no response anybody is waiting on.
     """
     if event is None:
         return
     from app.comms.rollout import schedule_routing_if_needed
 
-    schedule_routing_if_needed(None, event, EVENT_TYPE)
+    schedule_routing_if_needed(background_tasks, event, EVENT_TYPE)

@@ -111,8 +111,15 @@ F_PURCHASE_VERB = MergeField(
     "purchase_verb", "purchase_verb", "purchased",
     "How this kind of purchase reads \u2014 \u201cpurchased\u201d for an "
     "Offering, \u201cjoined\u201d for a Pathway or Series, "
-    "\u201cbooked\u201d for a Gathering. Resolved by Fresh Collective "
-    "from what was bought.",
+    "\u201cbooked\u201d for a Gathering, \u201cadded\u201d for a free "
+    "Offering. Resolved by Fresh Collective from what was bought.",
+)
+
+F_PURCHASE_SUFFIX = MergeField(
+    "purchase_suffix", "purchase_suffix", "",
+    "Finishes the sentence when the verb alone cannot \u2014 "
+    "\u201c\u2026 to their collection\u201d for a free Offering. Empty "
+    "for every paid purchase.",
 )
 
 F_AMOUNT = MergeField(
@@ -373,6 +380,7 @@ declare(TemplateDeclaration(
     classification=EDITABLE,
     merge_fields=(
         F_COLLECTIVE, F_EXPERIENCE, F_BUYER, F_AMOUNT, F_PURCHASE_VERB,
+        F_PURCHASE_SUFFIX,
     ),
     slots=(
         # The subject carries the Collective because the real send
@@ -380,16 +388,17 @@ declare(TemplateDeclaration(
         # default did not — so the admin preview and the delivered email
         # disagreed. Stating it here is what makes them match.
         EditableSlot("subject", "Subject",
-                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}} "
-                     "\u2014 {{collective_name}}",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}} \u2014 {{collective_name}}",
                      multiline=False, max_length=120,
                      required_fields=("buyer_name",)),
         EditableSlot("heading", "Heading",
-                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}}",
                      multiline=False, required_fields=("buyer_name",)),
         EditableSlot("body.opening", "Opening",
-                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}} in "
-                     "{{collective_name}}.",
+                     "{{buyer_name}} {{purchase_verb}} {{purchase_name}}"
+                     "{{purchase_suffix}} in {{collective_name}}.",
                      required_fields=("buyer_name", "collective_name")),
         EditableSlot("cta_label", "Button label", "Open Creator Studio",
                      multiline=False),

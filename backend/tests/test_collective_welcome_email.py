@@ -319,6 +319,42 @@ class TestTheOtherJoiningPaths:
             db, space=space, member=buyer, join_source="ticket_purchase",
         ) is not None
 
+    def test_no_call_site_routes_before_it_commits(self):
+        """Routing dispatches synchronously, so scheduling a welcome
+        before the commit would send mail describing a membership that
+        can still roll back. Every call site must therefore order the
+        two one way: ``db.commit()`` first, scheduling after.
+
+        Read from the source because the ordering is the whole
+        guarantee and a passing functional test cannot see it — a
+        send that happens to precede a commit that happens to succeed
+        looks identical to the correct order.
+        """
+        from pathlib import Path
+
+        backend = Path(__file__).resolve().parents[1]
+        offenders = []
+        for rel in (
+            "app/spaces/routes.py",
+            "app/spaces/_offering_member_routes.py",
+            "app/creator/routes.py",
+            "app/webhooks/routes.py",
+            "app/webhooks/finite_plan_handlers.py",
+        ):
+            lines = (backend / rel).read_text().splitlines()
+            commits = [i for i, l in enumerate(lines) if "db.commit()" in l]
+            for i, line in enumerate(lines):
+                if "schedule_welcome(" not in line or "def " in line:
+                    continue
+                if "import" in line:
+                    continue
+                if not any(c < i for c in commits):
+                    offenders.append(f"{rel}:{i + 1}: {line.strip()}")
+        assert offenders == [], (
+            "a welcome is scheduled with no commit before it:\n"
+            + "\n".join(offenders)
+        )
+
     def test_every_membership_creating_path_emits_a_welcome(self):
         """Structural: a path that creates membership must emit.
 
