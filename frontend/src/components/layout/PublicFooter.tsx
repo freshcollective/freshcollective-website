@@ -26,7 +26,7 @@ export default function PublicFooter() {
               className="max-w-[300px] text-[14px] leading-[1.78]"
               style={{ color: '#FFFFFF' }}
             >
-              Creator-led collectives for transformative growth — structured pathways,
+              A home for creator-led communities — structured pathways,
               live gatherings, and intentional community.
             </p>
           </div>
