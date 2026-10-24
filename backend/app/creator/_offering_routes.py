@@ -741,9 +741,24 @@ def delete_offering(
     anybody.
     """
     from app.core.storage import StorageDeleteError, delete_keys
+    from sqlalchemy.exc import IntegrityError
 
     space = _get_owned_space(slug, current_user, db)
     offering = _get_offering(space, offering_slug, db)
+
+    # Lock the row for the rest of this transaction.
+    #
+    # Without it the eligibility checks are a read followed by a write
+    # with a gap in between, and a concurrent publish lands in that gap:
+    # ``publish_offering`` sets ``published_at`` and flips its Payment
+    # Option to published, so the delete would proceed on checks that
+    # were true a moment ago and then hit the grant's RESTRICT at
+    # commit — after the storage objects were already gone. The lock
+    # makes publish wait, and publish re-reads this row, so whichever
+    # arrives second sees the other's outcome. Same mechanism the
+    # Stripe webhook uses before it mutates.
+    db.query(Offering).filter(Offering.id == offering.id).with_for_update().one()
+    db.refresh(offering)
 
     if offering.published_at is not None:
         raise HTTPException(
@@ -810,10 +825,33 @@ def delete_offering(
             ) from exc
 
     offering_id, offering_title = offering.id, offering.title
-    for f in files:
-        db.delete(f)
-    db.delete(offering)
-    db.commit()
+    try:
+        # The Offering's own commerce rows first — a paid draft owns a
+        # draft option whose grant holds the RESTRICT on this row, and
+        # deleting the option cascades the grant away.
+        offering_commerce.delete_commerce_rows(db, offering)
+        for f in files:
+            db.delete(f)
+        db.delete(offering)
+        db.commit()
+    except IntegrityError:
+        # A reference nothing above saw. The row lock makes a
+        # concurrent publish wait, so this should be unreachable —
+        # but a 409 explaining the refusal is the correct answer to a
+        # reference that exists, and a 500 is not. The storage objects
+        # are already gone at this point; see the docstring.
+        db.rollback()
+        logger.exception(
+            "offering delete: refused by a database reference id=%s space=%s",
+            offering_id, space.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Something still refers to this Offering, so it was not "
+                "deleted. Retire it instead."
+            ),
+        ) from None
 
     logger.info(
         "offering deleted: id=%s title=%r space=%s files=%d by=%s",

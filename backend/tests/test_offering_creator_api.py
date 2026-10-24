@@ -1831,6 +1831,165 @@ class TestDeleteADraft:
         )
         assert out["deleted"] is True
 
+    # ── A PAID draft, which owns commerce rows from the moment it
+    #    has a price ────────────────────────────────────────────────
+
+    def _paid_draft(self, db, space):
+        """``offering_commerce.sync`` provisions the option, its grant
+        and its schedule as soon as a price exists — in draft status,
+        so publishing is a status flip. A paid draft therefore has
+        commerce rows before anybody has done anything with it."""
+        from app.services import offering_commerce
+        off = _offering(
+            db, space,
+            pricing_kind=OfferingPricingKind.one_time.value,
+            price_cents=2400,
+        )
+        _file(db, off)
+        offering_commerce.sync(db, offering=off, space=space)
+        db.flush()
+        return off
+
+    def test_a_paid_draft_can_be_deleted(self, db, owner_space):
+        """The bug this class nearly shipped with. Treating the
+        Offering's own draft option as a blocker made every paid draft
+        undeletable, telling the creator to archive an option they
+        never created and cannot see."""
+        from app.models.payment_option import PaymentOption
+
+        space, owner = owner_space()
+        off = self._paid_draft(db, space)
+        off_id = off.id
+        assert db.query(PaymentOption).filter(
+            PaymentOption.attaches_to_id == off_id,
+        ).count() == 1, "fixture did not provision an option"
+
+        out = api.delete_offering(
+            space.slug, off.slug, db=db, current_user=owner,
+        )
+
+        assert out["deleted"] is True
+        assert db.query(Offering).filter(Offering.id == off_id).first() is None
+
+    def test_its_option_grant_and_schedule_go_with_it(self, db, owner_space):
+        """The grant holds ``ondelete=RESTRICT`` on the Offering, so if
+        it survived the delete would be impossible. Deleting the option
+        cascades both the grant and the schedule."""
+        from app.models.payment_option import PaymentOption
+        from app.models.payment_option_grant import PaymentOptionGrant
+        from app.models.payment_option_schedule import PaymentOptionSchedule
+
+        space, owner = owner_space()
+        off = self._paid_draft(db, space)
+        off_id = off.id
+        option_id = db.query(PaymentOption.id).filter(
+            PaymentOption.attaches_to_id == off_id,
+        ).scalar()
+
+        api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+
+        assert db.query(PaymentOption).filter(
+            PaymentOption.id == option_id,
+        ).first() is None
+        assert db.query(PaymentOptionGrant).filter(
+            PaymentOptionGrant.offering_id == off_id,
+        ).count() == 0
+        assert db.query(PaymentOptionSchedule).filter(
+            PaymentOptionSchedule.payment_option_id == option_id,
+        ).count() == 0
+
+    def test_a_published_option_is_refused(self, db, owner_space):
+        """Defence in depth. A published option means a sellable
+        Offering; ``published_at`` already refuses that, so this guards
+        a future path that publishes an option on its own."""
+        from app.models.payment_option import PaymentOption, PaymentOptionStatus
+
+        space, owner = owner_space()
+        off = self._paid_draft(db, space)
+        db.query(PaymentOption).filter(
+            PaymentOption.attaches_to_id == off.id,
+        ).one().status = PaymentOptionStatus.published
+        db.flush()
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert "on sale" in exc.value.detail
+
+    def test_another_options_grant_is_refused(self, db, owner_space):
+        """``grant_kind='offering'`` lets any option grant any Offering,
+        so a bundle could include this one. Deleting it would break that
+        bundle — and the RESTRICT would make it a 500."""
+        from app.models.payment_option import (
+            PaymentOption, PaymentOptionStatus, PaymentOptionType,
+        )
+        from app.models.payment_option_grant import PaymentOptionGrant
+
+        space, owner = owner_space()
+        off = _offering(db, space)
+        bundle = PaymentOption(
+            id=_uid("po"), space_id=space.id, pathway_id=None,
+            attaches_to_kind="space", attaches_to_id=space.id,
+            name="Everything bundle",
+            payment_type=PaymentOptionType.one_time,
+            status=PaymentOptionStatus.draft,
+            calculated_total_cents=9900, currency="AUD",
+        )
+        db.add(bundle)
+        db.flush()
+        db.add(PaymentOptionGrant(
+            id=_uid("pog"), payment_option_id=bundle.id,
+            grant_kind="offering", offering_id=off.id, position=0,
+        ))
+        db.flush()
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert "Another Payment Option" in exc.value.detail
+        assert db.query(Offering).filter(Offering.id == off.id).first() is not None
+
+    # ── Storage / database consistency ───────────────────────────────
+
+    def test_a_reference_appearing_late_is_a_409_not_a_500(
+        self, db, owner_space, monkeypatch,
+    ):
+        """The residual window: storage is gone, and the commit then
+        hits a reference nothing saw. The row lock should make this
+        unreachable, but if it happens the answer is a refusal a
+        creator can read — never a 500."""
+        from sqlalchemy.exc import IntegrityError
+
+        space, owner = owner_space()
+        off = _offering(db, space)
+        monkeypatch.setattr("app.core.storage.delete_keys", lambda keys: None)
+
+        real_commit = db.commit
+        calls = {"n": 0}
+
+        def _commit_once_then_fail():
+            calls["n"] += 1
+            raise IntegrityError("stmt", {}, Exception("RESTRICT"))
+
+        monkeypatch.setattr(db, "commit", _commit_once_then_fail)
+        monkeypatch.setattr(db, "rollback", lambda: None)
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert calls["n"] == 1
+        monkeypatch.setattr(db, "commit", real_commit)
+
+    def test_the_offering_row_is_locked_before_the_checks(self):
+        """What closes the publish race. Read from the source because
+        the lock's whole purpose is to affect a concurrent transaction,
+        which a single-session test cannot stage."""
+        import inspect
+        src = inspect.getsource(api.delete_offering)
+        assert "with_for_update()" in src
+        # Before the first eligibility check, not after it.
+        assert src.index("with_for_update()") < src.index("published_at is not None")
+
     # ── Ownership is unchanged by any of this ────────────────────────
 
     def test_another_creator_cannot_delete_it(

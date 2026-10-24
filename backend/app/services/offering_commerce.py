@@ -74,6 +74,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Session
 
 from app.models.offering import Offering, OfferingPricingKind, OfferingStatus
@@ -412,52 +413,109 @@ __all__ = [
 
 
 def blocking_commerce_reference(db: Session, offering: Offering) -> str | None:
-    """Why this Offering's commerce rows forbid deleting it, or ``None``.
+    """Why another product's commerce rows forbid deleting this
+    Offering, or ``None``.
 
-    Lives here rather than in ``_offering_routes`` because this module
-    already owns the Offering ↔ PaymentOption relationship, and that
-    route module is deliberately kept clear of payment imports — a
-    boundary two tests in ``test_offering_creator_api`` enforce by
-    name. Asking the owner of the relationship is both cleaner and the
-    only way to ask without crossing it.
+    Lives here because this module owns the Offering ↔ PaymentOption
+    relationship, and ``_offering_routes`` is deliberately kept clear
+    of payment imports — a boundary two tests enforce by name.
 
-    Two references matter:
+    What counts as a blocker, and what does not
+    -------------------------------------------
 
-    * **A live (non-archived) Payment Option.** Archiving one is a
-      creator's deliberate act of putting it beyond use; it must never
-      happen as a side effect of deleting something else. So a live
-      option is reported, and an archived one is not.
+    A **paid draft already has commerce rows**. ``sync`` provisions the
+    option, its grant and its schedule as soon as a price is set, in
+    ``draft`` status, so that publishing is a status flip rather than a
+    creation. Those rows exist only to serve this Offering and nobody
+    else can reach them, so they are **not** blockers — they are part
+    of what gets deleted. Treating them as blockers made every paid
+    draft undeletable, with a message telling the creator to archive an
+    option they never created and cannot see.
 
-    * **A grant.** ``payment_option_grants.offering_id`` carries
-      ``ondelete=RESTRICT``, so without this the database would refuse
-      the delete — correctly, but as a 500 that explains nothing. This
-      turns that into a sentence a creator can act on.
+    Two things genuinely do block:
 
-    Returns the message, so the caller decides the status code.
+    * **A published option.** It is sellable right now. This cannot
+      happen for a deletable Offering — a published option means a
+      published Offering, which ``published_at`` already refuses — so
+      it is defence in depth against a future path that publishes an
+      option without publishing its Offering.
+
+    * **A grant held by some OTHER option.** ``grant_kind='offering'``
+      lets any option grant any Offering, so a bundle could include
+      this one. Deleting it would break that bundle, and
+      ``payment_option_grants.offering_id`` is ``ondelete=RESTRICT``,
+      so the database would refuse the delete as a 500 that explains
+      nothing. This turns it into a sentence a creator can act on.
     """
-    live_option = (
+    own_option_ids = [
+        row[0] for row in (
+            db.query(PaymentOption.id)
+            .filter(
+                PaymentOption.attaches_to_kind == OFFERING_ATTACHES_KIND,
+                PaymentOption.attaches_to_id == offering.id,
+            )
+            .all()
+        )
+    ]
+
+    published = (
         db.query(PaymentOption.id)
         .filter(
             PaymentOption.attaches_to_kind == OFFERING_ATTACHES_KIND,
             PaymentOption.attaches_to_id == offering.id,
-            PaymentOption.status != PaymentOptionStatus.archived,
+            PaymentOption.status == PaymentOptionStatus.published,
         )
         .first()
     )
-    if live_option:
+    if published:
         return (
-            "This Offering still has a live Payment Option. Archive it "
-            "first."
+            "This Offering is on sale through a published Payment "
+            "Option. Retire it instead."
         )
 
-    granted = (
-        db.query(PaymentOptionGrant.id)
-        .filter(PaymentOptionGrant.offering_id == offering.id)
-        .first()
-    )
-    if granted:
+    foreign_grant = db.query(PaymentOptionGrant.id).filter(
+        PaymentOptionGrant.offering_id == offering.id,
+        ~PaymentOptionGrant.payment_option_id.in_(own_option_ids)
+        if own_option_ids else sa_true(),
+    ).first()
+    if foreign_grant:
         return (
-            "A Payment Option grants this Offering. Remove that grant "
-            "first."
+            "Another Payment Option includes this Offering. Remove it "
+            "from that option first."
         )
     return None
+
+
+def delete_commerce_rows(db: Session, offering: Offering) -> int:
+    """Remove the commerce rows this Offering owns. Returns the count.
+
+    Only ever called after :func:`blocking_commerce_reference` has
+    returned ``None``, so by then the only options attached to this
+    Offering are draft or archived ones it provisioned for itself, and
+    no other option grants it.
+
+    Deleting the option is enough: ``payment_option_grants`` and
+    ``payment_option_schedules`` both carry ``ondelete=CASCADE`` from
+    ``payment_options.id``, so the grant that holds the RESTRICT on
+    ``offerings.id`` goes with its option rather than needing its own
+    delete — which is also the order that satisfies the RESTRICT.
+    """
+    options = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.attaches_to_kind == OFFERING_ATTACHES_KIND,
+            PaymentOption.attaches_to_id == offering.id,
+        )
+        .all()
+    )
+    for option in options:
+        db.delete(option)
+    if options:
+        # Flushed here so the CASCADE clears the grants before the
+        # caller deletes the Offering row they point at.
+        db.flush()
+        logger.info(
+            "offering_commerce: removed %d option(s) for offering=%s",
+            len(options), offering.id,
+        )
+    return len(options)
