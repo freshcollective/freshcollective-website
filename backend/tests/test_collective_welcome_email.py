@@ -18,6 +18,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -463,6 +465,225 @@ class TestTheRenderedEmail:
         assert out.body_html.count("<p") >= 3
 
 
+class TestTheCollectivesArtwork:
+    """The welcome carries the Collective's own world.
+
+    Artwork belongs to the Location a Collective has chosen, not to
+    the Collective itself — so these build a real Location, point a
+    Space at it, and render through the production template.
+    """
+
+    def _with_location(self, db, make_space, hero):
+        import uuid as _uuid
+        from app.models.platform import Location
+
+        loc = Location(
+            id=_uid("loc"), key=f"loc-{_uuid.uuid4().hex[:8]}",
+            name="Moonlit Shore", hero_artwork_url=hero,
+        )
+        db.add(loc)
+        db.flush()
+        space = make_space()
+        space.location_id = loc.id
+        db.flush()
+        return space
+
+    def test_a_collective_with_artwork_shows_it(self, db, make_space):
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/shore/hero.png",
+        )
+        html = _render(db, space).body_html
+        assert "atlas-locations/shore/hero.png" in html
+        assert "<img" in html
+
+    def test_a_collective_without_a_location_still_sends(
+        self, db, make_space,
+    ):
+        """The graceful fallback is NO image, not a placeholder — the
+        card simply closes up and the message still reads."""
+        space = make_space()
+        html = _render(db, space).body_html
+        assert "atlas-locations" not in html
+        # The heading and the button survive the missing artwork.
+        assert space.name in html
+        assert "Explore" in html
+
+    def test_a_location_with_no_artwork_sends_no_image(
+        self, db, make_space,
+    ):
+        space = self._with_location(db, make_space, None)
+        html = _render(db, space).body_html
+        assert "atlas-locations" not in html
+
+    def test_the_artwork_is_fetchable_without_signing_in(
+        self, db, make_space,
+    ):
+        """The whole point. A recipient has no session, so the URL has
+        to be absolute and anonymous — a relative path or an
+        authorised one is a broken image in every inbox."""
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/shore/hero.png",
+        )
+        html = _render(db, space).body_html
+        src = re.search(r'<img src="([^"]+)"[^>]*alt="[^"]*"', html)
+        assert src, "no banner <img> rendered"
+        assert src.group(1).startswith("http"), (
+            f"banner src must be absolute, got {src.group(1)!r}"
+        )
+
+    def test_a_private_cover_is_never_used_as_artwork(
+        self, db, make_space,
+    ):
+        """The trap this guards.
+
+        Every in-product surface falls back to ``cover_image_url``
+        when there is no Location. Covers are PRIVATE uploads: the URL
+        works for the creator previewing the email and 403s for every
+        actual recipient. Copying that ladder here would produce a
+        broken image for everyone except the one person who checked.
+        """
+        space = make_space()
+        space.cover_image_url = "/api/uploads/space-covers/secret.png"
+        db.flush()
+        html = _render(db, space).body_html
+        assert "space-covers" not in html
+        assert "secret.png" not in html
+
+    def test_changing_the_location_changes_the_next_email(
+        self, db, make_space,
+    ):
+        """Resolved per render, never stored on the event — so Place &
+        Feel edits reach future welcomes without a migration."""
+        import uuid as _uuid
+        from app.models.platform import Location
+
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/first/hero.png",
+        )
+        assert "first/hero.png" in _render(db, space).body_html
+
+        other = Location(
+            id=_uid("loc"), key=f"loc-{_uuid.uuid4().hex[:8]}",
+            name="Second Shore",
+            hero_artwork_url=(
+                "/api/uploads/platform-artwork/atlas-locations/second/hero.png"
+            ),
+        )
+        db.add(other)
+        db.flush()
+        space.location_id = other.id
+        db.flush()
+
+        html = _render(db, space).body_html
+        assert "second/hero.png" in html
+        assert "first/hero.png" not in html
+
+    def test_the_alt_text_names_the_collective(self, db, make_space):
+        """Most clients block remote images, so for many recipients
+        the alt text IS the artwork."""
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/shore/hero.png",
+        )
+        html = _render(db, space).body_html
+        assert f'alt="{space.name}"' in html
+
+    def test_it_is_responsive_and_outlook_safe(self, db, make_space):
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/shore/hero.png",
+        )
+        html = _render(db, space).body_html
+        img = re.search(r'<img src="[^"]*atlas-locations[^>]*>', html,
+                        re.S).group(0)
+        # Outlook for Windows ignores CSS sizing, so the width
+        # attribute has to be there as well as the CSS.
+        assert 'width="560"' in img
+        assert "max-width:560px" in img
+        assert "width:100%" in img
+        # Proportional, so a landscape composition is never squashed.
+        assert "height:auto" in img
+        assert 'border="0"' in img
+        assert "display:block" in img
+
+    def test_the_artwork_sits_above_the_heading(self, db, make_space):
+        """Beneath the Fresh Collective logo, above the welcome."""
+        space = self._with_location(
+            db, make_space,
+            "/api/uploads/platform-artwork/atlas-locations/shore/hero.png",
+        )
+        html = _render(db, space).body_html
+        assert html.index("atlas-locations") < html.index("<h1")
+
+    def test_no_other_email_grew_a_banner(self, db, make_space):
+        """The parameter is opt-in. Every other template renders the
+        plain card it always did."""
+        from app.comms.templates.base import render_email_shell
+
+        html = render_email_shell(
+            preheader="p", heading="h", body_paragraphs=["one"], db=None,
+        )
+        assert "<img" not in html or "atlas-locations" not in html
+
+
+class TestTheSignature:
+    """Sized as part of the message, because a creator wrote it."""
+
+    def _signature_block(self, db, space, overrides=None):
+        html = _render(db, space, overrides).body_html
+        # The sign-off is the last <p> before the footer.
+        return re.search(
+            r'<p style="([^"]*font-style:italic[^"]*)">\s*(.*?)\s*</p>',
+            html, re.S,
+        )
+
+    def test_it_is_body_size_and_body_colour(self, db, make_space):
+        m = self._signature_block(db, make_space())
+        assert m, "no italic sign-off block found"
+        css = m.group(1).replace("\n", " ")
+        assert "15.5px" in css, f"signature should be body size, got {css}"
+        assert "#334155" in css, f"signature should be body colour, got {css}"
+
+    def test_it_stays_italic(self, db, make_space):
+        m = self._signature_block(db, make_space())
+        assert "font-style:italic" in m.group(1)
+
+    def test_line_breaks_the_creator_typed_survive(self, db, make_space):
+        """The default is two lines — "With warmth," then the team —
+        and HTML collapses the newline between them unless it is
+        turned into a <br />."""
+        m = self._signature_block(db, make_space())
+        assert "<br />" in m.group(2), (
+            f"signature lost its line break: {m.group(2)!r}"
+        )
+
+    def test_a_creators_own_line_breaks_survive_too(self, db, make_space):
+        m = self._signature_block(
+            db, make_space(), {"signature": "One\nTwo\nThree"},
+        )
+        assert m.group(2).count("<br />") == 2
+
+    def test_it_has_room_above_it(self, db, make_space):
+        html = _render(db, make_space()).body_html
+        assert "padding:16px 40px 24px 40px" in html
+
+    def test_other_emails_keep_the_muted_signoff(self, db):
+        """Five other templates pass a Fresh Collective sign-off
+        through the same argument. None of them should have moved."""
+        from app.comms.templates.base import render_email_shell
+
+        html = render_email_shell(
+            preheader="p", heading="h", body_paragraphs=["one"],
+            signoff="Thank you for building with Fresh Collective.",
+            db=None,
+        )
+        assert "font-size:14px" in html
+        assert "#64748B" in html
+
+
 class TestInheritance:
     """system default → platform admin override → this Collective."""
 
@@ -649,6 +870,82 @@ class TestCreatorStudioApi:
 # ---------------------------------------------------------------------------
 # The structural guard
 # ---------------------------------------------------------------------------
+
+
+class TestPreviewMatchesTheRealSend:
+    """Requirement 6, pinned where it can actually break.
+
+    The preview and the send already share a renderer, which is why
+    there is no preview-only code path. These prove the artwork went
+    through that shared path rather than being added to one side.
+    """
+
+    def test_the_preview_shows_the_collectives_artwork(
+        self, db, creator_client,
+    ):
+        import uuid as _uuid
+        from app.models.platform import Location
+
+        client, space, _owner = creator_client
+        loc = Location(
+            id=_uid("loc"), key=f"loc-{_uuid.uuid4().hex[:8]}",
+            name="Moonlit Shore",
+            hero_artwork_url=(
+                "/api/uploads/platform-artwork/atlas-locations/moonlit/hero.png"
+            ),
+        )
+        db.add(loc)
+        db.flush()
+        space.location_id = loc.id
+        db.flush()
+
+        res = client.post(
+            f"/api/creator/spaces/{space.slug}/welcome-email/preview",
+            json={"mode": "saved", "drafts": {}},
+        )
+        assert res.status_code == 200, res.text
+        assert "moonlit/hero.png" in res.json()["html"]
+
+    def test_preview_and_send_render_identical_artwork(
+        self, db, creator_client,
+    ):
+        """Byte-for-byte on the <img>, not merely "both have one"."""
+        import uuid as _uuid
+        from app.models.platform import Location
+
+        client, space, _owner = creator_client
+        loc = Location(
+            id=_uid("loc"), key=f"loc-{_uuid.uuid4().hex[:8]}",
+            name="Moonlit Shore",
+            hero_artwork_url=(
+                "/api/uploads/platform-artwork/atlas-locations/moonlit/hero.png"
+            ),
+        )
+        db.add(loc)
+        db.flush()
+        space.location_id = loc.id
+        db.flush()
+
+        previewed = client.post(
+            f"/api/creator/spaces/{space.slug}/welcome-email/preview",
+            json={"mode": "saved", "drafts": {}},
+        ).json()["html"]
+        delivered = _render(db, space).body_html
+
+        pattern = r'<img src="[^"]*atlas-locations[^>]*>'
+        assert re.search(pattern, previewed, re.S).group(0) == \
+            re.search(pattern, delivered, re.S).group(0)
+
+    def test_a_collective_with_no_artwork_previews_without_one(
+        self, db, creator_client,
+    ):
+        client, space, _owner = creator_client
+        res = client.post(
+            f"/api/creator/spaces/{space.slug}/welcome-email/preview",
+            json={"mode": "saved", "drafts": {}},
+        )
+        assert res.status_code == 200, res.text
+        assert "atlas-locations" not in res.json()["html"]
 
 
 class TestEditableTemplatesAreWired:
