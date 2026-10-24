@@ -1268,17 +1268,37 @@ class TestRetire:
         rows = api.list_offerings(space.slug, db=db, current_user=owner)
         assert [r["status"] for r in rows] == ["retired"]
 
-    def test_nothing_is_physically_deleted_in_this_phase(self):
-        """No endpoint deletes an Offering. A retired product still has
-        purchasers."""
+    def test_retiring_deletes_nothing(self):
+        """A retired product still has purchasers, so retire must never
+        destroy anything.
+
+        This test used to assert the whole module contained no
+        ``db.delete(`` and no DELETE route, which was true while retire
+        was the only lifecycle action. A draft delete now exists, so the
+        assertion is narrowed to the thing that actually matters rather
+        than relaxed away: ``retire_offering`` itself still deletes
+        nothing, and the DELETE route refuses anything that was ever
+        published.
+        """
         import inspect
-        src = inspect.getsource(api)
-        assert "db.delete(" not in src
-        assert not any(
-            r.path.endswith("/offerings/{offering_slug}")
+        assert "db.delete(" not in inspect.getsource(api.retire_offering)
+
+        delete_src = inspect.getsource(api.delete_offering)
+        # The guard that keeps retire's promise true for the one
+        # endpoint that can delete: published-ever is refused.
+        assert "published_at is not None" in delete_src
+        assert "OfferingEntitlement" in delete_src
+
+    def test_the_only_delete_route_is_the_draft_one(self):
+        """One DELETE on an Offering, and it is the guarded draft
+        delete — not a second one added later without the guards."""
+        routes = [
+            r for r in __import__("app.main", fromlist=["app"]).app.routes
+            if r.path.endswith("/offerings/{offering_slug}")
             and "DELETE" in (getattr(r, "methods", None) or set())
-            for r in __import__("app.main", fromlist=["app"]).app.routes
-        )
+        ]
+        assert len(routes) == 1, [r.path for r in routes]
+        assert routes[0].endpoint is api.delete_offering
 
 
 # ---------------------------------------------------------------------------
@@ -1608,3 +1628,224 @@ class TestExistingBehaviourUnchanged:
                 and c.name not in permitted.get(name, set())
             ]
             assert bad == [], f"{name}: {bad}"
+
+
+# ---------------------------------------------------------------------------
+# Delete — only a draft, only when there is nothing to preserve
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteADraft:
+    """The platform's lifecycle rule, now applied to Offerings.
+
+    Draft and never publicly used → delete. Published or historical →
+    retire, which keeps the slug, the files and the entitlements
+    resolvable. A shared link and a purchase are commitments; they must
+    not become 404s because a creator tidied a draft list.
+    """
+
+    def test_a_draft_nobody_has_touched_is_deleted(self, db, owner_space):
+        space, owner = owner_space()
+        off = _offering(db, space)
+        off_id = off.id
+
+        out = api.delete_offering(
+            space.slug, off.slug, db=db, current_user=owner,
+        )
+
+        assert out["deleted"] is True
+        assert out["offering_id"] == off_id
+        assert db.query(Offering).filter(Offering.id == off_id).first() is None
+
+    def test_its_file_rows_go_with_it(self, db, owner_space):
+        space, owner = owner_space()
+        off = _offering(db, space)
+        _file(db, off)
+        off_id = off.id
+
+        api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+
+        assert db.query(OfferingFile).filter(
+            OfferingFile.offering_id == off_id,
+        ).count() == 0
+
+    def test_the_stored_objects_are_removed_before_the_rows(
+        self, db, owner_space, monkeypatch,
+    ):
+        """Storage first, deliberately. ``delete_keys`` raises on a hard
+        error so a failure aborts BEFORE the irreversible step."""
+        space, owner = owner_space()
+        off = _offering(db, space)
+        f = _file(db, off)
+        seen: list[list[str]] = []
+        monkeypatch.setattr(
+            "app.core.storage.delete_keys", lambda keys: seen.append(list(keys)),
+        )
+
+        api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+
+        assert seen == [[f.storage_key]]
+
+    def test_a_storage_failure_deletes_nothing(
+        self, db, owner_space, monkeypatch,
+    ):
+        """The whole reason for doing storage first. Rows intact, so a
+        retry is possible — and missing keys are not errors, so the
+        retry is safe."""
+        from app.core.storage import StorageDeleteError
+
+        space, owner = owner_space()
+        off = _offering(db, space)
+        _file(db, off)
+        off_id = off.id
+
+        def _boom(keys):
+            raise StorageDeleteError("R2 said no")
+
+        monkeypatch.setattr("app.core.storage.delete_keys", _boom)
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 502
+        assert db.query(Offering).filter(Offering.id == off_id).first() is not None
+
+    # ── The refusals ─────────────────────────────────────────────────
+
+    def test_a_published_offering_is_refused(self, db, owner_space):
+        space, owner = owner_space()
+        off = _offering(
+            db, space, status=OfferingStatus.published.value,
+            published_at=datetime.utcnow(),
+        )
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert "Retire" in exc.value.detail
+
+    def test_an_offering_that_was_published_and_withdrawn_is_refused(
+        self, db, owner_space,
+    ):
+        """The case ``status`` alone cannot see. ``published_at`` is set
+        on first publish and never cleared, so it answers "was this ever
+        public?" — and somebody may still hold the URL."""
+        space, owner = owner_space()
+        off = _offering(
+            db, space, status=OfferingStatus.draft.value,
+            published_at=datetime.utcnow(),
+        )
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+
+    def test_a_retired_offering_is_refused(self, db, owner_space):
+        space, owner = owner_space()
+        off = _offering(
+            db, space, status=OfferingStatus.retired.value,
+            published_at=datetime.utcnow(),
+        )
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+
+    def test_an_acquired_offering_is_refused(self, db, owner_space, make_user):
+        """Covers purchases too: a transaction reaches its Offering
+        through ``OfferingEntitlement.payment_transaction_id``, so a
+        purchase always leaves an entitlement row."""
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.add(OfferingEntitlement(
+            id=_uid("oe"), user_id=make_user().id, offering_id=off.id,
+            space_id=space.id,
+            source=OfferingEntitlementSource.free.value,
+            status=OfferingEntitlementStatus.active.value,
+            acquired_at=datetime.utcnow(),
+        ))
+        db.flush()
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert "acquired" in exc.value.detail
+
+    def test_a_revoked_entitlement_still_refuses(
+        self, db, owner_space, make_user,
+    ):
+        """Any state, not just active. The record of the acquisition is
+        the thing being protected, not the access."""
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.add(OfferingEntitlement(
+            id=_uid("oe"), user_id=make_user().id, offering_id=off.id,
+            space_id=space.id,
+            source=OfferingEntitlementSource.free.value,
+            status=OfferingEntitlementStatus.revoked.value,
+            acquired_at=datetime.utcnow(), revoked_at=datetime.utcnow(),
+        ))
+        db.flush()
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+
+    def test_a_live_payment_option_is_refused(self, db, owner_space):
+        from app.models.payment_option import (
+            PaymentOption, PaymentOptionStatus, PaymentOptionType,
+        )
+
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.add(PaymentOption(
+            id=_uid("po"), space_id=space.id, pathway_id=None,
+            attaches_to_kind="offering", attaches_to_id=off.id,
+            name="Buy it", payment_type=PaymentOptionType.one_time,
+            status=PaymentOptionStatus.published,
+            calculated_total_cents=2400, currency="AUD",
+        ))
+        db.flush()
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(space.slug, off.slug, db=db, current_user=owner)
+        assert exc.value.status_code == 409
+        assert "Payment Option" in exc.value.detail
+
+    def test_an_archived_payment_option_does_not_block(self, db, owner_space):
+        """Archiving is the creator's own act of putting it beyond use.
+        Having done it, the draft is theirs to delete."""
+        from app.models.payment_option import (
+            PaymentOption, PaymentOptionStatus, PaymentOptionType,
+        )
+
+        space, owner = owner_space()
+        off = _offering(db, space)
+        db.add(PaymentOption(
+            id=_uid("po"), space_id=space.id, pathway_id=None,
+            attaches_to_kind="offering", attaches_to_id=off.id,
+            name="Old", payment_type=PaymentOptionType.one_time,
+            status=PaymentOptionStatus.archived,
+            calculated_total_cents=2400, currency="AUD",
+        ))
+        db.flush()
+
+        out = api.delete_offering(
+            space.slug, off.slug, db=db, current_user=owner,
+        )
+        assert out["deleted"] is True
+
+    # ── Ownership is unchanged by any of this ────────────────────────
+
+    def test_another_creator_cannot_delete_it(
+        self, db, owner_space, make_user,
+    ):
+        """404 rather than 403 — the same refusal every other creator
+        handler gives, so a stranger cannot confirm the Offering is
+        there."""
+        space, _owner = owner_space()
+        off = _offering(db, space)
+        intruder = make_user(role="creator")
+
+        with pytest.raises(HTTPException) as exc:
+            api.delete_offering(
+                space.slug, off.slug, db=db, current_user=intruder,
+            )
+        assert exc.value.status_code == 404
+        assert db.query(Offering).filter(Offering.id == off.id).first() is not None

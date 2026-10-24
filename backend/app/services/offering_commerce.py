@@ -409,3 +409,55 @@ __all__ = [
     "pay_in_full_schedule",
     "sync",
 ]
+
+
+def blocking_commerce_reference(db: Session, offering: Offering) -> str | None:
+    """Why this Offering's commerce rows forbid deleting it, or ``None``.
+
+    Lives here rather than in ``_offering_routes`` because this module
+    already owns the Offering ↔ PaymentOption relationship, and that
+    route module is deliberately kept clear of payment imports — a
+    boundary two tests in ``test_offering_creator_api`` enforce by
+    name. Asking the owner of the relationship is both cleaner and the
+    only way to ask without crossing it.
+
+    Two references matter:
+
+    * **A live (non-archived) Payment Option.** Archiving one is a
+      creator's deliberate act of putting it beyond use; it must never
+      happen as a side effect of deleting something else. So a live
+      option is reported, and an archived one is not.
+
+    * **A grant.** ``payment_option_grants.offering_id`` carries
+      ``ondelete=RESTRICT``, so without this the database would refuse
+      the delete — correctly, but as a 500 that explains nothing. This
+      turns that into a sentence a creator can act on.
+
+    Returns the message, so the caller decides the status code.
+    """
+    live_option = (
+        db.query(PaymentOption.id)
+        .filter(
+            PaymentOption.attaches_to_kind == OFFERING_ATTACHES_KIND,
+            PaymentOption.attaches_to_id == offering.id,
+            PaymentOption.status != PaymentOptionStatus.archived,
+        )
+        .first()
+    )
+    if live_option:
+        return (
+            "This Offering still has a live Payment Option. Archive it "
+            "first."
+        )
+
+    granted = (
+        db.query(PaymentOptionGrant.id)
+        .filter(PaymentOptionGrant.offering_id == offering.id)
+        .first()
+    )
+    if granted:
+        return (
+            "A Payment Option grants this Offering. Remove that grant "
+            "first."
+        )
+    return None
