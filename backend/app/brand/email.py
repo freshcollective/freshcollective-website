@@ -195,3 +195,42 @@ def brand_header_html(
                           max-width:100%;" />
             </td>
           </tr>'''
+
+
+#: The footer lockup, for emails whose hero belongs to somebody else.
+#:
+#: Small enough to read as a maker's mark rather than a masthead. The
+#: asset is the same approved artwork the header uses and is served at
+#: 500px, so a 44px render is comfortably retina-sharp without a
+#: second file.
+FOOTER_LOGO_PX = 44
+
+
+def brand_footer_logo_html(
+    db: Session | None = None,
+    brand_logo_url: str | None = None,
+) -> str:
+    """A small Fresh Collective mark, for use above the footer text.
+
+    For the Collective welcome email, where the Collective's own
+    artwork is the hero and Fresh Collective is the platform holding
+    the connection rather than the sender being introduced. Same
+    resolution path as :func:`brand_header_html`, so an admin who
+    replaces the brand artwork replaces both.
+
+    Returns ``""`` when no artwork resolves at all. The footer already
+    carries the words "Fresh Collective" as live text directly beneath
+    this, so an unresolvable logo costs nothing — unlike in the header,
+    where the name has to be substituted in.
+    """
+    url = brand_logo_url or email_logo_url(db)
+    if not url:
+        return ""
+    safe_url = _html.escape(url, quote=True)
+    return f'''
+              <img src="{safe_url}" alt="Fresh Collective"
+                   width="{FOOTER_LOGO_PX}" height="{FOOTER_LOGO_PX}" border="0"
+                   style="display:block;margin:0 0 10px 0;border:0;
+                          outline:none;text-decoration:none;
+                          width:{FOOTER_LOGO_PX}px;height:{FOOTER_LOGO_PX}px;
+                          max-width:100%;" />'''

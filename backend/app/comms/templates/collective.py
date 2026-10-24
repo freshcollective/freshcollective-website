@@ -285,6 +285,12 @@ class CollectiveMembershipWelcomeEmailTemplate:
             # Circle" tells them where they have arrived where
             # "banner image" would not.
             banner=(banner_url, collective) if banner_url else None,
+            # The Collective's artwork is the hero here, so the Fresh
+            # Collective mark moves to the footer — present as the
+            # platform holding the connection, not as the sender being
+            # introduced. With no artwork the card simply opens on the
+            # welcome heading rather than on a 200px platform logo.
+            brand_placement="footer",
             action=(cta_label, collective_url) if collective_url else None,
             signoff=signature,
             # The creator wrote this one, so it is set as part of the
