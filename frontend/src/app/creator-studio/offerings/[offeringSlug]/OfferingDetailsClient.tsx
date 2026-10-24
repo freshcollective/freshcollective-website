@@ -176,7 +176,95 @@ export default function OfferingDetailsClient({
         }}
         onError={setSaveError}
       />
+
+      {/* Only for a draft. A published or retired Offering is retired,
+          never deleted — somebody may hold its link or a copy. The
+          backend refuses either way; this keeps the UI from offering a
+          control that would only 409. */}
+      {offering.status === 'draft' && (
+        <OfferingDangerZone
+          spaceSlug={spaceSlug}
+          offering={offering}
+        />
+      )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Danger zone — delete a draft
+// ---------------------------------------------------------------------------
+
+/**
+ * Same treatment as the Payment Option editor's danger zone: restrained,
+ * at the bottom, not competing with everyday actions.
+ *
+ * The confirmation names the Offering, because "are you sure?" is easy
+ * to click through and a title is not. The backend is the authority on
+ * whether this is safe — it refuses a published Offering, one somebody
+ * has acquired, and one with a live Payment Option or grant — so a
+ * refusal is surfaced as its own message rather than guessed at here.
+ */
+function OfferingDangerZone({
+  spaceSlug, offering,
+}: {
+  spaceSlug: string
+  offering: CreatorOffering
+}) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const remove = useCallback(async () => {
+    const ok = confirm(
+      `Delete “${offering.title}” permanently?\n\n` +
+      'Its files are removed from storage too. This cannot be undone.',
+    )
+    if (!ok) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/offerings/${offering.slug}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(
+          typeof body?.detail === 'string'
+            ? body.detail
+            : `Could not delete this Offering (${res.status}).`,
+        )
+      }
+      router.push(`/creator-studio/offerings`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete this Offering.')
+      setBusy(false)
+    }
+  }, [spaceSlug, offering.slug, offering.title, router])
+
+  return (
+    <section className="rounded-xl border border-red-100 bg-red-50/40 p-6">
+      <h2 className="font-serif text-lg text-red-900">Delete this draft</h2>
+      <p className="mt-1 text-[13px] text-red-800">
+        Only a draft nobody has acquired can be deleted permanently. Once
+        an Offering has been published, retire it instead so anyone
+        holding its link or a copy keeps a valid reference.
+      </p>
+      {error && (
+        <p className="mt-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-[13px] text-red-800">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void remove()}
+        disabled={busy}
+        className="mt-3 inline-flex items-center rounded-md border border-red-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+      >
+        {busy ? 'Deleting…' : 'Delete permanently'}
+      </button>
+    </section>
   )
 }
 

@@ -681,3 +681,180 @@ def retire_offering(
 
 
 __all__ = ["router", "require_offerings_enabled"]
+
+
+@router.delete(
+    "/spaces/{slug}/offerings/{offering_slug}",
+    summary="Permanently delete a draft Offering that nobody has acquired",
+)
+def delete_offering(
+    slug: str,
+    offering_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Delete, and only where there is nothing to preserve.
+
+    The platform's lifecycle rule, already applied to Gathering Series
+    (``_gathering_series_routes.delete_gathering_series``): a draft that
+    was never publicly used is **deleted**; anything published or
+    historical is **retired**, which keeps its slug, files and
+    entitlements resolvable. Shared links and purchases are
+    commitments, and they must not become 404s because a creator tidied
+    a draft list.
+
+    So this refuses four ways, each a 409 naming the alternative:
+
+    1. **Published, ever.** ``published_at`` is set on first publish and
+       deliberately not cleared by an unpublish, so it answers "was this
+       ever public?" where ``status`` only answers "is it public now?".
+       An Offering that was published and withdrawn still had a public
+       URL somebody may hold.
+    2. **Not a draft.** Belt to (1)'s braces.
+    3. **Any entitlement, in any state.** The direct analogue of the
+       Series rule about AccessPass rows. Somebody acquired this; the
+       record of that must outlive the creator's tidying.
+
+       This is also what covers *payments*. A transaction has no
+       ``offering_id`` — it reaches its Offering through
+       ``OfferingEntitlement.payment_transaction_id`` (see
+       ``list_creator_payments``) — so a purchase always leaves an
+       entitlement row, and refusing on entitlements refuses on
+       purchases by construction rather than by a second query.
+    4. **Any live Payment Option, or any grant** — asked of
+       ``offering_commerce.blocking_commerce_reference``, which owns
+       that relationship. Options are archived by a creator's choice,
+       never as a side effect. Grants carry ``ondelete=RESTRICT``, so
+       without the check the database would refuse the delete as a 500
+       instead of explaining itself.
+
+    Storage is removed before the database, using ``delete_keys`` —
+    which raises rather than swallowing, so a failed R2 delete aborts
+    *before* the irreversible step and leaves the Offering intact. The
+    opposite order would leave objects with no row pointing at them and
+    nothing to find them by.
+
+    This is the one path that deletes a stored Offering object. The
+    retention decision that keeps *superseded* files does not apply:
+    those belong to an Offering somebody may have downloaded from, and
+    a never-published draft with no entitlements was never served to
+    anybody.
+    """
+    from app.core.storage import StorageDeleteError, delete_keys
+    from sqlalchemy.exc import IntegrityError
+
+    space = _get_owned_space(slug, current_user, db)
+    offering = _get_offering(space, offering_slug, db)
+
+    # Lock the row for the rest of this transaction.
+    #
+    # Without it the eligibility checks are a read followed by a write
+    # with a gap in between, and a concurrent publish lands in that gap:
+    # ``publish_offering`` sets ``published_at`` and flips its Payment
+    # Option to published, so the delete would proceed on checks that
+    # were true a moment ago and then hit the grant's RESTRICT at
+    # commit — after the storage objects were already gone. The lock
+    # makes publish wait, and publish re-reads this row, so whichever
+    # arrives second sees the other's outcome. Same mechanism the
+    # Stripe webhook uses before it mutates.
+    db.query(Offering).filter(Offering.id == offering.id).with_for_update().one()
+    db.refresh(offering)
+
+    if offering.published_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This Offering has been published before. Retire it "
+                "instead so anyone holding its link or a copy keeps a "
+                "valid reference."
+            ),
+        )
+    if offering.status != OfferingStatus.draft.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a draft Offering can be deleted. Retire this one instead.",
+        )
+
+    owned = (
+        db.query(OfferingEntitlement.id)
+        .filter(OfferingEntitlement.offering_id == offering.id)
+        .first()
+    )
+    if owned:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Somebody has acquired this Offering. Retire it instead "
+                "so their access and its record stay intact."
+            ),
+        )
+
+    # Asked of the module that owns the Offering-to-commerce
+    # relationship. This one is deliberately kept clear of payment
+    # imports, and two tests enforce that by name.
+    blocked = offering_commerce.blocking_commerce_reference(db, offering)
+    if blocked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=blocked,
+        )
+
+    files = (
+        db.query(OfferingFile)
+        .filter(OfferingFile.offering_id == offering.id)
+        .all()
+    )
+    keys = [f.storage_key for f in files if f.storage_key]
+
+    # Storage first, and allowed to fail loudly. ``delete_keys`` raises
+    # on a hard R2 error precisely so this can abort with the rows still
+    # present; missing keys are not errors, so a retry is safe.
+    if keys:
+        try:
+            delete_keys(keys)
+        except StorageDeleteError as exc:
+            logger.error(
+                "offering delete: storage removal failed id=%s space=%s: %s",
+                offering.id, space.id, exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "The Offering's files could not be removed from "
+                    "storage, so nothing was deleted. Please try again."
+                ),
+            ) from exc
+
+    offering_id, offering_title = offering.id, offering.title
+    try:
+        # The Offering's own commerce rows first — a paid draft owns a
+        # draft option whose grant holds the RESTRICT on this row, and
+        # deleting the option cascades the grant away.
+        offering_commerce.delete_commerce_rows(db, offering)
+        for f in files:
+            db.delete(f)
+        db.delete(offering)
+        db.commit()
+    except IntegrityError:
+        # A reference nothing above saw. The row lock makes a
+        # concurrent publish wait, so this should be unreachable —
+        # but a 409 explaining the refusal is the correct answer to a
+        # reference that exists, and a 500 is not. The storage objects
+        # are already gone at this point; see the docstring.
+        db.rollback()
+        logger.exception(
+            "offering delete: refused by a database reference id=%s space=%s",
+            offering_id, space.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Something still refers to this Offering, so it was not "
+                "deleted. Retire it instead."
+            ),
+        ) from None
+
+    logger.info(
+        "offering deleted: id=%s title=%r space=%s files=%d by=%s",
+        offering_id, offering_title, space.id, len(keys), current_user.id,
+    )
+    return {"deleted": True, "offering_id": offering_id}

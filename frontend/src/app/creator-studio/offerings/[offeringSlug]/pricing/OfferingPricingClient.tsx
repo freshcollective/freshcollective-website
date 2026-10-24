@@ -182,13 +182,6 @@ export default function OfferingPricingClient({
         )}
       </div>
 
-      {/* Honest about what has and has not been built. A creator setting
-          a price today should not expect money to arrive tomorrow. */}
-      <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] leading-relaxed text-black">
-        Buying isn&rsquo;t switched on yet. Your choice here is saved and will
-        be used when purchasing opens — nothing is charged to anyone in the
-        meantime.
-      </p>
     </div>
   )
 }
