@@ -2,6 +2,7 @@ import Link from 'next/link'
 
 import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import Container from './Container'
+import { CONTACT_INFO_EMAIL } from '@/lib/contact'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 export default function PublicFooter() {
@@ -46,6 +47,21 @@ export default function PublicFooter() {
                 {label}
               </Link>
             ))}
+            {/* An anchor rather than ``Link``: a mailto is not a route,
+                so there is no navigation to prefetch. Styled from the
+                same values as its siblings so the row reads as one
+                nav. ``info@`` rather than ``support@`` because a
+                footer catches general, membership and creator
+                enquiries from people who are not yet members —
+                somebody with a technical problem meets ``support@`` at
+                the point where they are stuck. */}
+            <a
+              href={`mailto:${CONTACT_INFO_EMAIL}`}
+              className="text-[13px] transition-colors hover:text-white"
+              style={{ color: '#FFFFFF' }}
+            >
+              Contact
+            </a>
           </nav>
 
           {/* Governance — the four documents someone actually reaches
