@@ -3,8 +3,14 @@ import "./globals.css";
 import { FreshProviders } from "@/components/platform/FreshProviders";
 import { BrandProvider } from '@/components/brand/BrandProvider'
 import { getBrandOverrides } from '@/lib/serverApi'
+import { SITE_ORIGIN } from '@/lib/collectiveSeo'
 
 export const metadata: Metadata = {
+  // Relative ``alternates.canonical`` and OpenGraph image paths are
+  // resolved against this. Without it Next leaves them relative, and a
+  // crawler cannot follow a relative canonical or fetch a relative
+  // image. Set here so every route inherits one answer.
+  metadataBase: new URL(SITE_ORIGIN),
   title: "Fresh Collective",
   description:
     "A home for creator-led communities where people learn, gather, connect and grow together.",
