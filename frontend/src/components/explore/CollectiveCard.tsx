@@ -103,15 +103,6 @@ export default function CollectiveCard({
               Joined
             </span>
           )}
-          {space.has_upcoming_event && (
-            <span
-              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{ background: 'rgba(7,24,36,0.45)', color: '#FFFFFF' }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
-              Live soon
-            </span>
-          )}
         </div>
 
         {/* Name + tagline over cover */}

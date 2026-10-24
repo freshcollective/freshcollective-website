@@ -157,7 +157,7 @@ export default function ExploreCollectivesExperience({
           {/* Note about payment */}
           {isLoggedIn && (
             <p className="mt-10 text-center text-[12px] text-black">
-              Some collectives are free and some require payment. Payment integration is coming soon.
+              Some collectives are free to join and some require payment — each card shows which.
             </p>
           )}
 

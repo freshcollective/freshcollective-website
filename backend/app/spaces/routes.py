@@ -407,17 +407,6 @@ def hydrate_public_space_cards(
         .all()
     )
 
-    upcoming_event_space_ids: set[str] = {
-        r[0] for r in db.query(Event.space_id)
-        .filter(
-            Event.space_id.in_(space_ids),
-            Event.is_published.is_(True),
-            Event.starts_at >= datetime.utcnow(),
-        )
-        .distinct()
-        .all()
-    }
-
     creator_ids = [s.creator_id for s in spaces if s.creator_id]
     creator_names: dict[str, str | None] = {}
     if creator_ids:
@@ -450,7 +439,6 @@ def hydrate_public_space_cards(
             member_count=member_counts.get(s.id, 0),
             creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
             join_policy=join_policy.resolve(s.join_policy),
-            has_upcoming_event=s.id in upcoming_event_space_ids,
             themes=s.themes or [],
             pricing_type=s.pricing_type or 'free',
             pricing_amount_cents=s.pricing_amount_cents,
