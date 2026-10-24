@@ -22,6 +22,7 @@
 import { useCallback, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import { Switch } from '@/components/platform'
+import WelcomeEmailPreference from './WelcomeEmailPreference'
 import type { NotificationPrefs, SpaceMembership } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
@@ -377,6 +378,11 @@ export default function StayConnectedClient({ collectives }: Props) {
 
   if (collectives.length === 0) {
     return (
+      <>
+      {/* Shown even here. This setting is about Collectives not yet
+          joined, so somebody with no memberships is precisely the
+          person it concerns. */}
+      <WelcomeEmailPreference />
       <div className="rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center">
         <p className="mb-2 font-serif text-[17px] text-navy-900">
           No collective preferences yet
@@ -385,11 +391,15 @@ export default function StayConnectedClient({ collectives }: Props) {
           Your connection choices will appear here when you join a collective.
         </p>
       </div>
+      </>
     )
   }
 
   return (
     <div className="space-y-4">
+      {/* Above the per-Collective cards: it governs all of them, and
+          the ones not joined yet. */}
+      <WelcomeEmailPreference />
       {collectives.map((c) => (
         <CollectiveCard
           key={c.membership.space_id}

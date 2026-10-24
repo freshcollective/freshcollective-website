@@ -124,6 +124,17 @@ CATEGORY_PATHWAYS = "pathways"
 CATEGORY_COMMUNITY = "community"
 CATEGORY_CREATOR_UPDATES = "creator_updates"
 CATEGORY_PLATFORM_UPDATES = "platform_updates"
+#: The welcome a Collective sends the first time somebody joins it.
+#:
+#: Its own category rather than a borrowed one, because every existing
+#: category refuses it for a different reason: ``community`` has email
+#: off by default (and turning it on would email every member about
+#: every post), ``creator_updates`` demands broadcast consent a new
+#: member has never given, and ``account`` would have worked only by
+#: accident of its defaults while telling members this is an account
+#: matter. Enabled, unlocked, no consent gate — it arrives without
+#: being asked for, and can be switched off.
+CATEGORY_COLLECTIVE_WELCOME = "collective_welcome"
 
 ALL_CATEGORIES = (
     CATEGORY_ACCOUNT,
@@ -135,6 +146,7 @@ ALL_CATEGORIES = (
     CATEGORY_COMMUNITY,
     CATEGORY_CREATOR_UPDATES,
     CATEGORY_PLATFORM_UPDATES,
+    CATEGORY_COLLECTIVE_WELCOME,
 )
 
 
@@ -158,6 +170,11 @@ TOPIC_PRODUCT_UPDATES = "product_updates"
 TOPIC_MARKETING = "marketing"
 TOPIC_MODERATION = "moderation"
 TOPIC_COMMUNITY_CARE = "community_care"
+#: Carries only ``collective.membership.welcome``. A topic of its own
+#: so the rollout flag can turn the welcome on without also turning on
+#: the three silent membership events that share
+#: ``collective_updates``.
+TOPIC_COLLECTIVE_WELCOME = "collective_welcome"
 
 ALL_TOPICS = (
     TOPIC_ACCOUNT,
@@ -174,6 +191,7 @@ ALL_TOPICS = (
     TOPIC_MARKETING,
     TOPIC_COMMUNITY_CARE,
     TOPIC_MODERATION,
+    TOPIC_COLLECTIVE_WELCOME,
 )
 
 
@@ -198,4 +216,5 @@ TOPIC_TO_CATEGORY: dict[str, str] = {
     TOPIC_MARKETING:          CATEGORY_PLATFORM_UPDATES,
     TOPIC_MODERATION:         CATEGORY_SAFETY,
     TOPIC_COMMUNITY_CARE:     CATEGORY_SAFETY,
+    TOPIC_COLLECTIVE_WELCOME: CATEGORY_COLLECTIVE_WELCOME,
 }

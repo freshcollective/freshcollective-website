@@ -21,6 +21,7 @@ from app.comms.categories import (
     PriorityType,
     TOPIC_ACCOUNT,
     TOPIC_COLLECTIVE_UPDATES,
+    TOPIC_COLLECTIVE_WELCOME,
     TOPIC_CONVERSATIONS,
     TOPIC_CREATOR_BROADCASTS,
     TOPIC_DIRECT_MESSAGES,
@@ -82,10 +83,33 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     #
     # Deliberately NOT in TRANSACTIONAL_EVENT_TYPES. It is a greeting,
     # not a receipt, a deadline or a security instruction, so a member
-    # who has quietened Collective updates should not be forced to
-    # receive it. Same stance as ``account.welcome_after_signup``, which
-    # is likewise immediate and likewise preference-controlled.
-    EventDefinition("collective.membership.welcome",      TOPIC_COLLECTIVE_UPDATES, PRIORITY_IMMEDIATE),
+    # who has quietened welcome mail should not be forced to receive it.
+    #
+    # Its own topic and its own category, seeded by migration 165.
+    #
+    # Every existing category refuses this email, each for a different
+    # reason — measured end to end, routing a welcome for a member on
+    # default settings:
+    #
+    #   collective_updates -> community        state=recorded
+    #   creator_broadcasts -> creator_updates  state=suppressed/no_consent
+    #   account            -> account          state=sent
+    #
+    # ``community`` seeds (email_transactional, default_enabled=False),
+    # and raising it is not available: post and comment notifications
+    # share that category and their topic is already live, so it would
+    # email every member about every post. ``creator_updates`` is gated
+    # on ``creator_broadcast`` consent, which a new member has never
+    # given — the gate reads a missing row as refusal, so it would have
+    # swapped one silent failure for an identical one. ``account``
+    # delivers, but only by accident of its defaults, and it would tell
+    # members that a Collective's welcome is an account matter.
+    #
+    # A dedicated topic also keeps the rollout flag honest: adding
+    # ``collective_welcome`` to COMMS_LIVE_TOPICS turns on this event
+    # and nothing else, where ``collective_updates`` would have carried
+    # three silent membership events along with it.
+    EventDefinition("collective.membership.welcome",      TOPIC_COLLECTIVE_WELCOME, PRIORITY_IMMEDIATE),
     EventDefinition("collective.membership.left",         TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     EventDefinition("collective.membership.role_changed", TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     # A creator has sent an invitation email to a prospective member.

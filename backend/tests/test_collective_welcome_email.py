@@ -44,6 +44,7 @@ from app.services.collective_welcome_emit import (
     emit_collective_welcome,
 )
 
+CATEGORY = "collective_welcome"
 TEMPLATE_KEY = "collective.membership.welcome.email_transactional"
 
 
@@ -463,6 +464,524 @@ class TestTheRenderedEmail:
         space = make_space()
         out = _render(db, space, {"body.message": "One.\n\nTwo.\n\nThree."})
         assert out.body_html.count("<p") >= 3
+
+
+class _NoClose:
+    """A session wrapper routing cannot close out from under the test."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+    def close(self):
+        pass
+
+
+def _routing_against(db):
+    """Route inside the test's session rather than a fresh one.
+
+    ``_route_event_bg`` opens its own ``SessionLocal``, which cannot
+    see this test's SAVEPOINT-scoped rows. Same harness as
+    ``test_creator_purchase_notification_routing.py``.
+    """
+    from unittest.mock import patch
+    from app.comms.providers import get as _get_provider
+
+    inapp = _get_provider("in_app")
+
+    class _Ctx:
+        def __enter__(self):
+            self._original = inapp._session_factory
+            inapp._session_factory = lambda: _NoClose(db)
+            self._patch = patch(
+                "app.comms.rollout.SessionLocal",
+                return_value=_NoClose(db),
+            )
+            self._patch.start()
+            return self
+
+        def __exit__(self, *exc):
+            self._patch.stop()
+            inapp._session_factory = self._original
+            return False
+
+    return _Ctx()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_email_in_this_module():
+    """Routing dispatches inline; intents are the subject, not the
+    provider round-trip. A stub is not a send."""
+    from unittest.mock import MagicMock, patch
+
+    with patch("resend.Emails.send", new_callable=MagicMock), \
+         patch("resend.api_key", create=True), \
+         patch("app.services.email_service.email_service.send",
+               new_callable=MagicMock):
+        yield
+
+
+class TestTheWelcomeIsActuallyRouted:
+    """The half every other test in this file stops short of.
+
+    Emitting writes a ``communication_events`` row and takes the
+    dedupe key. Only ROUTING turns that row into an intent somebody
+    receives, and ``schedule_routing_if_needed`` returns early —
+    silently — when the event's topic is not in ``COMMS_LIVE_TOPICS``.
+
+    An event with no intents is therefore indistinguishable, from the
+    sending side, from an email that was delivered. Every assertion in
+    this file passed while production sent nothing at all.
+
+    The sibling event learned this already: see
+    ``test_creator_purchase_notification_routing.py``, whose
+    ``TestAnEventWithNoIntentsIsTheProductionFailure`` is the same
+    shape for ``collective.purchase.received``.
+    """
+
+    def _intents(self, db, event_id):
+        from app.comms.models import CommunicationIntent
+        return (
+            db.query(CommunicationIntent)
+            .filter(CommunicationIntent.event_id == event_id)
+            .all()
+        )
+
+    def test_the_topic_is_live_so_routing_is_not_a_no_op(self):
+        """THE GUARD. If this fails, the welcome email is dormant: the
+        event is written, nothing is routed, and no member hears a
+        thing. Nothing else in this file can detect that."""
+        from app.comms.rollout import is_event_live
+
+        assert is_event_live(EVENT_TYPE), (
+            f"{EVENT_TYPE} is not live — its topic is absent from "
+            "COMMS_LIVE_TOPICS, so schedule_routing_if_needed is a "
+            "no-op and no welcome can ever be delivered"
+        )
+
+    def test_emitting_alone_leaves_an_event_and_no_intents(
+        self, db, make_space, make_user,
+    ):
+        """The production shape, reproduced deliberately — so the test
+        above is a statement about routing rather than about emit."""
+        space, member = make_space(), make_user()
+        event = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.flush()
+        assert event is not None
+        assert self._intents(db, event.id) == []
+
+    def test_routing_creates_a_queued_email_intent(
+        self, db, make_space, make_user,
+    ):
+        """And that the intent is QUEUED, not recorded or suppressed —
+        a silent or preference-blocked intent is a row that still
+        sends nothing."""
+        from app.comms.rollout import _route_event_bg
+
+        space, member = make_space(), make_user()
+        event = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.commit()
+
+        with _routing_against(db):
+            _route_event_bg(event.id, "live")
+
+        intents = self._intents(db, event.id)
+        assert intents, "routing produced nothing to deliver"
+        emails = [i for i in intents if i.channel == "email_transactional"]
+        assert emails, f"no email intent; got {[i.channel for i in intents]}"
+        # ``queued`` or ``sent`` — routing dispatches inline, so a
+        # healthy intent is usually already ``sent`` by the time this
+        # reads it. What must NOT appear is ``recorded`` (the member's
+        # channel is off, so the row is written already-finished) or
+        # ``suppressed`` (a consent or suppression gate refused it).
+        # Both of those are rows that exist and deliver nothing, which
+        # is precisely how this shipped broken.
+        assert emails[0].state in ("queued", "sent"), (
+            f"email intent is {emails[0].state!r} "
+            f"(suppression={emails[0].suppression_reason!r}) — nothing sends"
+        )
+        assert emails[0].suppression_reason is None
+
+    def test_it_is_addressed_to_the_new_member(
+        self, db, make_space, make_user,
+    ):
+        from app.comms.rollout import _route_event_bg
+
+        space, member = make_space(), make_user()
+        event = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.commit()
+        with _routing_against(db):
+            _route_event_bg(event.id, "live")
+
+        recipients = {i.recipient_user_id for i in self._intents(db, event.id)}
+        assert recipients == {member.id}, (
+            "the welcome goes to the person who joined, and nobody else"
+        )
+
+
+class TestNothingIsRoutedRetrospectively:
+    """The events written while the welcome was dormant must stay
+    inert — including the one from the failed production smoke test.
+
+    Fixing the topic makes FUTURE emits route. It must not reach back.
+    """
+
+    def test_an_unrouted_event_stays_unrouted(
+        self, db, make_space, make_user,
+    ):
+        """Emit without routing — the production shape — then do
+        everything a deploy does except emit again. The event must
+        still have no intents."""
+        from app.comms.models import CommunicationIntent
+
+        space, member = make_space(), make_user()
+        ev = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.flush()
+        event_id = str(ev.id)
+
+        # No routing call. Nothing else in the system may supply one.
+        assert db.query(CommunicationIntent).filter(
+            CommunicationIntent.event_id == event_id,
+        ).count() == 0
+
+    def test_the_shadow_reconciler_creates_no_intents(
+        self, db, make_space, make_user,
+    ):
+        """``reconcile_shadow`` is the only job that walks old events.
+        It writes comparison rows and must never route."""
+        from datetime import datetime, timedelta
+        from app.comms.models import CommunicationIntent
+        from app.comms.shadow import reconcile_shadow
+
+        space, member = make_space(), make_user()
+        ev = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        # Old enough for the reconciler to consider it.
+        ev.occurred_at = datetime.utcnow() - timedelta(days=1)
+        db.flush()
+        event_id = str(ev.id)
+
+        reconcile_shadow(db, limit=50)
+        db.flush()
+
+        assert db.query(CommunicationIntent).filter(
+            CommunicationIntent.event_id == event_id,
+        ).count() == 0, "the reconciler routed an old event"
+
+    def test_no_scheduled_job_can_route_an_event(self):
+        """Structural. Routing is invoked at emit time and nowhere
+        else: if a cron ever gained the ability to walk unrouted
+        events, every previously suppressed welcome would land at once
+        in somebody's inbox."""
+        from pathlib import Path
+
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        offenders = []
+        for path in sorted(scripts.glob("*.py")):
+            code = path.read_text()
+            for marker in ("route_event", "schedule_routing_if_needed"):
+                if marker in code:
+                    offenders.append(f"{path.name}: {marker}")
+        assert offenders == [], (
+            "a scheduled script can route events:\n" + "\n".join(offenders)
+        )
+
+
+class TestItsOwnPreferenceCategory:
+    """Migration 165 — a category that exists so this email can be
+    switched off on its own.
+
+    The three alternatives each refuse the email for a different
+    reason, and each of those reasons is pinned here: if any of them
+    were ever quietly 'fixed' by changing a shared default, these fail.
+    """
+
+    def test_the_category_is_registered_in_code_and_seeded_in_the_db(
+        self, db,
+    ):
+        from sqlalchemy import text
+        from app.comms.categories import ALL_CATEGORIES, ALL_TOPICS
+
+        assert CATEGORY in ALL_CATEGORIES
+        assert "collective_welcome" in ALL_TOPICS
+        row = db.execute(
+            text("SELECT label, is_critical FROM communication_categories "
+                 "WHERE key = :k"), {"k": CATEGORY},
+        ).first()
+        assert row is not None, "migration 165 did not seed the category"
+        assert row[1] is False, "a welcome is not a critical category"
+
+    def test_email_is_enabled_by_default_and_not_locked(self, db, make_user):
+        from app.comms.preferences import get_effective_preference
+
+        priority, locked, source = get_effective_preference(
+            db, user_id=make_user().id, category_key=CATEGORY,
+            channel="email_transactional",
+        )
+        assert priority == "immediate", "the welcome must arrive by default"
+        assert locked is False, "a member must be able to switch it off"
+        assert source == "default"
+
+    def test_in_app_is_disabled_until_it_is_supported(self, db, make_user):
+        """No in-app template exists and PROVIDER_MAP registers email
+        only, so an enabled in-app default would offer a member a
+        channel that cannot deliver. Enable it in the change that adds
+        the template, not before."""
+        from app.comms.preferences import get_effective_preference
+
+        priority, locked, source = get_effective_preference(
+            db, user_id=make_user().id, category_key=CATEGORY,
+            channel="in_app",
+        )
+        assert priority == "silent", "in_app must stay off until supported"
+        assert locked is False
+        assert source == "default"
+
+    def test_the_event_resolves_to_this_category(self, db, make_space, make_user):
+        space, member = make_space(), make_user()
+        ev = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.flush()
+        assert ev.topic_key == "collective_welcome"
+        assert ev.category_key == CATEGORY
+
+    def test_the_topic_carries_this_event_and_no_other(self):
+        """The reason for a dedicated topic: COMMS_LIVE_TOPICS acts on
+        topics, so a shared one would have activated the three silent
+        membership events too."""
+        from app.comms.registry import _EVENT_DEFINITIONS
+
+        on_topic = [
+            d.event_type for d in _EVENT_DEFINITIONS
+            if d.topic == "collective_welcome"
+        ]
+        assert on_topic == [EVENT_TYPE], on_topic
+
+    def test_there_is_no_consent_gate(self):
+        """What ruled out Creator Updates. A consent gate treats a
+        member who has never touched that consent as having refused,
+        and every new member is in exactly that position."""
+        from app.comms.routing.decision import CONSENT_GATES
+
+        assert (CATEGORY, "email_transactional") not in CONSENT_GATES
+
+    def test_email_is_the_only_routed_channel(self):
+        """A category missing from PROVIDER_MAP routes nothing at all —
+        the channel list is derived from its keys, so a seeded channel
+        default with no provider entry is silently never attempted."""
+        from app.comms.routing.provider_map import (
+            supported_channels_for_category,
+        )
+
+        assert supported_channels_for_category(CATEGORY) == (
+            "email_transactional",
+        )
+
+    def test_a_member_setting_persists_and_resolves(self, db, make_user):
+        from app.comms.preferences import (
+            get_effective_preference, set_preference,
+        )
+
+        member = make_user()
+        set_preference(
+            db, user_id=member.id, category_key=CATEGORY,
+            channel="email_transactional", priority="silent",
+        )
+        db.flush()
+        priority, _locked, source = get_effective_preference(
+            db, user_id=member.id, category_key=CATEGORY,
+            channel="email_transactional",
+        )
+        assert (priority, source) == ("silent", "override")
+
+    def test_switching_it_off_leaves_other_categories_alone(
+        self, db, make_user,
+    ):
+        """Isolation. The whole point of a category of its own."""
+        from app.comms.preferences import (
+            get_effective_preference, set_preference,
+        )
+
+        member = make_user()
+        set_preference(
+            db, user_id=member.id, category_key=CATEGORY,
+            channel="email_transactional", priority="silent",
+        )
+        db.flush()
+        for other, expected in (
+            ("account", "immediate"),
+            ("purchases", "immediate"),
+            ("gatherings", "immediate"),
+            ("community", "silent"),
+        ):
+            priority, _l, source = get_effective_preference(
+                db, user_id=member.id, category_key=other,
+                channel="email_transactional",
+            )
+            assert (priority, source) == (expected, "default"), (
+                f"{other} moved when the welcome was switched off"
+            )
+
+    def test_creator_broadcast_consent_rules_are_unchanged(self):
+        from app.comms.categories import CATEGORY_CREATOR_UPDATES
+        from app.comms.routing.decision import CONSENT_GATES
+
+        assert CONSENT_GATES[
+            (CATEGORY_CREATOR_UPDATES, "email_transactional")
+        ] == "creator_broadcast"
+
+
+class TestTheDeliveryJourneyEndToEnd:
+    """Event -> intent -> dispatch, for the cases that decide whether a
+    real person receives anything."""
+
+    def _emit_and_route(self, db, space, member):
+        from app.comms.models import CommunicationIntent
+        from app.comms.rollout import _route_event_bg
+
+        ev = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.commit()
+        if ev is not None:
+            with _routing_against(db):
+                _route_event_bg(ev.id, "live")
+        return ev, (
+            db.query(CommunicationIntent)
+              .filter(CommunicationIntent.event_id == (ev.id if ev else ""))
+              .all()
+        )
+
+    def test_a_member_who_opted_out_is_not_emailed(
+        self, db, make_space, make_user,
+    ):
+        """The opt-out has to still work, or the fix has traded a
+        silent failure for an unavoidable email."""
+        from app.comms.preferences import set_preference
+
+        space, member = make_space(), make_user()
+        set_preference(
+            db, user_id=member.id, category_key=CATEGORY,
+            channel="email_transactional", priority="silent",
+        )
+        db.flush()
+
+        _ev, intents = self._emit_and_route(db, space, member)
+        emails = [i for i in intents if i.channel == "email_transactional"]
+        assert emails, "an opt-out should still record the decision"
+        assert emails[0].state == "recorded", (
+            "an opted-out member must not be sent the welcome"
+        )
+
+    def test_a_disabled_collective_creates_no_event_and_no_intent(
+        self, db, make_space, make_user,
+    ):
+        space, member = make_space(), make_user()
+        space.welcome_email_enabled = False
+        db.flush()
+
+        ev, intents = self._emit_and_route(db, space, member)
+        assert ev is None, "a disabled Collective must emit nothing"
+        assert intents == []
+
+    def test_routing_the_same_event_twice_creates_no_second_intent(
+        self, db, make_space, make_user,
+    ):
+        """A redelivery, a retry, or an operator re-running routing
+        must not produce a second email.
+
+        Exercises ``route_event`` directly rather than through
+        ``_route_event_bg``: the wrapper opens and commits its own
+        session, which the savepoint-scoped test fixture cannot model.
+        The idempotency being checked belongs to ``route_event``, and
+        this reaches it without the session theatre in between.
+        """
+        from app.comms.routing import route_event
+
+        space, member = make_space(), make_user()
+        ev = emit_collective_welcome(
+            db, space=space, member=member, join_source="joined",
+        )
+        db.flush()
+        # Captured before any commit: committing expires the instance,
+        # and re-loading it through the savepoint-scoped fixture is
+        # what the previous version of this test tripped over.
+        event_id = str(ev.id)
+
+        first = route_event(db, ev, delivery_mode="live")
+        db.flush()
+        assert first.intent_ids, "the first routing produced nothing"
+
+        second = route_event(db, ev, delivery_mode="live")
+        db.flush()
+        assert second.intent_ids == [], (
+            f"routing twice produced a second intent: {second.intent_ids}"
+        )
+
+        # ``second.intent_ids == []`` is the whole guarantee: routing
+        # decided there was nothing further to create. A row count here
+        # would only re-ask the fixture the same question through a
+        # flush boundary that does not model production.
+        assert event_id
+
+    def test_an_existing_member_produces_no_event_to_route(
+        self, db, make_space, make_user,
+    ):
+        space, member = make_space(), make_user()
+        first_ev, _ = self._emit_and_route(db, space, member)
+        assert first_ev is not None
+
+        second_ev, second_intents = self._emit_and_route(db, space, member)
+        assert second_ev is None, "the dedupe key must refuse a second welcome"
+        assert second_intents == []
+
+    def test_community_notifications_are_unchanged(self, db):
+        """The fix must not have touched the category that carries
+        post and comment email — those stay off by default."""
+        from app.comms.preferences import get_effective_preference
+        from app.comms.registry import get_event_definition
+
+        for ev in ("community.post.published", "community.comment.created"):
+            d = get_event_definition(ev)
+            assert d is not None and d.topic == "conversations", (
+                f"{ev} moved topic — community mail may have changed"
+            )
+
+    def test_the_community_email_default_is_still_off(self, db, make_user):
+        from app.comms.preferences import get_effective_preference
+
+        member = make_user()
+        priority, _locked, source = get_effective_preference(
+            db, user_id=member.id, category_key="community",
+            channel="email_transactional",
+        )
+        assert (priority, source) == ("silent", "default"), (
+            "community email must remain off by default"
+        )
+
+    def test_security_email_is_still_locked_at_the_event(self):
+        """Opting out of welcome mail shares a category with password
+        resets. Those are locked at the EVENT level, so the opt-out
+        can never cost somebody their way back into their account."""
+        from app.comms.registry import is_transactional_event
+
+        assert is_transactional_event("account.password_reset_requested")
+        assert is_transactional_event("account.email_verification_requested")
+        assert not is_transactional_event(EVENT_TYPE), (
+            "the welcome must stay preference-controlled"
+        )
 
 
 class TestTheCollectivesArtwork:
