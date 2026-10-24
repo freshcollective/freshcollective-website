@@ -6,7 +6,8 @@ import { getBrandOverrides } from '@/lib/serverApi'
 
 export const metadata: Metadata = {
   title: "Fresh Collective",
-  description: "A membership-based transformation platform for women.",
+  description:
+    "A home for creator-led communities where people learn, gather, connect and grow together.",
 };
 
 // Icons are resolved by Next.js from the files beside this one —
