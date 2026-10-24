@@ -26,6 +26,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
+import { CONTACT_SUPPORT_EMAIL } from '@/lib/contact'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 import type { PurchaseByTokenResponse } from '@/lib/serverApi'
 
@@ -384,6 +385,22 @@ function ErrorCard({ message }: { message: string }) {
         style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
       >
         {message}
+      </p>
+      {/* Where "contact support" actually goes.
+          Rendered here rather than inside the messages because
+          ``resolveFlow`` is a pure function returning plain strings —
+          putting markup in it would make it harder to test for no gain.
+          One line on the shared card serves every error flow: the
+          already-claimed purchase, the expired claim link, and the two
+          generic failures above. Somebody reaching this screen has
+          usually already paid, so the address has to be here. */}
+      <p className="mt-3 text-[14px]" style={{ color: INK_BODY }}>
+        <a
+          href={`mailto:${CONTACT_SUPPORT_EMAIL}`}
+          className="underline hover:no-underline"
+        >
+          {CONTACT_SUPPORT_EMAIL}
+        </a>
       </p>
     </div>
   )

@@ -2,6 +2,7 @@ import { getMe } from '@/lib/serverApi'
 import ChangePasswordForm from '@/components/settings/ChangePasswordForm'
 import LogoutButton from '@/components/layout/LogoutButton'
 import type { UserProfile } from '@/types/platform'
+import { CONTACT_SUPPORT_EMAIL } from '@/lib/contact'
 
 export default async function SettingsSecurityPage() {
   const profile: UserProfile | null = await getMe()
@@ -23,7 +24,15 @@ export default async function SettingsSecurityPage() {
         <div className="rounded-xl border border-border bg-surface px-6 py-4">
           <p className="text-sm text-navy-800">{profile?.email}</p>
           <p className="mt-0.5 text-xs text-black">
-            To change your email, contact support.
+            {/* This named a channel that existed nowhere on the site.
+                An email change is an account matter, so support@. */}
+            To change your email, contact{' '}
+            <a
+              href={`mailto:${CONTACT_SUPPORT_EMAIL}`}
+              className="underline hover:no-underline"
+            >
+              {CONTACT_SUPPORT_EMAIL}
+            </a>.
           </p>
         </div>
       </section>
