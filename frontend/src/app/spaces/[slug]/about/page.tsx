@@ -18,9 +18,47 @@ import Avatar from '@/components/ui/Avatar'
 import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
 import SpaceAboutCTA from './SpaceAboutCTA'
 import MarkdownBody from '@/components/ui/MarkdownBody'
+import type { Metadata } from 'next'
+import { collectiveMetadata } from '@/lib/collectiveSeo'
 
 interface Props {
   params: Promise<{ slug: string }>
+}
+
+/**
+ * A Collective's own SEO identity, from what its creator already wrote.
+ *
+ * This page rather than the layout: ``/spaces/[slug]`` redirects a
+ * non-member here, so this is where a shared link and a crawler both
+ * land. The layout wraps member-only areas whose metadata differs.
+ *
+ * ``getSpace`` is the privacy boundary and it is already in place —
+ * ``GET /api/spaces/{slug}`` returns 401 to an anonymous caller for a
+ * non-public Collective and 404 for a non-active one. Crawlers are
+ * anonymous, so a restricted Collective yields ``null`` here and gets
+ * the generic fallback: its name never reaches the markup.
+ */
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params
+  const space = (await getSpace(slug)) as SpaceResponse | null
+  if (!space) {
+    // Unreachable, private or draft — all the same answer, and none of
+    // them name anything.
+    return {
+      title: 'Collective · Fresh Collective',
+      robots: { index: false, follow: false },
+    }
+  }
+  return collectiveMetadata(
+    {
+      name: space.name,
+      tagline: space.tagline,
+      description: space.description,
+      isPublic: space.is_public,
+      location: space.location as { hero_artwork_url?: string | null } | null,
+    },
+    slug,
+  )
 }
 
 export default async function SpaceAboutPage({ params }: Props) {
