@@ -156,6 +156,18 @@ def render_email_shell(
     # two plain strings rather than as markup because this module is
     # the single escaping boundary — see the module docstring.
     banner: tuple[str, str] | None = None,
+    # Where the Fresh Collective mark goes.
+    #
+    # "header" is the masthead every platform email has always had:
+    # the logo introduces the sender before anything else.
+    #
+    # "footer" is for an email whose hero belongs to somebody else. The
+    # Collective welcome leads with the Collective's own artwork, and a
+    # 200px platform logo above it competes with the thing the member
+    # is being welcomed into. Fresh Collective stays visible as the
+    # platform holding the connection — small, under the message, with
+    # the sender-identifying text it already sits beside.
+    brand_placement: str = "header",
     action: tuple[str, str] | None = None,   # (label, url)
     signoff: str | None = None,
     # How the sign-off is set. "muted" is the Fresh Collective
@@ -193,6 +205,12 @@ def render_email_shell(
     banner_html = ""
     if banner is not None and banner[0]:
         banner_url, banner_alt = banner
+        # Flush to the top of the card when it IS the top of the card,
+        # so the artwork fills the rounded corners instead of floating
+        # under a strip of white. Only a header logo earns it a gap.
+        banner_pad = (
+            "0" if brand_placement == "footer" else "20px 0 0 0"
+        )
         # Conventions are brand/email.py's, which documents why each
         # one is needed: a raster at an absolute https URL (SVG and
         # data: URIs are stripped by major clients), an explicit
@@ -212,7 +230,7 @@ def render_email_shell(
         # into a letter.
         banner_html = f'''
           <tr>
-            <td style="padding:20px 0 0 0;font-size:0;line-height:0;">
+            <td style="padding:{banner_pad};font-size:0;line-height:0;">
               <img src="{_esc_attr(banner_url)}" alt="{_esc_attr(banner_alt)}"
                    width="{_CARD_PX}" border="0"
                    style="display:block;width:100%;max-width:{_CARD_PX}px;
@@ -292,10 +310,20 @@ def render_email_shell(
         # text that is already safe, so it cannot introduce markup.
         signoff_body = safe_signoff.replace("\n", "<br />")
         if signoff_style == "body":
+            # Indistinguishable from the message above it, because it
+            # IS the message: the creator's own words carrying on to
+            # their name. Family, size, colour, weight and style all
+            # match a body paragraph, with only the spacing above
+            # marking it as the close.
+            #
+            # ``normal`` and ``400`` are stated rather than left to
+            # inherit — email clients inherit unpredictably, and a
+            # signature that italicises in one inbox and not another
+            # is the defect this replaced.
             signoff_css = (
                 f"margin:0;font-size:15.5px;line-height:1.65;"
-                f"color:{_INK_BODY};font-family:{_FONT_STACK_SERIF};"
-                f"font-style:italic;"
+                f"color:{_INK_BODY};font-family:{_FONT_STACK_SANS};"
+                f"font-style:normal;font-weight:400;"
             )
             # Clear of the message above it, the way a signature sits
             # under a letter rather than against it.
@@ -329,7 +357,13 @@ def render_email_shell(
                 </a>.
               </p>'''
 
-    brand_header = brand_header_html(db, brand_logo_url)
+    if brand_placement == "footer":
+        from app.brand.email import brand_footer_logo_html
+        brand_header = ""
+        footer_logo = brand_footer_logo_html(db, brand_logo_url)
+    else:
+        brand_header = brand_header_html(db, brand_logo_url)
+        footer_logo = ""
 
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -384,7 +418,7 @@ def render_email_shell(
           <tr>
             <td style="padding:24px 40px 32px 40px;
                        border-top:1px solid {_BORDER};
-                       margin-top:8px;">
+                       margin-top:8px;">{footer_logo}
               <p style="margin:0 0 6px 0;font-size:12px;font-weight:600;
                         color:{_INK_MUTED};font-family:{_FONT_STACK_SANS};
                         letter-spacing:0.04em;">

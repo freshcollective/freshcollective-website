@@ -629,27 +629,162 @@ class TestTheCollectivesArtwork:
         assert "<img" not in html or "atlas-locations" not in html
 
 
+class TestTheCollectiveIsTheHero:
+    """Whose email this looks like.
+
+    A 200px Fresh Collective logo above the Collective's own landscape
+    competed with the thing the member was being welcomed into. The
+    platform mark moves to the footer; the artwork leads.
+    """
+
+    def _with_art(self, db, make_space):
+        import uuid as _uuid
+        from app.models.platform import Location
+
+        loc = Location(
+            id=_uid("loc"), key=f"loc-{_uuid.uuid4().hex[:8]}",
+            name="Moonlit Shore",
+            hero_artwork_url=(
+                "/api/uploads/platform-artwork/atlas-locations/shore/hero.png"
+            ),
+        )
+        db.add(loc)
+        db.flush()
+        space = make_space()
+        space.location_id = loc.id
+        db.flush()
+        return space
+
+    def test_the_artwork_is_the_first_thing_in_the_card(
+        self, db, make_space,
+    ):
+        html = _render(db, self._with_art(db, make_space)).body_html
+        card = html.index('width="560"')
+        art = html.index("atlas-locations", card)
+        assert art < html.index("<h1", card), "artwork must precede the heading"
+        # Nothing of Fresh Collective's precedes it. Sliced to the START
+        # of the artwork's own <img> tag, not to the URL inside it —
+        # otherwise the tag being searched for is in the search window.
+        head = html[card:html.rfind("<img", card, art)]
+        assert "<img" not in head, (
+            "something is rendered above the Collective's artwork"
+        )
+
+    def test_no_large_platform_logo_anywhere(self, db, make_space):
+        html = _render(db, self._with_art(db, make_space)).body_html
+        assert 'width="200"' not in html, (
+            "the 200px masthead logo must not appear in a welcome email"
+        )
+
+    def test_a_collective_without_artwork_opens_on_the_heading(
+        self, db, make_space,
+    ):
+        """Explicitly NOT "fall back to the platform logo" — the card
+        simply begins with the welcome."""
+        html = _render(db, make_space()).body_html
+        card = html.index('width="560"')
+        before_heading = html[card:html.index("<h1", card)]
+        assert "<img" not in before_heading, (
+            "a Collective with no artwork must not get a logo instead"
+        )
+
+    def test_fresh_collective_is_still_present_in_the_footer(
+        self, db, make_space,
+    ):
+        """Understated, not absent. The platform still says who
+        carried the message."""
+        html = _render(db, self._with_art(db, make_space)).body_html
+        footer = html[html.index("<!-- Footer -->"):]
+        assert 'width="44"' in footer, "no small brand mark in the footer"
+        assert 'alt="Fresh Collective"' in footer
+        assert "Fresh Collective" in footer
+
+    def test_the_footer_mark_is_the_approved_brand_asset(
+        self, db, make_space,
+    ):
+        """The same artwork the header uses, so an admin replacing the
+        brand image replaces this too — not a second asset to forget."""
+        from app.brand.email import brand_footer_logo_html, email_logo_url
+
+        html = _render(db, self._with_art(db, make_space)).body_html
+        assert email_logo_url(None) in html
+        assert brand_footer_logo_html(None).strip() in html
+
+    def test_the_footer_mark_is_outlook_safe(self, db, make_space):
+        html = _render(db, self._with_art(db, make_space)).body_html
+        img = re.search(
+            r'<img[^>]*width="44"[^>]*>', html, re.S,
+        ).group(0)
+        # Outlook ignores CSS sizing, so both attributes must be set.
+        assert 'height="44"' in img
+        assert 'border="0"' in img
+        assert "display:block" in img
+
+    def test_the_preferences_footer_is_untouched(self, db, make_space):
+        html = _render(db, self._with_art(db, make_space)).body_html
+        assert "communication preferences" in html
+
+    def test_every_other_email_keeps_its_masthead(self, db):
+        """The placement is opt-in. Nothing else moved its logo."""
+        from app.comms.templates.base import render_email_shell
+
+        html = render_email_shell(
+            preheader="p", heading="h", body_paragraphs=["one"], db=None,
+        )
+        assert 'width="200"' in html, (
+            "the default placement must still render the masthead"
+        )
+        assert 'width="44"' not in html
+
+
 class TestTheSignature:
     """Sized as part of the message, because a creator wrote it."""
 
     def _signature_block(self, db, space, overrides=None):
         html = _render(db, space, overrides).body_html
-        # The sign-off is the last <p> before the footer.
+        # Found by its cell padding, which is the one thing that still
+        # distinguishes the signature from a body paragraph now that
+        # every type property matches.
         return re.search(
-            r'<p style="([^"]*font-style:italic[^"]*)">\s*(.*?)\s*</p>',
+            r'<td style="padding:16px 40px 24px 40px;">\s*'
+            r'<p style="([^"]*)">\s*(.*?)\s*</p>',
             html, re.S,
         )
 
     def test_it_is_body_size_and_body_colour(self, db, make_space):
         m = self._signature_block(db, make_space())
-        assert m, "no italic sign-off block found"
+        assert m, "no sign-off block found"
         css = m.group(1).replace("\n", " ")
         assert "15.5px" in css, f"signature should be body size, got {css}"
         assert "#334155" in css, f"signature should be body colour, got {css}"
 
-    def test_it_stays_italic(self, db, make_space):
+    def test_it_is_not_italic(self, db, make_space):
+        """It reads as the creator's message carrying on to their
+        name, and italics made it look like a detached footnote."""
         m = self._signature_block(db, make_space())
-        assert "font-style:italic" in m.group(1)
+        assert "font-style:normal" in m.group(1)
+        assert "italic" not in m.group(1)
+
+    def test_it_is_regular_weight(self, db, make_space):
+        m = self._signature_block(db, make_space())
+        assert "font-weight:400" in m.group(1)
+
+    def test_it_uses_the_same_font_as_the_message(self, db, make_space):
+        """Not merely "a sans font" — the SAME declaration the body
+        paragraphs use, so the two can never drift apart."""
+        html = _render(db, make_space()).body_html
+        body = re.search(
+            r'<td style="padding:0 40px 16px 40px;">\s*<p style="([^"]*)">',
+            html, re.S,
+        ).group(1)
+        sig = self._signature_block(db, make_space()).group(1)
+
+        def family(css):
+            return re.search(r"font-family:([^;]+);", css.replace("\n", " ")
+                             ).group(1).strip()
+            # noqa: E501
+
+        assert family(sig).split() == family(body).split()
 
     def test_line_breaks_the_creator_typed_survive(self, db, make_space):
         """The default is two lines — "With warmth," then the team —
