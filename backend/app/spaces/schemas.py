@@ -579,7 +579,6 @@ class PublicSpaceCard(BaseModel):
     pathway_count: int
     member_count: int
     creator_name: str | None
-    has_upcoming_event: bool
     themes: list[str] = []
     pricing_type: str = 'free'
     pricing_amount_cents: int | None = None

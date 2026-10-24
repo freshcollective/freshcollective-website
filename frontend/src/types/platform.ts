@@ -1219,7 +1219,6 @@ export interface PublicSpaceCard {
   pathway_count: number
   member_count: number
   creator_name: string | null
-  has_upcoming_event: boolean
   themes: string[]
   pricing_type: PricingType
   pricing_amount_cents: number | null
