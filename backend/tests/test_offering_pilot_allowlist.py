@@ -1007,3 +1007,188 @@ class TestDownloadsAreNeverPilotGated:
         assert "offerings_enabled" not in src
         assert "offering_pilot" not in src
         assert "space_in_pilot" not in src
+
+
+# ---------------------------------------------------------------------------
+# General release — the state the pilot was built to end in
+# ---------------------------------------------------------------------------
+
+
+class TestGeneralRelease:
+    """``OFFERINGS_PILOT_COLLECTIVES=*`` — Offerings for every Collective.
+
+    The pilot's own docstring says a general release is setting the
+    value to ``*``, "an explicit act, which is the point". Every test
+    above proves the pilot RESTRICTS correctly; these prove the
+    release state works, which is a different question and the one
+    that matters once the restriction is lifted.
+
+    Nothing here changes the security model: ownership, entitlement
+    and draft visibility are enforced by their own guards, and the
+    last tests in this class are what hold that line.
+    """
+
+    def _general_release(self, monkeypatch):
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "offerings_enabled", True)
+        monkeypatch.setattr(settings, "offerings_pilot_collectives", "*")
+
+    def _owner(self, db, space) -> User:
+        return db.query(User).filter(User.id == space.creator_id).one()
+
+    def test_every_collective_is_admitted(
+        self, db, two_collectives, monkeypatch,
+    ):
+        self._general_release(monkeypatch)
+        inside, outside, _a, _b = two_collectives
+        for space in (inside, outside):
+            assert pilot.offerings_available_for(space) is True
+
+    def test_both_creators_can_manage_their_own(
+        self, db, two_collectives, monkeypatch,
+    ):
+        """The pilot's defining restriction — one Collective works, the
+        other 404s — is gone, and each creator reaches their own."""
+        self._general_release(monkeypatch)
+        inside, outside, _a, _b = two_collectives
+        for space in (inside, outside):
+            owner = self._owner(db, space)
+            assert creator_api.list_offerings(
+                space.slug, db=db, current_user=owner,
+            ) is not None
+            created = creator_api.create_offering(
+                space.slug, OfferingCreateRequest(title="Generally available"),
+                db=db, current_user=owner,
+            )
+            assert created["status"] == OfferingStatus.draft.value
+
+    def test_a_collective_created_after_the_release_is_included(
+        self, db, make_space, monkeypatch,
+    ):
+        """No allow-list to add it to. A Collective made tomorrow has
+        Offerings for the same reason every other one does."""
+        self._general_release(monkeypatch)
+        fresh = make_space()
+        assert pilot.offerings_available_for(fresh) is True
+        owner = self._owner(db, fresh)
+        assert creator_api.list_offerings(
+            fresh.slug, db=db, current_user=owner,
+        ) is not None
+
+    def test_renaming_a_collective_cannot_remove_its_offerings(
+        self, db, make_space, monkeypatch,
+    ):
+        """Under the pilot a rename could drop a slug-listed Collective
+        out of scope. With no list, a rename is just a rename."""
+        self._general_release(monkeypatch)
+        space = make_space()
+        space.slug = "renamed-after-release"
+        db.flush()
+        assert pilot.offerings_available_for(space) is True
+
+    def test_the_offerings_area_is_reachable_in_every_collective(
+        self, db, two_collectives, monkeypatch,
+    ):
+        """What drives the Creator Studio sidebar and the member tab.
+        During the pilot this answered False for the second Collective,
+        which is what left stale navigation pointing at a 404."""
+        from app.spaces.area_access import _offerings_available_for
+
+        self._general_release(monkeypatch)
+        inside, outside, _a, _b = two_collectives
+        assert _offerings_available_for(inside) is True
+        assert _offerings_available_for(outside) is True
+
+    def test_a_published_offering_is_browsable_in_any_collective(
+        self, db, two_collectives, make_user, monkeypatch,
+    ):
+        self._general_release(monkeypatch)
+        inside, outside, a, b = two_collectives
+        for space, off in ((inside, a), (outside, b)):
+            cards = member_api.list_member_offerings(
+                space.slug, db=db, current_user=None,
+            )
+            slugs = [c["slug"] for c in cards]
+            assert off.slug in slugs, f"{off.slug} missing from {space.slug}"
+
+    def test_a_free_offering_can_be_acquired_in_any_collective(
+        self, db, two_collectives, make_user, monkeypatch,
+    ):
+        self._general_release(monkeypatch)
+        inside, outside, a, b = two_collectives
+        for space, off in ((inside, a), (outside, b)):
+            taker = make_user()
+            out = member_api.acquire_offering(
+                space.slug, off.slug, db=db, current_user=taker,
+            )
+            assert out["acquired"] is True
+            assert out["already_owned"] is False
+
+    # ── The guards that must NOT relax with the pilot ────────────────
+
+    def test_a_creator_still_cannot_touch_another_collectives_offering(
+        self, db, two_collectives, monkeypatch,
+    ):
+        """Ownership is enforced by the creator guard, never by the
+        pilot. Opening the pilot must not open this."""
+        self._general_release(monkeypatch)
+        inside, outside, _a, b = two_collectives
+        intruder = self._owner(db, inside)
+
+        with pytest.raises(HTTPException) as exc:
+            creator_api.get_offering(
+                outside.slug, b.slug, db=db, current_user=intruder,
+            )
+        assert exc.value.status_code in (403, 404)
+
+    def test_a_draft_is_still_invisible_to_members(
+        self, db, make_space, make_user, monkeypatch,
+    ):
+        """The one thing a general release must never do."""
+        self._general_release(monkeypatch)
+        space = make_space()
+        draft = _offering(db, space, status=OfferingStatus.draft.value)
+        _file(db, draft)
+
+        cards = member_api.list_member_offerings(
+            space.slug, db=db, current_user=None,
+        )
+        assert draft.slug not in [c["slug"] for c in cards]
+
+        with pytest.raises(HTTPException) as exc:
+            member_api.get_member_offering(
+                space.slug, draft.slug, db=db, current_user=make_user(),
+            )
+        assert exc.value.status_code == 404
+
+    def test_a_draft_cannot_be_acquired_even_when_generally_available(
+        self, db, make_space, make_user, monkeypatch,
+    ):
+        self._general_release(monkeypatch)
+        space = make_space()
+        draft = _offering(db, space, status=OfferingStatus.draft.value)
+        _file(db, draft)
+        with pytest.raises(HTTPException):
+            member_api.acquire_offering(
+                space.slug, draft.slug, db=db, current_user=make_user(),
+            )
+
+    def test_the_master_switch_still_overrides_everything(
+        self, db, make_space, monkeypatch,
+    ):
+        """``*`` is the scope, not the feature. OFFERINGS_ENABLED=false
+        must still turn the whole thing off — the rollback path if the
+        general release has to be undone."""
+        from app.core.config import settings
+
+        self._general_release(monkeypatch)
+        monkeypatch.setattr(settings, "offerings_enabled", False)
+        assert pilot.offerings_available_for(make_space()) is False
+
+    def test_describe_tells_an_operator_it_is_generally_available(
+        self, monkeypatch,
+    ):
+        from app.services.offering_pilot import describe
+
+        self._general_release(monkeypatch)
+        assert "ALL Collectives" in describe()
