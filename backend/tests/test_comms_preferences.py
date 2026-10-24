@@ -220,7 +220,7 @@ class TestSetPreference:
 
 
 class TestPreferenceMatrix:
-    def test_matrix_returns_all_nine_categories(self, db, make_user):
+    def test_matrix_returns_every_seeded_category(self, db, make_user):
         u = make_user()
         matrix = get_preference_matrix(db, user_id=u.id)
         keys = [row["category_key"] for row in matrix]
@@ -228,6 +228,10 @@ class TestPreferenceMatrix:
         for expected in [
             "account", "safety", "purchases", "messages", "gatherings",
             "pathways", "community", "creator_updates", "platform_updates",
+            # Migration 165 — the Collective welcome email's own
+            # category, so a member can switch that one email off
+            # without touching community or account mail.
+            "collective_welcome",
         ]:
             assert expected in keys
 
@@ -382,7 +386,10 @@ class TestPreferencesEndpoint:
     def test_get_returns_matrix_and_defaults(self, db, make_user):
         u = make_user()
         resp = get_my_preferences(db=db, current_user=u)  # type: ignore[arg-type]
-        assert len(resp.categories) == 9
+        # Ten since migration 165 added collective_welcome. Counted
+        # rather than listed here because the matrix test above names
+        # them; this one is a drift pin.
+        assert len(resp.categories) == 10
         assert resp.member_settings.timezone is None
         assert len(resp.consents) == 5
         # All consents start unset.

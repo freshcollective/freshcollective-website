@@ -292,7 +292,13 @@ class Settings(BaseSettings):
     # a blueprint sync reasserts render.yaml, and this value is not
     # declared there.
     comms_live_topics: str = (
-        "security,account,gatherings,conversations,purchases,pathways"
+        "security,account,gatherings,conversations,purchases,pathways,"
+        # The Collective welcome. Its own topic, carrying exactly one
+        # event, so naming it here activates that email and nothing
+        # else. Without this entry ``schedule_routing_if_needed``
+        # returns early and the event is written but never delivered —
+        # which is how the welcome shipped silent.
+        "collective_welcome"
     )
     # Minimum age (seconds) an event must reach before the shadow
     # reconciler will attempt to compare it. Gives both the legacy

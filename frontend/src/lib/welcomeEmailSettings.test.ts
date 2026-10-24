@@ -166,3 +166,86 @@ describe('the form is reachable, and only where it makes sense', () => {
     )
   })
 })
+
+
+/**
+ * The member's own control, in Stay Connected.
+ *
+ * Every other control on that page is per-Collective and writes
+ * ``/api/spaces/{slug}/notification-settings``. This one cannot be:
+ * it governs Collectives not yet joined. These pin that it reads the
+ * communications matrix instead, and that it touches exactly one cell
+ * of it.
+ */
+const PREF = 'app/settings/stay-connected/WelcomeEmailPreference.tsx'
+const SHELL2 = 'app/settings/stay-connected/StayConnectedClient.tsx'
+
+describe('the member can switch Collective welcome emails off', () => {
+
+  test('it is mounted in Stay Connected', () => {
+    const src = codeOnly(SHELL2)
+    assert.match(src, /<WelcomeEmailPreference\s*\/>/)
+  })
+
+  test('it is shown even to somebody with no memberships', () => {
+    // They are exactly who the setting is about — it governs the
+    // Collectives they have not joined yet.
+    const src = codeOnly(SHELL2)
+    const empty = src.slice(
+      src.indexOf('collectives.length === 0'),
+      src.indexOf('return (\n    <div className="space-y-4">'),
+    )
+    assert.ok(
+      empty.includes('<WelcomeEmailPreference'),
+      'the empty state must still offer the welcome-email control',
+    )
+  })
+
+  test('it reads and writes the communications matrix', () => {
+    const src = codeOnly(PREF)
+    assert.match(src, /\/api\/comms\/preferences\/me/)
+    assert.match(src, /'PATCH'/)
+  })
+
+  test('it never writes the per-Collective notification endpoint', () => {
+    // That endpoint is keyed by space slug; this setting has no space.
+    const src = codeOnly(PREF)
+    assert.ok(
+      !src.includes('notification-settings'),
+      'the welcome preference is not per-Collective',
+    )
+  })
+
+  test('it touches exactly one category and one channel', () => {
+    const src = codeOnly(PREF)
+    assert.match(src, /CATEGORY = 'collective_welcome'/)
+    assert.match(src, /CHANNEL = 'email_transactional'/)
+    // Exactly one category is WRITTEN, and it is written through the
+    // constant. A second one here, or an inline string, would make
+    // this control silently govern unrelated email.
+    const written = src.match(/category_key:\s*CATEGORY/g) ?? []
+    assert.equal(written.length, 1)
+    assert.ok(
+      !/category_key:\s*'/.test(src),
+      'the category must come from the constant, never an inline string',
+    )
+  })
+
+  test('on and off are the only two priorities it sends', () => {
+    const src = codeOnly(PREF)
+    assert.match(src, /ON = 'immediate'/)
+    assert.match(src, /OFF = 'silent'/)
+    assert.ok(
+      !/'daily_digest'|'weekly_digest'|'scheduled'/.test(src),
+      'a digest priority here would promise a cadence nothing delivers',
+    )
+  })
+
+  test('it hides itself rather than guessing when the read fails', () => {
+    // Showing "off" because a request failed is a lie a member might
+    // act on; the server holds the truth.
+    const src = codeOnly(PREF)
+    assert.match(src, /setPresent\(false\)/)
+    assert.match(src, /if \(!present\) return null/)
+  })
+})

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from app.comms.categories import (
     CATEGORY_ACCOUNT,
+    CATEGORY_COLLECTIVE_WELCOME,
     CATEGORY_COMMUNITY,
     CATEGORY_CREATOR_UPDATES,
     CATEGORY_GATHERINGS,
@@ -55,6 +56,14 @@ PROVIDER_MAP: dict[tuple[str, str], str] = {
     (CATEGORY_CREATOR_UPDATES,  CHANNEL_EMAIL_TRANSACTIONAL): "resend",
     (CATEGORY_PLATFORM_UPDATES, CHANNEL_IN_APP):              "in_app",
     # (platform_updates, email_marketing) intentionally deferred to M11.
+    #
+    # Email only. A category absent from this map routes NOTHING —
+    # ``supported_channels_for_category`` derives the channel list from
+    # these keys, so a seeded channel default with no entry here is
+    # silently never attempted. No in-app welcome template exists, so
+    # in_app is left out deliberately rather than registered and
+    # skipped on every join.
+    (CATEGORY_COLLECTIVE_WELCOME, CHANNEL_EMAIL_TRANSACTIONAL): "resend",
 }
 
 
