@@ -91,6 +91,68 @@ describe('the form is reachable, and only where it makes sense', () => {
     assert.match(src, /<WelcomeEmailForm\s+slug=/)
   })
 
+  /**
+   * WHICH tab, not merely "somewhere in the shell".
+   *
+   * The two tests around this one both passed while the release note
+   * claimed the form lived under a tab that does not exist by that
+   * name — they assert the form is mounted and guarded, and neither
+   * can tell one tab from another. A creator looking in the wrong
+   * place finds nothing and reasonably concludes the feature did not
+   * ship, so the tab is part of the contract and is pinned here.
+   *
+   * Access & Visibility is the right home: the welcome is about the
+   * moment somebody gets in, which is what that tab is for, and it
+   * sits with the joining policy that decides who gets in at all.
+   */
+  test('it sits in the Access & Visibility tab, beside the joining policy', () => {
+    const src = codeOnly(SHELL)
+    const block = src.match(
+      /\{tab === 'visibility'[\s\S]*?\n      \)\}/,
+    )
+    assert.ok(block, "no `tab === 'visibility'` block found in the shell")
+    assert.ok(
+      block[0].includes('<WelcomeEmailForm'),
+      'the welcome form must render inside the Access & Visibility tab',
+    )
+    assert.ok(
+      block[0].includes('<JoinPolicyForm'),
+      'it belongs beside the joining policy, not alone on a tab',
+    )
+  })
+
+  /**
+   * The tab keys are internal; the labels are what a creator reads.
+   * `members` is labelled "Collective Home" — naming either one after
+   * the other in a report sends somebody hunting for a tab that is not
+   * there, which is exactly what happened. This pins the pairing so
+   * the mismatch is visible in the test output rather than discovered
+   * in production.
+   */
+  test('the visibility tab is the one labelled Access & Visibility', () => {
+    const src = codeOnly(SHELL)
+    assert.match(
+      src,
+      /key: 'visibility',\s*label: 'Access & Visibility'/,
+      "the 'visibility' key must still be the Access & Visibility tab",
+    )
+    assert.match(
+      src,
+      /key: 'members',\s*label: 'Collective Home'/,
+      "the 'members' key is labelled Collective Home — it is NOT a Members tab",
+    )
+  })
+
+  test('the welcome form is not on the Collective Home tab', () => {
+    const src = codeOnly(SHELL)
+    const home = src.match(/\{tab === 'members' &&[^\n]*/)
+    assert.ok(home, "no `tab === 'members'` branch found")
+    assert.ok(
+      !home[0].includes('WelcomeEmailForm'),
+      'the welcome form belongs with joining, not with Collective Home',
+    )
+  })
+
   test('auto-managed Collectives do not get one', () => {
     // Membership there is computed from platform eligibility rather
     // than chosen, so nobody joins and nobody is welcomed. The server

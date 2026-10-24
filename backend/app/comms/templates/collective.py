@@ -238,11 +238,24 @@ class CollectiveMembershipWelcomeEmailTemplate:
         first_name = (ctx.get("member_first_name") or "").strip()
         collective_url = ctx.get("collective_url") or ""
 
+        space_id = ctx.get("space_id") or None
         r = resolver_for(db, self.key, {
             **ctx,
             "collective_name": collective,
             "member_first_name": first_name or "there",
-        }, space_id=(ctx.get("space_id") or None))
+        }, space_id=space_id)
+
+        # The Collective's own artwork, resolved HERE rather than
+        # carried on the event. Two reasons: a creator who changes
+        # their Location in Place & Feel changes the next welcome too,
+        # and the Creator Studio preview renders through this very
+        # line — so the preview cannot show artwork a real send would
+        # not. ``None`` when the Collective has chosen no Location,
+        # and the shell then simply omits the image.
+        banner_url = None
+        if db is not None and space_id:
+            from app.brand.resolver import collective_artwork_for_email
+            banner_url = collective_artwork_for_email(db, space_id)
 
         subject = r.text("subject")
         heading = r.text("heading")
@@ -266,8 +279,18 @@ class CollectiveMembershipWelcomeEmailTemplate:
             preheader=heading,
             heading=heading,
             body_paragraphs=paragraphs,
+            # Alt text names the Collective, because most clients
+            # block remote images by default — for a large share of
+            # recipients this text IS the artwork, and "Moonlit
+            # Circle" tells them where they have arrived where
+            # "banner image" would not.
+            banner=(banner_url, collective) if banner_url else None,
             action=(cta_label, collective_url) if collective_url else None,
             signoff=signature,
+            # The creator wrote this one, so it is set as part of the
+            # message rather than as a platform footnote. Every other
+            # template keeps the muted default.
+            signoff_style="body",
             # A welcome is preference-controlled rather than
             # transactional, so the preferences link belongs here: a
             # member who would rather not hear from Collectives must be

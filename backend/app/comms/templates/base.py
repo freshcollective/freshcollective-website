@@ -51,8 +51,13 @@ double-escape the markup and render tags as literal text; the fix is
 always to pass the value as its own plain-text paragraph.
 
 Design constraints inherited from the legacy shell: table-based
-markup, inline styles only, no external stylesheets, no hero imagery,
-one primary call to action.
+markup, inline styles only, no external stylesheets, one primary call
+to action.
+
+The "no hero imagery" constraint was lifted for the Collective welcome
+email, which carries its Collective's own artwork — see ``banner``.
+Nothing else passes one, and the parameter is opt-in so every other
+email keeps the plain card.
 """
 
 from __future__ import annotations
@@ -100,6 +105,10 @@ class Template(Protocol):
 _BG_PAGE         = "#F5F0E8"    # ivory
 _BG_CARD         = "#FFFFFF"
 _INK_HEADING     = "#0C1826"    # navy-950
+#: Width of the email card. Named so the banner cannot drift from
+#: the table it sits in — a banner wider than the card overflows
+#: on every client, and one narrower leaves a seam.
+_CARD_PX         = 560
 _INK_BODY        = "#334155"    # slate-700
 _INK_MUTED       = "#64748B"    # slate-500
 _INK_ON_BUTTON   = "#FFFFFF"
@@ -142,8 +151,26 @@ def render_email_shell(
     heading: str,
     body_paragraphs: Sequence[str],
     greeting: str | None = None,
+    # (url, alt) for a landscape image across the top of the card,
+    # under the Fresh Collective logo and above the heading. Passed as
+    # two plain strings rather than as markup because this module is
+    # the single escaping boundary — see the module docstring.
+    banner: tuple[str, str] | None = None,
     action: tuple[str, str] | None = None,   # (label, url)
     signoff: str | None = None,
+    # How the sign-off is set. "muted" is the Fresh Collective
+    # flourish every platform email has always used: small, grey, a
+    # deliberate step down from the message.
+    #
+    # "body" is for a sign-off somebody WROTE. A creator's signature
+    # is part of their message, not a footnote to it, so it is set at
+    # body size and body colour — still italic, because that is what
+    # makes it read as a signature rather than another paragraph.
+    #
+    # Opt-in rather than a change of default: five existing templates
+    # pass a Fresh Collective sign-off through this argument and none
+    # of them should change appearance.
+    signoff_style: str = "muted",
     show_preferences_link: bool = True,
     db: Any = None,
     brand_logo_url: str | None = None,
@@ -163,6 +190,37 @@ def render_email_shell(
     than a degraded one. ``brand_logo_url`` short-circuits that lookup
     for callers that have already resolved it.
     """
+    banner_html = ""
+    if banner is not None and banner[0]:
+        banner_url, banner_alt = banner
+        # Conventions are brand/email.py's, which documents why each
+        # one is needed: a raster at an absolute https URL (SVG and
+        # data: URIs are stripped by major clients), an explicit
+        # ``width`` attribute because Outlook for Windows ignores CSS
+        # sizing, ``border="0"`` because older Outlook draws a border,
+        # and ``display:block`` to kill the inline baseline gap.
+        #
+        # Height is deliberately left to the image. A fixed height
+        # would need a crop to avoid distortion, and Outlook's Word
+        # renderer ignores ``object-fit`` — so it would squash the
+        # artwork rather than crop it. Proportional scaling keeps the
+        # landscape composition intact in every client.
+        #
+        # Full-bleed to the card edge rather than inset to the 40px
+        # text gutter: this is the Collective's own world, and it
+        # reads as a window rather than as an illustration dropped
+        # into a letter.
+        banner_html = f'''
+          <tr>
+            <td style="padding:20px 0 0 0;font-size:0;line-height:0;">
+              <img src="{_esc_attr(banner_url)}" alt="{_esc_attr(banner_alt)}"
+                   width="{_CARD_PX}" border="0"
+                   style="display:block;width:100%;max-width:{_CARD_PX}px;
+                          height:auto;border:0;outline:none;
+                          text-decoration:none;" />
+            </td>
+          </tr>'''
+
     safe_preheader = _esc_text(preheader)
     safe_heading   = _esc_text(heading)
     safe_greeting  = _esc_text(greeting) if greeting else None
@@ -225,13 +283,35 @@ def render_email_shell(
 
     signoff_html = ""
     if safe_signoff:
+        # Line breaks survive.
+        #
+        # A signature is written as lines — "With warmth," then the
+        # name — and HTML collapses the newline between them, so the
+        # default sign-off arrived as one run-on line. Escaped first,
+        # then the newlines become <br />: the replacement runs over
+        # text that is already safe, so it cannot introduce markup.
+        signoff_body = safe_signoff.replace("\n", "<br />")
+        if signoff_style == "body":
+            signoff_css = (
+                f"margin:0;font-size:15.5px;line-height:1.65;"
+                f"color:{_INK_BODY};font-family:{_FONT_STACK_SERIF};"
+                f"font-style:italic;"
+            )
+            # Clear of the message above it, the way a signature sits
+            # under a letter rather than against it.
+            signoff_pad = "padding:16px 40px 24px 40px;"
+        else:
+            signoff_css = (
+                f"margin:0;font-size:14px;line-height:1.6;"
+                f"color:{_INK_MUTED};font-family:{_FONT_STACK_SERIF};"
+                f"font-style:italic;"
+            )
+            signoff_pad = "padding:8px 40px 24px 40px;"
         signoff_html = f'''
         <tr>
-          <td style="padding:8px 40px 24px 40px;">
-            <p style="margin:0;font-size:14px;line-height:1.6;
-                      color:{_INK_MUTED};font-family:{_FONT_STACK_SERIF};
-                      font-style:italic;">
-              {safe_signoff}
+          <td style="{signoff_pad}">
+            <p style="{signoff_css}">
+              {signoff_body}
             </p>
           </td>
         </tr>'''
@@ -271,14 +351,15 @@ def render_email_shell(
          style="background:{_BG_PAGE};padding:48px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0"
-               style="max-width:560px;background:{_BG_CARD};
+        <table role="presentation" width="{_CARD_PX}" cellpadding="0" cellspacing="0"
+               style="max-width:{_CARD_PX}px;background:{_BG_CARD};
                       border-radius:20px;overflow:hidden;
                       border:1px solid {_BORDER};">
 
           <!-- Brand — see app/brand/email.py; shared with the
                legacy renderer so the two cannot drift. -->
           {brand_header}
+          {banner_html}
 
           <!-- Heading -->
           <tr>

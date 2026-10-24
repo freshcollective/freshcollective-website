@@ -208,3 +208,59 @@ def resolve_for_email(db: Session, role: str) -> str | None:
     and the layout holds. It never means "fall back to something".
     """
     return resolve(db, role).public_url
+
+
+def collective_artwork_for_email(db: Session, space_id: str | None) -> str | None:
+    """The Collective's own artwork, as an ``<img src>`` an inbox can load.
+
+    ``None`` means "render no image", exactly as in
+    :func:`resolve_for_email` — never "fall back to something". That
+    matters more here than it does for the brand logo, because the
+    obvious fallback is wrong in a way that is invisible from the
+    sending side.
+
+    Where the artwork comes from
+    ----------------------------
+
+    A Collective does not own artwork. Under the Atlas it *chooses* a
+    Location, and the Location carries the artwork — curated by Fresh
+    Collective, reusable across Collectives. So the lookup is
+    ``Space.location_id -> Location.hero_artwork_url``, and a
+    Collective that has not chosen a Location simply has no artwork to
+    send. Resolved per render rather than stored on the event, so a
+    creator who changes their Location in Place & Feel changes the
+    next welcome email too.
+
+    Why not the two other artwork columns
+    -------------------------------------
+
+    ``Space.island_artwork_url`` is a stale column from migration 064
+    that no form writes to; ``admin/schemas.py`` says in terms not to
+    use it as a source anywhere new.
+
+    ``Space.cover_image_url`` is the fallback rung every *in-product*
+    call site uses, and it is the one thing that must not be used
+    here. Covers are private uploads: ``/api/uploads/*`` authorises
+    them against the signed-in user, so the URL works perfectly for
+    the creator previewing the email and returns 403 for every actual
+    recipient. A broken image in everyone's inbox except the person
+    who checked it is precisely the bug this docstring exists to
+    prevent.
+
+    ``_absolute_for_upload`` is what enforces that: Location artwork
+    is stored under ``platform-artwork/atlas-locations/...`` and so
+    passes the public-prefix gate, while a cover would be refused.
+    """
+    if not space_id:
+        return None
+    from app.models.platform import Location, Space
+
+    row = (
+        db.query(Location.hero_artwork_url)
+        .join(Space, Space.location_id == Location.id)
+        .filter(Space.id == space_id)
+        .first()
+    )
+    if row is None or not row[0]:
+        return None
+    return _absolute_for_upload(row[0])
