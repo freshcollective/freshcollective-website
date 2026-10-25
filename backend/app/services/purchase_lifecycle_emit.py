@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.models.payment_option import PaymentOption
 from app.models.platform import EventSeries, Pathway, Space
+from app.services import member_links as _links
 from app.models.purchase_plan import PurchasePlan
 from app.models.user import User
 
@@ -74,9 +75,22 @@ def _origin() -> str:
 
 def _member_url_for_option(db: Session, option: PaymentOption | None) -> str:
     """Deep-link to the member surface for the option's affected
-    experience, or ``/dashboard`` when we can't honestly resolve one."""
-    origin = _origin()
-    fallback = f"{origin}/dashboard"
+    experience, or ``/dashboard`` when we can't honestly resolve one.
+
+    Feeds both ``member_url`` and ``repair_url`` on every one of the six
+    purchase-lifecycle emails, so a wrong answer here is not only a
+    misdirected receipt — it is a payment-recovery CTA that lands
+    somewhere ``PlanRecoveryBanner`` does not render.
+
+    The Series branch used to match ``"series"``. The platform writes
+    ``"event_series"`` (``creator._gathering_series_routes``), so the
+    branch was unreachable and every Series purchase and every Series
+    instalment-recovery email linked to ``/dashboard``. Both spellings
+    are accepted now — see ``member_links.SERIES_ATTACH_KINDS`` — and
+    the paths themselves are built in ``services.member_links`` so this
+    module and ``gathering_booking_emit`` cannot drift apart again.
+    """
+    fallback = _links.dashboard_url()
     if option is None or not option.attaches_to_id:
         return fallback
 
@@ -84,38 +98,37 @@ def _member_url_for_option(db: Session, option: PaymentOption | None) -> str:
     if space is None:
         return fallback
     kind = (option.attaches_to_kind or "").lower()
+
     if kind == "pathway":
         pw = db.query(Pathway).filter(Pathway.id == option.attaches_to_id).one_or_none()
-        if pw is None:
-            return fallback
-        return f"{origin}/spaces/{space.slug}/pathways/{pw.slug}"
-    if kind == "series":
-        series = db.query(EventSeries).filter(EventSeries.id == option.attaches_to_id).one_or_none()
-        if series is None:
-            return fallback
-        return f"{origin}/spaces/{space.slug}/gathering-series/{series.slug}"
+        return _links.pathway_member_url(space, pw) or fallback
+
+    if kind in _links.SERIES_ATTACH_KINDS:
+        series = (
+            db.query(EventSeries)
+            .filter(EventSeries.id == option.attaches_to_id)
+            .one_or_none()
+        )
+        return _links.series_member_url(space, series) or fallback
+
     if kind == "offering":
         # Offerings Phase C/D. Without this branch a member who had just
         # bought a workbook was sent to ``/dashboard`` by their own
         # purchase confirmation — technically true, and no help at all
         # in finding the thing they paid for.
-        #
-        # Narrow by construction: the branch is reached only for an
-        # option whose ``attaches_to_kind`` is ``offering``, which
-        # nothing but ``offering_commerce`` ever writes. Pathway and
-        # Series options take their existing branches above and are
-        # untouched.
         from app.models.offering import Offering
         offering = (
             db.query(Offering)
             .filter(Offering.id == option.attaches_to_id)
             .one_or_none()
         )
-        if offering is None:
-            return fallback
-        return f"{origin}/spaces/{space.slug}/offerings/{offering.slug}"
-    # Any other attach kind (future: standalone gathering bundle,
-    # etc.) — fall back to dashboard rather than invent a URL.
+        return _links.offering_member_url(space, offering) or fallback
+
+    # ``space`` — the grants-first sentinel, where the option grants
+    # many things and no single destination is honest — and any future
+    # kind. Fall back rather than invent a URL. Both are named in
+    # ``member_links``, so a kind nothing has heard of fails a test
+    # rather than silently becoming a dashboard link.
     return fallback
 
 

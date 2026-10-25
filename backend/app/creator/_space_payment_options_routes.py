@@ -206,9 +206,16 @@ class PaymentOptionReferenceOut(BaseModel):
 # not attach to a single Pathway/Series (they may grant many). Rather
 # than lie by pointing at "the first" grant target, we tag them with
 # a distinct sentinel so downstream readers can recognise them if
-# needed. Nothing in the checkout pipeline reads ``attaches_to_kind``
-# for options that have grants (the dispatcher routes grants-first
-# → grant resolver), so the sentinel is inert at runtime.
+# needed.
+#
+# Nothing in the CHECKOUT pipeline reads ``attaches_to_kind`` for
+# options that have grants (the dispatcher routes grants-first → grant
+# resolver). The sentinel is not inert everywhere, though: the comms
+# layer does read it. ``services.member_links`` lists ``space`` among
+# the kinds with no specific member destination, so a lifecycle email
+# for a grants-first purchase links to ``/dashboard`` — which is the
+# right answer when the option grants many things, and is a recorded
+# decision there rather than a side effect here.
 _GRANTS_FIRST_ATTACH_KIND = "space"
 
 

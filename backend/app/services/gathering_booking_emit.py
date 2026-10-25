@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from app.models.platform import Event, EventBooking, Space
 from app.core.public_url import public_app_url
+from app.services import member_links
 
 if TYPE_CHECKING:
     from app.comms.models import CommunicationEvent
@@ -161,14 +162,15 @@ def _gathering_url(space: Space, event: Event) -> str:
 
 def _series_url(space: Space, series: Any) -> str:
     """Existing member-facing Series page, when the bookings belong to
-    a real ``EventSeries``."""
-    if series is None or not getattr(series, "slug", None):
-        return ""
-    if not getattr(space, "slug", None):
-        return ""
-    return public_app_url(
-        f"/spaces/{space.slug}/gathering-series/{series.slug}"
-    )
+    a real ``EventSeries``.
+
+    Delegates to ``services.member_links`` so this and the
+    purchase-lifecycle emails build the same URL. They did not: this one
+    was right, and the other matched an attachment kind nothing writes,
+    sending every Series purchase and recovery email to ``/dashboard``.
+    One construction now, so a future divergence has nowhere to hide.
+    """
+    return member_links.series_member_url(space, series)
 
 
 def _multi_dedupe_key(user_id: str, scope: str, operation_at) -> str:
