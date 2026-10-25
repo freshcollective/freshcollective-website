@@ -762,7 +762,13 @@ export interface RemovedMember {
   removal_reason: string | null
   note: string | null
   rejoin_blocked: boolean
+  /** Audit: the removal was taken while a plan was collecting. */
   payment_action_required: boolean
+  /** Live: money is still outstanding now. Derived server-side from
+   *  the plans themselves, so it clears itself when a plan is
+   *  cancelled — by creator or admin — or ends naturally. */
+  payment_action_outstanding: boolean
+  live_payment_plan_id: string | null
   removed_at: string | null
   removed_by_display_name: string | null
   may_rejoin: boolean

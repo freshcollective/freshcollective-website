@@ -42,6 +42,7 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.services import checkout_orchestration as _co
+from app.services import fulfilment_block_reasons as _fbr
 from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
@@ -949,6 +950,9 @@ def _handle_checkout_completed(
             # the snapshot payload. Stripe re-delivery will re-hit
             # this path.
             txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+            txn.fulfilment_blocked_reason = (
+                _fbr.TEMPORARY_SNAPSHOT_UNREADABLE
+            )
             db.commit()
             logger.exception(
                 "checkout.session.completed: snapshot deserialisation failed "
@@ -973,6 +977,7 @@ def _handle_checkout_completed(
     # idempotency check above. ──
     if resolution.fatal_error:
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_RESOLVER_ERROR
         db.commit()
         logger.error(
             "checkout.session.completed: blocked session=%s txn=%s — %s",
@@ -987,6 +992,7 @@ def _handle_checkout_completed(
     validation = validate_intent(db, resolution.intent)
     if not validation.ok:
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_VALIDATION_FAILED
         db.commit()
         logger.error(
             "checkout.session.completed: blocked session=%s txn=%s — %s",
@@ -1019,6 +1025,7 @@ def _handle_checkout_completed(
     )
     if _ineligible is not None:
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.ineligible(_ineligible)
         db.commit()
         logger.error(
             "checkout.session.completed: blocked session=%s txn=%s — buyer "

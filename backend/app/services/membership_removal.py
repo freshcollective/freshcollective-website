@@ -342,6 +342,59 @@ def live_payment_plan_count(
     return int(row or 0)
 
 
+def live_plans_by_member(
+    db: Session, *, space_id: str,
+) -> dict[str, str]:
+    """``{member_user_id: plan_id}`` for plans Stripe may still charge
+    in this Collective.
+
+    One query for a whole page of removed people, rather than a count
+    per row. Returns at most one plan id per member — the warning asks
+    "is there something outstanding", and a creator with two live plans
+    for the same person still only needs taking to the same page.
+
+    Why this exists rather than reading a stored flag
+    ------------------------------------------------
+
+    ``SpaceMembership.payment_action_required`` records that a removal
+    *was taken* while a plan was collecting. That is audit: it happened,
+    the creator acknowledged it, and it stays true forever.
+
+    Whether the money is *still* outstanding is a different question,
+    and a stored boolean is the wrong shape for it — it would have to be
+    cleared by whoever ended the plan, and the plan can end in at least
+    four ways: the creator cancels it, an administrator cancels it, it
+    completes naturally, or Stripe's retries exhaust and it fails. A
+    flag cleared by only some of those paths is worse than no flag,
+    because it reads as "resolved" when it is not.
+
+    So the warning is derived, here, from the plans themselves. It
+    cannot drift, it needs no clearing logic, it covers every way a plan
+    can end including ones nobody anticipated, and a *failed*
+    cancellation leaves the plan live and therefore the warning
+    standing — which is exactly the required behaviour.
+    """
+    from sqlalchemy import text
+
+    placeholders = ", ".join(f":s{i}" for i in range(len(LIVE_PLAN_STATUSES)))
+    params: dict[str, object] = {"sid": space_id}
+    for i, value in enumerate(LIVE_PLAN_STATUSES):
+        params[f"s{i}"] = value
+    rows = db.execute(
+        text(
+            "SELECT member_user_id, id FROM purchase_plans "
+            "WHERE space_id = :sid "
+            f"AND status IN ({placeholders}) "
+            "ORDER BY created_at"
+        ),
+        params,
+    ).all()
+    out: dict[str, str] = {}
+    for member_user_id, plan_id in rows:
+        out.setdefault(member_user_id, plan_id)
+    return out
+
+
 def summarise_departure(
     db: Session, *, user_id: str, space_id: str, now: datetime,
 ) -> DepartureConsequences:
@@ -672,5 +725,6 @@ __all__ = [
     "lift_restriction",
     "record_restriction_event",
     "live_payment_plan_count",
+    "live_plans_by_member",
     "summarise_departure",
 ]

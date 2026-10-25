@@ -17,6 +17,7 @@
  * member-facing payload.
  */
 
+import Link from 'next/link'
 import { useCallback, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import type { RemovedMember } from '@/types/platform'
@@ -258,13 +259,34 @@ export default function RemovedPeople({
               </div>
             </div>
 
-            {r.payment_action_required && (
-              <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">
-                <span className="font-semibold">Payment still outstanding.</span>{' '}
-                This person was removed while a payment plan was still
-                collecting. Fresh Collective has not cancelled or refunded it —
-                please resolve the arrangement with them.
-              </p>
+            {/*
+              Driven by ``payment_action_outstanding``, which the server
+              derives from the plans themselves — NOT by
+              ``payment_action_required``, which is the audit fact that
+              the removal was taken with a plan live and stays true
+              forever. So this clears itself when the plan is cancelled
+              (by this creator or by an administrator) or ends
+              naturally, and a FAILED cancellation leaves the plan live
+              and the warning standing.
+            */}
+            {r.payment_action_outstanding && (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+                <p className="text-[12.5px] font-semibold text-amber-900">
+                  Payment arrangement requires attention
+                </p>
+                <p className="mt-1 text-[12px] leading-relaxed text-amber-900">
+                  This member has an active instalment plan. Their membership
+                  has been removed, but future payments may continue until the
+                  plan is cancelled.
+                </p>
+                <Link
+                  href={`/creator-studio/payment-plans?member=${encodeURIComponent(r.email)}`}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 transition-colors hover:text-amber-950"
+                >
+                  Manage payment plan
+                  <span aria-hidden="true">&rarr;</span>
+                </Link>
+              </div>
             )}
           </div>
         ))}

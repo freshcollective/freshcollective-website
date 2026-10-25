@@ -1,5 +1,7 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
+
 /**
  * FIP4C — Creator Studio Payment Plans view.
  *
@@ -329,9 +331,16 @@ export default function CreatorPaymentPlansClient({
   // A creator's plan volume is bounded enough that server filtering
   // is unnecessary; keeping the endpoint stateless makes the API
   // simpler and reuses one dataset for pill-switches and searches.
+  const searchParams = useSearchParams()
   const [pill, setPill] = useState<string>('default')
   const [optionFilter, setOptionFilter] = useState<string>('')
-  const [memberSearch, setMemberSearch] = useState<string>('')
+  // Seeded from ``?member=`` so a creator arriving from the Removed
+  // People warning lands on that member's plan rather than the whole
+  // list. Read at render rather than in an effect: an effect that
+  // called setState would fight the ``set-state-in-effect`` rule and
+  // flash the unfiltered list first.
+  const memberParam = searchParams.get('member') ?? ''
+  const [memberSearch, setMemberSearch] = useState<string>(memberParam)
 
   useEffect(() => {
     // Reset state when the active Collective changes so terminal

@@ -132,7 +132,7 @@ describe('the Stripe reference for follow-up', () => {
       page.indexOf('function FulfilmentCell'),
       page.indexOf('function StatusPill'),
     )
-    assert.match(cell, /blocked && ref &&/)
+    assert.match(cell, /blocked && detail\?\.ref &&/)
     assert.match(cell, /const blocked = row\.fulfilment_status === 'blocked'/)
   })
 
@@ -164,8 +164,87 @@ describe('no new payment actions were added', () => {
   })
 
   test('nothing offers a refund or a replay', () => {
-    assert.ok(!/refund/i.test(cell))
-    assert.ok(!/replay/i.test(cell))
-    assert.ok(!/retry/i.test(cell))
+    // Bans the action, not the word: the tooltips name a replay
+    // deliberately, because telling the admin which fix applies is the
+    // point of the classification. What must not exist is a control.
+    const code = cell
+      .replace(/'[^'\n]*'/g, "''")
+      .replace(/"[^"\n]*"/g, '""')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    assert.ok(!/<button/i.test(code))
+    assert.ok(!/onClick/.test(code))
+    assert.ok(!/fetch\(/.test(code))
+  })
+})
+
+describe('the blocked reason distinguishes temporary from permanent', () => {
+  test('a classifier exists rather than raw strings on screen', () => {
+    assert.match(page, /function classifyBlock/)
+  })
+
+  test('ineligibility is marked as needing a decision', () => {
+    const fn = page.slice(
+      page.indexOf('function classifyBlock'),
+      page.indexOf('const PAYOUT_HUE'),
+    )
+    assert.match(fn, /membership_ineligible/)
+    assert.match(fn, /needsDecision: true/)
+  })
+
+  test('a data fault is not marked as needing a decision', () => {
+    const fn = page.slice(
+      page.indexOf('function classifyBlock'),
+      page.indexOf('const PAYOUT_HUE'),
+    )
+    // The fall-through case: anything that is not ineligibility.
+    assert.match(fn, /needsDecision: false/)
+  })
+
+  test('an unrecorded reason says so rather than guessing', () => {
+    const fn = page.slice(
+      page.indexOf('function classifyBlock'),
+      page.indexOf('const PAYOUT_HUE'),
+    )
+    assert.match(fn, /Reason not recorded/)
+  })
+
+  test('the two classes are visually distinct', () => {
+    const cell = page.slice(
+      page.indexOf('function FulfilmentCell'),
+      page.indexOf('function StatusPill'),
+    )
+    assert.match(cell, /classified\.needsDecision \? WM_HUE\.coral\.text/)
+  })
+
+  test('each class explains what to do', () => {
+    const cell = page.slice(
+      page.indexOf('function FulfilmentCell'),
+      page.indexOf('function StatusPill'),
+    )
+    assert.match(cell, /a replay will not fix this/i)
+    assert.match(cell, /re-send the Stripe event/i)
+  })
+
+  test('the reason and plan come from the payments endpoint', () => {
+    assert.match(page, /fulfilment_blocked_reason: string \| null/)
+    assert.match(page, /purchase_plan_id: string \| null/)
+  })
+
+  test('a blocked instalment shows its plan', () => {
+    const cell = page.slice(
+      page.indexOf('function FulfilmentCell'),
+      page.indexOf('function StatusPill'),
+    )
+    assert.match(cell, /detail\?\.planId/)
+    assert.match(cell, /plan \{detail\.planId\}/)
+  })
+
+  test('still no actions on the row', () => {
+    const cell = page.slice(
+      page.indexOf('function FulfilmentCell'),
+      page.indexOf('function StatusPill'),
+    )
+    assert.ok(!/<button/i.test(cell))
+    assert.ok(!/onClick/.test(cell))
   })
 })

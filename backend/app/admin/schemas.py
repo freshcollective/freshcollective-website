@@ -90,6 +90,22 @@ class PaymentTransactionOut(BaseModel):
     #: must not be invisible. ``blocked`` is the one an operator needs to
     #: act on; the Stripe references below are what they act with.
     fulfilment_status: str
+    #: WHY it blocked (migration 167). NULL unless blocked, and NULL on
+    #: historical blocked rows written before the column existed.
+    #:
+    #: The distinction that matters: a ``snapshot_*`` / ``resolver_*`` /
+    #: ``validation_*`` / ``apply_*`` reason is a data fault a replay
+    #: fixes, so the member's payment arrangement should be left alone.
+    #: A ``membership_ineligible:*`` reason is permanent, and somebody
+    #: has to choose between readmitting the buyer and cancelling their
+    #: plan. See ``services.fulfilment_block_reasons``.
+    fulfilment_blocked_reason: str | None = None
+    #: The instalment plan this transaction belongs to, when it is one.
+    #: Exposed so an administrator reading a blocked row can reach
+    #: ``POST /api/admin/purchase-plans/{id}/cancel`` — the column
+    #: existed and the payload did not carry it, so a blocked instalment
+    #: was visible and its plan was not addressable.
+    purchase_plan_id: str | None = None
     payment_provider: str
 
     payer_user_id: str | None

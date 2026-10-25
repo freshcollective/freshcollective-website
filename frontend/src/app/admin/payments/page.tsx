@@ -207,7 +207,42 @@ const FULFILMENT_OPTIONS: [string, string][] = [
  * Normally an empty map: blocked fulfilments are rare, which is why
  * fetching them separately costs nothing.
  */
-type BlockedRefs = Record<string, string | null>
+interface BlockedDetail {
+  /** Stripe handle for follow-up, if the row has one. */
+  ref: string | null
+  /**
+   * Why fulfilment blocked. The distinction that decides what to do:
+   * a ``snapshot_*`` / ``resolver_*`` / ``validation_*`` / ``apply_*``
+   * reason is a data fault a replay fixes, so the member's payment
+   * arrangement should be left alone. A ``membership_ineligible:*``
+   * reason is permanent — somebody has to choose between readmitting
+   * the buyer and cancelling their plan.
+   */
+  reason: string | null
+  /** The instalment plan, when this transaction is one, so an admin
+   *  can act on it instead of only seeing the problem. */
+  planId: string | null
+}
+
+type BlockedRefs = Record<string, BlockedDetail>
+
+/** Reads a stored reason without pretending to know an unrecorded one. */
+function classifyBlock(reason: string | null): {
+  label: string
+  needsDecision: boolean
+} {
+  if (!reason) return { label: 'Reason not recorded', needsDecision: false }
+  if (reason.startsWith('membership_ineligible')) {
+    const detail = reason.split(':')[1]
+    return {
+      label: detail
+        ? `Buyer not eligible for membership (${prettify(detail)})`
+        : 'Buyer not eligible for membership',
+      needsDecision: true,
+    }
+  }
+  return { label: prettify(reason), needsDecision: false }
+}
 
 const PAYOUT_HUE: Record<string, WMHue> = {
   paid:           'teal',
@@ -285,7 +320,13 @@ export default function TransactionsPage() {
       // that hid one because the operator was looking at this month.
       fetch(apiUrl('/api/admin/payments?fulfilment_status=blocked'), { credentials: 'include' })
         .then((r) => r.ok
-          ? r.json() as Promise<{ id: string; provider_payment_intent_id: string | null; provider_checkout_session_id: string | null }[]>
+          ? r.json() as Promise<{
+              id: string
+              provider_payment_intent_id: string | null
+              provider_checkout_session_id: string | null
+              fulfilment_blocked_reason: string | null
+              purchase_plan_id: string | null
+            }[]>
           : []),
     ])
       .then(([l, s, st, blocked]) => {
@@ -295,7 +336,11 @@ export default function TransactionsPage() {
         if (st) setPlatformStatus(st)
         const refs: BlockedRefs = {}
         for (const b of blocked) {
-          refs[b.id] = b.provider_payment_intent_id ?? b.provider_checkout_session_id
+          refs[b.id] = {
+            ref: b.provider_payment_intent_id ?? b.provider_checkout_session_id,
+            reason: b.fulfilment_blocked_reason,
+            planId: b.purchase_plan_id,
+          }
         }
         setBlockedRefs(refs)
       })
@@ -702,22 +747,47 @@ function FulfilmentCell({ row, blockedRefs }: {
   blockedRefs: BlockedRefs
 }) {
   const blocked = row.fulfilment_status === 'blocked'
-  const ref = blockedRefs[row.id] ?? null
+  const detail = blockedRefs[row.id]
+  const classified = blocked ? classifyBlock(detail?.reason ?? null) : null
   return (
     <div className="flex flex-col gap-1">
       <StatusPill hue={FULFILMENT_HUE[row.fulfilment_status] ?? 'navy'}>
         {prettify(row.fulfilment_status)}
       </StatusPill>
-      {blocked && ref && (
+      {blocked && classified && (
+        <span
+          className="text-[10.5px] leading-snug"
+          style={{
+            color: classified.needsDecision ? WM_HUE.coral.text : INK_MUTED,
+          }}
+          title={
+            classified.needsDecision
+              ? 'Permanent — a replay will not fix this. Readmit the buyer or cancel their plan.'
+              : 'Fix the cause and re-send the Stripe event; the handler is idempotent.'
+          }
+        >
+          {classified.label}
+        </span>
+      )}
+      {blocked && detail?.planId && (
+        <span
+          className="whitespace-nowrap font-mono text-[10.5px]"
+          style={{ color: INK_MUTED }}
+          title="Instalment plan — cancellable by an administrator or the Collective's owner"
+        >
+          plan {detail.planId}
+        </span>
+      )}
+      {blocked && detail?.ref && (
         <span
           className="whitespace-nowrap font-mono text-[10.5px]"
           style={{ color: INK_MUTED }}
           title="Find this in Stripe to follow up"
         >
-          {ref}
+          {detail.ref}
         </span>
       )}
-      {blocked && !ref && (
+      {blocked && detail && !detail.ref && (
         <span className="text-[10.5px]" style={{ color: INK_MUTED }}>
           No Stripe reference
         </span>

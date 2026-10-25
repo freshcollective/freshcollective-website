@@ -5383,8 +5383,18 @@ def list_removed_members(
         .all()
     )
 
+    # One query for the whole page. The displayed warning is derived
+    # from live plan state rather than read from
+    # ``payment_action_required``, which is audit — see
+    # ``membership_removal.live_plans_by_member`` for why a stored flag
+    # is the wrong shape for this.
+    live_plans = membership_removal.live_plans_by_member(
+        db, space_id=space.id,
+    )
+
     out: list[RemovedMemberItem] = []
     for membership, user, profile, remover in rows:
+        live_plan_id = live_plans.get(user.id)
         out.append(RemovedMemberItem(
             user_id=user.id,
             display_name=(
@@ -5398,6 +5408,8 @@ def list_removed_members(
             note=membership.removal_note,
             rejoin_blocked=bool(membership.rejoin_blocked),
             payment_action_required=bool(membership.payment_action_required),
+            payment_action_outstanding=live_plan_id is not None,
+            live_payment_plan_id=live_plan_id,
             removed_at=membership.removed_at,
             removed_by_display_name=(
                 (remover.name or remover.email) if remover else None

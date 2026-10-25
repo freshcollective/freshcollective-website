@@ -1227,7 +1227,18 @@ class RemovedMemberItem(BaseModel):
     removal_reason: str | None
     note: str | None
     rejoin_blocked: bool
+    #: **Audit.** This removal was taken while a plan was collecting and
+    #: the creator acknowledged it. Immutable — it happened, and stays
+    #: true whatever becomes of the plan.
     payment_action_required: bool
+    #: **Live state.** Whether money is still outstanding *now* —
+    #: derived from ``purchase_plans``, not stored, so it cannot drift
+    #: and needs no clearing. False once every live plan has been
+    #: cancelled (by creator or admin), completed, or failed. A failed
+    #: cancellation leaves the plan live and so leaves this True.
+    payment_action_outstanding: bool = False
+    #: The plan to take the creator to, when something is outstanding.
+    live_payment_plan_id: str | None = None
     removed_at: datetime | None
     removed_by_display_name: str | None = None
     #: Whether the ordinary Join / purchase route would let them back.

@@ -420,6 +420,21 @@ class PaymentTransaction(Base):
         JSONB, nullable=True,
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why ``fulfilment_status`` is ``blocked`` (migration 167). Set by
+    #: every path that blocks; NULL on rows that are not blocked, and on
+    #: historical blocked rows written before the column existed.
+    #:
+    #: Exists because the reasons split into two classes needing
+    #: opposite responses — a data problem a replay fixes, versus a
+    #: buyer who is no longer eligible and never will be by replay. An
+    #: administrator cannot tell those apart from the status alone.
+    #:
+    #: Informational only. Nothing automated reads it, and in particular
+    #: no payment plan is ever cancelled because of what it says: that
+    #: stays an explicit decision by an authorised creator or admin.
+    fulfilment_blocked_reason: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
 
     # Refund state (migration 126). Populated by the
     # ``charge.refunded`` webhook handler with Stripe's cumulative

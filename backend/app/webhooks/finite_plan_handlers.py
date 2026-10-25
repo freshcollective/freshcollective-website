@@ -59,6 +59,7 @@ from app.models.payment_option import (
 )
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.services import checkout_orchestration as _co
+from app.services import fulfilment_block_reasons as _fbr
 from app.services.purchase_fulfilment import (
     FulfilmentStatus,
     apply_intent,
@@ -1162,6 +1163,7 @@ def _do_invoice_succeeded(
         # written at plan creation. Mark blocked so an operator
         # can inspect.
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_SNAPSHOT_MISSING
         db.commit()
         raise RuntimeError(
             f"FIP2 invoice: plan {plan.id} has no snapshot_grants_json"
@@ -1171,6 +1173,7 @@ def _do_invoice_succeeded(
         intent = deserialise_intent(plan.snapshot_grants_json)
     except Exception as exc:
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_SNAPSHOT_UNREADABLE
         db.commit()
         raise RuntimeError(
             f"FIP2 invoice: cannot deserialise plan snapshot: {exc}"
@@ -1183,6 +1186,7 @@ def _do_invoice_succeeded(
         # blocked — the payment stands, access cannot be applied,
         # operator intervention required.
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_VALIDATION_FAILED
         db.commit()
         logger.error(
             "FIP2 invoice: fulfilment blocked plan=%s txn=%s errors=%s",
@@ -1216,6 +1220,7 @@ def _do_invoice_succeeded(
     )
     if _ineligible is not None:
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.ineligible(_ineligible)
         db.commit()
         logger.error(
             "FIP2 invoice: fulfilment blocked plan=%s txn=%s — member became "
@@ -1242,6 +1247,7 @@ def _do_invoice_succeeded(
     )
     if result.status != FulfilmentStatus.APPLIED:  # pragma: no cover
         txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        txn.fulfilment_blocked_reason = _fbr.TEMPORARY_APPLY_FAILED
         db.commit()
         raise RuntimeError(
             f"FIP2 invoice: apply_intent returned status={result.status}"

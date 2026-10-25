@@ -169,8 +169,11 @@ describe('Removed People', () => {
   })
 
   test('an outstanding payment is surfaced and not called settled', () => {
-    assert.match(removed, /Payment still outstanding/)
-    assert.match(removed, /has not cancelled or refunded it/)
+    // Superseded wording lives in its own describe block below; here
+    // we only need that the panel exists and promises no resolution.
+    assert.match(removed, /Payment arrangement requires attention/)
+    assert.ok(!/payment resolved/i.test(removed))
+    assert.ok(!/refunded automatically/i.test(removed))
   })
 
   test('it never claims the removal resolved the money', () => {
@@ -246,5 +249,64 @@ describe('the block dialog replaces the browser prompt', () => {
 
   test('the reason is still described as private', () => {
     assert.match(removed, /Only you and your moderators can see\s*\n?\s*it/)
+  })
+})
+
+describe('the payment warning directs the creator to the plan', () => {
+  test('it is driven by live state, not the audit flag', () => {
+    // ``payment_action_required`` records that the removal was taken
+    // with a plan live and stays true forever; the warning must follow
+    // ``payment_action_outstanding``, which the server derives.
+    assert.match(removed, /r\.payment_action_outstanding &&/)
+    assert.ok(!/r\.payment_action_required &&/.test(removed))
+  })
+
+  test('it uses the approved wording', () => {
+    assert.match(removed, /Payment arrangement requires attention/)
+    assert.match(removed, /This member has an active instalment plan/)
+    assert.match(
+      removed,
+      /future payments may continue until the\s*\n?\s*plan is cancelled/,
+    )
+  })
+
+  test('it links to Payment Plans filtered to that member', () => {
+    assert.match(
+      removed,
+      /\/creator-studio\/payment-plans\?member=\$\{encodeURIComponent\(r\.email\)\}/,
+    )
+    assert.match(removed, /Manage payment plan/)
+  })
+
+  test('it is prominent enough to read as action required', () => {
+    assert.match(removed, /border-amber-300 bg-amber-50/)
+    assert.match(removed, /font-semibold text-amber-900/)
+  })
+
+  test('it offers no cancel action of its own', () => {
+    // Cancellation stays a separate, explicit action on the page that
+    // already does it safely. The prose mentions cancelling; what must
+    // not exist is a control that does it from here. Asserted on the
+    // panel's affordances, with strings stripped.
+    const panel = removed
+      .slice(removed.indexOf('payment_action_outstanding'))
+      .slice(0, 1400)
+      .replace(/'[^'\n]*'/g, "''")
+      .replace(/"[^"\n]*"/g, '""')
+    assert.ok(!/<button/i.test(panel))
+    assert.ok(!/setPolicy/.test(panel))
+    assert.ok(!/fetch\(/.test(panel))
+    // A link out, not an action in place.
+    assert.match(panel, /<Link/)
+  })
+
+  test('the Payment Plans page honours the member filter', () => {
+    const plans = readFileSync(
+      join(SRC, '..', 'app', 'creator-studio', 'payment-plans',
+           'CreatorPaymentPlansClient.tsx'),
+      'utf8',
+    )
+    assert.match(plans, /searchParams\.get\('member'\)/)
+    assert.match(plans, /useState<string>\(memberParam\)/)
   })
 })
