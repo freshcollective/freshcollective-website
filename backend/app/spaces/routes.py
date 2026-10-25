@@ -50,7 +50,7 @@ from app.spaces import join_policy
 from app.spaces import joining_doors
 from app.spaces import pathway_pricing
 from app.spaces import venue_projection
-from app.spaces import area_access
+from app.spaces import area_access, pathway_visibility
 from app.spaces import area_policies
 from app.spaces.schemas import (
     AccessRequestOut,
@@ -358,11 +358,19 @@ def hydrate_public_space_cards(
 
     space_ids = [s.id for s in spaces]
 
+    # Listed Pathways only. This counted ``status != 'archived'``, so a
+    # Collective whose only Pathway was a draft advertised "1 pathway"
+    # on Explore while its own Pathways tab correctly said "none".
+    #
+    # These cards are the anonymous public listing, so there is no
+    # caretaker to consider: the count is always the non-caretaker one.
+    # A creator's own view of their drafts lives in Creator Studio,
+    # which counts them separately and deliberately.
     pathway_counts: dict[str, int] = dict(
         db.query(Pathway.space_id, func.count(Pathway.id))
         .filter(
             Pathway.space_id.in_(space_ids),
-            Pathway.status != "archived",
+            Pathway.status.in_(pathway_visibility.LISTED_STATUSES),
         )
         .group_by(Pathway.space_id)
         .all()
@@ -571,6 +579,40 @@ def _get_pathway_or_404(space_id: str, pathway_slug: str, db: Session) -> Pathwa
     if not pathway:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pathway not found.")
     return pathway
+
+
+def _get_listed_pathway_or_404(
+    space: Space,
+    pathway_slug: str,
+    db: Session,
+    current_user: "User | None",
+) -> Pathway:
+    """A Pathway by slug, 404 unless this viewer may see it listed.
+
+    The sibling of ``_get_pathway_or_404`` for the two detail endpoints
+    reachable without a membership check. Both looked a Pathway up by
+    slug with no status gate, so a draft Pathway's title, description,
+    price and full ordered step list were readable by any caller —
+    anonymously, in the case of ``/overview``. Discovering the slug was
+    the only obstacle, and the public Collective payload used to hand it
+    over.
+
+    **404, not 403.** Matching ``_get_space_visible_to``: a draft
+    Pathway's existence is itself unreleased information, so the honest
+    answer to a stranger is that there is nothing here. A 403 would
+    confirm the slug names something real.
+
+    Caretakers are unaffected, which is what keeps the Creator Studio
+    Preview flow working on an unpublished Pathway.
+    """
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    if pathway_visibility.is_listed(pathway):
+        return pathway
+    if pathway_visibility.viewer_sees_all_pathways(current_user, space, db):
+        return pathway
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="Pathway not found.",
+    )
 
 
 def _get_step_or_404(pathway_id: str, step_slug: str, db: Session) -> PathwayStep:
@@ -976,7 +1018,27 @@ def get_space(
     # where one person's resolved doorways could be served to another.
 
     resp = SpaceResponse.model_validate(space)
+    # ``pathways`` comes from the ORM relationship, which is
+    # unfiltered — so before this, an anonymous caller received every
+    # draft and archived Pathway in full, title and all, and the
+    # Collective's own page counted them. The About page never rendered
+    # a draft title, but the payload carried it, which is the part a
+    # reader of the API could see.
+    #
+    # Filtered here rather than on the relationship: other readers of
+    # ``space.pathways`` — Creator Studio among them — legitimately
+    # need every row, and narrowing the relationship would quietly
+    # change all of them.
+    _sees_all = pathway_visibility.viewer_sees_all_pathways(
+        current_user, space, db,
+    )
+    listed_pathways = (
+        resp.pathways
+        if _sees_all
+        else [p for p in resp.pathways if pathway_visibility.is_listed(p)]
+    )
     return resp.model_copy(update={
+        "pathways": listed_pathways,
         "area_access": sorted(areas.reachable),
         "creator_name": creator_name,
         "join_policy": join_policy.resolve(space.join_policy),
@@ -1330,9 +1392,13 @@ def list_pathways(
     is_space_manager = channel_perms.is_caretaker(current_user, space, db)
 
     query = db.query(Pathway).filter(Pathway.space_id == space.id)
-    if not is_space_manager:
-        # Anonymous visitors and regular members only see published pathways (active + coming_soon)
-        query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
+    # The rule this endpoint has always applied, now shared so the
+    # public counts cannot drift from it. Access is NOT filtered here:
+    # ``has_access`` below is computed per row, so a paid or
+    # members-only published Pathway is listed and renders locked.
+    _listed = pathway_visibility.listed_pathway_filter(is_space_manager)
+    if _listed is not None:
+        query = query.filter(_listed)
 
     pathways = query.order_by(Pathway.position).all()
 
@@ -1421,8 +1487,11 @@ def list_pathways_progress(
     is_space_manager = channel_perms.is_caretaker(current_user, space, db)
 
     query = db.query(Pathway).filter(Pathway.space_id == space.id)
-    if not is_space_manager:
-        query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
+    # Was a fourth hand-written copy of the status list. Same rule, read
+    # from one place so it cannot drift from the tab or the counts.
+    _listed = pathway_visibility.listed_pathway_filter(is_space_manager)
+    if _listed is not None:
+        query = query.filter(_listed)
     pathways = query.order_by(Pathway.position).all()
     pathway_ids = [p.id for p in pathways]
     if not pathway_ids:
@@ -2844,7 +2913,7 @@ def get_pathway(
     current_user: User = Depends(get_current_user),
 ) -> PathwaySummary:
     space = _get_space_or_404(slug, db)
-    p = _get_pathway_or_404(space.id, pathway_slug, db)
+    p = _get_listed_pathway_or_404(space, pathway_slug, db, current_user)
     from app.models.payment_option_grant import PaymentOptionGrant as _POG_single
     unlock_offer_names = [
         row.name
@@ -2892,7 +2961,7 @@ def get_pathway_overview(
 ) -> PathwayWithSteps:
     """Pathway detail with ordered steps and this user's completion state."""
     space = _get_space_visible_to(slug, db, current_user)
-    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    pathway = _get_listed_pathway_or_404(space, pathway_slug, db, current_user)
 
     steps = (
         db.query(PathwayStep)
