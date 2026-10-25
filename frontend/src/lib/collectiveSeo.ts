@@ -17,6 +17,11 @@
  * belt to that architecture's braces, not a substitute for it.
  */
 
+// Relative with the extension, matching the other node-tested libs:
+// the '@/' alias is a tsconfig path the bare test runner cannot
+// resolve, so an aliased import here breaks collectiveSeo.test.ts.
+import { BUNDLED_DEFAULTS } from './brand.ts'
+
 /**
  * The canonical origin.
  *
@@ -37,9 +42,16 @@ export const SITE_ORIGIN = 'https://freshcollective.au'
  * with a purpose-made 1200×630 image if social previews become a
  * priority. Chosen over ``home/hero-community.webp`` because WebP
  * support across social crawlers is still uneven where PNG is not.
+ *
+ * Read from ``lib/brand.ts`` rather than restated here.
+ * ``test_brand_phase_b`` requires that module to be the only place in
+ * the frontend naming a brand asset path — one logo change should not
+ * be a multi-file change — and spelling the path again here broke it.
+ * The ``??`` is for the Record's nullable value type; this role always
+ * has a default.
  */
 export const DEFAULT_SOCIAL_IMAGE =
-  '/brand/fresh-collective-logo-navy-gold-on-white.png'
+  BUNDLED_DEFAULTS.primary_light_logo ?? '/brand/fallback.png'
 
 /** Meta descriptions are truncated to this. */
 const MAX_DESCRIPTION = 155

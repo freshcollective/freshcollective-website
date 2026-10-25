@@ -312,3 +312,17 @@ describe('cleanText', () => {
     assert.equal(cleanText('a&nbsp;b &amp; c'), 'a b & c')
   })
 })
+
+describe('the default social image', () => {
+  test('is the same image, only sourced from the brand module', () => {
+    // The sibling tests all compare against the constant, so they would
+    // pass at any value. This one pins the value: the brand-asset
+    // ownership fix changed WHERE the path comes from (lib/brand.ts,
+    // which test_brand_phase_b requires to be its only owner) and must
+    // not change WHICH image social crawlers get.
+    assert.equal(
+      DEFAULT_SOCIAL_IMAGE,
+      '/brand/fresh-collective-logo-navy-gold-on-white.png',
+    )
+  })
+})
