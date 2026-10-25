@@ -21,13 +21,19 @@ interface Props {
 // it deliberately (authenticated utility, surfaced separately below
 // as an account destination for signed-in visitors).
 function peerNavItems(
-  discoveryOn: boolean, waysToConnectOn: boolean,
+  discoveryOn: boolean, waysToConnectOn: boolean, isLoggedIn: boolean,
 ): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
   // One flag each — see lib/featureFlags.ts.
   if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
-  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  // Ways to Connect also needs a signed-in viewer, where the other two
+  // do not. ``/spaces`` and ``/discover-places`` are genuinely public
+  // surfaces; this one has no auth redirect of its own, so a stranger
+  // who follows it reaches the page, ``getWaysToConnect`` 401s, and
+  // they are shown the unavailable state. The link was the only thing
+  // promising them something — the route itself is unchanged.
+  if (waysToConnectOn && isLoggedIn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
   return items
 }
 
@@ -100,7 +106,7 @@ export default function MobileNav({ isLoggedIn, discoveryOn, waysToConnectOn, da
             style={{ background: '#0C1826', borderBottom: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 16px 48px rgba(0,0,0,0.50)' }}>
 
             <nav className="mb-5 space-y-0.5">
-              {peerNavItems(discoveryOn, waysToConnectOn).map(({ href, label }) => (
+              {peerNavItems(discoveryOn, waysToConnectOn, isLoggedIn).map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}
