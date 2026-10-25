@@ -60,6 +60,20 @@ export function buildCreatorPlanCard(
   plan: CreatorPlanOut | null | undefined,
   subscription: CreatorSubscriptionOut | null | undefined,
   feeBasisPoints: number | null | undefined,
+  /**
+   * The moment to describe the card at. Defaults to now, so every
+   * existing caller is unchanged.
+   *
+   * It exists because a complimentary grant's copy is phase-dependent —
+   * `describeCreatorAccess` picks different wording in the active,
+   * renewal and grace windows — and this function could not forward a
+   * clock. That made any phase-sensitive assertion about the card a
+   * function of the real date: a test written against a fixture ending
+   * 4 Nov 2026 passed until the 14-day renewal window opened on 21 Oct
+   * and failed every day after. The wording was right; the test had no
+   * way to say *when* it was asking.
+   */
+  now: Date = new Date(),
 ): CreatorPlanCardView {
   const feeLabel = feeBasisPoints == null
     ? null
@@ -78,7 +92,7 @@ export function buildCreatorPlanCard(
   // How the creator actually holds the plan. An admin-granted plan has
   // no Stripe subscription behind it, so the retail price is not what
   // they pay — see ``creatorPlanAccess`` for the audited semantics.
-  const access = describeCreatorAccess(plan, subscription)
+  const access = describeCreatorAccess(plan, subscription, now)
 
   // Null price is the Organisation plan — "Talk to us", not free.
   const priceLabel = access.priceOverride

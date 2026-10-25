@@ -159,17 +159,82 @@ describe('paid and free plans are unaffected', () => {
 })
 
 describe('the plan card tells the same truth', () => {
+  /**
+   * Every card assertion that touches a complimentary grant passes an
+   * explicit clock.
+   *
+   * It did not, and could not: ``buildCreatorPlanCard`` took no ``now``
+   * and so always described the card at the real date. A grant's copy
+   * is phase-dependent, so the fixture below — ending 4 Nov 2026 —
+   * silently crossed from the active phase into the renewal window on
+   * 21 Oct 2026 and the assertion began failing. The wording was
+   * correct throughout; the test simply had no way to say which moment
+   * it was asking about. ``NOW`` is the whole point.
+   */
+
   test('a comp grant does not quote $19 / month', () => {
     const card = buildCreatorPlanCard(
-      plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }), 800,
+      plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }),
+      800, NOW,
+    )
+    // The requirement in the name: never a retail price for access
+    // nobody is paying for.
+    assert.equal(card.priceLabel, 'Complimentary')
+    assert.ok(!/\$19/.test(card.statusNote ?? ''))
+    assert.ok(!/month/.test(card.statusNote ?? ''))
+    // NOW is 4 Oct; the window opens 21 Oct, so this is the active
+    // phase.
+    assert.match(card.statusNote ?? '', /Active until 4 Nov 2026/)
+    assert.match(card.statusNote ?? '', /will not be charged/)
+  })
+
+  test('the renewal window changes the wording, not the price', () => {
+    // 14 days out. The copy becomes an ending notice — and still
+    // quotes nothing.
+    const card = buildCreatorPlanCard(
+      plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }),
+      800, new Date('2026-10-25T00:00:00Z'),
     )
     assert.equal(card.priceLabel, 'Complimentary')
-    assert.match(card.statusNote ?? '', /Active until 4 Nov 2026/)
+    assert.match(
+      card.statusNote ?? '',
+      /Your complimentary Creator access ends on 4 Nov 2026/,
+    )
+    assert.ok(!/\$19/.test(card.statusNote ?? ''))
+  })
+
+  test('grace says what happens next, and it is not a charge', () => {
+    const card = buildCreatorPlanCard(
+      plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }),
+      800, new Date('2026-11-06T00:00:00Z'),
+    )
+    assert.equal(card.priceLabel, 'Complimentary')
+    assert.match(card.statusNote ?? '', /ended on 4 Nov 2026/)
+    // The fallback is the free Community plan — never a paid one.
+    assert.match(card.statusNote ?? '', /Community/)
+    assert.ok(!/\$19/.test(card.statusNote ?? ''))
+  })
+
+  test('an indefinite grant promises no charge either', () => {
+    const card = buildCreatorPlanCard(
+      plan(), sub({ grant_reason: 'comp', ends_at: null }), 800, NOW,
+    )
+    assert.equal(card.priceLabel, 'Complimentary')
+    assert.match(card.statusNote ?? '', /No end date/)
+    assert.match(card.statusNote ?? '', /will not be charged/)
+  })
+
+  test('a non-comp admin grant is neutral, and still unpriced', () => {
+    const card = buildCreatorPlanCard(
+      plan(), sub({ grant_reason: 'migration', ends_at: null }), 800, NOW,
+    )
+    assert.equal(card.priceLabel, 'Provided by Fresh Collective')
+    assert.ok(!/\$19/.test(card.statusNote ?? ''))
   })
 
   test('a paid subscription still quotes the retail price', () => {
     const card = buildCreatorPlanCard(
-      plan(), sub({ source: 'stripe_paid', grant_reason: null }), 800,
+      plan(), sub({ source: 'stripe_paid', grant_reason: null }), 800, NOW,
     )
     assert.equal(card.priceLabel, '$19 / month')
   })
@@ -183,9 +248,26 @@ describe('the plan card tells the same truth', () => {
         source: 'stripe_paid', grant_reason: null,
         cancel_at_period_end: true, current_period_end: '2026-11-04T00:00:00Z',
       }),
-      800,
+      800, NOW,
     )
     assert.match(card.statusNote ?? '', /Cancels on 4 Nov 2026/)
+  })
+
+  test('no card assertion depends on the real clock', () => {
+    // The guard. Every ``buildCreatorPlanCard`` call in this file
+    // passes a fourth argument, so none of these tests can start
+    // failing because a date passed.
+    const src = readFileSync(fileURLToPath(import.meta.url), 'utf8')
+    const calls = src.match(/buildCreatorPlanCard\(/g) ?? []
+    const withClock = src.match(/800,\s*(?:NOW|new Date\()/g) ?? []
+    assert.equal(calls.length, withClock.length)
+  })
+
+  test('the card forwards the clock rather than reading its own', () => {
+    const impl = readFileSync(
+      join(SRC, 'lib', 'creatorPlanCard.ts'), 'utf8',
+    )
+    assert.match(impl, /describeCreatorAccess\(plan, subscription, now\)/)
   })
 })
 
