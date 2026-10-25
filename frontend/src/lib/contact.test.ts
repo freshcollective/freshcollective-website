@@ -17,6 +17,7 @@ const codeOnly = (p: string) =>
 const FOOTER = 'components/layout/PublicFooter.tsx'
 const SECURITY = 'app/settings/security/page.tsx'
 const CHECKOUT = 'components/checkout/CompleteFlow.tsx'
+const CONTACT_SECTION = 'components/layout/FooterContact.tsx'
 
 describe('the addresses themselves', () => {
   test('they are the three working mailboxes, spelled once', () => {
@@ -27,7 +28,7 @@ describe('the addresses themselves', () => {
   test('no surface spells an address inline', () => {
     // A typo in one of four places would be invisible until somebody's
     // email bounced, so every surface goes through the constant.
-    for (const f of [FOOTER, SECURITY, CHECKOUT]) {
+    for (const f of [FOOTER, SECURITY, CHECKOUT, CONTACT_SECTION]) {
       assert.ok(
         !/@freshcollective\.au/.test(codeOnly(f)),
         `${f} hardcodes an address instead of importing the constant`,
@@ -36,19 +37,22 @@ describe('the addresses themselves', () => {
   })
 })
 
-describe('the public footer', () => {
-  test('it offers a Contact link', () => {
+describe('the public footer offers both addresses, not a mailto', () => {
+  // This block used to assert a single ``mailto:info@…`` Contact link
+  // in the nav. That link was replaced: a mailto hands the visitor to
+  // an email application, and on a machine with none configured it
+  // produces a dialog about choosing a program rather than an answer
+  // to "how do I contact you". The assertions follow the new design
+  // rather than being deleted.
+
+  test('the redundant Contact nav link is gone', () => {
     const src = codeOnly(FOOTER)
-    assert.match(src, /mailto:\$\{CONTACT_INFO_EMAIL\}/)
-    assert.match(src, />\s*Contact\s*</)
+    assert.ok(!/mailto:/.test(src), 'the footer still contains a mailto')
+    assert.ok(!/>\s*Contact\s*</.test(src), 'the Contact nav link survived')
   })
 
-  test('it uses info@, not support@ or hello@', () => {
-    // A footer catches enquiries from people who are not yet members.
-    const src = codeOnly(FOOTER)
-    assert.match(src, /CONTACT_INFO_EMAIL/)
-    assert.ok(!/CONTACT_SUPPORT_EMAIL/.test(src))
-    assert.ok(!/hello@/.test(src))
+  test('the Get in touch section is mounted in the footer', () => {
+    assert.match(codeOnly(FOOTER), /<FooterContact \/>/)
   })
 
   test('the existing navigation is intact', () => {
@@ -58,22 +62,103 @@ describe('the public footer', () => {
     }
   })
 
-  test('the Contact link sits in the main nav, not the governance one', () => {
-    const src = codeOnly(FOOTER)
-    const mainNav = src.indexOf('aria-label="Footer"')
-    const govNav = src.indexOf('aria-label="Governance and help"')
-    const contact = src.indexOf('CONTACT_INFO_EMAIL', mainNav)
-    assert.ok(mainNav > -1 && govNav > mainNav, 'nav order changed')
+  test('the governance nav is untouched', () => {
+    assert.match(codeOnly(FOOTER), /aria-label="Governance and help"/)
+  })
+})
+
+describe('the Get in touch section', () => {
+  test('it is a client component — the clipboard is a browser API', () => {
+    assert.match(read(CONTACT_SECTION), /^'use client'/m)
+  })
+
+  test('it shows both addresses, each from the shared constant', () => {
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /CONTACT_INFO_EMAIL/)
+    assert.match(src, /CONTACT_SUPPORT_EMAIL/)
     assert.ok(
-      contact > mainNav && contact < govNav,
-      'the Contact link must be in the main nav',
+      !/@freshcollective\.au/.test(src),
+      'an address is spelled inline instead of imported',
     )
   })
 
-  test('it is an anchor, not a next/link route', () => {
-    // A mailto is not a route; next/link has nothing to prefetch.
-    const src = codeOnly(FOOTER)
-    assert.ok(!/<Link[^>]*mailto/.test(src))
+  test('both are clearly labelled', () => {
+    const src = read(CONTACT_SECTION)
+    assert.match(src, /General enquiries/)
+    assert.match(src, /Technical & account support/)
+  })
+
+  test('nothing navigates — no mailto, no href, no redirect', () => {
+    // The whole point of replacing the link. A stray href here would
+    // reintroduce exactly what was removed.
+    const src = codeOnly(CONTACT_SECTION)
+    assert.ok(!/mailto:/.test(src), 'a mailto came back')
+    assert.ok(!/href=/.test(src), 'something in the section navigates')
+    assert.ok(!/router\.|redirect\(/.test(src), 'the section redirects')
+  })
+
+  test('copying uses the clipboard and confirms it', () => {
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /navigator\.clipboard/)
+    assert.match(src, /writeText\(email\)/)
+    assert.match(src, /'Copied!'/)
+  })
+
+  test('a clipboard that is unavailable does not claim success', () => {
+    // writeText needs a secure context and permission. Where it is
+    // missing, the honest answer is "select it yourself" — not a
+    // confirmation of something that did not happen.
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /writeText\) throw new Error/)
+    assert.match(src, /'Select to copy'/)
+  })
+
+  test('each button names which address it copies', () => {
+    // Two buttons both reading "Copy" are indistinguishable to a
+    // screen reader.
+    assert.match(
+      codeOnly(CONTACT_SECTION),
+      /aria-label=\{`Copy \$\{email\} to the clipboard`\}/,
+    )
+  })
+
+  test('the outcome is announced, not only shown', () => {
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /aria-live="polite"/)
+    assert.match(src, /copied to the clipboard/)
+  })
+
+  test('the confirmation clears itself', () => {
+    // A "Copied!" that never resets looks like the button broke.
+    assert.match(codeOnly(CONTACT_SECTION), /setTimeout\(/)
+    assert.match(codeOnly(CONTACT_SECTION), /'idle'/)
+  })
+
+  test('each address keeps its own state', () => {
+    // Copying one must not clear the other's confirmation.
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /Record<string, Status>/)
+    assert.match(src, /\[email\]:/)
+  })
+
+  test('the addresses stay readable and hand-selectable', () => {
+    // The button is the convenience, not the only route: somebody who
+    // prefers to select the text must be able to, and an address
+    // truncated with an ellipsis can be neither read nor copied.
+    const src = codeOnly(CONTACT_SECTION)
+    assert.match(src, /select-all/)
+    assert.match(src, /break-all/)
+    assert.ok(!/truncate/.test(src), 'the address is truncated')
+  })
+
+  test('it uses the footer palette rather than its own', () => {
+    const src = read(CONTACT_SECTION)
+    assert.match(src, /#FFFFFF/)
+    assert.match(src, /rgba\(255,255,255/)
+  })
+
+  test('it wraps on a narrow screen instead of overflowing', () => {
+    assert.match(codeOnly(CONTACT_SECTION), /flex-wrap/)
   })
 })
 
