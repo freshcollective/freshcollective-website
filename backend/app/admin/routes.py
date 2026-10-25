@@ -78,6 +78,7 @@ from app.models.creator_billing import (
     PlanChangeEvent,
 )
 from app.models.payment import (
+    PaymentFulfilmentStatus,
     PaymentTransaction,
     PaymentTransactionStatus,
     PaymentTransactionType,
@@ -1032,6 +1033,7 @@ def get_admin_payment_summary_periodic(
 @router.get("/payments", response_model=list[PaymentTransactionOut])
 def list_payments(
     status: str | None = None,
+    fulfilment_status: str | None = None,
     transaction_type: str | None = None,
     creator_user_id: str | None = None,
     space_id: str | None = None,
@@ -1040,10 +1042,41 @@ def list_payments(
     _: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> list[PaymentTransactionOut]:
-    """List all payment transactions with optional filters. Admin only."""
+    """List all payment transactions with optional filters. Admin only.
+
+    ``status`` and ``fulfilment_status`` are independent axes and both
+    are filterable, because the question an operator most needs to ask
+    spans the two: *"what did we collect and fail to deliver?"* —
+    ``status=succeeded&fulfilment_status=blocked``.
+
+    Until this filter existed, ``fulfilment_status='blocked'`` was
+    written by five handlers and read by none, so an unfulfilled
+    purchase was discoverable only in the logs.
+    """
     q = db.query(PaymentTransaction)
     if status:
         q = q.filter(PaymentTransaction.status == status)
+    if fulfilment_status:
+        # Validated rather than passed straight through. The column is a
+        # Postgres enum, so an unrecognised value makes the query itself
+        # fail with a DataError — a 500 on a typo. The sibling ``status``
+        # and ``transaction_type`` filters have the same flaw; it is
+        # pre-existing and left alone here rather than widening this
+        # change, but a new filter should not add another instance of
+        # it. An operational tool for finding unfulfilled purchases must
+        # not fall over when somebody mistypes the thing they are
+        # looking for.
+        try:
+            _wanted = PaymentFulfilmentStatus(fulfilment_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "fulfilment_status must be one of: "
+                    + ", ".join(e.value for e in PaymentFulfilmentStatus)
+                ),
+            ) from None
+        q = q.filter(PaymentTransaction.fulfilment_status == _wanted)
     if transaction_type:
         q = q.filter(PaymentTransaction.transaction_type == transaction_type)
     if creator_user_id:
@@ -1135,6 +1168,7 @@ def get_payments_ledger(
             created_at=t.created_at,
             transaction_type=_enum_value(t.transaction_type),
             status=_enum_value(t.status),
+            fulfilment_status=_enum_value(t.fulfilment_status),
             payout_status=_enum_value(t.payout_status),
             provider=_enum_value(t.payment_provider),
             stripe_mode=t.stripe_mode,

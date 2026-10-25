@@ -82,7 +82,14 @@ class PaymentTransactionOut(BaseModel):
 
     id: str
     transaction_type: str
+    #: The *payment* lifecycle: pending → succeeded / failed / refunded.
     status: str
+    #: What happened to the access the payment bought: pending /
+    #: applied / blocked. Orthogonal to ``status`` — Stripe may collect
+    #: successfully while Fresh Collective cannot fulfil, and that state
+    #: must not be invisible. ``blocked`` is the one an operator needs to
+    #: act on; the Stripe references below are what they act with.
+    fulfilment_status: str
     payment_provider: str
 
     payer_user_id: str | None
@@ -769,10 +776,21 @@ class LedgerRow(BaseModel):
     id: str                          # React key only — never rendered
     created_at: datetime
     transaction_type: str
-    status: str
+    status: str                      # the PAYMENT lifecycle
+    #: What happened to the access the payment bought — ``pending`` /
+    #: ``applied`` / ``blocked``. A separate axis from ``status``:
+    #: Stripe may collect successfully while Fresh Collective cannot
+    #: fulfil, and the ledger has to be able to say so.
+    fulfilment_status: str = "pending"
     payout_status: str
     provider: str                    # 'stripe' | 'manual'
     stripe_mode: str                 # 'test' | 'live'
+    # NO provider IDs here, deliberately — see
+    # ``test_ledger_row_shape_omits_stripe_ids``. The ledger is a
+    # reporting surface, not a debugging one. ``fulfilment_status``
+    # above belongs here because "did we deliver what we sold" is a
+    # reporting question; the Stripe handle needed to chase a blocked
+    # one does not, and ``GET /api/admin/payments`` already carries it.
     # Denormalised names
     payer_name: str | None
     payer_email: str | None

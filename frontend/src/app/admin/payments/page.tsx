@@ -46,7 +46,15 @@ interface LedgerRow {
   id: string
   created_at: string
   transaction_type: string
+  /** The PAYMENT lifecycle — did the money arrive. */
   status: string
+  /**
+   * What happened to the access the payment bought. A separate axis
+   * from ``status``: Stripe may collect successfully while Fresh
+   * Collective cannot fulfil, and ``blocked`` is the state nobody
+   * could see before this column existed.
+   */
+  fulfilment_status: string
   payout_status: string
   provider: string
   stripe_mode: string
@@ -168,6 +176,39 @@ const STATUS_HUE: Record<string, WMHue> = {
   cancelled:          'navy',
 }
 
+/**
+ * Fulfilment is the second axis. ``blocked`` is coral because it is the
+ * only one that needs somebody to do something: the payment succeeded
+ * and the access did not arrive.
+ */
+const FULFILMENT_HUE: Record<string, WMHue> = {
+  applied: 'teal',
+  pending: 'gold',
+  blocked: 'coral',
+}
+
+const FULFILMENT_OPTIONS: [string, string][] = [
+  ['all',     'All fulfilment'],
+  ['blocked', 'Blocked — needs attention'],
+  ['pending', 'Pending'],
+  ['applied', 'Applied'],
+]
+
+/**
+ * Stripe references for blocked fulfilments, keyed by transaction id.
+ *
+ * Sourced from ``GET /api/admin/payments?fulfilment_status=blocked``
+ * rather than from the ledger, because the ledger deliberately carries
+ * no provider IDs — it is a reporting surface, not a debugging one
+ * (``test_ledger_row_shape_omits_stripe_ids``). The admin payments
+ * endpoint is the one designed to expose them, and it is admin-gated
+ * the same way.
+ *
+ * Normally an empty map: blocked fulfilments are rare, which is why
+ * fetching them separately costs nothing.
+ */
+type BlockedRefs = Record<string, string | null>
+
 const PAYOUT_HUE: Record<string, WMHue> = {
   paid:           'teal',
   pending:        'coral',   // awaiting payout — action required
@@ -217,10 +258,12 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [blockedRefs, setBlockedRefs] = useState<BlockedRefs>({})
 
   // Filters (all client-side over the fetched period slice)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<string>('all')
+  const [fulfilment, setFulfilment] = useState<string>('all')
   const [type, setType] = useState<string>('all')
   const [payout, setPayout] = useState<string>('all')
   const [creator, setCreator] = useState<string>('all')
@@ -236,8 +279,26 @@ export default function TransactionsPage() {
         .then((r) => { if (!r.ok) throw new Error(`Summary: ${r.status}`); return r.json() as Promise<PeriodicRevenueSummary> }),
       fetch(apiUrl('/api/checkout/status'), { credentials: 'include' })
         .then((r) => r.ok ? r.json() as Promise<PlatformStatus> : null),
+      // Blocked fulfilments only, for their Stripe handles. Period is
+      // deliberately NOT applied: an unfulfilled purchase needs
+      // chasing whenever it happened, and it would be a poor surface
+      // that hid one because the operator was looking at this month.
+      fetch(apiUrl('/api/admin/payments?fulfilment_status=blocked'), { credentials: 'include' })
+        .then((r) => r.ok
+          ? r.json() as Promise<{ id: string; provider_payment_intent_id: string | null; provider_checkout_session_id: string | null }[]>
+          : []),
     ])
-      .then(([l, s, st]) => { if (!cancelled) { setRows(l); setSummary(s); if (st) setPlatformStatus(st) } })
+      .then(([l, s, st, blocked]) => {
+        if (cancelled) return
+        setRows(l)
+        setSummary(s)
+        if (st) setPlatformStatus(st)
+        const refs: BlockedRefs = {}
+        for (const b of blocked) {
+          refs[b.id] = b.provider_payment_intent_id ?? b.provider_checkout_session_id
+        }
+        setBlockedRefs(refs)
+      })
       .catch((e: Error) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -257,6 +318,7 @@ export default function TransactionsPage() {
     const q = search.trim().toLowerCase()
     return rows.filter((r) => {
       if (status !== 'all' && r.status !== status) return false
+      if (fulfilment !== 'all' && r.fulfilment_status !== fulfilment) return false
       if (type !== 'all' && r.transaction_type !== type) return false
       if (payout !== 'all' && r.payout_status !== payout) return false
       if (creator !== 'all' && r.creator_id !== creator) return false
@@ -270,10 +332,10 @@ export default function TransactionsPage() {
       }
       return true
     })
-  }, [rows, search, status, type, payout, creator])
+  }, [rows, search, status, fulfilment, type, payout, creator])
 
   const hasFilters =
-    search.trim() !== '' || status !== 'all' || type !== 'all' ||
+    search.trim() !== '' || status !== 'all' || fulfilment !== 'all' || type !== 'all' ||
     payout !== 'all' || creator !== 'all'
 
   const clearFilters = () => {
@@ -317,6 +379,7 @@ export default function TransactionsPage() {
               onChange={(v) => setPeriod(v as PeriodKey)}
               options={PERIOD_OPTIONS as [string, string][]} />
             <FilterSelect label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+            <FilterSelect label="Fulfilment" value={fulfilment} onChange={setFulfilment} options={FULFILMENT_OPTIONS} />
             <FilterSelect label="Type" value={type} onChange={setType} options={TYPE_OPTIONS} />
             <FilterSelect label="Payout" value={payout} onChange={setPayout} options={PAYOUT_OPTIONS} />
             <FilterSelect
@@ -363,7 +426,7 @@ export default function TransactionsPage() {
             {filtered.length === 0 ? (
               <EmptyState hasFilters={hasFilters} periodLabel={summary?.current_bounds.label ?? 'this period'} />
             ) : (
-              <TransactionsTable rows={filtered} />
+              <TransactionsTable rows={filtered} blockedRefs={blockedRefs} />
             )}
           </>
         )}
@@ -440,7 +503,7 @@ function MoneyCard({
 // Table
 // ---------------------------------------------------------------------------
 
-function TransactionsTable({ rows }: { rows: LedgerRow[] }) {
+function TransactionsTable({ rows, blockedRefs }: { rows: LedgerRow[]; blockedRefs: BlockedRefs }) {
   return (
     <div
       className="overflow-hidden rounded-2xl"
@@ -451,7 +514,7 @@ function TransactionsTable({ rows }: { rows: LedgerRow[] }) {
         <table className="w-full text-left">
           <thead>
             <tr>
-              {['Date', 'Type', 'Status', 'Buyer', 'Creator', 'Collective / item', 'Gross', 'FC fee', 'Creator share', 'Retained', 'Payout'].map((h) => (
+              {['Date', 'Type', 'Payment', 'Fulfilment', 'Buyer', 'Creator', 'Collective / item', 'Gross', 'FC fee', 'Creator share', 'Retained', 'Payout'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3.5 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
@@ -464,7 +527,7 @@ function TransactionsTable({ rows }: { rows: LedgerRow[] }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <TransactionRow key={r.id} row={r} first={i === 0} />
+              <TransactionRow key={r.id} row={r} first={i === 0} blockedRefs={blockedRefs} />
             ))}
           </tbody>
         </table>
@@ -473,14 +536,14 @@ function TransactionsTable({ rows }: { rows: LedgerRow[] }) {
       {/* Mobile */}
       <div className="lg:hidden">
         {rows.map((r, i) => (
-          <TransactionMobileRow key={r.id} row={r} first={i === 0} />
+          <TransactionMobileRow key={r.id} row={r} first={i === 0} blockedRefs={blockedRefs} />
         ))}
       </div>
     </div>
   )
 }
 
-function TransactionRow({ row, first }: { row: LedgerRow; first: boolean }) {
+function TransactionRow({ row, first, blockedRefs }: { row: LedgerRow; first: boolean; blockedRefs: BlockedRefs }) {
   const item = row.pathway_title ?? row.space_name ?? itemFallback(row.transaction_type)
   return (
     <tr
@@ -495,6 +558,9 @@ function TransactionRow({ row, first }: { row: LedgerRow; first: boolean }) {
       </td>
       <td className="px-4 py-3.5 align-top">
         <StatusPill hue={STATUS_HUE[row.status] ?? 'navy'}>{prettify(row.status)}</StatusPill>
+      </td>
+      <td className="px-4 py-3.5 align-top">
+        <FulfilmentCell row={row} blockedRefs={blockedRefs} />
       </td>
       <td className="px-4 py-3.5 align-top">
         <PersonCell name={row.payer_name} email={row.payer_email} />
@@ -531,7 +597,7 @@ function TransactionRow({ row, first }: { row: LedgerRow; first: boolean }) {
   )
 }
 
-function TransactionMobileRow({ row, first }: { row: LedgerRow; first: boolean }) {
+function TransactionMobileRow({ row, first, blockedRefs }: { row: LedgerRow; first: boolean; blockedRefs: BlockedRefs }) {
   const item = row.pathway_title ?? row.space_name ?? itemFallback(row.transaction_type)
   return (
     <div
@@ -547,7 +613,12 @@ function TransactionMobileRow({ row, first }: { row: LedgerRow; first: boolean }
             {fmtDate(row.created_at)} · {item}
           </div>
         </div>
-        <StatusPill hue={STATUS_HUE[row.status] ?? 'navy'}>{prettify(row.status)}</StatusPill>
+        {/* Both axes on the card too, stacked — a blocked fulfilment
+            must not be something only the desktop table reveals. */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <StatusPill hue={STATUS_HUE[row.status] ?? 'navy'}>{prettify(row.status)}</StatusPill>
+          <FulfilmentCell row={row} blockedRefs={blockedRefs} />
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]" style={{ color: INK_MUTED }}>
         {row.payer_name && <span style={{ color: INK }}>{row.payer_name}</span>}
@@ -613,6 +684,48 @@ function HueLabel({ hue, children }: { hue: WMHue; children: React.ReactNode }) 
 
 /** Status pill — slightly larger than the category HueLabel; used for
  *  succeeded/failed/pending/paid state indicators. */
+/**
+ * Fulfilment, and — when it is blocked — the Stripe handle an operator
+ * needs to act on it.
+ *
+ * The reference is shown only on a blocked row. Everywhere else it is
+ * noise: a succeeded-and-applied transaction needs no follow-up, and
+ * putting a Stripe id on every line would bury the one that matters.
+ *
+ * No action button, deliberately. Resolving a blocked fulfilment means
+ * fixing the cause and re-sending the event from the Stripe Dashboard
+ * (the handler is idempotent — ``applied`` short-circuits), or deciding
+ * to refund. Neither is something this page should do on one click.
+ */
+function FulfilmentCell({ row, blockedRefs }: {
+  row: LedgerRow
+  blockedRefs: BlockedRefs
+}) {
+  const blocked = row.fulfilment_status === 'blocked'
+  const ref = blockedRefs[row.id] ?? null
+  return (
+    <div className="flex flex-col gap-1">
+      <StatusPill hue={FULFILMENT_HUE[row.fulfilment_status] ?? 'navy'}>
+        {prettify(row.fulfilment_status)}
+      </StatusPill>
+      {blocked && ref && (
+        <span
+          className="whitespace-nowrap font-mono text-[10.5px]"
+          style={{ color: INK_MUTED }}
+          title="Find this in Stripe to follow up"
+        >
+          {ref}
+        </span>
+      )}
+      {blocked && !ref && (
+        <span className="text-[10.5px]" style={{ color: INK_MUTED }}>
+          No Stripe reference
+        </span>
+      )}
+    </div>
+  )
+}
+
 function StatusPill({ hue, children }: { hue: WMHue; children: React.ReactNode }) {
   const h = WM_HUE[hue]
   return (
