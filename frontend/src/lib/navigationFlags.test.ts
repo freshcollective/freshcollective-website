@@ -108,3 +108,98 @@ describe('Discover Places artwork degrades instead of going blank', () => {
     })
   }
 })
+
+
+// ---------------------------------------------------------------------------
+// Ways to Connect needs a signed-in viewer, where the other two do not
+// ---------------------------------------------------------------------------
+
+/**
+ * ``/spaces`` and ``/discover-places`` are genuinely public and return
+ * useful pages to a stranger. ``/ways-to-connect`` carries no auth
+ * redirect of its own, so a signed-out visitor who follows the link
+ * reaches the page, ``getWaysToConnect`` 401s, and they are shown the
+ * unavailable state. The LINK was the only thing promising them
+ * something, so the link is what changed — the route, its eligibility
+ * rules and its access checks are untouched.
+ *
+ * Both public surfaces build this list inline, so both are checked.
+ * They were identical and both wrong; the last test here fails if one
+ * is fixed and the other is not.
+ */
+const PUBLIC_NAV_SURFACES = [
+  'components/layout/PublicHeader.tsx',
+  'components/layout/MobileNav.tsx',
+]
+
+describe('Ways to Connect is hidden from signed-out visitors', () => {
+  for (const file of PUBLIC_NAV_SURFACES) {
+    const src = read(file)
+    const line = (needle: string) =>
+      src.split('\n').find((l) => l.includes(needle) && l.includes('push'))
+
+    test(`${file}: the Ways to Connect entry requires a signed-in viewer`, () => {
+      const ways = line("'/ways-to-connect'")
+      assert.ok(ways, `${file}: no Ways to Connect entry found`)
+      assert.ok(
+        /isLoggedIn/.test(ways),
+        `${file}: Ways to Connect is not gated on isLoggedIn`,
+      )
+    })
+
+    test(`${file}: the genuinely public entries are NOT gated on auth`, () => {
+      // Hiding these would be a regression, not a fix — a logged-out
+      // visitor is exactly who Explore Collectives is for.
+      const explore = line("'/spaces'")
+      const discover = line("'/discover-places'")
+      assert.ok(explore && !/isLoggedIn/.test(explore),
+        `${file}: Explore Collectives must stay public`)
+      assert.ok(discover && !/isLoggedIn/.test(discover),
+        `${file}: Discover Places must stay public`)
+    })
+
+    test(`${file}: the auth state is passed in, not read at render`, () => {
+      // No flash. PublicHeader is an async server component that awaits
+      // the user before building the list; MobileNav receives the
+      // answer as a prop from it. Neither resolves auth in the browser,
+      // so there is no frame in which the link exists and should not.
+      assert.ok(
+        /peerNavItems\([^)]*isLoggedIn[^)]*\)|peerNavItems\([^)]*!!user[^)]*\)/.test(src),
+        `${file}: the nav builder is not given the auth state`,
+      )
+    })
+  }
+
+  test('both surfaces agree — one cannot be fixed without the other', () => {
+    // The duplication is what allowed the same bug to exist twice.
+    const gated = PUBLIC_NAV_SURFACES.map((f) => {
+      const ways = read(f)
+        .split('\n')
+        .find((l) => l.includes("'/ways-to-connect'") && l.includes('push'))
+      return /isLoggedIn/.test(ways ?? '')
+    })
+    assert.deepEqual(gated, [true, true], 'the two nav surfaces disagree')
+  })
+
+  test('PublicHeader resolves the user server-side before the nav is built', () => {
+    const src = read('components/layout/PublicHeader.tsx')
+    assert.match(src, /export default async function PublicHeader/)
+    const userAt = src.indexOf('await getCurrentUser()')
+    const navAt = src.indexOf('peerNavItems(')
+    const callAt = src.indexOf('peerNavItems(discoveryOn')
+    assert.ok(userAt > -1 && callAt > userAt,
+      'the user must be resolved before the nav list is built')
+    assert.ok(navAt > -1)
+  })
+
+  test('the route itself is unchanged — no auth redirect was added', () => {
+    // The fix is the link, not the page. Adding a redirect here would
+    // change access behaviour, which was explicitly out of scope.
+    const page = read('app/ways-to-connect/page.tsx')
+    assert.ok(
+      !/redirect\(['"`]\/login/.test(page),
+      'a login redirect was added to the route; only the nav should change',
+    )
+    assert.match(page, /waysToConnectVisible\(\)/)
+  })
+})

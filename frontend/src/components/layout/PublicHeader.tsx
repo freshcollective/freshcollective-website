@@ -41,13 +41,19 @@ async function getCurrentUser(): Promise<MeResponse | null> {
 // utility, surfaced on the right-side auth cluster instead so it
 // reads as an account destination, not a marketing concept.
 function peerNavItems(
-  discoveryOn: boolean, waysToConnectOn: boolean,
+  discoveryOn: boolean, waysToConnectOn: boolean, isLoggedIn: boolean,
 ): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
   // One flag each: a nav entry must never outlive the route behind it.
   if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
-  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  // Ways to Connect also needs a signed-in viewer, where the other two
+  // do not. ``/spaces`` and ``/discover-places`` are genuinely public
+  // surfaces; this one has no auth redirect of its own, so a stranger
+  // who follows it reaches the page, ``getWaysToConnect`` 401s, and
+  // they are shown the unavailable state. The link was the only thing
+  // promising them something — the route itself is unchanged.
+  if (waysToConnectOn && isLoggedIn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
   return items
 }
 
@@ -66,7 +72,7 @@ export default async function PublicHeader({
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
   const waysToConnectOn = isWaysToConnectEnabled()
-  const centreNav   = peerNavItems(discoveryOn, waysToConnectOn)
+  const centreNav   = peerNavItems(discoveryOn, waysToConnectOn, !!user)
   // "Your World" is the authenticated account entry point — always
   // available to signed-in visitors on the right-side auth cluster,
   // regardless of whether the Discovery pillar is on. Signed-out
