@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
@@ -126,15 +126,29 @@ export default async function WaysToConnectPage() {
   // one source for it is the point.
   const me = await getMe().catch(() => null)
 
-  // No profile is not the same as a profile that says no.
+  // Signed out → login, carrying the destination back.
   //
-  // This route carries no auth redirect of its own, so a signed-out
-  // visitor reaches it and ``getMe`` returns null for them. Reading
-  // that as "opted out" showed a stranger a page about *their* setting
-  // being off, with a button that would 401 — which is worse than the
-  // generic state they saw before, because it is confidently wrong.
-  const signedIn = me !== null
-  const optedOut = signedIn && me?.ways_to_connect_enabled !== true
+  // Old links, bookmarks and search results reach this route directly,
+  // and ``getWaysToConnect`` 401s for a stranger — so they used to be
+  // shown "we couldn't load this just now", which reads as a fault on
+  // our side rather than as a page that needs an account.
+  //
+  // AFTER the feature-flag check above, deliberately: when the feature
+  // is off this route does not exist for anybody, and sending a
+  // visitor to log in for a page that will 404 them afterwards would
+  // be a worse answer than the 404 itself.
+  //
+  // ``?next=`` is the platform's established pattern — see
+  // ``creator-studio/account/page.tsx`` — and the login page validates
+  // it with ``next.startsWith('/')`` before forwarding, so it cannot
+  // become an open redirect.
+  if (!me) redirect('/login?next=/ways-to-connect')
+
+  // No profile is not the same as a profile that says no. Reading a
+  // missing profile as "opted out" would show somebody a page about
+  // *their* setting being off when they simply are not signed in —
+  // which the redirect above now prevents reaching this line at all.
+  const optedOut = me.ways_to_connect_enabled !== true
 
   const result = optedOut
     // Not fetched at all when opted out. The API would return an empty

@@ -12,12 +12,22 @@ import type { PathwayWithSteps, EventDetail } from '@/types/platform'
  *   "Log in to buy your ticket for <Gathering title>"
  * with a single prop.
  */
+// Named for its first two members; it is really "why this person was
+// sent to log in". Kept as-is rather than renamed, because the type is
+// duplicated in LoginForm and a rename would touch more than this
+// change needs to.
 export type CheckoutContext =
   | { kind: 'pathway'; pathwayTitle: string }
   | { kind: 'gathering'; gatheringTitle: string }
+  | { kind: 'ways-to-connect' }
 
 async function getCheckoutContext(next?: string): Promise<CheckoutContext | null> {
   if (!next) return null
+
+  // Ways to Connect — no title to fetch, so no request. The route
+  // redirects here when a signed-out visitor reaches it directly, and
+  // this turns a bare login form into an explanation of why.
+  if (next === '/ways-to-connect') return { kind: 'ways-to-connect' }
 
   // Pathway purchase — existing pattern (unchanged).
   const pathwayMatch = next.match(/^\/spaces\/([^/?#]+)\/pathways\/([^/?#]+)\/checkout/)

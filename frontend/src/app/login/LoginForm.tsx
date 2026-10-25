@@ -17,6 +17,7 @@ function getSafeRedirect(next?: string): string {
 type CheckoutContext =
   | { kind: 'pathway'; pathwayTitle: string }
   | { kind: 'gathering'; gatheringTitle: string }
+  | { kind: 'ways-to-connect' }
 
 export default function LoginForm({
   nextUrl,
@@ -85,6 +86,12 @@ export default function LoginForm({
         <span className="font-medium text-navy-900">{checkoutContext.gatheringTitle}</span>.
       </>
     )
+  } else if (checkoutContext?.kind === 'ways-to-connect') {
+    // Connections are personal to the viewer, so say whose they are —
+    // "log in to see yours" explains the requirement rather than
+    // simply asserting it.
+    title = 'Log in to see your connections'
+    subtitle = 'Ways to Connect shows people from the Collectives you are part of.'
   }
 
   return (

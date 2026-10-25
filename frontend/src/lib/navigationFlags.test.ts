@@ -192,14 +192,96 @@ describe('Ways to Connect is hidden from signed-out visitors', () => {
     assert.ok(navAt > -1)
   })
 
-  test('the route itself is unchanged — no auth redirect was added', () => {
-    // The fix is the link, not the page. Adding a redirect here would
-    // change access behaviour, which was explicitly out of scope.
+  test('the feature-flag gate still comes first', () => {
+    // This test used to assert the route had NO login redirect, which
+    // was true while the nav fix was the whole change. A redirect was
+    // approved afterwards, so the assertion is narrowed to what still
+    // matters rather than deleted: the FLAG check must stay ahead of
+    // the auth check, or a visitor would be sent to log in for a page
+    // that 404s them afterwards.
     const page = read('app/ways-to-connect/page.tsx')
+    const flagAt = page.indexOf('waysToConnectVisible()')
+    const authAt = page.indexOf("redirect('/login?next=/ways-to-connect')")
+    assert.ok(flagAt > -1, 'the feature-flag gate is gone')
+    assert.ok(authAt > -1, 'the login redirect is gone')
+    assert.ok(flagAt < authAt, 'the flag gate must precede the auth redirect')
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Direct access to /ways-to-connect while signed out
+// ---------------------------------------------------------------------------
+
+/**
+ * Old links, bookmarks and search results reach the route directly.
+ * ``getWaysToConnect`` 401s for a stranger, so they used to be shown
+ * "we couldn't load this just now" — which reads as our fault rather
+ * than as a page needing an account.
+ */
+describe('signed-out direct access redirects to login', () => {
+  const PAGE = 'app/ways-to-connect/page.tsx'
+  const LOGIN = 'app/login/page.tsx'
+  const FORM = 'app/login/LoginForm.tsx'
+
+  test('the route redirects a signed-out visitor to login', () => {
+    const src = read(PAGE)
+    assert.match(src, /if \(!me\) redirect\('\/login\?next=\/ways-to-connect'\)/)
+  })
+
+  test('it carries the destination back, using the platform pattern', () => {
+    // ``?next=`` is what creator-studio/account and the Collective
+    // joining doors already use.
+    assert.match(read(PAGE), /\?next=\/ways-to-connect/)
+  })
+
+  test('the destination cannot become an open redirect', () => {
+    // The login page validates ``next`` before forwarding. If that
+    // guard ever went, every ?next= caller would become a redirector.
+    assert.match(read(LOGIN), /next\.startsWith\('\/'\)/)
+  })
+
+  test('login explains why, rather than showing a bare form', () => {
+    assert.match(read(LOGIN), /next === '\/ways-to-connect'/)
+    assert.match(read(FORM), /Log in to see your connections/)
+  })
+
+  test('the context variant exists in BOTH copies of the type', () => {
+    // CheckoutContext is declared twice — page.tsx and LoginForm.tsx.
+    // A variant added to one and not the other type-errors, but the
+    // duplication is easy to miss when reading either file alone.
+    for (const f of [LOGIN, FORM]) {
+      assert.match(read(f), /kind: 'ways-to-connect'/, `${f}: variant missing`)
+    }
+  })
+
+  test('eligibility and opt-out behaviour are unchanged', () => {
+    const src = read(PAGE)
+    // Opt-out still read from the canonical profile field, and still
+    // distinguished from "nobody qualifies".
+    assert.match(src, /ways_to_connect_enabled !== true/)
+    assert.match(src, /optedOut/)
+    assert.match(src, /WaysToConnectOptIn/)
+  })
+
+  test('genuine technical errors still surface as errors', () => {
+    // The redirect must not swallow a real failure: an unavailable or
+    // errored response still renders the unavailable state for a
+    // signed-in member.
+    const src = read(PAGE)
+    assert.match(src, /status === 'unavailable' \|\| result\.status === 'error'/)
+    assert.match(src, /WaysToConnectUnavailable/)
+  })
+
+  test('an authenticated member is not redirected', () => {
+    // The guard is on a missing profile only — a signed-in member
+    // falls through to the page regardless of their opt-out state.
+    const src = read(PAGE)
+    const guard = src.match(/if \(!me\) redirect\([^)]*\)/)
+    assert.ok(guard, 'guard not found')
     assert.ok(
-      !/redirect\(['"`]\/login/.test(page),
-      'a login redirect was added to the route; only the nav should change',
+      !/me\.ways_to_connect_enabled/.test(guard[0]),
+      'the redirect must not depend on the opt-out field',
     )
-    assert.match(page, /waysToConnectVisible\(\)/)
   })
 })

@@ -33,12 +33,21 @@ describe('participation decides the page, not whether the feature exists', () =>
   })
 
   test('a signed-out visitor is not treated as opted out', () => {
-    // This route has no auth redirect of its own, so getMe() returns
-    // null for a stranger. Reading that as a declined setting showed
-    // them a page about *their* participation being off, with a CTA
-    // that would 401 — confidently wrong, rather than merely unhelpful.
-    assert.match(page, /const signedIn = me !== null/)
-    assert.match(page, /const optedOut = signedIn && /)
+    // Unchanged requirement, new mechanism. Reading a missing profile
+    // as a declined setting would show a stranger a page about *their*
+    // participation being off, with a CTA that would 401 —
+    // confidently wrong rather than merely unhelpful.
+    //
+    // This used to be held by ``optedOut = signedIn && …``, which kept
+    // a signed-out visitor out of the opt-in branch while still
+    // rendering them the page. The route now redirects them to login
+    // before either branch is reached, which is a stronger guarantee:
+    // ``optedOut`` is only ever evaluated for somebody with a profile.
+    assert.match(page, /if \(!me\) redirect\('\/login\?next=\/ways-to-connect'\)/)
+    const guardAt = page.indexOf('if (!me) redirect(')
+    const optedOutAt = page.indexOf('const optedOut =')
+    assert.ok(guardAt > -1 && optedOutAt > guardAt,
+      'the signed-out redirect must precede the opt-out decision')
   })
 
   test('participation is read before the recommendations', () => {
