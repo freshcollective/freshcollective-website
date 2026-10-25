@@ -243,7 +243,7 @@ export default async function MemberGatheringSeriesPage({
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-8 text-center text-[13px] italic text-slate-500">
-              More about this Series is coming soon.
+              No additional details have been provided for this Series.
             </div>
           )}
         </section>
