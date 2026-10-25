@@ -44,6 +44,8 @@ from app.services.connect_payout_model import resolve_payout_model
 from app.services.checkout_orchestration import (
     FeeContext,
     NoActiveCreatorPlanError,
+    check_membership_deliverable_or_raise,
+    check_not_banned_or_raise,
     resolve_fee_context,
 )
 from app.services.purchase_fulfilment import (
@@ -237,6 +239,12 @@ def start_finite_plan_setup(
     """Snapshot the plan + open a Stripe setup Session.
 
     Order:
+      0. Rules E and F — refuse if this person is blocked from the
+         Collective, or if membership could not be delivered. A third
+         entry point into paid checkout, so it needs the guard that
+         ``orchestrate_paid_checkout`` and ``orchestrate_free_checkout``
+         both run; without it, choosing instalments would have been a
+         way past it. Runs before the plan row and before Stripe.
       1. Resolve + validate the grants intent from current DB.
       2. Compute the fee snapshot.
       3. Insert a ``pending_setup`` PurchasePlan (with intent snapshot).
@@ -256,6 +264,14 @@ def start_finite_plan_setup(
     That happens after the member completes the setup Session and
     the ``checkout.session.completed`` webhook fires.
     """
+
+    check_not_banned_or_raise(db, user=payer, space=resolved.space)
+    check_membership_deliverable_or_raise(
+        db,
+        user=payer,
+        payment_option=resolved.payment_option,
+        space=resolved.space,
+    )
     if not settings.stripe_enabled:
         raise HTTPException(
             status_code=503,

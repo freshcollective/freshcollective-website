@@ -1,5 +1,5 @@
-import { getActiveCreatorSpace, getCreatorMembers, getCreatorInvitations, getCreatorAccessRequests, getCreatorSpace, getManualMembers } from '@/lib/serverApi'
-import type { AccessRequest, CreatorMemberDetail, CreatorSpaceDetail, ManualMember, SpaceInvitation } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorMembers, getCreatorInvitations, getCreatorAccessRequests, getCreatorSpace, getManualMembers, getRemovedMembers } from '@/lib/serverApi'
+import type { AccessRequest, CreatorMemberDetail, CreatorSpaceDetail, ManualMember, RemovedMember, SpaceInvitation } from '@/types/platform'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import PeopleClient from './PeopleClient'
@@ -23,14 +23,15 @@ export default async function CreatorPeoplePage() {
     )
   }
 
-  const [members, invitations, accessRequests, manualMembers, spaceDetail]: [
-    CreatorMemberDetail[], SpaceInvitation[], AccessRequest[], ManualMember[], CreatorSpaceDetail | null,
+  const [members, invitations, accessRequests, manualMembers, spaceDetail, removedMembers]: [
+    CreatorMemberDetail[], SpaceInvitation[], AccessRequest[], ManualMember[], CreatorSpaceDetail | null, RemovedMember[],
   ] = await Promise.all([
     getCreatorMembers(activeSpace.slug),
     getCreatorInvitations(activeSpace.slug),
     getCreatorAccessRequests(activeSpace.slug),
     getManualMembers(activeSpace.slug),
     getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
+    getRemovedMembers(activeSpace.slug),
   ])
 
   return (
@@ -45,6 +46,11 @@ export default async function CreatorPeoplePage() {
       headerLocation={spaceDetail?.location ?? null}
       headerCoverImageUrl={spaceDetail?.cover_image_url ?? null}
       spaceTimezone={collectiveTimezone(spaceDetail)}
+      removedMembers={removedMembers}
+      // Blocking somebody from ever rejoining is the founder's
+      // decision, so moderators never see the control. The server
+      // refuses them regardless — this only avoids offering it.
+      canBan={spaceDetail?.is_owner === true}
     />
   )
 }

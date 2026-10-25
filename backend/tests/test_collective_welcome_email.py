@@ -251,10 +251,14 @@ class TestThePurchasePath:
         self, db, make_space, make_user,
     ):
         space, buyer = make_space(), make_user()
-        _membership(
+        row = _membership(
             db, space, buyer,
             status=SpaceMembershipStatus.removed, source="joined",
         )
+        # A voluntary departure is the only removal a purchase restores
+        # (migration 166) — see ``membership_grant.may_rejoin``.
+        row.removal_kind = "voluntary"
+        db.flush()
         outcome = mg.ensure_membership_for_purchase(
             db, user_id=buyer.id, space_id=space.id, now=datetime.utcnow(),
         )

@@ -103,6 +103,11 @@ REASON_NOT_SELLABLE = "not_sellable"
 #: deliberately the same as "not available yet" — a visitor must not
 #: learn that a feature exists which their Collective is excluded from.
 REASON_OUTSIDE_PILOT = "outside_pilot"
+
+#: Rule F — this person is blocked from the Collective. Refused even
+#: for a free Offering: a ban that stopped payments but not free
+#: downloads would not be a ban.
+REASON_BLOCKED_FROM_COLLECTIVE = "blocked_from_collective"
 #: Not a refusal in the usual sense — the member has it already, and the
 #: right response is a way in rather than an error. Carried as a reason
 #: code so the client can tell this 409 from the others.
@@ -300,6 +305,35 @@ def check_acquirable(
             already_owned=True,
             approved_files=approved_file_count(db, offering.id),
         )
+
+    # ── Rule F — blocked from this Collective ──────────────────────
+    #
+    # Checked here rather than at each route for the reason given below
+    # for pilot scope: this one function is what all three write paths
+    # guard with, so a ban cannot be walked around by picking a
+    # different door.
+    #
+    # Deliberately AFTER the ``already_owned`` return — a ban stops new
+    # acquisitions, it does not reach back and take away a file somebody
+    # already owns, which is the same principle the download route
+    # applies when it ignores the pilot list and the feature flag.
+    #
+    # And deliberately BEFORE the pilot check: whether somebody is
+    # barred from a Collective has nothing to do with whether the
+    # Offerings feature is switched on for it, and reporting
+    # ``outside_pilot`` to a banned person would make the refusal depend
+    # on unrelated configuration.
+    from app.services import membership_removal as _mr
+
+    # ``user`` is optional here: the Offering detail page calls this for
+    # an anonymous visitor to decide what to render. Nobody is banned
+    # until they are somebody, and the acquire routes require
+    # authentication of their own — so a missing user simply has no ban
+    # to check.
+    if user is not None and _mr.is_banned(
+        db, user_id=user.id, space_id=space.id,
+    ):
+        return Acquirability(refusal=REASON_BLOCKED_FROM_COLLECTIVE)
 
     # ── Pilot scope — for everybody who does NOT already own it ────
     #
@@ -581,6 +615,7 @@ __all__ = [
     "already_owns",
     "approved_file_count",
     "check_acquirable",
+    "REASON_BLOCKED_FROM_COLLECTIVE",
     "guard_acquirable",
     "guard_option_purchase",
     "is_member",

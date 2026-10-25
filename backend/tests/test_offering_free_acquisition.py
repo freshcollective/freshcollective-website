@@ -559,13 +559,17 @@ class TestMembershipRespectsAccessControls:
     def test_a_removed_self_joined_membership_is_restored(
         self, db, make_space, make_user,
     ):
-        """They chose to join once and are choosing again."""
+        """They chose to join once, chose to leave, and are choosing
+        again. The departure is stamped ``voluntary`` because that is
+        what the scenario describes — migration 166 made it the
+        deciding question, so it can no longer be left unsaid."""
         space = make_space()
         taker = make_user()
         db.add(SpaceMembership(
             id=_uid("sm"), space_id=space.id, user_id=taker.id,
             role="learner", status=SpaceMembershipStatus.removed,
             source="joined", joined_at=datetime.utcnow(),
+            removal_kind="voluntary",
         ))
         db.flush()
         off = _offering(db, space)

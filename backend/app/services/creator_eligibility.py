@@ -153,6 +153,12 @@ def apply_creator_eligibility_change(user: User, db: Session) -> None:
                 )
             elif existing.status != SpaceMembershipStatus.active:
                 existing.status = SpaceMembershipStatus.active
+                # There is no longer a departure to describe. Left
+                # stale, this row would read as "removed by the sweep"
+                # while being active (migration 166).
+                existing.removal_kind = None
+                existing.removed_at = None
+                existing.removed_by_user_id = None
         else:
             # Not eligible — user is a creator but suspended or cancelled.
             if existing is None:
@@ -164,6 +170,8 @@ def apply_creator_eligibility_change(user: User, db: Session) -> None:
             else:
                 if existing.status != SpaceMembershipStatus.removed:
                     existing.status = SpaceMembershipStatus.removed
+                    existing.removal_kind = AUTO_ROLE_SOURCE
+                    existing.removed_at = now
 
     # Second: sweep any auto_role memberships in spaces the user's
     # current role no longer matches (e.g. role changed from creator
@@ -176,6 +184,10 @@ def apply_creator_eligibility_change(user: User, db: Session) -> None:
         # longer holds. Remove it.
         if membership.status != SpaceMembershipStatus.removed:
             membership.status = SpaceMembershipStatus.removed
+            # Nobody decided this; the sweep noticed a role no longer
+            # matched. ``removed_by_user_id`` stays NULL accordingly.
+            membership.removal_kind = AUTO_ROLE_SOURCE
+            membership.removed_at = now
 
 
 def reconcile_at_session_time(user: User, db: Session) -> None:

@@ -325,6 +325,18 @@ export const getMe = cache(async () => {
   return res.json()
 })
 
+/**
+ * Upcoming Gatherings the member paid for in Collectives they have
+ * left. Empty for almost everybody — see
+ * ``spaces.retained_reservations``. Returns [] on failure so the
+ * Membership page renders without the band rather than erroring.
+ */
+export const getRetainedReservations = cache(async () => {
+  const res = await fetchWithSession('/api/me/retained-reservations')
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getMyMemberships = cache(async () => {
   const res = await fetchWithSession('/api/auth/me/memberships')
   if (!res.ok) return []
@@ -763,6 +775,14 @@ export const getActiveCreatorSpace = cache(async (): Promise<SpaceSummary | null
     if (found) return found
   }
   return spaces[0]
+})
+
+/** People removed from this Collective — caretaker-only. Carries the
+ *  removal reason and note, which appear on no other surface. */
+export const getRemovedMembers = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/removed-members`)
+  if (!res.ok) return []
+  return res.json()
 })
 
 export const getCreatorSpace = cache(async (slug: string) => {

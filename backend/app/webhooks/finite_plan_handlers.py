@@ -54,7 +54,11 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.models.payment_option import PaymentOption
+from app.models.payment_option import (
+    PaymentOption as _PaymentOptionModel,
+)
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+from app.services import checkout_orchestration as _co
 from app.services.purchase_fulfilment import (
     FulfilmentStatus,
     apply_intent,
@@ -1183,6 +1187,43 @@ def _do_invoice_succeeded(
         logger.error(
             "FIP2 invoice: fulfilment blocked plan=%s txn=%s errors=%s",
             plan.id, txn.id, list(validation.errors),
+        )
+        return
+
+    # Eligibility, re-checked — the instalment counterpart of the
+    # check in ``webhooks.routes``. The plan's first invoice is the
+    # moment access is granted, and a creator may have banned the
+    # member between starting the plan and that invoice clearing.
+    # Same response: no grants, ``blocked``, and no provider call.
+    #
+    # Note what this does NOT do. The Stripe SubscriptionSchedule keeps
+    # collecting the remaining instalments — cancelling it is the
+    # payment-integrity work held for the next batch, and is not
+    # something a webhook should decide. The ``blocked`` status plus
+    # this log is what makes that visible rather than silent.
+    _ineligible = _co.membership_undeliverable_reason(
+        db,
+        user_id=plan.member_user_id,
+        space_id=plan.space_id,
+        # Aliased: a later ``from … import PaymentOption`` in this same
+        # function makes that name local for the whole body, so
+        # referring to it here would be an unbound local.
+        payment_option=(
+            db.query(_PaymentOptionModel)
+            .filter(_PaymentOptionModel.id == plan.payment_option_id)
+            .first()
+        ),
+    )
+    if _ineligible is not None:
+        txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        db.commit()
+        logger.error(
+            "FIP2 invoice: fulfilment blocked plan=%s txn=%s — member became "
+            "ineligible for membership (%s) after the plan began. Payment "
+            "stands, no access granted, and the schedule is STILL "
+            "COLLECTING. Needs a human decision: lift the restriction and "
+            "replay, or cancel the plan and refund via Stripe.",
+            plan.id, txn.id, _ineligible,
         )
         return
 

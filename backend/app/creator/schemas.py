@@ -184,6 +184,12 @@ class SpaceDetail(BaseModel):
     model_config = {"from_attributes": True}
     id: str
     slug: str
+    #: Whether the caller OWNS this Collective, as opposed to helping
+    #: manage it. ``_get_managed_space`` admits moderators, so a
+    #: creator-studio surface cannot tell the two apart without this —
+    #: and some decisions are the founder's alone (deleting the
+    #: Collective, blocking somebody from ever rejoining).
+    is_owner: bool = False
     name: str
     tagline: str | None
     description: str | None
@@ -280,7 +286,6 @@ ALLOWED_RESOURCE_TYPES: set[str] = {
 
 
 ALLOWED_RESOURCE_STATUSES: set[str] = {"draft", "published", "archived"}
-
 
 class ResourceCreateRequest(BaseModel):
     title: str
@@ -1148,6 +1153,111 @@ class MemberBookingItem(BaseModel):
     booking_status: str
     attendance_status: str | None = None
     booked_at: datetime
+
+
+class RemoveMemberRequest(BaseModel):
+    """What the creator decided when removing somebody.
+
+    ``reason`` is required: a removal with no recorded reason is the
+    state this release exists to leave behind. ``rejoin_blocked`` is a
+    separate, explicit decision — no reason implies it, which is why it
+    is not derived from ``reason`` here or anywhere else.
+
+    ``note`` is optional for an ordinary removal and **required for a
+    block**, validated below rather than only in the service so the
+    creator gets a field-level error rather than a 500.
+    """
+
+    reason: str
+    note: str | None = None
+    rejoin_blocked: bool = False
+    #: Set by the client only after the creator has been shown, and has
+    #: acknowledged, that an instalment plan will keep billing. Without
+    #: it an urgent removal of somebody mid-plan is refused, so the
+    #: warning cannot be skipped by a scripted call.
+    acknowledge_active_payment_plan: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def _valid_reason(cls, v: str) -> str:
+        from app.services.membership_removal import REMOVAL_REASONS
+
+        if v not in REMOVAL_REASONS:
+            raise ValueError(f"reason must be one of: {REMOVAL_REASONS}")
+        return v
+
+    @field_validator("note")
+    @classmethod
+    def _trim_note(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+    @model_validator(mode="after")
+    def _block_needs_explanation(self) -> "RemoveMemberRequest":
+        if self.rejoin_blocked and not (self.note or "").strip():
+            raise ValueError(
+                "Blocking future membership requires a written explanation.",
+            )
+        return self
+
+
+class RemoveMemberResponse(BaseModel):
+    removed: bool
+    rejoin_blocked: bool
+    #: True when the removal went ahead with an instalment plan still
+    #: collecting. The creator was warned and acknowledged it; this is
+    #: the receipt, and the reason the UI must not call the removal
+    #: financially settled.
+    payment_action_required: bool = False
+
+
+class RemovedMemberItem(BaseModel):
+    """One removed person, for the creator's Removed People view.
+
+    Caretaker-only. ``note`` in particular is never serialised to a
+    member-facing surface.
+    """
+
+    user_id: str
+    display_name: str
+    email: str
+    removal_kind: str | None
+    removal_reason: str | None
+    note: str | None
+    rejoin_blocked: bool
+    payment_action_required: bool
+    removed_at: datetime | None
+    removed_by_display_name: str | None = None
+    #: Whether the ordinary Join / purchase route would let them back.
+    may_rejoin: bool = False
+
+
+class RejoinPolicyRequest(BaseModel):
+    """Impose or lift a rejoin block on an already-removed person."""
+
+    rejoin_blocked: bool
+    note: str | None = None
+
+    @field_validator("note")
+    @classmethod
+    def _trim(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None
+
+    @model_validator(mode="after")
+    def _block_needs_explanation(self) -> "RejoinPolicyRequest":
+        if self.rejoin_blocked and not (self.note or "").strip():
+            raise ValueError(
+                "Blocking future membership requires a written explanation.",
+            )
+        return self
+
+
+class RejoinPolicyResponse(BaseModel):
+    rejoin_blocked: bool
 
 
 class AddMemberRequest(BaseModel):

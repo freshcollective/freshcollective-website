@@ -737,6 +737,37 @@ export interface NotificationsResponse {
   unread_count: number
 }
 
+/**
+ * A Gathering a former member still holds a paid place at. Preserved
+ * on departure and reachable through the per-reservation exception —
+ * not a membership, and not a route to the Collective's other
+ * Gatherings.
+ */
+export interface RetainedReservation {
+  event_id: string
+  event_title: string
+  starts_at: string
+  ends_at: string | null
+  space_slug: string
+  space_name: string
+  booking_id: string
+}
+
+/** One person removed from a Collective, for the creator's view. */
+export interface RemovedMember {
+  user_id: string
+  display_name: string
+  email: string
+  removal_kind: string | null
+  removal_reason: string | null
+  note: string | null
+  rejoin_blocked: boolean
+  payment_action_required: boolean
+  removed_at: string | null
+  removed_by_display_name: string | null
+  may_rejoin: boolean
+}
+
 export interface SpaceMembership {
   space_id: string
   space_name: string
@@ -760,6 +791,8 @@ export interface GuidancePanel {
 }
 
 export interface CreatorSpaceDetail extends GuidancePanel {
+  /** Whether the viewer owns this Collective (not merely moderates it). */
+  is_owner?: boolean
   /**
    * Whether Offerings is available to this creator in THIS Collective.
    *

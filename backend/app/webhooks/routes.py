@@ -41,6 +41,7 @@ from app.models.payment import (
     PayoutModel,
     PayoutStatus,
 )
+from app.services import checkout_orchestration as _co
 from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
@@ -990,6 +991,42 @@ def _handle_checkout_completed(
         logger.error(
             "checkout.session.completed: blocked session=%s txn=%s — %s",
             session_id, txn.id, "; ".join(validation.errors),
+        )
+        return
+
+    # ── Eligibility, re-checked. The same rule ran before Stripe was
+    # ever opened (Rule E), so reaching a refusal here means the
+    # buyer's eligibility changed while they were inside Checkout — a
+    # creator banning them mid-payment. The money has already moved,
+    # so the safe response is to write no grants and mark the
+    # transaction ``blocked``, which is what operational tooling
+    # already surfaces for every other unfulfillable purchase.
+    #
+    # Only membership-DEPENDENT purchases are refused. A ``one_time``
+    # Pathway, an Offering or a ticket does not read membership, so it
+    # is delivered as promised — refusing those would create the very
+    # charged-and-given-nothing outcome this check exists to prevent.
+    #
+    # Recoverable, deliberately: if the creator lifts the block, a
+    # Stripe re-delivery or a manual replay fulfils it through the
+    # applied-vs-blocked idempotency check above. Nothing here calls
+    # Stripe, cancels anything or refunds anything.
+    _ineligible = _co.membership_undeliverable_reason(
+        db,
+        user_id=payer_user_id,
+        space_id=space_id,
+        payment_option=payment_option,
+    )
+    if _ineligible is not None:
+        txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        db.commit()
+        logger.error(
+            "checkout.session.completed: blocked session=%s txn=%s — buyer "
+            "became ineligible for membership (%s) after checkout began. "
+            "Payment stands and no access was granted; needs a human "
+            "decision: lift the restriction and replay, or refund via "
+            "Stripe.",
+            session_id, txn.id, _ineligible,
         )
         return
 

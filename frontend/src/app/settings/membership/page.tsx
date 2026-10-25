@@ -1,31 +1,21 @@
-import { getMe, getMyMemberships } from '@/lib/serverApi'
-import Link from 'next/link'
-import type { UserProfile, SpaceMembership } from '@/types/platform'
-
-function formatDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
-}
-
-function RolePill({ role }: { role: string }) {
-  const styles: Record<string, string> = {
-    creator:   'bg-teal-50 text-teal-700 border border-teal-200',
-    moderator: 'bg-slate-100 text-navy-700 border border-slate-200',
-    learner:   'bg-slate-50 text-slate-500 border border-slate-200',
-  }
-  const labels: Record<string, string> = {
-    creator: 'Creator', moderator: 'Moderator', learner: 'Member',
-  }
-  return (
-    <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${styles[role] ?? styles.learner}`}>
-      {labels[role] ?? role}
-    </span>
-  )
-}
+import {
+  getMe, getMyMemberships, getRetainedReservations,
+} from '@/lib/serverApi'
+import CollectivesList from './CollectivesList'
+import RetainedReservations from './RetainedReservations'
+import type {
+  UserProfile, SpaceMembership, RetainedReservation,
+} from '@/types/platform'
 
 export default async function SettingsMembershipPage() {
-  const [profile, memberships]: [UserProfile | null, SpaceMembership[]] = await Promise.all([
+  const [profile, memberships, reservations]: [
+    UserProfile | null,
+    SpaceMembership[],
+    RetainedReservation[],
+  ] = await Promise.all([
     getMe(),
     getMyMemberships(),
+    getRetainedReservations(),
   ])
 
   return (
@@ -61,39 +51,12 @@ export default async function SettingsMembershipPage() {
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
           Collectives
         </p>
-        {memberships.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            {memberships.map((m) => (
-              <div
-                key={m.space_id}
-                className="flex items-center justify-between overflow-hidden rounded-2xl border border-border bg-white px-6 py-4 transition-shadow hover:shadow-sm"
-                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-              >
-                <div>
-                  <Link
-                    href={`/spaces/${m.space_slug}`}
-                    className="text-[14px] font-medium text-navy-800 hover:text-teal-700 transition-colors"
-                  >
-                    {m.space_name}
-                  </Link>
-                  <p className="mt-0.5 text-[12px] text-black">Joined {formatDate(m.joined_at)}</p>
-                </div>
-                <RolePill role={m.role} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div
-            className="overflow-hidden rounded-2xl border border-border bg-white px-6 py-10 text-center"
-            style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-          >
-            <p className="text-[14px] font-medium text-navy-800">Your memberships</p>
-            <p className="mt-1 text-[13px] text-black">
-              Collectives and membership details will appear here.
-            </p>
-          </div>
-        )}
+        <CollectivesList memberships={memberships} />
       </section>
+
+      {/* Paid reservations kept after leaving. Renders nothing when
+          there are none, which is the usual case. */}
+      <RetainedReservations reservations={reservations} />
 
       {/* Subscription placeholder */}
       <section>

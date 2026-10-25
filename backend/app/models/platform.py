@@ -504,12 +504,146 @@ class SpaceMembership(Base):
     # everything else is preserved untouched.
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    # Removal provenance (migration 166). ``source`` records how the
+    # membership BEGAN; these record how it ENDED, which is a different
+    # question and the one that decides whether somebody may come back.
+    #
+    # Before this, nothing distinguished "I left" from "I was removed",
+    # so the only safe answer to a rejoin attempt was no. See
+    # ``services.membership_removal.REMOVAL_KINDS`` for the vocabulary
+    # and ``services.membership_grant.may_rejoin`` for the rule that
+    # reads it.
+    #
+    # NULL has two meanings and both resolve the same way: the
+    # membership is live (status active/paused), or it is a historical
+    # ``removed`` row written before this column existed. A historical
+    # removal is NOT assumed voluntary — the migration deliberately
+    # leaves it NULL rather than guessing, and ``may_rejoin`` refuses
+    # NULL. Guessing wrong in that direction would quietly reverse
+    # moderation decisions nobody recorded.
+    #
+    # Allowed: voluntary | creator | admin | auto_role. A CHECK
+    # constraint enforces the set at the DB layer, so a new removal
+    # path cannot invent a value that ``may_rejoin`` has never heard of
+    # and have it silently read as "not voluntary".
+    removal_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    #: Who ended it. The member themselves for a voluntary departure,
+    #: the creator or admin who acted otherwise, NULL for the automatic
+    #: sweep (no person decided).
+    removed_by_user_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    #: The creator's choice field. ``member_requested`` /
+    #: ``no_longer_required`` / ``inappropriate_behaviour`` /
+    #: ``payment_issues`` / ``other``, under a CHECK constraint.
+    #:
+    #: Kept separate from ``rejoin_blocked`` on purpose: the reason
+    #: does not decide the consequence. "Inappropriate behaviour" does
+    #: not imply a ban and "Member requested removal" does not preclude
+    #: one — a ban is its own explicit decision.
+    removal_reason: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+    )
+    #: The written explanation. **Caretaker-only** — never serialised
+    #: to a member-facing surface. Required when ``rejoin_blocked`` is
+    #: set (enforced at the API, not the DB, because the requirement is
+    #: about the creator's decision rather than about row validity).
+    removal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Barred from returning. Read by ``membership_grant.may_rejoin``
+    #: (so Join, invite-accept and purchase reactivation all refuse)
+    #: and by the Rule F purchase guard (so every acquisition from this
+    #: Collective refuses). Only the Collective's owner may set or
+    #: clear it; the ledger in ``MembershipRestrictionEvent`` records
+    #: each change.
+    rejoin_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+    #: This removal was taken while an instalment plan was still live.
+    #: Set only on the urgent behaviour-removal path, which is allowed
+    #: to proceed precisely because moderation must not wait on
+    #: billing — and which therefore leaves Stripe collecting for
+    #: access that has been revoked.
+    #:
+    #: Nothing in this release clears it automatically. It exists so the
+    #: exposure is visible to the creator and addressable by the
+    #: payment-resolution work that follows.
+    payment_action_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])  # type: ignore[name-defined]
     space: Mapped[Space] = relationship("Space", back_populates="memberships")
 
     __table_args__ = (
         UniqueConstraint("user_id", "space_id", name="space_memberships_user_space_unique"),
         Index("ix_space_memberships_space_user", "space_id", "user_id"),
+        CheckConstraint(
+            "removal_kind IS NULL OR removal_kind IN "
+            "('voluntary', 'creator', 'admin', 'auto_role')",
+            name="space_memberships_removal_kind_valid",
+        ),
+        CheckConstraint(
+            "removal_reason IS NULL OR removal_reason IN "
+            "('member_requested', 'no_longer_required', "
+            "'inappropriate_behaviour', 'payment_issues', 'other')",
+            name="space_memberships_removal_reason_valid",
+        ),
+        CheckConstraint(
+            "rejoin_blocked IS FALSE OR status = 'removed'",
+            name="space_memberships_block_needs_removal",
+        ),
+    )
+
+
+class MembershipRestrictionEvent(Base):
+    """Append-only record of a rejoin block being imposed or lifted.
+
+    ``SpaceMembership.rejoin_blocked`` is the current state; this is the
+    history. Kept as a separate table for the reason
+    ``discount_redemptions`` is: a boolean on the owning row answers
+    "are they blocked now?", and overwriting it would destroy the answer
+    to "who blocked them, when, and why — and who lifted it?". A ban is
+    consequential enough that the second question has to survive the
+    first being changed.
+
+    Notes here are **caretaker-only**, like ``removal_note``.
+    """
+
+    __tablename__ = "membership_restriction_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String, ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    #: ``blocked`` | ``unblocked``
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The creator who decided. NULL only if the account is later
+    #: deleted — the event itself still happened.
+    actor_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('blocked', 'unblocked')",
+            name="membership_restriction_events_action_valid",
+        ),
+        Index(
+            "ix_membership_restriction_events_lookup",
+            "space_id", "user_id", "created_at",
+        ),
     )
 
 

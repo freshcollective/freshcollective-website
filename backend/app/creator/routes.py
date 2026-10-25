@@ -29,6 +29,8 @@ from app.community_care.shared import (
 from app.core.config import settings
 from app.core.public_url import public_app_url
 from app.core.database import get_db
+from app.services import membership_removal
+from app.services import membership_grant
 from app.services.creator_eligibility import is_eligible_creator
 from app.services.streaming_upload import (
     EmptyUpload,
@@ -71,6 +73,11 @@ from app.creator.schemas import (
     AboutBlockCreateRequest,
     AccessRequestOut,
     AddMemberRequest,
+    RejoinPolicyResponse,
+    RejoinPolicyRequest,
+    RemovedMemberItem,
+    RemoveMemberResponse,
+    RemoveMemberRequest,
     AddMemberResponse,
     AttendanceUpdateRequest,
     CreatorBillingPortalResponse,
@@ -273,7 +280,9 @@ def _to_utc_aware(dt: datetime) -> datetime:
 # Permission helpers
 # ---------------------------------------------------------------------------
 
-def _space_detail_response(space: Space, db: Session) -> dict:
+def _space_detail_response(
+    space: Space, db: Session, *, viewer: User | None = None,
+) -> dict:
     """Build a SpaceDetail-compatible dict with derived_has_paid_internal_content
     injected. Also hydrates the Atlas v1.2 identity fields (Location + Colour
     Palette + atmosphere/identity/welcome) so the frontend can drive the
@@ -355,6 +364,13 @@ def _space_detail_response(space: Space, db: Session) -> dict:
                 "region": place.region,
                 "country_code": place.country_code,
             }
+    # Ownership, for the surfaces where owner and moderator must be
+    # told apart. Defaults to False when no viewer is passed, which is
+    # the safe direction: a caller that forgets gets the lesser
+    # capability, never the greater one.
+    data["is_owner"] = bool(
+        viewer is not None and space.creator_id == viewer.id
+    )
     return data
 
 
@@ -1517,7 +1533,7 @@ def get_space(
     current_user: User = Depends(get_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
-    return _space_detail_response(space, db)
+    return _space_detail_response(space, db, viewer=current_user)
 
 
 @router.patch("/spaces/{slug}", response_model=SpaceDetail)
@@ -5110,28 +5126,25 @@ def list_creator_members(
     return result
 
 
-@router.delete("/spaces/{slug}/members/{user_id}", status_code=200)
-def remove_member(
-    slug: str,
-    user_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_verified_creator_user),
-) -> dict:
-    """Remove a member from a collective.
+def _resolve_removable_membership(
+    slug: str, user_id: str, current_user: User, db: Session,
+) -> tuple[Space, SpaceMembership]:
+    """The member a caretaker may remove, with the usual refusals.
 
-    Sets their SpaceMembership to 'removed', revokes manual pathway entitlements,
-    and cancels any active access passes in this space.
-    Does NOT touch the user account, posts, comments, or memberships in other spaces.
+    Shared by the removal endpoint and the rejoin-policy endpoint so
+    "who may be acted on" has one answer.
     """
     space = _get_managed_space(slug, current_user, db)
 
-    # Cannot remove yourself
     if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="You cannot remove yourself from a collective.")
-
-    # Cannot remove the space owner
-    if hasattr(space, "creator_id") and space.creator_id and user_id == space.creator_id:
-        raise HTTPException(status_code=400, detail="Cannot remove the collective owner.")
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot remove yourself from a collective.",
+        )
+    if getattr(space, "creator_id", None) and user_id == space.creator_id:
+        raise HTTPException(
+            status_code=400, detail="Cannot remove the collective owner.",
+        )
 
     membership = (
         db.query(SpaceMembership)
@@ -5142,66 +5155,328 @@ def remove_member(
         .first()
     )
     if not membership:
-        raise HTTPException(status_code=404, detail="Member not found in this collective.")
+        raise HTTPException(
+            status_code=404, detail="Member not found in this collective.",
+        )
+    return space, membership
+
+
+def _require_space_owner(space: Space, current_user: User) -> None:
+    """Only the Collective's owner may impose or lift a ban.
+
+    ``_get_managed_space`` admits moderators, and they keep ordinary
+    removal — but barring somebody from ever returning, and from buying
+    anything here again, is the founder's decision. Mirrors the
+    owner-only gate on deleting a Collective.
+    """
+    if space.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only the Collective's owner can block or unblock future "
+                "membership."
+            ),
+        )
+
+
+@router.post(
+    "/spaces/{slug}/members/{user_id}/remove",
+    response_model=RemoveMemberResponse,
+    status_code=200,
+)
+def remove_member_with_reason(
+    slug: str,
+    user_id: str,
+    body: RemoveMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> RemoveMemberResponse:
+    """Remove a member, recording why and whether they may return.
+
+    POST rather than DELETE because the decision is the point. A
+    removal now carries a reason, an optional explanation, and a
+    separate answer to "may this person come back?" — and a DELETE
+    whose meaning depends on a request body is a DELETE whose meaning
+    can be lost by any client or proxy that drops one. The old
+    ``DELETE`` endpoint remains for compatibility and is restricted to
+    the one decision it can express; see below.
+
+    The reason never implies the block
+    ----------------------------------
+
+    ``reason`` and ``rejoin_blocked`` are independent, in both
+    directions: "Inappropriate behaviour" does not bar somebody, and
+    "Member requested removal" does not stop a creator barring them. A
+    block additionally requires a written explanation, and only the
+    Collective's owner may impose one.
+
+    Active instalment plans
+    -----------------------
+
+    An ordinary removal is **refused** (409) while Stripe is still
+    collecting: revoking access while a card keeps being charged is the
+    outcome nobody chose, and an administrative tidy-up is never worth
+    it. An urgent behaviour removal may proceed, because a creator must
+    be able to act on behaviour immediately — but only with
+    ``acknowledge_active_payment_plan``, and it stamps
+    ``payment_action_required`` so the exposure is visible rather than
+    silent. No Stripe call is made either way.
+    """
+    space, membership = _resolve_removable_membership(
+        slug, user_id, current_user, db,
+    )
 
     if membership.status == SpaceMembershipStatus.removed:
-        raise HTTPException(status_code=400, detail="Member has already been removed.")
+        raise HTTPException(
+            status_code=400, detail="Member has already been removed.",
+        )
+
+    if body.rejoin_blocked:
+        _require_space_owner(space, current_user)
+
+    try:
+        decision = membership_removal.RemovalDecision(
+            kind=membership_removal.REMOVAL_BY_CREATOR,
+            reason=body.reason,
+            note=body.note,
+            rejoin_blocked=body.rejoin_blocked,
+        )
+    except membership_removal.RemovalDecisionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    live_plans = membership_removal.live_payment_plan_count(
+        db, user_id=user_id, space_id=space.id,
+    )
+    payment_action_required = False
+    if live_plans:
+        if not decision.may_override_live_plan:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "active_payment_plan",
+                    "message": (
+                        "This person has a payment plan still collecting for "
+                        "this collective. Resolve the payment arrangement "
+                        "first, or — if this is urgent and about behaviour — "
+                        "remove them with that reason and acknowledge that "
+                        "billing will continue."
+                    ),
+                    "live_payment_plans": live_plans,
+                },
+            )
+        if not body.acknowledge_active_payment_plan:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "acknowledgement_required",
+                    "message": (
+                        "Removing this person will NOT stop their payment "
+                        "plan. Stripe will keep collecting the remaining "
+                        "instalments for access they no longer have, and "
+                        "Fresh Collective will not cancel or refund it "
+                        "automatically. Confirm you understand before "
+                        "continuing."
+                    ),
+                    "live_payment_plans": live_plans,
+                },
+            )
+        payment_action_required = True
 
     now = datetime.utcnow()
 
-    # Soft-delete the membership
-    membership.status = SpaceMembershipStatus.removed
+    # Moderation removal, unchanged in effect — it revokes every active
+    # entitlement, cancels every pass and cancels future bookings. The
+    # body of it lives in ``services.membership_removal`` so that a
+    # member leaving of their own accord ends their membership through
+    # the same code, differing only in what it is allowed to destroy.
+    # See that module's table.
+    membership_removal.end_membership(
+        db,
+        membership=membership,
+        space=space,
+        actor_user_id=current_user.id,
+        now=now,
+        decision=decision,
+        revoke_purchased_access=True,
+        cancel_passes=True,
+        cancel_future_bookings=True,
+        note=f"Revoked on member removal by {current_user.email}",
+        payment_action_required=payment_action_required,
+    )
+    db.commit()
 
-    # Revoke all active pathway entitlements in this space
-    active_entitlements = (
-        db.query(PathwayEntitlement)
+    return RemoveMemberResponse(
+        removed=True,
+        rejoin_blocked=body.rejoin_blocked,
+        payment_action_required=payment_action_required,
+    )
+
+
+@router.delete("/spaces/{slug}/members/{user_id}", status_code=200)
+def remove_member(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Deprecated — kept so an older client cannot break.
+
+    Delegates to the endpoint above with the only decision a body-less
+    call can honestly express: an administrative removal
+    (``no_longer_required``), **no block**, and **no acknowledgement**
+    of an active payment plan. So this route cannot ban anybody and
+    cannot push past the instalment-plan refusal — the two things the
+    new required fields exist to make deliberate.
+
+    New callers should use ``POST .../members/{user_id}/remove``.
+    """
+    return remove_member_with_reason(
+        slug,
+        user_id,
+        RemoveMemberRequest(
+            reason=membership_removal.REASON_NO_LONGER_REQUIRED,
+            rejoin_blocked=False,
+            acknowledge_active_payment_plan=False,
+        ),
+        db=db,
+        current_user=current_user,
+    ).model_dump()
+
+
+@router.get(
+    "/spaces/{slug}/removed-members",
+    response_model=list[RemovedMemberItem],
+)
+def list_removed_members(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> list[RemovedMemberItem]:
+    """People removed from this Collective, and whether they may return.
+
+    The creator's Removed People view. ``GET /members`` filters on
+    ``status='active'``, so before this there was no surface showing who
+    had been removed, why, or who was blocked — a creator could impose a
+    restriction and then had no way to see or undo it.
+
+    Caretaker-gated by ``_get_managed_space``. ``note`` is returned here
+    and **nowhere else**: it is not on ``CreatorMemberItem``, not on the
+    member-facing directory, and not on ``/me/memberships``.
+    """
+    space = _get_managed_space(slug, current_user, db)
+
+    from sqlalchemy.orm import aliased
+
+    from app.models.platform import CreatorProfile
+
+    actor = aliased(User)
+    rows = (
+        db.query(SpaceMembership, User, CreatorProfile, actor)
+        .join(User, User.id == SpaceMembership.user_id)
+        .outerjoin(CreatorProfile, CreatorProfile.user_id == User.id)
+        .outerjoin(actor, actor.id == SpaceMembership.removed_by_user_id)
         .filter(
-            PathwayEntitlement.user_id == user_id,
-            PathwayEntitlement.space_id == space.id,
-            PathwayEntitlement.status == EntitlementStatus.active,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.removed,
         )
+        .order_by(SpaceMembership.removed_at.desc().nullslast())
         .all()
     )
-    for ent in active_entitlements:
-        ent.status = EntitlementStatus.revoked
-        ent.revoked_by_user_id = current_user.id
-        ent.revoked_at = now
-        ent.notes = (ent.notes or "") + f" [Revoked on member removal by {current_user.email}]"
 
-    # Cancel active/pending access passes in this space
-    active_passes = (
-        db.query(AccessPass)
-        .filter(
-            AccessPass.user_id == user_id,
-            AccessPass.space_id == space.id,
-            AccessPass.status.in_([AccessPassStatus.active, AccessPassStatus.pending]),
-        )
-        .all()
-    )
-    for ap in active_passes:
-        ap.status = AccessPassStatus.cancelled
-        ap.revoked_by_user_id = current_user.id
-        ap.revoked_at = now
+    out: list[RemovedMemberItem] = []
+    for membership, user, profile, remover in rows:
+        out.append(RemovedMemberItem(
+            user_id=user.id,
+            display_name=(
+                (profile.display_name if profile else None)
+                or user.name
+                or user.email
+            ),
+            email=user.email,
+            removal_kind=membership.removal_kind,
+            removal_reason=membership.removal_reason,
+            note=membership.removal_note,
+            rejoin_blocked=bool(membership.rejoin_blocked),
+            payment_action_required=bool(membership.payment_action_required),
+            removed_at=membership.removed_at,
+            removed_by_display_name=(
+                (remover.name or remover.email) if remover else None
+            ),
+            may_rejoin=membership_grant.may_rejoin(membership),
+        ))
+    return out
 
-    # Cancel future confirmed event bookings in this space.
-    # Past bookings are kept as historical record.
-    future_bookings = (
-        db.query(EventBooking)
-        .join(Event, Event.id == EventBooking.event_id)
-        .filter(
-            EventBooking.user_id == user_id,
-            EventBooking.status == BookingStatus.confirmed,
-            Event.space_id == space.id,
-            Event.starts_at > now,
-        )
-        .all()
+
+@router.post(
+    "/spaces/{slug}/members/{user_id}/rejoin-policy",
+    response_model=RejoinPolicyResponse,
+)
+def set_rejoin_policy(
+    slug: str,
+    user_id: str,
+    body: RejoinPolicyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> RejoinPolicyResponse:
+    """Impose or lift a rejoin block on somebody already removed.
+
+    Owner-only, both directions. Every change appends to
+    ``membership_restriction_events``, so lifting a ban leaves a record
+    of who lifted it rather than overwriting the record that it existed.
+
+    **Lifting a block restores nothing.** Not membership — the person
+    becomes free to rejoin or buy their way back, which is theirs to
+    decide — and not any pass, entitlement or booking that was
+    cancelled when they were removed. ``removal_kind`` and
+    ``removal_reason`` are left as they are: the removal still happened
+    for the reason recorded.
+    """
+    space, membership = _resolve_removable_membership(
+        slug, user_id, current_user, db,
     )
-    for booking in future_bookings:
-        booking.status = BookingStatus.cancelled
-        booking.cancelled_at = now
+    _require_space_owner(space, current_user)
+
+    if membership.status != SpaceMembershipStatus.removed:
+        # The DB CHECK says the same thing; refusing here gives the
+        # creator a sentence instead of a constraint violation.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This person is not removed from the collective, so there "
+                "is no rejoining restriction to change."
+            ),
+        )
+
+    now = datetime.utcnow()
+    if body.rejoin_blocked:
+        if not membership.rejoin_blocked:
+            membership.rejoin_blocked = True
+            membership_removal.record_restriction_event(
+                db,
+                space_id=space.id,
+                user_id=user_id,
+                action=membership_removal.RESTRICTION_BLOCKED,
+                actor_user_id=current_user.id,
+                note=body.note,
+                now=now,
+            )
+            # The explanation the block was imposed with becomes the
+            # removal note when there was none — otherwise a block
+            # added after the fact would have no reason attached to the
+            # membership a reader sees first.
+            if not (membership.removal_note or "").strip():
+                membership.removal_note = body.note
+    elif membership.rejoin_blocked:
+        membership_removal.lift_restriction(
+            db,
+            membership=membership,
+            actor_user_id=current_user.id,
+            note=body.note,
+            now=now,
+        )
 
     db.commit()
-    return {"ok": True}
+    return RejoinPolicyResponse(rejoin_blocked=bool(membership.rejoin_blocked))
 
 
 @router.post("/spaces/{slug}/members/add", response_model=AddMemberResponse, status_code=200)
@@ -5245,17 +5520,27 @@ def add_or_invite_member(
     user = db.query(User).filter(_func.lower(User.email) == email).first()
 
     if user:
-        # Check if already an active member
+        # ANY membership row, not just an active one. Filtering on
+        # ``status == 'active'`` made this miss a ``removed`` row and
+        # fall through to the INSERT below, which
+        # ``space_memberships_user_space_unique`` then rejected — so
+        # re-adding somebody who had been removed failed with a 500
+        # rather than adding them. That made creator removal and
+        # voluntary departure both one-way doors.
         existing = (
             db.query(SpaceMembership)
             .filter(
                 SpaceMembership.space_id == space.id,
                 SpaceMembership.user_id == user.id,
-                SpaceMembership.status == "active",
             )
             .first()
         )
-        if existing:
+        existing_status = (
+            existing.status.value
+            if existing is not None and hasattr(existing.status, "value")
+            else str(existing.status) if existing is not None else None
+        )
+        if existing_status == SpaceMembershipStatus.active.value:
             return AddMemberResponse(
                 result="already_member",
                 message="This person is already a member of this collective.",
@@ -5264,16 +5549,52 @@ def add_or_invite_member(
         # allowance purposes — only learners count against the cap.
         if role_enum == SpaceRole.learner:
             guard_member_allowance(space, db, for_creator=True)
-        # Add as active member — existing users are added directly, no email needed
-        membership = SpaceMembership(
-            id=str(uuid4()),
-            space_id=space.id,
-            user_id=user.id,
-            role=role_enum,
-            status=SpaceMembershipStatus.active,
-            source="invited",
-        )
-        db.add(membership)
+
+        if existing is not None:
+            # A live block is refused here too, and that is the one
+            # place it might look surprising: this IS the creator. But
+            # lifting a ban must be a deliberate, recorded act, not a
+            # side effect of typing an email into the add-member field
+            # — otherwise the restriction quietly disappears with no
+            # entry in ``membership_restriction_events`` saying who
+            # removed it. The owner lifts it from Removed People, then
+            # re-adds.
+            if existing.rejoin_blocked:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This person is blocked from rejoining this "
+                        "collective. Lift the restriction in Removed "
+                        "People before adding them back."
+                    ),
+                )
+            # Otherwise: re-add, in place. Deliberately NOT gated on
+            # ``may_rejoin`` beyond the block — that rule governs the
+            # member-initiated doors (Join, invitation, purchase), where
+            # the question is whether somebody may let themselves back
+            # in. This is the creator deciding to readmit, which is the
+            # authority that removed them — and it is the escape hatch
+            # that makes refusing historical, unknown removals at the
+            # other doors a recoverable mistake rather than a permanent
+            # one.
+            #
+            # Restores membership only. No cancelled pass, revoked
+            # entitlement or cancelled booking comes back; see
+            # ``membership_grant.reactivate``.
+            membership_grant.reactivate(existing, now=datetime.utcnow())
+            existing.role = role_enum
+            membership = existing
+        else:
+            # Add as active member — existing users are added directly, no email needed
+            membership = SpaceMembership(
+                id=str(uuid4()),
+                space_id=space.id,
+                user_id=user.id,
+                role=role_enum,
+                status=SpaceMembershipStatus.active,
+                source="invited",
+            )
+            db.add(membership)
         # Added directly as an ACTIVE member, so they are a member now
         # and the welcome is due. The ``else`` branch below creates a
         # draft invitation instead — nobody has joined there, and it

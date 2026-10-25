@@ -676,6 +676,15 @@ def revoke_purchase(
                 and membership.source == "purchase"
             ):
                 membership.status = SpaceMembershipStatus.removed
+                # Provenance (migration 166): an admin revocation is
+                # not a voluntary departure, so pressing Join or
+                # buying again must not restore it. Without this stamp
+                # the row would read as unknown-provenance, which also
+                # refuses — but recording what actually happened is the
+                # point of the column.
+                membership.removal_kind = "admin"
+                membership.removed_at = now
+                membership.removed_by_user_id = admin.id
                 membership_removed = True
 
     db.commit()

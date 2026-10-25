@@ -393,6 +393,13 @@ def create_or_reuse_hold(
     long only over-counts a seat briefly; erring short reopens the
     oversell window.
     """
+
+    # Rule F — a banned person buys nothing from this Collective,
+    # tickets included. Before the seat lock and before Stripe, so a
+    # refusal consumes no capacity.
+    from app.services.checkout_orchestration import check_not_banned_or_raise
+
+    check_not_banned_or_raise(db, user=buyer, space=offer.space)
     # 1. Row lock the event
     db.execute(text("SELECT id FROM events WHERE id = :id FOR UPDATE"),
                {"id": offer.event.id})

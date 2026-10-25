@@ -864,6 +864,15 @@ def create_pathway_checkout_session(
     if not pathway.price_cents or pathway.price_cents <= 0:
         raise HTTPException(status_code=400, detail="Pathway has no valid price.")
 
+    # Rule F — the legacy single-Pathway door. It does not go through
+    # the PaymentOption orchestrators, so it needs the ban guard of its
+    # own or it is a way past one. Rule E is deliberately NOT applied:
+    # this endpoint only ever sells ``one_time`` access, whose gate
+    # reads the entitlement and never asks about membership.
+    from app.services.checkout_orchestration import check_not_banned_or_raise
+
+    check_not_banned_or_raise(db, user=current_user, space=pathway.space)
+
     session = _legacy_pathway_price_stripe_session(
         db, pathway=pathway, payer=current_user,
         success_url=body.success_url, cancel_url=body.cancel_url, now=now,

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation } from '@/types/platform'
+import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation , RemovedMember} from '@/types/platform'
 import { apiUrl } from '@/lib/api'
+import RemovedPeople from './RemovedPeople'
 import {
   formatGatheringTimeFriendly,
   gatheringWeekdaySlot,
@@ -1486,30 +1487,96 @@ function DirectMessageModal({ member, spaceSlug, onClose }: {
 // Member detail panel
 // ---------------------------------------------------------------------------
 
-function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }: {
+/**
+ * Remove a member — with a recorded reason, and a separate decision
+ * about whether they may come back.
+ *
+ * The two questions are deliberately not one control. A creator helping
+ * somebody leave and a creator acting on behaviour both "remove", and
+ * before this the platform could not tell them apart, so every removal
+ * had to be treated as permanent. Picking a reason therefore never
+ * changes the rejoin setting: ``Inappropriate behaviour`` with
+ * rejoining allowed is an ordinary removal, and ``Member requested
+ * removal`` with it blocked is a ban. The server enforces the same
+ * separation.
+ *
+ * Blocking requires a written explanation — it is the consequential,
+ * owner-only decision, and the note is the only record of why.
+ */
+
+const REMOVAL_REASONS: { value: string; label: string }[] = [
+  { value: 'member_requested',        label: 'Member requested removal' },
+  { value: 'no_longer_required',      label: 'Membership no longer required' },
+  { value: 'inappropriate_behaviour', label: 'Inappropriate behaviour' },
+  { value: 'payment_issues',          label: 'Payment issues' },
+  { value: 'other',                   label: 'Other' },
+]
+
+/** Only this reason may proceed past a live instalment plan. Mirrors
+ *  ``membership_removal.URGENT_REASONS``. */
+const URGENT_REASON = 'inappropriate_behaviour'
+
+function RemoveMemberModal({ member, spaceName, spaceSlug, canBan, onClose, onRemoved }: {
   member: CreatorMemberDetail
   spaceName: string
   spaceSlug: string
+  /** Only the Collective's owner may block future membership. */
+  canBan: boolean
   onClose: () => void
   onRemoved: () => void
 }) {
   const [removing, setRemoving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [reason, setReason] = useState<string>('member_requested')
+  const [note, setNote] = useState('')
+  const [rejoinBlocked, setRejoinBlocked] = useState(false)
+  // Set once the server has told us a plan is still collecting and the
+  // creator has read that warning. Never pre-set: the acknowledgement
+  // is the point.
+  const [planWarning, setPlanWarning] = useState<string | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+
+  const noteRequired = rejoinBlocked
+  const noteMissing = noteRequired && note.trim().length === 0
+  const blockedNeedsUrgent = Boolean(planWarning) && !acknowledged
 
   async function handleRemove() {
+    if (noteMissing) return
     setRemoving(true)
     setError(null)
     try {
       const res = await fetch(
-        apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}`),
-        { method: 'DELETE', credentials: 'include' },
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/remove`),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reason,
+            note: note.trim() || null,
+            rejoin_blocked: rejoinBlocked,
+            acknowledge_active_payment_plan: acknowledged,
+          }),
+        },
       )
       if (res.ok) {
         onRemoved()
-      } else {
-        const body = await res.json().catch(() => ({}))
-        setError(typeof body.detail === 'string' ? body.detail : 'Could not remove member. Please try again.')
+        return
       }
+      const body = await res.json().catch(() => ({}))
+      const detail = body?.detail
+      // The two payment-plan refusals are structured, because one of
+      // them is recoverable in this dialog and the other is not.
+      if (detail && typeof detail === 'object' && detail.code) {
+        if (detail.code === 'acknowledgement_required') {
+          setPlanWarning(String(detail.message))
+          setAcknowledged(false)
+        } else {
+          setError(String(detail.message))
+        }
+        return
+      }
+      setError(typeof detail === 'string' ? detail : 'Could not remove member. Please try again.')
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -1519,7 +1586,7 @@ function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-white shadow-xl">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-white shadow-xl">
         <div className="px-6 py-5">
           <h3 className="text-[16px] font-semibold text-navy-900">
             Remove from {spaceName}?
@@ -1529,6 +1596,105 @@ function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }:
             collective, including pathways and member content. Their Fresh Collective account will
             not be deleted.
           </p>
+
+          <label className="mt-5 block text-[13px] font-medium text-navy-800">
+            Reason for removal
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={removing}
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-[14px] text-navy-900"
+            >
+              {REMOVAL_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-4 block text-[13px] font-medium text-navy-800">
+            {noteRequired ? 'Explanation (required)' : 'Explanation (optional)'}
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={removing}
+              rows={3}
+              placeholder={
+                reason === 'other'
+                  ? 'Briefly, what happened?'
+                  : 'Anything worth recording for later'
+              }
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-[14px] text-navy-900"
+            />
+          </label>
+          <p className="mt-1 text-[12px] text-black">
+            Only you and your collective’s moderators can see this.
+          </p>
+
+          {canBan && (
+            <div className="mt-5 rounded-xl border border-border bg-slate-50 px-4 py-3">
+              <p className="text-[13px] font-medium text-navy-800">
+                Allow this person to rejoin in the future?
+              </p>
+              <label className="mt-2.5 flex items-start gap-2.5 text-[13px] text-black">
+                <input
+                  type="radio"
+                  name="rejoin"
+                  checked={!rejoinBlocked}
+                  onChange={() => setRejoinBlocked(false)}
+                  disabled={removing}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-navy-800">Yes</span> — they can rejoin and
+                  purchase normally, subject to this collective’s membership requirements.
+                </span>
+              </label>
+              <label className="mt-2 flex items-start gap-2.5 text-[13px] text-black">
+                <input
+                  type="radio"
+                  name="rejoin"
+                  checked={rejoinBlocked}
+                  onChange={() => setRejoinBlocked(true)}
+                  disabled={removing}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-navy-800">No</span> — block future membership
+                  and new purchases from this collective. You can lift this later in Removed
+                  people.
+                </span>
+              </label>
+            </div>
+          )}
+
+          {planWarning && (
+            <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+              <p className="text-[13px] font-semibold text-amber-900">
+                Their payment plan will keep running
+              </p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-amber-900">
+                {planWarning}
+              </p>
+              <label className="mt-2.5 flex items-start gap-2.5 text-[13px] text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(e) => setAcknowledged(e.target.checked)}
+                  disabled={removing}
+                  className="mt-0.5"
+                />
+                <span>
+                  I understand this removal does not stop or refund their payments.
+                </span>
+              </label>
+            </div>
+          )}
+
+          {noteMissing && (
+            <p className="mt-3 text-[13px] text-red-700">
+              Blocking future membership requires a written explanation.
+            </p>
+          )}
           {error && (
             <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
               {error}
@@ -1538,11 +1704,13 @@ function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }:
         <div className="flex gap-2 border-t border-border px-6 py-4">
           <button
             onClick={handleRemove}
-            disabled={removing}
+            disabled={removing || noteMissing || blockedNeedsUrgent}
             className="flex-1 rounded-xl px-4 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ background: '#dc2626' }}
           >
-            {removing ? 'Removing…' : 'Remove member'}
+            {removing
+              ? 'Removing…'
+              : rejoinBlocked ? 'Remove and block' : 'Remove member'}
           </button>
           <button
             onClick={onClose}
@@ -1557,13 +1725,15 @@ function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }:
   )
 }
 
-function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemoved, spaceTimezone }: {
+function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemoved, spaceTimezone, canBan }: {
   member: CreatorMemberDetail
   onClose: () => void
   spaceSlug: string
   spaceName: string
   onMemberRemoved: (userId: string) => void
   spaceTimezone: string
+  /** Only the Collective's owner may block future membership. */
+  canBan: boolean
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [showMessage, setShowMessage]     = useState(false)
@@ -1652,6 +1822,7 @@ function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemo
           member={member}
           spaceName={spaceName}
           spaceSlug={spaceSlug}
+          canBan={canBan}
           onClose={() => setConfirmRemove(false)}
           onRemoved={() => onMemberRemoved(member.id)}
         />
@@ -2689,9 +2860,13 @@ interface Props {
   /** The Collective's timezone. Every Gathering timestamp in this panel
    *  belongs to the Collective, not to whoever is reading the page. */
   spaceTimezone: string
+  /** Whether the viewer OWNS the Collective. Only the owner may block
+   *  somebody from rejoining; moderators keep ordinary removal. */
+  canBan?: boolean
+  removedMembers?: RemovedMember[]
 }
 
-export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic, headerLocation, headerCoverImageUrl, spaceTimezone }: Props) {
+export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic, headerLocation, headerCoverImageUrl, spaceTimezone, canBan = false, removedMembers = [] }: Props) {
   const router = useRouter()
   const [membersList, setMembersList]                   = useState<CreatorMemberDetail[]>(initialMembers)
   const [manualMembersList, setManualMembersList]       = useState<ManualMember[]>(initialManualMembers)
@@ -2848,12 +3023,13 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
           {selectedMember && (
             <div className="w-full xl:w-[360px] xl:shrink-0">
               <MemberDetailPanel
-          spaceTimezone={spaceTimezone}
+                spaceTimezone={spaceTimezone}
                 member={selectedMember}
                 onClose={() => setSelectedMember(null)}
                 spaceSlug={spaceSlug}
                 spaceName={spaceName}
                 onMemberRemoved={handleMemberRemoved}
+                canBan={canBan}
               />
             </div>
           )}
@@ -3005,6 +3181,13 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
           onSuccess={handleAddSuccess}
         />
       )}
+
+
+      <RemovedPeople
+        spaceSlug={spaceSlug}
+        removed={removedMembers}
+        canManage={canBan}
+      />
 
     </div>
   )

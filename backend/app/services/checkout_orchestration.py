@@ -601,6 +601,279 @@ def check_same_option_not_active(
         )
 
 
+def check_not_banned_or_raise(
+    db: Session, *, user: User, space: Space,
+) -> None:
+    """Rule F — a banned person buys nothing from this Collective.
+
+    The sibling of Rule E, and deliberately a separate guard rather than
+    a widening of it, because the two refuse different sets and for
+    different reasons:
+
+    * **Rule E** refuses a purchase whose *delivery* needs membership.
+      An ordinarily-removed person is still welcome to buy a
+      ``one_time`` Pathway, an Offering or a Gathering ticket, because
+      none of that access reads membership — so Rule E leaves those
+      alone on purpose.
+    * **Rule F** refuses *everything*, including exactly those. A ban is
+      not "you cannot be a member"; it is "you may not transact with
+      this Collective". Folding it into Rule E would either let bans
+      through the Offerings door or punish an ordinary removal with a
+      blanket block.
+
+    Called from every acquisition entrance — the three PaymentOption
+    orchestrators, the Offerings acquirability check (free and paid),
+    the standalone Gathering ticket hold, and the legacy single-Pathway
+    checkout. Free acquisitions included: a ban that stopped payments
+    but not free downloads would not be a ban.
+
+    **402**, like Rule E, and for the same reason: this is a purchase
+    that must not happen, and the member-facing answer points at the
+    creator without disclosing a moderation decision.
+    """
+    from app.services import membership_removal
+
+    if not membership_removal.is_banned(
+        db, user_id=user.id, space_id=space.id,
+    ):
+        return
+    logger.info(
+        "checkout rule F: refused — user=%s is blocked from space=%s",
+        user.id, space.id,
+    )
+    raise HTTPException(
+        status_code=402,
+        detail=(
+            "You are not able to make purchases from this collective. "
+            "Please contact the collective's creator."
+        ),
+    )
+
+
+def membership_undeliverable_reason(
+    db: Session, *,
+    user_id: str,
+    space_id: str,
+    payment_option: PaymentOption | None,
+) -> str | None:
+    """Why this purchase could not be delivered to this buyer, or
+    ``None`` when it can.
+
+    Reports rather than raises, because it is asked at two different
+    moments that need different responses:
+
+    * **before payment** — :func:`check_membership_deliverable_or_raise`
+      turns a reason into a 402 and no money moves;
+    * **before fulfilment** — the ``checkout.session.completed`` and
+      finite-plan invoice handlers turn a reason into
+      ``fulfilment_status='blocked'``, because by then the money HAS
+      moved and refusing to write grants is all that is left to do
+      safely.
+
+    One function for both so the two moments cannot disagree. A buyer
+    who passed the first check and fails the second has had their
+    eligibility changed mid-checkout — a creator banning them while
+    they were inside Stripe — which is the only way to reach the second
+    refusal.
+    """
+    space = db.query(Space).filter(Space.id == space_id).first()
+    if space is None:
+        return None
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        return None
+
+    blocked = _membership_readmission_block(db, user=user, space=space)
+    if blocked is None:
+        return None
+    if payment_option is None:
+        return None
+    if not _purchase_needs_membership(
+        db, payment_option=payment_option, space=space,
+    ):
+        return None
+    return blocked
+
+
+def check_membership_deliverable_or_raise(
+    db: Session, *,
+    user: User,
+    payment_option: PaymentOption,
+    space: Space,
+) -> None:
+    """Rule E — refuse to charge for access membership would have to
+    carry, when this buyer cannot be given membership.
+
+    The gap this closes
+    -------------------
+
+    Nothing else in checkout consults membership status. Rules A–D are
+    about duplicate purchases and in-flight plans, so a member a creator
+    had removed could complete Stripe Checkout and only then be refused
+    the thing they bought: ``membership_grant.ensure_membership_for_purchase``
+    declines to restore a membership that was ended by somebody else,
+    which is the moderation protection removal provenance exists for.
+    Most purchases survive that refusal untouched — an Offering, a
+    ``one_time`` Pathway entitlement, a standalone Gathering ticket all
+    deliver without membership. Two do not, and this refuses those two
+    **before** any money moves.
+
+    What it refuses, and only this
+    ------------------------------
+
+    1. **Membership itself.** A joining Option on a Collective whose
+       ``join_policy`` is ``purchase_required``: membership *is* the
+       product, so a buyer who cannot be readmitted is buying nothing.
+
+    2. **A Pathway that is included with the offer.**
+       ``access_type='included_with_offer'`` is the one access type
+       whose gate reads an active membership alongside the unlock (see
+       ``spaces.routes._check_pathway_access``), so without membership
+       the Pathway stays shut however much was paid.
+
+    Everything else is left alone deliberately. A creator-removed person
+    buying a ``one_time`` Pathway, an Offering or a Gathering ticket
+    gets exactly what they paid for — their access does not read
+    membership — and refusing those would be inventing a punishment the
+    product never had.
+
+    Who is refused
+    --------------
+
+    Only somebody whose membership row blocks readmission:
+    ``removed`` with a ``removal_kind`` that is not ``voluntary``
+    (a creator's removal, an admin's revocation, or a historical removal
+    whose provenance was never recorded), or ``paused``. A person with
+    no row at all, an active membership, or a voluntary departure is not
+    refused — the first two need no readmission and the third is
+    restored by the purchase itself.
+
+    **402, not 403.** This is a payment that must not be taken, and the
+    member-facing answer is "this cannot be bought right now", with the
+    creator as the route onward. It deliberately does not say they were
+    removed: a checkout error is not the place to disclose a moderation
+    decision.
+
+    Creator-authorised readmission clears it with no special case — once
+    ``add_or_invite_member`` has reactivated the row the buyer is an
+    active member again, and this returns without refusing.
+    """
+    blocked = membership_undeliverable_reason(
+        db, user_id=user.id, space_id=space.id, payment_option=payment_option,
+    )
+    if blocked is None:
+        return
+
+    logger.info(
+        "checkout rule E: refused option=%s user=%s space=%s — %s",
+        payment_option.id, user.id, space.id, blocked,
+    )
+    raise HTTPException(
+        status_code=402,
+        detail=(
+            "This purchase needs an active membership of this collective, "
+            "and your membership is not active. Please contact the "
+            "collective's creator before buying."
+        ),
+    )
+
+
+def _membership_readmission_block(
+    db: Session, *, user: User, space: Space,
+) -> str | None:
+    """Why membership could not be granted to this buyer, or ``None``.
+
+    Mirrors ``membership_grant.ensure_membership_for_purchase`` rather
+    than reimplementing its judgement: the same ``may_rejoin``
+    predicate, so the guard and the fulfilment path cannot disagree
+    about who may be let in. A Collective that manages its own
+    membership (``auto_grant_role``) is not this guard's business, for
+    the same reason the grant service skips it.
+    """
+    from app.models.platform import SpaceMembership, SpaceMembershipStatus
+    from app.services import membership_grant
+
+    if space.auto_grant_role is not None:
+        return None
+
+    row = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == user.id,
+            SpaceMembership.space_id == space.id,
+        )
+        .first()
+    )
+    if row is None:
+        return None
+
+    status = getattr(row.status, "value", row.status)
+    if status == SpaceMembershipStatus.active.value:
+        return None
+    if status == SpaceMembershipStatus.removed.value:
+        if membership_grant.may_rejoin(row):
+            return None
+        # Reported the same way ``membership_grant`` reports it, so an
+        # operator reading a blocked-fulfilment log and one reading a
+        # skipped-membership log see the same vocabulary. A block is
+        # named as a block: it is the one of these a creator can lift.
+        if row.rejoin_blocked:
+            return "rejoin_blocked"
+        return f"removal_{row.removal_kind or 'unknown'}"
+    # ``paused`` today, anything new tomorrow. The grant service leaves
+    # these alone, so a purchase cannot restore them either.
+    return f"status_{status}"
+
+
+def _purchase_needs_membership(
+    db: Session, *, payment_option: PaymentOption, space: Space,
+) -> bool:
+    """Whether delivering this Option depends on active membership."""
+    from app.models.platform import Pathway
+    from app.models.payment_option_grant import (
+        GRANT_KIND_PATHWAY,
+        PaymentOptionGrant,
+    )
+    from app.spaces import join_policy
+
+    # 1. Membership is the product.
+    if (
+        getattr(payment_option, "is_joining_option", False)
+        and not join_policy.allows_free_join(space.join_policy)
+    ):
+        return True
+
+    # 2. The Option unlocks a Pathway whose gate reads membership.
+    #    Both shapes are checked: the grant rows (current) and the
+    #    legacy ``grants_pathway_id`` column, because an Option written
+    #    before grants existed still fulfils through the legacy
+    #    resolver.
+    pathway_ids = [
+        row[0]
+        for row in db.query(PaymentOptionGrant.pathway_id).filter(
+            PaymentOptionGrant.payment_option_id == payment_option.id,
+            PaymentOptionGrant.grant_kind == GRANT_KIND_PATHWAY,
+            PaymentOptionGrant.pathway_id.isnot(None),
+        )
+    ]
+    legacy = getattr(payment_option, "grants_pathway_id", None)
+    if legacy:
+        pathway_ids.append(legacy)
+    if getattr(payment_option, "pathway_id", None):
+        pathway_ids.append(payment_option.pathway_id)
+    if not pathway_ids:
+        return False
+
+    return bool(
+        db.query(Pathway.id)
+        .filter(
+            Pathway.id.in_(pathway_ids),
+            Pathway.access_type == "included_with_offer",
+        )
+        .first()
+    )
+
+
 def check_option_fulfillable_or_raise(payment_option: PaymentOption) -> None:
     """Refuse to take payment for options the fulfilment layer
     cannot honour under the current grant-first rules.
@@ -963,6 +1236,18 @@ def orchestrate_paid_checkout(
       happen for an orphan session that the buyer was never
       redirected to.
     """
+
+    # Rule E — before Stripe is touched. See
+    # ``check_membership_deliverable_or_raise``: this is the one guard
+    # that asks whether membership could be delivered, and it must run
+    # before a Session exists, not after a charge.
+    check_not_banned_or_raise(db, user=payer, space=resolved.space)
+    check_membership_deliverable_or_raise(
+        db,
+        user=payer,
+        payment_option=resolved.payment_option,
+        space=resolved.space,
+    )
     if not settings.stripe_enabled:
         raise HTTPException(
             status_code=503,
@@ -1085,6 +1370,17 @@ def orchestrate_free_checkout(
     Returned outcome carries the txn + apply result so callers
     can log or return the transaction id.
     """
+    # Rule E — a zero-price joining Option is still a purchase that
+    # grants membership, so it is refused on the same terms. No money
+    # moves here, but delivering nothing is still delivering nothing.
+    check_not_banned_or_raise(db, user=payer, space=resolved.space)
+    check_membership_deliverable_or_raise(
+        db,
+        user=payer,
+        payment_option=resolved.payment_option,
+        space=resolved.space,
+    )
+
     # Preflight (before any writes).
     resolution = resolve_intent_for_option(
         db,

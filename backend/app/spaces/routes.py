@@ -51,6 +51,9 @@ from app.spaces import joining_doors
 from app.spaces import pathway_pricing
 from app.spaces import venue_projection
 from app.spaces import area_access, pathway_visibility
+from app.services import membership_removal
+from app.services import membership_grant
+from app.spaces import retained_reservations
 from app.spaces import area_policies
 from app.spaces.schemas import (
     AccessRequestOut,
@@ -73,6 +76,9 @@ from app.spaces.schemas import (
     SaveNotesRequest,
     SaveNotesResponse,
     SectionWithSteps,
+    DeparturePreview,
+    RetainedReservationOut,
+    LeaveCollectiveResponse,
     SpaceAccessStatus,
     SpaceResponse,
     SpaceSummary,
@@ -1119,6 +1125,263 @@ def get_my_access(
     )
 
 
+# ---------------------------------------------------------------------------
+# Leaving — a member ending their own membership
+# ---------------------------------------------------------------------------
+#
+# Two endpoints, deliberately. The preview is what lets the confirmation
+# dialog state consequences instead of reciting a generic warning, and
+# the same refusals are evaluated in both so the dialog never offers an
+# action the DELETE would reject.
+#
+# Neither takes a user id. That is the authorisation model, not an
+# omission: there is no parameter through which one member could name
+# another, so "cannot remove somebody else" is a property of the route's
+# shape rather than a check that could be forgotten. Creator-initiated
+# removal keeps its own endpoint, its own ``user_id`` and its own
+# creator guard.
+
+
+def _resolve_own_membership(
+    slug: str, db: Session, current_user: User,
+) -> tuple[Space, SpaceMembership | None, str | None]:
+    """The caller's own membership of this Collective, and why they may
+    not leave it — ``None`` when they may.
+
+    Shared by the preview and the DELETE so the two cannot disagree
+    about who is allowed to go.
+    """
+    space = _get_space_visible_to(slug, db, current_user)
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .first()
+    )
+    if membership is None:
+        return space, None, "not_a_member"
+
+    # The owner cannot leave their own Collective, and neither can a
+    # caretaker leave through this door. Stepping back from running a
+    # place is a different operation with different consequences for the
+    # place — who owns it, who moderates it, what happens to its
+    # members — and quietly turning it into "remove my membership row"
+    # would strand a Collective with nobody managing it. Mirrors the
+    # creator endpoint's refusal to remove the owner.
+    if space.creator_id and space.creator_id == current_user.id:
+        return space, membership, "caretaker_role"
+    if membership.role in membership_removal.CARETAKER_ROLES:
+        return space, membership, "caretaker_role"
+
+    # World Builders and friends: membership here is computed from
+    # platform eligibility, not chosen. ``creator_eligibility`` would
+    # set the row straight back to ``active`` on its next run, so
+    # offering to leave would be offering something that silently
+    # undoes itself. ``membership_grant`` declines to touch these
+    # Collectives for the same reason.
+    if space.auto_grant_role is not None:
+        return space, membership, "auto_managed_collective"
+
+    if membership_removal.live_payment_plan_count(
+        db, user_id=current_user.id, space_id=space.id,
+    ):
+        return space, membership, "live_payment_plan"
+
+    return space, membership, None
+
+
+@me_router.get(
+    "/retained-reservations",
+    response_model=list[RetainedReservationOut],
+)
+def list_retained_reservations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[RetainedReservationOut]:
+    """Upcoming Gatherings the caller paid for in Collectives they left.
+
+    The "practical way to locate it" half of the paid-reservation
+    exception. Without this, keeping the reservation reachable would
+    depend on the former member still having the Gathering's URL.
+
+    Scoped to the caller by ``current_user`` with no addressable
+    parameter, like the departure endpoints — there is no shape of this
+    request that returns somebody else's reservations.
+
+    Empty for everybody who has not left a Collective holding a paid
+    booking, which is almost everybody; the surface that renders it
+    shows nothing at all in that case.
+    """
+    rows = retained_reservations.list_retained(
+        db, user_id=current_user.id, now=datetime.utcnow(),
+    )
+    return [
+        RetainedReservationOut(
+            event_id=r.event_id,
+            event_title=r.event_title,
+            starts_at=r.starts_at,
+            ends_at=r.ends_at,
+            space_slug=r.space_slug,
+            space_name=r.space_name,
+            booking_id=r.booking_id,
+        )
+        for r in rows
+    ]
+
+
+@router.get(
+    "/{slug}/my-membership/departure",
+    response_model=DeparturePreview,
+)
+def preview_leaving_collective(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeparturePreview:
+    """What leaving this Collective would mean for the caller.
+
+    Read-only. Changes nothing, and is safe to call on a Collective the
+    caller is not a member of — it answers ``can_leave=False`` with
+    ``blocked_reason='not_a_member'`` rather than 404, because the
+    Membership page may render a stale card.
+    """
+    space, membership, blocked = _resolve_own_membership(
+        slug, db, current_user,
+    )
+    if membership is None:
+        return DeparturePreview(can_leave=False, blocked_reason=blocked)
+
+    consequences = membership_removal.summarise_departure(
+        db,
+        user_id=current_user.id,
+        space_id=space.id,
+        now=datetime.utcnow(),
+    )
+    return DeparturePreview(
+        can_leave=blocked is None,
+        blocked_reason=blocked,
+        live_payment_plans=consequences.live_payment_plans,
+        active_passes=consequences.active_passes,
+        unused_credits=consequences.unused_credits,
+        future_bookings=consequences.future_bookings,
+        purchased_future_bookings=consequences.purchased_future_bookings,
+        purchased_pathways=consequences.purchased_pathways,
+        membership_gated_paid_pathways=(
+            consequences.membership_gated_paid_pathways
+        ),
+        offerings_retained=consequences.offerings_retained,
+    )
+
+
+@router.delete(
+    "/{slug}/my-membership",
+    response_model=LeaveCollectiveResponse,
+)
+def leave_collective(
+    slug: str,
+    db: Session = Depends(get_db),
+    # Verified account required, matching every other member-initiated
+    # state change (SEC-009).
+    current_user: User = Depends(get_verified_current_user),
+) -> LeaveCollectiveResponse:
+    """End the caller's own membership of this Collective.
+
+    Takes nothing but the Collective. Ends one membership, in one
+    Collective, for the person making the request.
+
+    What it does **not** do, and why
+    -------------------------------
+
+    It makes no payment change of any kind — no Stripe call, no refund,
+    no schedule alteration, no cancelled booking, no cancelled pass. A
+    member walking out is not consent to forfeit what they bought, and
+    the reverse — taking access away while a card keeps being charged —
+    is the one outcome nobody would choose. So where a live payment plan
+    exists this refuses with 409 rather than pick either side of that
+    conflict; the member is sent to the creator, who has the plan-cancel
+    operation that talks to Stripe properly.
+
+    Offerings in Your Collection are untouched here and by design: their
+    entitlement row, and nothing else, authorises a download.
+    """
+    space, membership, blocked = _resolve_own_membership(
+        slug, db, current_user,
+    )
+
+    if blocked == "not_a_member" or membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not a member of this collective.",
+        )
+    if blocked == "caretaker_role":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "You manage this collective, so you cannot leave it as a "
+                "member. Transfer or close it from Creator Studio instead."
+            ),
+        )
+    if blocked == "auto_managed_collective":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Membership of this collective is managed automatically "
+                "and cannot be left here."
+            ),
+        )
+    if blocked == "live_payment_plan":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "You have a payment plan in progress for this collective. "
+                "Please contact the collective's creator to settle or "
+                "cancel it before leaving, so you are not charged for "
+                "access you no longer have."
+            ),
+        )
+    if blocked is not None:  # pragma: no cover — defensive
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Cannot leave.",
+        )
+
+    now = datetime.utcnow()
+    retained = membership_removal.summarise_departure(
+        db, user_id=current_user.id, space_id=space.id, now=now,
+    ).offerings_retained
+
+    membership_removal.end_membership(
+        db,
+        membership=membership,
+        space=space,
+        actor_user_id=current_user.id,
+        now=now,
+        # Recorded as the member's own decision, which is what makes
+        # rejoining through the ordinary Join flow safe. A voluntary
+        # departure carries no reason and can never carry a block —
+        # ``RemovalDecision`` refuses to construct one that does.
+        decision=membership_removal.RemovalDecision(
+            kind=membership_removal.REMOVAL_VOLUNTARY,
+        ),
+        # The member chose to go; they did not choose to lose what they
+        # paid for. See the table in ``services.membership_removal``.
+        revoke_purchased_access=False,
+        cancel_passes=False,
+        cancel_future_bookings=False,
+        note="Revoked when the member left the collective",
+    )
+    db.commit()
+
+    return LeaveCollectiveResponse(
+        left=True,
+        space_name=space.name,
+        offerings_retained=retained,
+    )
+
+
 @router.post("/{slug}/join", status_code=201)
 def join_space(
     slug: str,
@@ -1178,8 +1441,54 @@ def join_space(
         .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == current_user.id)
         .first()
     )
-    if existing:
-        return {"joined": True, "already_member": True}
+    if existing is not None:
+        existing_status = (
+            existing.status.value
+            if hasattr(existing.status, "value") else str(existing.status)
+        )
+        if existing_status == SpaceMembershipStatus.active.value:
+            return {"joined": True, "already_member": True}
+
+        # Rejoining. This used to be the same branch as "already a
+        # member": the query had no status filter, so a ``removed`` row
+        # produced ``already_member: true`` — a success for a join that
+        # happened to nobody. The person stayed removed and was told
+        # they were in.
+        #
+        # Who may come back is ``membership_grant.may_rejoin``, shared
+        # with the purchase path so a refusal at one door is not a way
+        # in through the other. It requires a recorded *voluntary*
+        # departure, so a creator's removal, an admin's revocation and
+        # a historical removal of unknown provenance all stay refused.
+        if (
+            existing_status == SpaceMembershipStatus.removed.value
+            and membership_grant.may_rejoin(existing)
+        ):
+            # Allowance is re-checked, because the Collective may have
+            # filled up while they were away — rejoining is subject to
+            # the same requirements as joining, which is what was
+            # promised.
+            guard_member_allowance(space, db)
+            membership_grant.reactivate(existing, now=datetime.utcnow())
+            db.commit()
+            # No second welcome: the Collective's welcome is a
+            # first-arrival moment, and ``_emit_collective_welcome``
+            # would dedupe it anyway.
+            return {"joined": True, "already_member": False, "rejoined": True}
+
+        # Removed and not by their own choice — or paused. Refused, and
+        # deliberately without saying which: "ask the creative" is the
+        # same next step either way, and spelling out that a specific
+        # person was removed by a creator discloses a moderation
+        # decision through a join button.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Your membership of this collective is not active. Please "
+                "contact the collective's creator if you would like to "
+                "rejoin."
+            ),
+        )
 
     # Plan enforcement: the owning creator's member allowance. Checked
     # here, after the already-a-member return above, so an existing
@@ -1337,6 +1646,39 @@ def accept_invite(
         .first()
     )
     _welcome = None
+    if existing is not None:
+        # A third membership door, and it had the same bug ``join_space``
+        # did: the lookup above has no status filter, so a ``removed``
+        # row made this skip the INSERT, delete the invitation and
+        # return ``accepted: true`` — consuming the invite and joining
+        # nobody.
+        #
+        # Same rule as the other two doors, read from the same place, so
+        # an invitation cannot be a way around a refusal at Join or at
+        # checkout. An invitation is not authority to overturn a
+        # creator's block: the creator lifts the block, and then the
+        # invitation works.
+        existing_status = (
+            existing.status.value
+            if hasattr(existing.status, "value") else str(existing.status)
+        )
+        if existing_status == SpaceMembershipStatus.removed.value:
+            if not membership_grant.may_rejoin(existing):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Your membership of this collective is not active. "
+                        "Please contact the collective's creator."
+                    ),
+                )
+            role_value = (
+                invite.role.value if hasattr(invite.role, "value")
+                else str(invite.role)
+            )
+            if role_value == SpaceRole.learner.value:
+                guard_member_allowance(space, db)
+            membership_grant.reactivate(existing, now=datetime.utcnow())
+            existing.role = role_value
     if not existing:
         role_value = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
         # An invitation does not exempt the Collective from its plan's
@@ -2369,9 +2711,6 @@ def get_event(
 ) -> dict:
     """Return a single published event by ID within a space, with booking state."""
     space = _get_space_or_404(slug, db)
-    # A child of the Gatherings area — never more reachable than the
-    # list it belongs to, or the list becomes a formality.
-    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     event = (
         db.query(Event)
         .filter(
@@ -2383,6 +2722,31 @@ def get_event(
     )
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    # Normally a child of the Gatherings area — never more reachable
+    # than the list it belongs to, or the list becomes a formality.
+    #
+    # The one exception: somebody holding a paid, confirmed booking for
+    # THIS Gathering. A member who leaves keeps the reservation they
+    # bought, and before this the area gate made that reservation
+    # unreachable — intact in the database and invisible to its owner.
+    #
+    # Scoped to the reservation, not to the Collective. The resolver is
+    # untouched, so the Gatherings list, the Pathways, the Channels and
+    # the member directory all still refuse them; this opens one
+    # Gathering to one person who paid for it. See
+    # ``spaces.retained_reservations``.
+    #
+    # Loaded before the gate because the exception needs the event row
+    # to ask the question. A non-existent Gathering still 404s first, so
+    # the reordering tells an unauthorised caller nothing new.
+    _paid_reservation = retained_reservations.find_purchased_booking(
+        db, user_id=current_user.id if current_user else None, event=event,
+    )
+    if _paid_reservation is None:
+        area_access.require_area(
+            db, space, current_user, area_policies.AREA_GATHERINGS,
+        )
 
     # Non-members can only see public events. The membership row is
     # kept alongside the boolean so the caretaker check further down
@@ -2404,7 +2768,15 @@ def get_event(
     # the price + purchase panel. Members-only events (any other access
     # type) still require `is_public=True` to be visible externally.
     _paid_event = getattr(event, 'booking_access_type', None) == 'paid_separately'
-    if not is_member and not event.is_public and not _paid_event:
+    if (
+        not is_member
+        and not event.is_public
+        and not _paid_event
+        # A pass-funded reservation on a members-only Gathering: bought,
+        # confirmed, and the holder has since left. Without this the
+        # area exception above would be undone three lines later.
+        and _paid_reservation is None
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
 
     now = datetime.utcnow()
@@ -2511,6 +2883,15 @@ def get_event(
         and (event.booking_closes_at is None or event.booking_closes_at > now)
     )
     can_book = booking_open and my_booking_status != "confirmed" and (spots_remaining is None or spots_remaining > 0)
+    # A former member reading this page through the paid-reservation
+    # exception may not book. ``book_event`` would refuse them anyway —
+    # it keeps its own area gate and membership checks, and the
+    # exception is deliberately not a caller — so without this the
+    # payload would advertise a button that fails. Which is also the
+    # honest answer after they cancel: coming back needs rejoining,
+    # not a second pass through this page.
+    if _paid_reservation is not None and not is_member:
+        can_book = False
     can_cancel_booking = bool(not is_past and not is_cancelled and my_booking_status == "confirmed")
 
     # Sensitive detail visibility — confirmed attendees + caretakers
@@ -2847,7 +3228,13 @@ def download_ics(
             )
             .first()
         )
-    if not is_member and not event.is_public:
+    # Same paid-reservation exception as ``get_event``: the calendar
+    # entry is part of "what you need to turn up to the thing you
+    # bought". Holder-scoped and event-scoped, like the other two.
+    _holds_paid_reservation = retained_reservations.find_purchased_booking(
+        db, user_id=current_user.id if current_user else None, event=event,
+    ) is not None
+    if not is_member and not event.is_public and not _holds_paid_reservation:
         raise HTTPException(status_code=404, detail="Event not found.")
     if getattr(event, 'status', 'active') == 'cancelled':
         raise HTTPException(status_code=410, detail="This event has been cancelled.")

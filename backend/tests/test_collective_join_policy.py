@@ -266,12 +266,20 @@ class TestPurchaseMembership:
     ):
         """They chose to be here once, or paid to be; they have paid
         again. Leaving a buyer outside the Collective they just bought
-        into is the failure this fixes."""
+        into is the failure this fixes.
+
+        ``removal_kind='voluntary'`` is now part of the scenario rather
+        than a detail of the fixture: migration 166 made "did they
+        choose to end it?" a second, independent question from "did they
+        choose to begin it?". This test is about somebody who left and
+        came back, so the departure is stamped as theirs.
+        """
         space = make_space(is_public=True)
         buyer = make_user(role="user")
         db.add(SpaceMembership(
             id=str(uuid.uuid4()), user_id=buyer.id, space_id=space.id,
             role="learner", status="removed", source=source,
+            removal_kind="voluntary",
         ))
         db.flush()
         out = ensure_membership_for_purchase(
@@ -281,6 +289,68 @@ class TestPurchaseMembership:
         row = membership(db, space, buyer)
         assert row.status == SpaceMembershipStatus.active
         assert row.source == source, "provenance of the original join is kept"
+        assert row.removal_kind is None, "no departure left to describe"
+
+    @pytest.mark.parametrize("removal_kind,blocked,note", [
+        # An admin revocation — a disputed or fraudulent purchase.
+        ("admin", False, None),
+        # A historical removal: provenance was never recorded, so it is
+        # refused because we do not know what it was.
+        (None, False, None),
+        # A creator removal WITH an explicit block. An ordinary creator
+        # removal is readmittable now — see
+        # ``test_an_ordinary_creator_removal_is_restored`` — so what
+        # refuses here is the ban, not the fact a creator acted.
+        ("creator", True, "Abuse."),
+    ])
+    def test_a_self_service_membership_removed_by_somebody_else_is_not(
+        self, db, make_space, make_user, removal_kind, blocked, note,
+    ):
+        """The same sources, the other half of the rule.
+
+        ``source`` says they chose to arrive, so the old condition
+        passed them — and that was the gap: a card being charged
+        overturned a creator's moderation.
+        """
+        space = make_space(is_public=True)
+        buyer = make_user(role="user")
+        db.add(SpaceMembership(
+            id=str(uuid.uuid4()), user_id=buyer.id, space_id=space.id,
+            role="learner", status="removed", source="purchase",
+            removal_kind=removal_kind,
+            rejoin_blocked=blocked,
+            removal_note=note,
+        ))
+        db.flush()
+        out = ensure_membership_for_purchase(
+            db, user_id=buyer.id, space_id=space.id, now=datetime.utcnow(),
+        )
+        assert not out.reactivated
+        assert membership(db, space, buyer).status == (
+            SpaceMembershipStatus.removed
+        )
+
+    def test_an_ordinary_creator_removal_is_restored(
+        self, db, make_space, make_user,
+    ):
+        """Creator removal is not automatically a ban (migration 166).
+        Most are administrative, so buying back in works."""
+        space = make_space(is_public=True)
+        buyer = make_user(role="user")
+        db.add(SpaceMembership(
+            id=str(uuid.uuid4()), user_id=buyer.id, space_id=space.id,
+            role="learner", status="removed", source="purchase",
+            removal_kind="creator", removal_reason="no_longer_required",
+            rejoin_blocked=False,
+        ))
+        db.flush()
+        out = ensure_membership_for_purchase(
+            db, user_id=buyer.id, space_id=space.id, now=datetime.utcnow(),
+        )
+        assert out.reactivated
+        assert membership(db, space, buyer).status == (
+            SpaceMembershipStatus.active
+        )
 
     @pytest.mark.parametrize("source", [
         "auto_role", "creator_owner", "invited", "manual", "manual_grant",

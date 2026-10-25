@@ -723,6 +723,64 @@ class SpaceAccessStatus(BaseModel):
     has_pending_invite: bool           # invite exists for caller's email
 
 
+class RetainedReservationOut(BaseModel):
+    """An upcoming Gathering a former member still holds a paid place at.
+
+    Deliberately thin: enough to recognise the Gathering and follow a
+    link to it, and nothing about the Collective beyond its name and
+    slug. The Gathering page itself applies the attendee gate that
+    decides whether the join link and venue address are shown.
+    """
+
+    event_id: str
+    event_title: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+    space_slug: str
+    space_name: str
+    booking_id: str
+
+
+class DeparturePreview(BaseModel):
+    """What leaving a Collective would mean for the signed-in member.
+
+    Exists so the confirmation dialog states consequences rather than
+    guessing at them. Every field is read-only and scoped to one
+    Collective; nothing here changes anything.
+    """
+
+    #: False when a live payment plan blocks departure. The frontend
+    #: must not offer the action when this is False.
+    can_leave: bool
+    #: Machine-readable refusal, or None. Today: ``live_payment_plan``,
+    #: ``caretaker_role``, ``auto_managed_collective``, ``not_a_member``.
+    blocked_reason: str | None = None
+
+    live_payment_plans: int = 0
+    active_passes: int = 0
+    unused_credits: int = 0
+    future_bookings: int = 0
+    #: Of ``future_bookings``, the ones the member paid for. These stay
+    #: reachable after departure; the remainder came with membership.
+    purchased_future_bookings: int = 0
+    purchased_pathways: int = 0
+    #: Paid Pathway access that does NOT survive leaving, because
+    #: ``included_with_offer`` is gated on active membership.
+    membership_gated_paid_pathways: int = 0
+    #: Offerings kept in Your Collection regardless.
+    offerings_retained: int = 0
+
+
+class LeaveCollectiveResponse(BaseModel):
+    """Result of a member ending their own membership."""
+
+    left: bool
+    space_name: str
+    #: Offerings still available in Your Collection, so the success
+    #: message can be specific instead of reassuring in the abstract.
+    offerings_retained: int = 0
+
+
 class AccessRequestOut(BaseModel):
     id: str
     space_id: str
