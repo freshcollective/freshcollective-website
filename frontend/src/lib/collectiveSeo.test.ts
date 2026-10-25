@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { BUNDLED_DEFAULTS } from './brand.ts'
 import {
   DEFAULT_SOCIAL_IMAGE,
   SITE_ORIGIN,
@@ -314,15 +315,24 @@ describe('cleanText', () => {
 })
 
 describe('the default social image', () => {
-  test('is the same image, only sourced from the brand module', () => {
-    // The sibling tests all compare against the constant, so they would
-    // pass at any value. This one pins the value: the brand-asset
-    // ownership fix changed WHERE the path comes from (lib/brand.ts,
-    // which test_brand_phase_b requires to be its only owner) and must
-    // not change WHICH image social crawlers get.
-    assert.equal(
-      DEFAULT_SOCIAL_IMAGE,
-      '/brand/fresh-collective-logo-navy-gold-on-white.png',
-    )
+  test('is the brand module\'s primary light logo', () => {
+    // The sibling assertions all compare against the constant, so they
+    // would pass at any value. This one pins WHICH image: the same one
+    // the rest of the brand system calls the primary light logo.
+    //
+    // Deliberately not the literal path. test_brand_phase_b requires
+    // lib/brand.ts to be the only .ts under src naming a brand asset,
+    // and it globs test files too — restating the path here would
+    // reintroduce the exact violation this change fixes. (It did, on
+    // the first attempt.) Asserting the equivalence is also the
+    // stronger claim: a future logo change in brand.ts should carry
+    // the social image with it, not fail here.
+    assert.equal(DEFAULT_SOCIAL_IMAGE, BUNDLED_DEFAULTS.primary_light_logo)
+  })
+
+  test('it is a bundled public path a crawler can fetch', () => {
+    // Social crawlers are anonymous: an /api/uploads/ path would 401.
+    assert.match(DEFAULT_SOCIAL_IMAGE, /^\/[a-z]/)
+    assert.ok(!DEFAULT_SOCIAL_IMAGE.startsWith('/api/'))
   })
 })

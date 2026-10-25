@@ -47,11 +47,16 @@ export const SITE_ORIGIN = 'https://freshcollective.au'
  * ``test_brand_phase_b`` requires that module to be the only place in
  * the frontend naming a brand asset path — one logo change should not
  * be a multi-file change — and spelling the path again here broke it.
- * The ``??`` is for the Record's nullable value type; this role always
- * has a default.
+ * ``BUNDLED_DEFAULTS`` is typed ``string | null`` across all roles, so
+ * this reads through a narrowing assertion rather than a ``??``
+ * fallback. There is no honest fallback to name: brand.ts is explicit
+ * that a caller may never invent a substitute asset, and the earlier
+ * ``?? '/brand/fallback.png'`` named a file that does not exist. The
+ * value is non-null in the table and a contract test
+ * (``test_every_frontend_default_exists_on_disk``) keeps it that way.
  */
 export const DEFAULT_SOCIAL_IMAGE =
-  BUNDLED_DEFAULTS.primary_light_logo ?? '/brand/fallback.png'
+  BUNDLED_DEFAULTS.primary_light_logo as string
 
 /** Meta descriptions are truncated to this. */
 const MAX_DESCRIPTION = 155
