@@ -2,18 +2,37 @@
 
 import { useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import {
+  modeIsTappable,
+  modeShowsBar,
+  nextSelection,
+  pollRowMode,
+  showsClearVote,
+  type PollRowMode,
+} from '@/lib/pollInteraction'
 
 /**
  * PollView — the poll surface rendered inside a PostCard when the post
- * has a poll attached. Two visual modes:
+ * has a poll attached.
  *
- *   pre-vote  · options listed as tap-targets. On tap, we POST the vote
- *              and swap to results mode.
- *   results   · each option a labelled progress bar showing the vote
- *              share (only when the poll config or state permits).
+ * Two things are decided independently, and conflating them is what
+ * made polls unvotable:
  *
- * All result-visibility decisions come from the server (`show_results`)
- * — the client just renders what it's told.
+ *   **Are results visible?** Entirely the server's call
+ *   (`show_results`), which is true when the poll shows results early,
+ *   OR the member has voted, OR the poll has closed.
+ *
+ *   **Can the member still act?** Only false once the poll has closed
+ *   (or while a request is in flight).
+ *
+ * This used to render a static bar whenever results were visible, which
+ * meant a poll set to "show results before voting" had no tap-target
+ * from the moment it was created, and every poll became read-only the
+ * instant somebody voted — so a vote could never be changed, despite
+ * the API supporting it and the button below saying "Update vote".
+ *
+ * Both rules now live in `lib/pollInteraction`, so the component cannot
+ * drift from them.
  */
 
 export interface PollViewData {
@@ -53,8 +72,9 @@ export default function PollView({ spaceSlug, postId, poll: initial, onVote }: P
   )
 
   const closed = poll.is_closed
-  const showResults = poll.show_results
   const totalVotes = poll.options.reduce((sum, o) => sum + o.vote_count, 0)
+  const rowMode = pollRowMode(poll, busy)
+  const clearable = showsClearVote(poll)
 
   async function submit(optionIds: string[]) {
     setBusy(true)
@@ -81,15 +101,19 @@ export default function PollView({ spaceSlug, postId, poll: initial, onVote }: P
     }
   }
 
-  function onSingleChoiceClick(id: string) {
-    if (closed || busy) return
-    submit([id])
-  }
-
-  function toggleMulti(id: string) {
-    setSelectedIds((prev) => prev.includes(id)
-      ? prev.filter((x) => x !== id)
-      : [...prev, id])
+  /**
+   * One handler for both poll kinds, so a tap means the same thing
+   * whether results happen to be on screen or not.
+   *
+   * Single choice submits immediately — there is one decision and no
+   * reason to make the member confirm it. Multiple choice stages the
+   * selection locally; the Cast/Update button below sends it.
+   */
+  function onOptionTap(id: string) {
+    if (!modeIsTappable(rowMode)) return
+    const next = nextSelection(selectedIds, id, poll.allow_multiple)
+    setSelectedIds(next)
+    if (!poll.allow_multiple) submit(next)
   }
 
   return (
@@ -108,36 +132,47 @@ export default function PollView({ spaceSlug, postId, poll: initial, onVote }: P
           <PollRow
             key={o.id}
             option={o}
-            showResults={showResults}
+            mode={rowMode}
             totalVotes={totalVotes}
             selected={selectedIds.includes(o.id)}
-            disabled={closed || busy}
             allowMultiple={poll.allow_multiple}
-            onSingleClick={() => onSingleChoiceClick(o.id)}
-            onToggle={() => toggleMulti(o.id)}
+            onTap={() => onOptionTap(o.id)}
           />
         ))}
       </div>
 
-      {poll.allow_multiple && !closed && (
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => submit(selectedIds)}
-            disabled={busy}
-            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
-            style={{ background: 'var(--fc-accent, #0d9488)' }}
-          >
-            {busy ? 'Saving…' : poll.user_has_voted ? 'Update vote' : 'Cast vote'}
-          </button>
-          {poll.user_has_voted && (
+      {/*
+        The action row. Multiple choice needs a submit button because
+        its selection is staged locally; single choice submits on tap
+        and so needs only the retraction.
+
+        ``Clear vote`` is shared by both kinds through
+        ``showsClearVote`` — single choice had no way to retract at all,
+        though the API has always read an empty selection as "remove my
+        vote". Rendered only while the poll is open, so a closed poll
+        offers nothing to press rather than pressing and being refused.
+      */}
+      {(poll.allow_multiple || clearable) && !closed && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {poll.allow_multiple && (
+            <button
+              type="button"
+              onClick={() => submit(selectedIds)}
+              disabled={busy}
+              className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
+              style={{ background: 'var(--fc-accent, #0d9488)' }}
+            >
+              {busy ? 'Saving…' : poll.user_has_voted ? 'Update vote' : 'Cast vote'}
+            </button>
+          )}
+          {clearable && (
             <button
               type="button"
               onClick={() => submit([])}
               disabled={busy}
-              className="text-[12px] text-slate-500 hover:text-red-500"
+              className="min-h-[32px] px-1 text-[12px] text-slate-500 transition-colors hover:text-red-500 disabled:opacity-50"
             >
-              Clear vote
+              {busy ? 'Saving…' : 'Clear vote'}
             </button>
           )}
         </div>
@@ -145,7 +180,7 @@ export default function PollView({ spaceSlug, postId, poll: initial, onVote }: P
 
       {error && <p className="mt-2 text-[12px] text-red-500">{error}</p>}
 
-      {showResults && (
+      {poll.show_results && (
         <p className="mt-3 text-[11px] text-slate-500">
           {poll.total_voters === 1 ? '1 vote' : `${poll.total_voters} votes`}
           {poll.is_anonymous ? ' · Individual voters are hidden' : ''}
@@ -156,87 +191,103 @@ export default function PollView({ spaceSlug, postId, poll: initial, onVote }: P
 }
 
 function PollRow({
-  option, showResults, totalVotes, selected, disabled, allowMultiple,
-  onSingleClick, onToggle,
+  option, mode, totalVotes, selected, allowMultiple, onTap,
 }: {
   option: PollViewData['options'][number]
-  showResults: boolean
+  mode: PollRowMode
   totalVotes: number
   selected: boolean
-  disabled: boolean
   allowMultiple: boolean
-  onSingleClick: () => void
-  onToggle: () => void
+  onTap: () => void
 }) {
   const pct = totalVotes > 0 ? Math.round((option.vote_count / totalVotes) * 100) : 0
+  const tappable = modeIsTappable(mode)
+  const showBar = modeShowsBar(mode)
 
-  if (showResults) {
-    return (
-      <div
-        className="relative overflow-hidden rounded-lg px-3 py-2"
-        style={{
-          background: 'rgba(0,0,0,0.03)',
-          border: option.voted
-            ? '1px solid var(--fc-accent-line, rgba(56,160,158,0.35))'
-            : '1px solid rgba(12,24,38,0.08)',
-        }}
-      >
-        <div
+  // Selection is drawn from the member's CURRENT selection, not from
+  // what the server last stored — on a multiple-choice poll those differ
+  // between a tap and pressing Update, and the border is what tells the
+  // member their tap registered.
+  const highlighted = selected || (!tappable && option.voted)
+
+  const inner = (
+    <>
+      {showBar && (
+        <span
+          aria-hidden="true"
           className="absolute inset-y-0 left-0"
           style={{
             width: `${pct}%`,
-            background: option.voted
+            background: highlighted
               ? 'var(--fc-accent-soft, rgba(56,160,158,0.18))'
               : 'rgba(0,0,0,0.05)',
             transition: 'width 300ms ease',
           }}
         />
-        <div className="relative flex items-center justify-between gap-3">
-          <span className="text-[13px] text-navy-900">
-            {option.voted && (
-              <span aria-hidden="true" className="mr-1" style={{ color: 'var(--fc-accent, #0f766e)' }}>✓</span>
-            )}
-            {option.label}
-          </span>
-          <span className="text-[12px] font-semibold text-slate-600">
+      )}
+      <span className="relative flex w-full items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-[13px] text-navy-900">
+          {allowMultiple && (
+            <span
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded"
+              style={{
+                border: '1px solid rgba(12,24,38,0.30)',
+                background: selected ? 'var(--fc-accent, #0d9488)' : 'transparent',
+                color: '#FFFFFF',
+                fontSize: '10px',
+              }}
+              aria-hidden="true"
+            >
+              {selected ? '✓' : ''}
+            </span>
+          )}
+          {!allowMultiple && showBar && option.voted && (
+            <span aria-hidden="true" style={{ color: 'var(--fc-accent, #0f766e)' }}>✓</span>
+          )}
+          <span className="truncate">{option.label}</span>
+        </span>
+        {showBar && (
+          <span className="shrink-0 text-[12px] font-semibold text-slate-600">
             {pct}%{option.vote_count > 0 && ` · ${option.vote_count}`}
           </span>
-        </div>
+        )}
+      </span>
+    </>
+  )
+
+  const shell =
+    'relative flex w-full items-center overflow-hidden rounded-lg border px-3 py-2 text-left transition-colors'
+  const style = {
+    borderColor: highlighted
+      ? 'var(--fc-accent, rgba(56,160,158,0.55))'
+      : 'rgba(12,24,38,0.10)',
+    background: showBar
+      ? 'rgba(0,0,0,0.03)'
+      : highlighted
+        ? 'var(--fc-accent-soft, rgba(56,160,158,0.06))'
+        : 'transparent',
+  }
+
+  // A real <button> when it is tappable, so the keyboard, screen
+  // readers and mobile tap targets all behave — and a plain <div> when
+  // the poll is closed, so nothing invites a press that would do
+  // nothing. ``min-h`` keeps the target comfortable on a phone.
+  if (!tappable) {
+    return (
+      <div className={shell} style={style}>
+        {inner}
       </div>
     )
   }
-
-  // Pre-vote — options are tap-targets (single) or checkboxes (multi).
   return (
     <button
       type="button"
-      onClick={allowMultiple ? onToggle : onSingleClick}
-      disabled={disabled}
-      className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] text-navy-900 transition-colors disabled:opacity-50"
-      style={{
-        borderColor: selected
-          ? 'var(--fc-accent, rgba(56,160,158,0.55))'
-          : 'rgba(12,24,38,0.10)',
-        background: selected
-          ? 'var(--fc-accent-soft, rgba(56,160,158,0.06))'
-          : 'transparent',
-      }}
+      onClick={onTap}
+      aria-pressed={allowMultiple ? selected : undefined}
+      className={`${shell} min-h-[40px] disabled:opacity-50`}
+      style={style}
     >
-      {allowMultiple && (
-        <span
-          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded"
-          style={{
-            border: '1px solid rgba(12,24,38,0.30)',
-            background: selected ? 'var(--fc-accent, #0d9488)' : 'transparent',
-            color: '#FFFFFF',
-            fontSize: '10px',
-          }}
-          aria-hidden="true"
-        >
-          {selected ? '✓' : ''}
-        </span>
-      )}
-      <span className="flex-1">{option.label}</span>
+      {inner}
     </button>
   )
 }

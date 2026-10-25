@@ -1010,7 +1010,22 @@ def vote_on_poll(
         raise HTTPException(400, detail="This poll has closed.")
 
     valid_option_ids = {o.id for o in poll.options}
-    chosen = [oid for oid in body.option_ids if oid in valid_option_ids]
+    # De-duplicated as well as filtered. Without this a request that
+    # names the same option twice — a double-tap, or a client that
+    # appends to its selection without checking — inserted two rows and
+    # hit ``uq_poll_votes_option_user``, surfacing as a 500 rather than
+    # a vote. It also made ``[id, id]`` on a single-choice poll fail the
+    # "single choice only" check below, which is a confusing answer to
+    # what is really one choice sent twice.
+    #
+    # Order is preserved rather than using a set, so the stored rows
+    # follow the order the member picked.
+    seen: set[str] = set()
+    chosen: list[str] = []
+    for oid in body.option_ids:
+        if oid in valid_option_ids and oid not in seen:
+            seen.add(oid)
+            chosen.append(oid)
 
     if not poll.allow_multiple and len(chosen) > 1:
         raise HTTPException(400, detail="This poll accepts a single choice only.")
