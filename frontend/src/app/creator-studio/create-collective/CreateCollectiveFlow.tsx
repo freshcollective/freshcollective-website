@@ -41,7 +41,8 @@ function LimitReached() {
       </h2>
       <p className="mb-8 max-w-[400px] text-[15px] leading-relaxed text-slate-500">
         Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
-        Creator Plus is coming soon for creators who need more room to build.
+        Need more room to grow? Explore Ecosystem, our upcoming option for
+        creators building across multiple Collectives.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-3">
         <Link
@@ -50,12 +51,13 @@ function LimitReached() {
         >
           Back to Studio Home
         </Link>
-        <span
-          className="rounded-xl px-6 py-2.5 text-[14px] font-medium"
-          style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E', cursor: 'default' }}
+        <Link
+          href="/ecosystem-interest"
+          className="rounded-xl px-6 py-2.5 text-[14px] font-medium transition-opacity hover:opacity-80"
+          style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
         >
-          Creator Plus coming soon
-        </span>
+          Join the Ecosystem waitlist
+        </Link>
       </div>
     </div>
   )

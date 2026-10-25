@@ -146,11 +146,6 @@ export default async function MemberProfilePage({ params }: Props) {
                   <span className="text-[14px] text-navy-900">{formatDate(joinedSpace)}</span>
                 </div>
               )}
-              <div className="flex items-start gap-4 px-5 py-3">
-                <span className="w-24 shrink-0 text-[12px] font-medium text-black">Pathways</span>
-                {/* TODO: show pathway progress once per-member pathway access data is available */}
-                <span className="text-[14px] text-black">Coming soon.</span>
-              </div>
             </div>
           </div>
 
@@ -171,19 +166,6 @@ export default async function MemberProfilePage({ params }: Props) {
               </div>
             </div>
           )}
-
-          {/* Recent contributions placeholder */}
-          <div className="overflow-hidden rounded-2xl border border-border bg-white">
-            <div className="border-b border-border px-5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
-                Recent contributions
-              </p>
-            </div>
-            <div className="px-5 py-4">
-              {/* TODO: show real contribution history once data is available */}
-              <p className="text-[14px] text-black">Contributions coming soon.</p>
-            </div>
-          </div>
 
         </div>
 
