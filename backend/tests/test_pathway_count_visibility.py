@@ -144,7 +144,13 @@ class TestPublishedPathwaysAreCounted:
         assert _card_count(db, public_space) == 1
 
     @pytest.mark.parametrize(
-        "access_type", ["free", "included", "one_time", "subscription"],
+        "access_type",
+        # The five values production actually holds. ``access_type`` is a
+        # plain String column, not an enum, and ``included_with_offer``
+        # -- the one EMBODY uses -- is named only in the
+        # PaymentOption join table, so it is easy to miss when reading
+        # the access rules alone.
+        ["free", "included", "one_time", "subscription", "included_with_offer"],
     )
     def test_access_does_not_hide_a_published_pathway(
         self, db, public_space, access_type,
@@ -384,7 +390,13 @@ class TestADraftCannotBeFetchedDirectly:
     # -- the other side: nothing published became harder to reach --
 
     @pytest.mark.parametrize(
-        "access_type", ["free", "included", "one_time", "subscription"],
+        "access_type",
+        # The five values production actually holds. ``access_type`` is a
+        # plain String column, not an enum, and ``included_with_offer``
+        # -- the one EMBODY uses -- is named only in the
+        # PaymentOption join table, so it is easy to miss when reading
+        # the access rules alone.
+        ["free", "included", "one_time", "subscription", "included_with_offer"],
     )
     def test_a_published_pathway_is_still_reachable_anonymously(
         self, db, public_space, access_type,
