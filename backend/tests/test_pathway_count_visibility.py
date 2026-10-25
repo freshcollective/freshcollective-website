@@ -56,6 +56,26 @@ def _pathway(db, space, *, status="active", access_type="free", title=None) -> P
     return p
 
 
+def _about_block(db, pathway, content: str):
+    """One About-page block on a Pathway — the sales copy a creator
+    writes before publishing, which is why a draft's must not be
+    public."""
+    from app.models.platform import PathwayAboutBlock, StepBlockType
+
+    b = PathwayAboutBlock(
+        id=_uid("ab"),
+        owner_kind="pathway",
+        owner_id=pathway.id,
+        pathway_id=pathway.id,
+        block_type=StepBlockType.text,
+        position=0,
+        content=content,
+    )
+    db.add(b)
+    db.flush()
+    return b
+
+
 def _member(db, space, user, role=SpaceRole.learner):
     db.add(SpaceMembership(
         id=_uid("sm"), space_id=space.id, user_id=user.id,
@@ -334,6 +354,12 @@ class TestADraftCannotBeFetchedDirectly:
         from app.spaces.routes import get_pathway
         return get_pathway(space.slug, slug, db=db, current_user=user)
 
+    def _about(self, db, space, slug, user=None):
+        from app.spaces.routes import list_pathway_about_blocks
+        return list_pathway_about_blocks(
+            space.slug, slug, db=db, current_user=user,
+        )
+
     def test_anonymous_overview_of_a_draft_is_404(self, db, public_space):
         p = _pathway(db, public_space, status="draft", title="Know Yourself")
         with pytest.raises(HTTPException) as exc:
@@ -427,6 +453,80 @@ class TestADraftCannotBeFetchedDirectly:
         _member(db, public_space, mod, role=SpaceRole.moderator)
         p = _pathway(db, public_space, status="draft")
         assert self._overview(db, public_space, p.slug, mod).slug == p.slug
+
+    def test_the_about_page_of_a_draft_is_404_anonymously(
+        self, db, public_space,
+    ):
+        """The fourth anonymous door, found verifying the first three.
+
+        ``/about-blocks`` takes an optional user and used the same
+        unfiltered lookup, so closing ``/overview`` left the draft's
+        sales copy readable by a stranger. Production returned the
+        heading and body of Know Yourself's About page after the other
+        three endpoints were already answering 404.
+        """
+        p = _pathway(db, public_space, status="draft", title="Know Yourself")
+        _about_block(db, p, "The unpublished pitch")
+        with pytest.raises(HTTPException) as exc:
+            self._about(db, public_space, p.slug)
+        assert exc.value.status_code == 404
+
+    def test_the_draft_about_copy_does_not_leak(self, db, public_space):
+        p = _pathway(db, public_space, status="draft")
+        _about_block(db, p, "Sales copy still being written")
+        with pytest.raises(HTTPException):
+            self._about(db, public_space, p.slug)
+
+    def test_archived_about_blocks_are_hidden_too(self, db, public_space):
+        p = _pathway(db, public_space, status="archived")
+        _about_block(db, p, "Retired")
+        with pytest.raises(HTTPException) as exc:
+            self._about(db, public_space, p.slug)
+        assert exc.value.status_code == 404
+
+    @pytest.mark.parametrize(
+        "access_type",
+        ["free", "included", "one_time", "subscription", "included_with_offer"],
+    )
+    def test_a_published_about_page_is_still_public(
+        self, db, public_space, access_type,
+    ):
+        """The half this endpoint exists for. A paid Pathway's About
+        page IS its sales page and must stay anonymous at every access
+        type — discoverability, not entitlement."""
+        p = _pathway(db, public_space, status="active", access_type=access_type)
+        _about_block(db, p, "Why this Pathway is for you")
+        blocks = self._about(db, public_space, p.slug)
+        assert [b.content for b in blocks] == ["Why this Pathway is for you"]
+
+    def test_coming_soon_about_page_is_public(self, db, public_space):
+        p = _pathway(db, public_space, status="coming_soon")
+        _about_block(db, p, "Opening soon")
+        assert len(self._about(db, public_space, p.slug)) == 1
+
+    def test_the_owner_still_sees_their_draft_about_page(
+        self, db, public_space,
+    ):
+        from app.models.user import User
+        owner = db.query(User).filter(User.id == public_space.creator_id).first()
+        p = _pathway(db, public_space, status="draft")
+        _about_block(db, p, "Draft pitch")
+        assert len(self._about(db, public_space, p.slug, owner)) == 1
+
+    def test_a_moderator_still_sees_a_draft_about_page(
+        self, db, public_space, make_user,
+    ):
+        mod = make_user()
+        _member(db, public_space, mod, role=SpaceRole.moderator)
+        p = _pathway(db, public_space, status="draft")
+        _about_block(db, p, "Draft pitch")
+        assert len(self._about(db, public_space, p.slug, mod)) == 1
+
+    def test_the_about_gate_reads_the_shared_module(self):
+        import inspect
+        from app.spaces import routes
+        src = inspect.getsource(routes.list_pathway_about_blocks)
+        assert "_get_listed_pathway_or_404" in src
 
     def test_the_detail_gate_reads_the_shared_module(self):
         import inspect

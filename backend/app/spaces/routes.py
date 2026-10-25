@@ -3415,10 +3415,21 @@ def list_pathway_about_blocks(
 ) -> list[PathwayAboutBlock]:
     """Return about-page blocks for a pathway.
 
-    Public — locked and anonymous visitors can view the About page as a preview/sales page.
+    Public — locked and anonymous visitors can view the About page as a
+    preview/sales page. That is the point of this endpoint and it is
+    unchanged: a published Pathway sells itself to strangers, and
+    ``has_access`` elsewhere decides whether they may open its steps.
+
+    **Listed Pathways only.** A draft has nothing to sell yet, and its
+    About blocks are the sales copy a creator is still writing. This
+    endpoint took the same unfiltered ``_get_pathway_or_404`` the two
+    detail endpoints did, so it was the fourth anonymous way to read an
+    unpublished Pathway — verified against production, which returned
+    the draft's heading and body to an unauthenticated caller after the
+    other three were closed.
     """
     space = _get_space_visible_to(slug, db, current_user)
-    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    pathway = _get_listed_pathway_or_404(space, pathway_slug, db, current_user)
     return (
         db.query(PathwayAboutBlock)
         .options(
