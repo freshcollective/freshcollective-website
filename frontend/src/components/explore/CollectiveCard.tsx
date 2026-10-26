@@ -123,7 +123,13 @@ export default function CollectiveCard({
               membership one, which is what it is. */}
           {space.creator_only && (
             <span
-              className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+              // Same pill, same place. ``whitespace-nowrap`` is the only
+              // addition: "For Creators Only" is three words, and the
+              // container is a wrapping flex row, so without it the
+              // badge could break mid-phrase on a narrow card. The
+              // row still wraps as a whole, so the responsive layout
+              // is unchanged.
+              className="whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
               style={{ background: 'rgba(12,24,38,0.82)', color: '#FFFFFF' }}
               title="World Builders is exclusively for Fresh Collective Creators."
             >
@@ -195,19 +201,38 @@ export default function CollectiveCard({
             {ctaLabel}
           </Link>
         </div>
-        {/* Pricing pill */}
-        <div className="mt-2">
-          <span
-            className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium"
-            style={{
-              borderColor: 'rgba(0,0,0,0.08)',
-              background: 'rgba(0,0,0,0.03)',
-              color: '#475569',
-            }}
-          >
-            {formatCollectivePricingSummary(space)}
-          </span>
-        </div>
+        {/*
+          Pricing pill — omitted entirely for a creator-only Collective.
+
+          ``formatCollectivePricingSummary`` reported "Free to join ·
+          all included" for World Builders, which is read off
+          ``pricing_type`` and ``join_policy`` and is true of neither
+          thing that matters here: there is no public joining at all
+          (``join_space`` and ``request_access`` both answer 403), and
+          membership is granted from creator eligibility rather than
+          chosen. A visitor was being told they could join something
+          they cannot.
+
+          Removed rather than reworded. The badge says "For Creators
+          Only" and the description says what it offers; a second pill
+          restating it in pricing language would be the same mistake in
+          softer words. Ordinary cards are untouched — the summary is
+          accurate for them and they keep it.
+        */}
+        {!space.creator_only && (
+          <div className="mt-2">
+            <span
+              className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium"
+              style={{
+                borderColor: 'rgba(0,0,0,0.08)',
+                background: 'rgba(0,0,0,0.03)',
+                color: '#475569',
+              }}
+            >
+              {formatCollectivePricingSummary(space)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

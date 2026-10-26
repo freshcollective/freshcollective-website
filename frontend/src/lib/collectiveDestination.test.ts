@@ -237,29 +237,52 @@ describe('a creator-only Collective card', () => {
     isJoined: false, isLoggedIn: false, isCreator: false, ...over,
   })
 
-  test('a logged-out visitor is invited to become a creator', () => {
+  // The journey these three pin:
+  //
+  //   Explore Collectives → World Builders About → For Creators
+  //
+  // The card used to jump straight to ``/for-creators``, correctly at
+  // the time, because the About page answered 401 to an anonymous
+  // caller and would have been a dead end. It is public and indexable
+  // now, and it is the better first stop — it explains what World
+  // Builders is before anybody is asked to become a creator, and it
+  // carries ``Explore Becoming a Creator →`` itself.
+
+  test('a logged-out visitor is sent to the public About page', () => {
     const a = collectiveCardAction(wb, viewer())
-    assert.equal(a.label, BECOME_A_CREATOR_LABEL)
-    assert.equal(a.label, 'Explore Becoming a Creator →')
-    assert.equal(a.href, '/for-creators')
+    assert.equal(a.label, 'Explore →')
+    assert.equal(a.href, '/spaces/world-builders/about')
   })
 
-  test('a signed-in non-creator gets the same invitation', () => {
-    // Signing up is not becoming a creator. The backend is explicit
-    // that the role, not an account, is what grants membership.
+  test('a signed-in non-creator is sent to the same page', () => {
+    // Signing up is not becoming a creator — the backend is explicit
+    // that the role, not an account, is what grants membership — so
+    // these two viewers get the same answer.
     const a = collectiveCardAction(wb, viewer({ isLoggedIn: true }))
-    assert.equal(a.label, BECOME_A_CREATOR_LABEL)
-    assert.equal(a.href, BECOME_A_CREATOR_HREF)
+    assert.equal(a.label, 'Explore →')
+    assert.equal(a.href, '/spaces/world-builders/about')
   })
 
-  test('neither is ever sent to the Collective itself', () => {
-    // ``get_space`` answers 401 to an anonymous caller on a non-public
-    // Collective, so /spaces/world-builders/about is a dead end rather
-    // than an introduction. That is why there is no public landing
-    // page to build.
+  test('the card no longer shortcuts past the About page', () => {
     for (const v of [viewer(), viewer({ isLoggedIn: true })]) {
-      assert.ok(!collectiveCardAction(wb, v).href.startsWith('/spaces/'))
+      assert.notEqual(collectiveCardAction(wb, v).href, BECOME_A_CREATOR_HREF)
     }
+  })
+
+  test('neither is sent into the Collective itself', () => {
+    // The About page is public; everything behind it is not. The card
+    // must never point at the member entrance for somebody who cannot
+    // open it.
+    for (const v of [viewer(), viewer({ isLoggedIn: true })]) {
+      assert.notEqual(collectiveCardAction(wb, v).href, '/spaces/world-builders')
+    }
+  })
+
+  test('the become-a-creator invitation still exists, on the About page', () => {
+    // Moved rather than removed: the wording is unchanged and lives
+    // where the visitor now meets it.
+    assert.equal(BECOME_A_CREATOR_LABEL, 'Explore Becoming a Creator →')
+    assert.equal(BECOME_A_CREATOR_HREF, '/for-creators')
   })
 
   test('a member enters the Collective', () => {
@@ -313,8 +336,15 @@ describe('a creator-only Collective card', () => {
     assert.ok(!a.href.startsWith('/spaces/'))
   })
 
-  test('the badge copy is fixed', () => {
-    assert.equal(CREATOR_ONLY_BADGE, 'For Creators')
+  test('the badge says For Creators Only', () => {
+    assert.equal(CREATOR_ONLY_BADGE, 'For Creators Only')
+  })
+
+  test('the old shorter wording is gone', () => {
+    // "For Creators" alone read as a category rather than a
+    // restriction. The badge has to say the restriction.
+    assert.notEqual(CREATOR_ONLY_BADGE, 'For Creators')
+    assert.match(CREATOR_ONLY_BADGE, /Only$/)
   })
 })
 

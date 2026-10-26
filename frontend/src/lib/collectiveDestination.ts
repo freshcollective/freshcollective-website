@@ -99,7 +99,10 @@ export interface CollectiveCardAction {
 }
 
 /** Copy, in one place so the card and its tests cannot drift. */
-export const CREATOR_ONLY_BADGE = 'For Creators'
+export const CREATOR_ONLY_BADGE = 'For Creators Only'
+/** The About page's own call to action, not the card's. Kept here with
+ *  the rest of the creator-only vocabulary so the wording has one home;
+ *  ``publicCollectiveAbout`` re-exports what the page renders. */
 export const BECOME_A_CREATOR_LABEL = 'Explore Becoming a Creator →'
 export const BECOME_A_CREATOR_HREF = '/for-creators'
 export const CREATOR_STATUS_LABEL = 'Check your creator status →'
@@ -134,12 +137,24 @@ export function collectiveCardAction(
     if (viewer.isCreator) {
       return { label: CREATOR_STATUS_LABEL, href: CREATOR_STATUS_HREF }
     }
-    // Everybody else, signed in or not: the public case for becoming a
-    // creator. Deliberately NOT the Collective's own pages — a
-    // non-member cannot open them, and ``get_space`` answers 401 to an
-    // anonymous caller, so ``/spaces/{slug}/about`` would be a dead
-    // end rather than an introduction.
-    return { label: BECOME_A_CREATOR_LABEL, href: BECOME_A_CREATOR_HREF }
+    // Everybody else, signed in or not: the Collective's own public
+    // About page, like any other non-member card.
+    //
+    // This used to go straight to ``/for-creators``, correctly at the
+    // time — the About page answered 401 to an anonymous caller, so it
+    // would have been a dead end. It is public and indexable now, and
+    // it is the better first stop: it explains what World Builders is
+    // before asking anybody to become a creator, and it carries
+    // ``Explore Becoming a Creator →`` itself. So the journey is
+    //
+    //   Explore Collectives → World Builders About → For Creators
+    //
+    // and this card is the first hop rather than a shortcut past the
+    // middle one. ``collectiveCardHref`` already resolves a non-member
+    // to ``/spaces/{slug}/about``, so there is nothing special to
+    // compute — only the label differs from an ordinary card, and it
+    // does not: "Explore →" is exactly right here.
+    return { label: 'Explore →', href }
   }
 
   return { label: viewer.isJoined ? 'Continue →' : 'Explore →', href }
