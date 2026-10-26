@@ -230,3 +230,34 @@ describe('the Collective layout falls back too', () => {
     assert.match(layout(), /publicAboutAsSpace/)
   })
 })
+
+
+describe('the public fallback does not open the member routes', () => {
+  // The regression this release shipped and then fixed: giving the
+  // shared layout a public fallback removed the only ``notFound()``
+  // those four pages had, and they began serving 200 with an empty
+  // shell — "No pathways yet" for a Collective that has pathways.
+  //
+  // No protected data ever leaked (the APIs refused, which is why the
+  // lists were empty), but a visitor was handed pages they should not
+  // have, and told the place was empty rather than closed.
+  const MEMBER_ROUTES = ['pathways', 'events', 'community', 'members']
+
+  for (const route of MEMBER_ROUTES) {
+    it(`${route} refuses a Collective it cannot resolve`, () => {
+      const src = read(`app/spaces/[slug]/${route}/page.tsx`)
+      assert.match(src, /if \(!space\) notFound\(\)/,
+        `${route} must 404 rather than render an empty shell`)
+      assert.match(src, /from 'next\/navigation'/)
+    })
+  }
+
+  it('requireArea alone would not have stopped it', () => {
+    // ``canReachArea`` reads a missing ``area_access`` as "allow",
+    // which is deliberate for older payloads — and means a NULL Space
+    // passes straight through. Pinned so nobody removes the explicit
+    // guard on the grounds that requireArea covers it.
+    const src = read('lib/collectiveAreas.ts')
+    assert.match(src, /if \(areas === undefined\) return true/)
+  })
+})

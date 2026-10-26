@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation'
 import { getCommunityFeed, getMemberChannels, getSpace, getSpaceMembers, getMe, type ChannelSummaryLite, getUnseenCounts } from '@/lib/serverApi'
 import { requireArea } from '@/lib/areaAccess'
 import CommunityFeed from '@/components/community/CommunityFeed'
@@ -22,6 +23,29 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
     getMe() as Promise<{ id: string; role: string } | null>,
     getMemberChannels(slug),
   ])
+
+  // A Collective this viewer cannot resolve must not render a page.
+  //
+  // These member routes never guarded this themselves: the shared
+  // ``[slug]/layout.tsx`` called ``notFound()`` on a null Space, so by
+  // the time a page ran it always had one. Giving that layout a public
+  // fallback — so a discoverable-but-private Collective can show its
+  // About page — removed the only guard they had, and they began
+  // rendering empty-state shells to visitors: "No pathways yet" for a
+  // Collective that has pathways, "No members yet" for one with
+  // members. No protected data leaked (the APIs refused, which is why
+  // the lists were empty) but it misrepresented the Collective and
+  // handed a visitor pages they should not have.
+  //
+  // ``requireArea`` does not cover this: ``canReachArea`` reads a
+  // missing ``area_access`` as "allow", which is deliberate for older
+  // payloads but means a NULL Space passes straight through.
+  //
+  // Only reachable for a Collective in
+  // ``PUBLICLY_DISCOVERABLE_MANAGED_SLUGS``: for every other
+  // non-public Collective the layout's own fallback resolves to null
+  // and 404s first, exactly as before.
+  if (!space) notFound()
 
   // Area policy decides whether this doorway opens. The API
   // refuses independently; this stops the page shell rendering at
