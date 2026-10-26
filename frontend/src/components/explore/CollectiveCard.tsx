@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
-import { collectiveCardHref } from '@/lib/collectiveDestination'
+import {
+  CREATOR_ONLY_BADGE,
+  collectiveCardAction,
+} from '@/lib/collectiveDestination'
 import { formatCollectivePricingSummary } from '@/lib/pricing'
 import type { SpaceWithMeta } from './spaceMeta'
 
@@ -24,12 +27,17 @@ import type { SpaceWithMeta } from './spaceMeta'
 export default function CollectiveCard({
   space,
   isJoined,
+  isLoggedIn = false,
+  isCreator = false,
 }: {
   space: SpaceWithMeta
   isJoined: boolean
-  /** Retained for API compatibility with the Explore surface — the
-   *  card itself does not branch on it today. */
-  isLoggedIn: boolean
+  /** Whether there is a session at all. */
+  isLoggedIn?: boolean
+  /** Platform ``creator`` role. Only creator-only Collectives read it,
+   *  and only to tell a creator whose access has lapsed apart from
+   *  somebody who has never been one. */
+  isCreator?: boolean
 }) {
   const cs = getCollectiveCoverStyle(space.slug)
   // Atlas v1.2 — prefer the collective's assigned Location artwork.
@@ -40,7 +48,12 @@ export default function CollectiveCard({
       ?? space.cover_image_url,
   )
   const hasImage = Boolean(resolvedImageUrl)
-  const href = collectiveCardHref(space, isJoined)
+  // Label and destination together, from one rule — see
+  // ``collectiveCardAction``. A creator-only Collective sends a
+  // non-member to ``/for-creators`` rather than to its own pages,
+  // which a non-member cannot open.
+  const action = collectiveCardAction(space, { isJoined, isLoggedIn, isCreator })
+  const href = action.href
 
   const titleColor = hasImage ? '#FFFFFF' : (cs.isDark ? '#FFFFFF' : '#152236')
   const taglineColor = hasImage
@@ -49,7 +62,7 @@ export default function CollectiveCard({
       ? '#FFFFFF'
       : '#000000'
 
-  const ctaLabel = isJoined ? 'Continue →' : 'Explore →'
+  const ctaLabel = action.label
   const primaryTheme = space.themes[0] ?? null
 
   return (
@@ -101,6 +114,20 @@ export default function CollectiveCard({
               style={{ background: 'rgba(56,160,158,0.85)', color: '#FFFFFF' }}
             >
               Joined
+            </span>
+          )}
+          {/* Same pill as Joined — the container is already a wrapping
+              flex row, so a creator who is both a member and sees this
+              gets two badges side by side with no layout change. The
+              navy reads as a platform statement rather than a
+              membership one, which is what it is. */}
+          {space.creator_only && (
+            <span
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ background: 'rgba(12,24,38,0.82)', color: '#FFFFFF' }}
+              title="World Builders is exclusively for Fresh Collective Creators."
+            >
+              {CREATOR_ONLY_BADGE}
             </span>
           )}
         </div>

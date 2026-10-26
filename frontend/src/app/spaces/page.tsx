@@ -25,7 +25,7 @@ export default async function SpacesPage() {
     getViewerCollectives(),
   ])
 
-  const { isLoggedIn, joinedSlugs } = viewer
+  const { isLoggedIn, joinedSlugs, isCreator } = viewer
   const spaces = (apiSpaces as PublicSpaceCard[]).map(toSpaceWithMeta)
 
   return (
@@ -34,6 +34,7 @@ export default async function SpacesPage() {
         spaces={spaces}
         joinedSlugs={joinedSlugs}
         isLoggedIn={isLoggedIn}
+        isCreator={isCreator}
       />
     </SiteShell>
   )

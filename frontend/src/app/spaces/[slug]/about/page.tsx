@@ -1,4 +1,12 @@
-import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
+import {
+  getMe,
+  getMySpaceAccess,
+  getPublicCollectiveAbout,
+  getSpace,
+  getSpaceEvents,
+  getSpaceMembers,
+} from '@/lib/serverApi'
+import { publicAboutAsSpace } from '@/lib/publicCollectiveAbout'
 import { resolveMediaUrl } from '@/lib/api'
 import {
   formatAccessFallbackCopy,
@@ -40,7 +48,21 @@ interface Props {
  */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const space = (await getSpace(slug)) as SpaceResponse | null
+  let space = (await getSpace(slug)) as SpaceResponse | null
+  if (!space) {
+    // A Collective that is discoverable and private inside — World
+    // Builders — has a public introduction, and that page is MEANT to
+    // be indexed: a prospective creator should be able to find it from
+    // a search engine. Resolved from the allowlisted public payload,
+    // so the markup carries only what that payload carries.
+    //
+    // The endpoint answers 404 for every other private Collective, so
+    // the protection below is unchanged for them: a crawler is
+    // anonymous, gets null, and the Collective's name never reaches
+    // the markup.
+    const about = await getPublicCollectiveAbout(slug)
+    space = about ? publicAboutAsSpace(about) : null
+  }
   if (!space) {
     // Unreachable, private or draft — all the same answer, and none of
     // them name anything.
@@ -64,12 +86,40 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function SpaceAboutPage({ params }: Props) {
   const { slug } = await params
 
-  const [space, members, me, events] = await Promise.all([
+  const [privateSpace, members, me, events] = await Promise.all([
     getSpace(slug) as Promise<SpaceResponse | null>,
     getSpaceMembers(slug) as Promise<MemberProfile[]>,
     getMe() as Promise<UserProfile | null>,
     getSpaceEvents(slug) as Promise<EventSummary[]>,
   ])
+
+  // A Collective that is discoverable on Explore and private inside.
+  //
+  // World Builders is the one today: its card is public so a
+  // prospective creator can find it, and ``GET /api/spaces/{slug}``
+  // answers 404 to them because ``visibility='private'`` is now
+  // enforced. Without this fallback the card would lead to a 404 —
+  // which is what it did before this release.
+  //
+  // The fallback is an explicitly allowlisted payload, NOT a relaxed
+  // version of the private one: no guidance bodies, no Pathway list,
+  // no joining options, no member counts. See
+  // ``lib/publicCollectiveAbout`` and the server's
+  // ``PublicCollectiveAbout``.
+  // The page needs no flag for which payload it got. Everything
+  // member-shaped is already absent from the public one, and the
+  // visitor call to action is decided by ``SpaceAboutCTA`` from
+  // ``autoGrantRole && !isMember`` — true for a public visitor on this
+  // page, and already the branch that handled them.
+  //
+  // Deliberately NOT viewer-aware: this page is identical for every
+  // caller so it stays cacheable and indexable, which is the point of
+  // making it public. The per-viewer nuance — a lapsed creator being
+  // sent to their account rather than to the creator pitch — lives on
+  // the Explore card, where the viewer is already resolved.
+  const publicAbout = privateSpace ? null : await getPublicCollectiveAbout(slug)
+  const space: SpaceResponse | null =
+    privateSpace ?? (publicAbout ? publicAboutAsSpace(publicAbout) : null)
 
   if (!space) notFound()
 

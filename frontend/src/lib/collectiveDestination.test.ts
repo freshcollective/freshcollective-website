@@ -4,7 +4,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { activeJoinedSlugs, collectiveCardHref } from './collectiveDestination.ts'
+import {
+  BECOME_A_CREATOR_HREF,
+  BECOME_A_CREATOR_LABEL,
+  CREATOR_ONLY_BADGE,
+  CREATOR_STATUS_HREF,
+  CREATOR_STATUS_LABEL,
+  activeJoinedSlugs,
+  collectiveCardAction,
+  collectiveCardHref,
+} from './collectiveDestination.ts'
 
 /**
  * Where a Collective card sends you.
@@ -86,15 +95,35 @@ describe('which Collectives count as joined', () => {
 describe('the signed-out property', () => {
   const helper = () => read('lib/joinedCollectives.ts')
 
-  test('a signed-out visitor triggers no membership request', () => {
-    // The good half of the commit that caused the regression. The
-    // early return must come before the fetch, not after it.
+  test('a signed-out visitor triggers no request at all', () => {
+    // The good half of the commit that caused the regression: the
+    // early return must come before every fetch, not after it.
+    //
+    // Asserted against EVERY call site rather than one hardcoded
+    // `await getMyMemberships()` string. That literal broke the moment
+    // the helper gained a second request, even though the property it
+    // protects was intact — and a test that fails on a refactor which
+    // preserves its own guarantee teaches people to edit the test.
+    // This version also covers the new call, which the old one did not.
     const src = helper()
     const guard = src.indexOf('if (!cookieStore.get(SESSION_COOKIE))')
-    const fetchCall = src.indexOf('await getMyMemberships()')
     assert.ok(guard > 0, 'the session check exists')
-    assert.ok(fetchCall > guard, 'and it short-circuits before the request')
-    assert.match(src, /return \{ isLoggedIn: false, joinedSlugs: \[\] \}/)
+    for (const call of ['getMyMemberships(', 'getMe(']) {
+      let at = src.indexOf(call)
+      // Skip the import line, which legitimately precedes the guard.
+      while (at !== -1) {
+        const lineStart = src.lastIndexOf('\n', at) + 1
+        const line = src.slice(lineStart, src.indexOf('\n', at))
+        if (!line.trimStart().startsWith('import')) {
+          assert.ok(at > guard, `${call} must sit after the session check`)
+        }
+        at = src.indexOf(call, at + 1)
+      }
+    }
+    // And the signed-out answer is a complete value, not a partial one.
+    assert.match(src, /isLoggedIn: false/)
+    assert.match(src, /joinedSlugs: \[\]/)
+    assert.match(src, /isCreator: false/)
   })
 
   test('signed in with nothing joined is not the same as signed out', () => {
@@ -187,5 +216,176 @@ describe('Discover Places', () => {
     assert.ok(src.includes('/events/${gathering.id}'), 'Gathering link')
     // The membership set is consulted for Collective cards only.
     assert.equal((src.match(/joined\.has\(/g) ?? []).length, 2)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Creator-only Collectives
+// ---------------------------------------------------------------------------
+
+describe('a creator-only Collective card', () => {
+  const wb = {
+    slug: 'world-builders',
+    name: 'World Builders',
+    isReal: true,
+    creator_only: true,
+  }
+  const viewer = (over: Partial<{
+    isJoined: boolean; isLoggedIn: boolean; isCreator: boolean
+  }> = {}) => ({
+    isJoined: false, isLoggedIn: false, isCreator: false, ...over,
+  })
+
+  test('a logged-out visitor is invited to become a creator', () => {
+    const a = collectiveCardAction(wb, viewer())
+    assert.equal(a.label, BECOME_A_CREATOR_LABEL)
+    assert.equal(a.label, 'Explore Becoming a Creator →')
+    assert.equal(a.href, '/for-creators')
+  })
+
+  test('a signed-in non-creator gets the same invitation', () => {
+    // Signing up is not becoming a creator. The backend is explicit
+    // that the role, not an account, is what grants membership.
+    const a = collectiveCardAction(wb, viewer({ isLoggedIn: true }))
+    assert.equal(a.label, BECOME_A_CREATOR_LABEL)
+    assert.equal(a.href, BECOME_A_CREATOR_HREF)
+  })
+
+  test('neither is ever sent to the Collective itself', () => {
+    // ``get_space`` answers 401 to an anonymous caller on a non-public
+    // Collective, so /spaces/world-builders/about is a dead end rather
+    // than an introduction. That is why there is no public landing
+    // page to build.
+    for (const v of [viewer(), viewer({ isLoggedIn: true })]) {
+      assert.ok(!collectiveCardAction(wb, v).href.startsWith('/spaces/'))
+    }
+  })
+
+  test('a member enters the Collective', () => {
+    const a = collectiveCardAction(wb, viewer({ isLoggedIn: true, isJoined: true, isCreator: true }))
+    assert.equal(a.label, 'Enter World Builders →')
+    assert.equal(a.href, '/spaces/world-builders')
+  })
+
+  test('the entry label is built from the name, not hardcoded', () => {
+    // So the rule reads as a rule. "Enter World Builders →" is what it
+    // produces for the one Collective carrying the flag today.
+    const other = { ...wb, slug: 'makers', name: 'Makers' }
+    assert.equal(
+      collectiveCardAction(other, viewer({ isJoined: true })).label,
+      'Enter Makers →',
+    )
+  })
+
+  test('a membership is all the eligibility signal the card needs', () => {
+    // Membership is derived from creator eligibility and reconciled on
+    // every authenticated request, so an active membership means
+    // eligible. The card asks for no separate eligibility check — and
+    // a member who somehow lacked the role still enters, because the
+    // server already decided they belong.
+    const a = collectiveCardAction(wb, viewer({ isLoggedIn: true, isJoined: true, isCreator: false }))
+    assert.equal(a.label, 'Enter World Builders →')
+  })
+
+  test('there is no Join action for anybody', () => {
+    // ``join_space`` answers 403 for an auto-grant Collective
+    // unconditionally. A Join button would have nothing to call.
+    for (const v of [
+      viewer(),
+      viewer({ isLoggedIn: true }),
+      viewer({ isLoggedIn: true, isCreator: true }),
+      viewer({ isLoggedIn: true, isCreator: true, isJoined: true }),
+    ]) {
+      assert.ok(!/join/i.test(collectiveCardAction(wb, v).label))
+    }
+  })
+
+  test('a creator whose access has lapsed is sent to their account', () => {
+    // Suspended or cancelled: the role is still ``creator`` but the
+    // membership is paused or removed, so they are not joined. They
+    // must not be invited to become something they already are.
+    const a = collectiveCardAction(wb, viewer({ isLoggedIn: true, isCreator: true }))
+    assert.equal(a.label, CREATOR_STATUS_LABEL)
+    assert.equal(a.href, CREATOR_STATUS_HREF)
+    assert.notEqual(a.label, BECOME_A_CREATOR_LABEL)
+    // And they are not offered entry.
+    assert.ok(!a.href.startsWith('/spaces/'))
+  })
+
+  test('the badge copy is fixed', () => {
+    assert.equal(CREATOR_ONLY_BADGE, 'For Creators')
+  })
+})
+
+describe('ordinary Collective cards are unchanged', () => {
+  const embodyCard = { slug: 'embody', name: 'EMBODY', isReal: true }
+  const viewer = (over = {}) => ({
+    isJoined: false, isLoggedIn: false, isCreator: false, ...over,
+  })
+
+  test('a member still gets Continue', () => {
+    const a = collectiveCardAction(embodyCard, viewer({ isJoined: true }))
+    assert.equal(a.label, 'Continue →')
+    assert.equal(a.href, '/spaces/embody')
+  })
+
+  test('everyone else still gets Explore and the About page', () => {
+    for (const v of [viewer(), viewer({ isLoggedIn: true }), viewer({ isCreator: true })]) {
+      const a = collectiveCardAction(embodyCard, v)
+      assert.equal(a.label, 'Explore →')
+      assert.equal(a.href, '/spaces/embody/about')
+    }
+  })
+
+  test('the creator role changes nothing for an ordinary Collective', () => {
+    assert.deepEqual(
+      collectiveCardAction(embodyCard, viewer({ isCreator: true })),
+      collectiveCardAction(embodyCard, viewer()),
+    )
+  })
+
+  test('a placeholder still invites a signup', () => {
+    const a = collectiveCardAction({ slug: 'someday', isReal: false }, viewer())
+    assert.equal(a.href, '/signup')
+  })
+
+  test('it delegates to the one destination rule rather than restating it', () => {
+    // Two rules for where a card goes is how Explore and the dashboard
+    // disagreed about the same person before.
+    for (const isJoined of [true, false]) {
+      assert.equal(
+        collectiveCardAction(embodyCard, viewer({ isJoined })).href,
+        collectiveCardHref(embodyCard, isJoined),
+      )
+    }
+  })
+})
+
+describe('the Explore card renders both', () => {
+  const card = () => read('components/explore/CollectiveCard.tsx')
+
+  test('the badge is the existing pill, not a new component', () => {
+    const src = card()
+    // Same class string the Joined badge uses — one visual language.
+    const pill = /rounded-full px-2\.5 py-0\.5 text-\[10px\] font-semibold uppercase tracking-wide/g
+    assert.ok((src.match(pill) ?? []).length >= 2, 'both badges share the pill')
+    assert.match(src, /CREATOR_ONLY_BADGE/)
+    assert.match(src, /space\.creator_only/)
+  })
+
+  test('label and destination come from the shared rule', () => {
+    const src = card()
+    assert.match(src, /collectiveCardAction\(/)
+    assert.ok(!/isJoined \? 'Continue →' : 'Explore →'/.test(src),
+      'the card must not keep its own copy of the label rule')
+  })
+
+  test('Explore passes the viewer role through', () => {
+    assert.match(read('app/spaces/page.tsx'), /isCreator=\{isCreator\}/)
+    assert.match(
+      read('components/explore/ExploreCollectivesExperience.tsx'),
+      /isCreator=\{isCreator\}/,
+    )
   })
 })

@@ -34,12 +34,17 @@ function EmptyState() {
 interface Props {
   spaces: SpaceWithMeta[]
   joinedSlugs?: string[]
+  /** Platform ``creator`` role. Read only by creator-only Collectives,
+   *  and only to tell a creator whose access has lapsed apart from
+   *  somebody who has never been one. */
+  isCreator?: boolean
   isLoggedIn?: boolean
 }
 
 export default function ExploreCollectivesExperience({
   spaces,
   joinedSlugs = [],
+  isCreator = false,
   isLoggedIn = false,
 }: Props) {
   const [activeTheme, setActiveTheme] = useState('All')
@@ -147,6 +152,7 @@ export default function ExploreCollectivesExperience({
                   space={space}
                   isJoined={joinedSet.has(space.slug)}
                   isLoggedIn={isLoggedIn}
+                  isCreator={isCreator}
                 />
               ))}
             </div>

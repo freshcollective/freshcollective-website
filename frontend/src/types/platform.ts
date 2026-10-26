@@ -1249,6 +1249,32 @@ export interface MediaUsageResponse {
   references: MediaUsageReference[]
 }
 
+/**
+ * The public introduction to a Collective whose inside is private.
+ *
+ * Mirrors the server allowlist in
+ * ``spaces.schemas.PublicCollectiveAbout``. Deliberately NOT an
+ * extension of `SpaceResponse`: the point of the allowlist is that a
+ * field added to the private payload is invisible here unless somebody
+ * writes it in.
+ */
+export interface PublicCollectiveAbout {
+  slug: string
+  name: string
+  tagline: string | null
+  description: string | null
+  /** The creator's public story. */
+  about_content: string | null
+  cover_image_url: string | null
+  logo_url: string | null
+  location_hero_artwork_url: string | null
+  location_thumbnail_artwork_url: string | null
+  location_name: string | null
+  themes: string[]
+  creator_name: string | null
+  creator_only: boolean
+}
+
 export interface PublicSpaceCard {
   id: string
   slug: string
@@ -1278,6 +1304,11 @@ export interface PublicSpaceCard {
   /** How someone becomes a member. Authoritative over
    *  `pricing_type` for any statement about joining. */
   join_policy?: JoinPolicy
+  /** A Collective whose membership the platform grants from creator
+   *  eligibility rather than from a Join button — World Builders
+   *  today. Drives the "For Creators" badge and sends a non-member to
+   *  `/for-creators` rather than to pages they cannot open. */
+  creator_only?: boolean
 }
 
 export interface SpaceInvitation {

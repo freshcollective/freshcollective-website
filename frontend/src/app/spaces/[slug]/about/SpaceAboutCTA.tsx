@@ -3,6 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+
+import {
+  PUBLIC_ABOUT_CTA_HREF,
+  PUBLIC_ABOUT_CTA_LABEL,
+} from '@/lib/publicCollectiveAbout'
 import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
 import JoiningDoors from './JoiningDoors'
@@ -101,14 +106,34 @@ export default function SpaceAboutCTA({
   }
   const ghostBtn = 'block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-black transition-colors hover:bg-slate-50'
 
-  // Auto-managed collectives (e.g. World Builders) — non-members see
-  // a soft restricted state. No self-service join, no request-access,
-  // no speculative "become a Creator" CTA. Members fall through to the
-  // normal "Enter collective" flow below.
+  // Auto-managed collectives (e.g. World Builders) — non-members see a
+  // soft restricted state. No self-service join and no request-access:
+  // both endpoints refuse these Collectives outright, so offering
+  // either would be a button that cannot work.
+  //
+  // This branch used to stop there, deliberately — "no speculative
+  // 'become a Creator' CTA" — on the reasoning that World Builders was
+  // not discoverable, so anybody reading this had arrived by a link
+  // and did not need recruiting. That reasoning no longer holds: the
+  // Collective now has a public card on Explore and a public About
+  // page, and a visitor who followed them there has asked, in effect,
+  // how to get in. The answer is the creator route, so it is offered.
+  //
+  // Members fall through to the normal "Enter collective" flow below.
   if (autoGrantRole && !isMember) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-[13px] text-slate-600">
-        Access to this collective is managed automatically by Fresh Collective.
+      <div className="flex flex-col gap-3">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-[13px] text-slate-600">
+          Exclusively for Fresh Collective Creators. Membership is granted
+          automatically when you become one.
+        </div>
+        <Link
+          href={PUBLIC_ABOUT_CTA_HREF}
+          className={tealBtn}
+          style={tealStyle}
+        >
+          {PUBLIC_ABOUT_CTA_LABEL}
+        </Link>
       </div>
     )
   }

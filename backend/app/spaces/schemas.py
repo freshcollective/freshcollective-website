@@ -572,6 +572,65 @@ class BookingResponse(BaseModel):
     booking_id: str | None = None
 
 
+class PublicCollectiveAbout(BaseModel):
+    """The public introduction to a Collective whose inside is private.
+
+    An **allowlist**, written out field by field, and that is the whole
+    design. The alternative — relaxing ``get_space`` for one Collective
+    — would have handed an anonymous caller a payload carrying
+    ``guidance_start_body``, ``guidance_focus_body``,
+    ``guidance_links_body``, ``welcome_message``, ``home_tiles``, the
+    Pathway list, ``joining_options`` and the member counts, and would
+    have left every future field added to ``SpaceResponse`` public by
+    default. Here a new private field is invisible unless somebody
+    writes it in, which is the direction the mistake should run.
+
+    Served only for the Collectives in
+    ``routes.PUBLICLY_DISCOVERABLE_MANAGED_SLUGS`` — today, World
+    Builders — because a Collective that is private *and* not
+    deliberately on a public surface has no public introduction to
+    give.
+
+    What is deliberately in
+    -----------------------
+    ``about_content`` is the creator's own public story, which is the
+    page's substance and the reason it is worth visiting; the Location
+    and cover artwork, so it looks like itself; name, tagline,
+    description and themes, which the discovery card already shows
+    publicly anyway.
+
+    What is deliberately out
+    ------------------------
+    Every ``guidance_*`` field (the member-only material), the welcome
+    message (written for somebody who has arrived), ``home_tiles`` and
+    ``area_access`` (a map of the inside), the Pathway list,
+    ``joining_options`` (there is no public joining here), the member
+    counts and anything per-viewer. A regression test asserts these
+    names cannot appear in this model.
+    """
+
+    slug: str
+    name: str
+    tagline: str | None = None
+    description: str | None = None
+    #: The creator's public story. Reviewed for public suitability
+    #: before this shipped — see the release report.
+    about_content: str | None = None
+    cover_image_url: str | None = None
+    logo_url: str | None = None
+    #: Atlas Location artwork, so the page carries the Collective's own
+    #: identity rather than a generic frame.
+    location_hero_artwork_url: str | None = None
+    location_thumbnail_artwork_url: str | None = None
+    location_name: str | None = None
+    themes: list[str] = []
+    creator_name: str | None = None
+    #: True for a Collective whose membership the platform grants from
+    #: eligibility. Drives the "For Creators" framing and the
+    #: become-a-creator call to action.
+    creator_only: bool = False
+
+
 class PublicSpaceCard(BaseModel):
     id: str
     slug: str
@@ -593,6 +652,17 @@ class PublicSpaceCard(BaseModel):
     # marked 'free' and still require a purchase to join. Explore
     # cards say "Free to join", so they need the real rule.
     join_policy: str = 'open'
+    # A Collective whose membership the platform manages from creator
+    # eligibility rather than from a Join button — World Builders
+    # today. The card uses it for its "For Creators" badge and to
+    # send a non-member to ``/for-creators`` instead of a Collective
+    # page they cannot open.
+    #
+    # Deliberately a derived boolean rather than ``auto_grant_role``
+    # itself. The client needs to know *that* a Collective is
+    # creator-only, not which internal role string drives it, and a
+    # public payload is the wrong place to publish the mechanism.
+    creator_only: bool = False
     has_paid_internal_content: bool = False
     included_access_summary: str | None = None
     paid_content_summary: str | None = None

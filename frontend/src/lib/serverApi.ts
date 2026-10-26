@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, CreatorStripeConnectStatus, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary, UnseenCountsResponse } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, CreatorStripeConnectStatus, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicCollectiveAbout, PublicSpaceCard, SpaceAccessStatus, SpaceSummary, UnseenCountsResponse } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -89,6 +89,35 @@ export const getCreatorChannels = cache(async (spaceSlug: string): Promise<Chann
   if (!res.ok) return []
   return res.json()
 })
+
+/**
+ * The public introduction to a Collective whose inside is private.
+ *
+ * Unauthenticated and identical for every caller, so it is safe for a
+ * crawler — which is the point: World Builders' About page is meant to
+ * be indexable. 404 when the Collective is not one of the named
+ * discoverable ones, which is also what a missing slug returns, so
+ * this cannot be used to discover that a private Collective exists.
+ *
+ * The fields are an allowlist on the server
+ * (``spaces.schemas.PublicCollectiveAbout``) — none of the guidance
+ * bodies, the Pathway list, the joining options or the member counts
+ * are in it.
+ */
+export const getPublicCollectiveAbout = cache(
+  async (slug: string): Promise<PublicCollectiveAbout | null> => {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/public/spaces/${encodeURIComponent(slug)}/about`),
+        { cache: 'no-store' },
+      )
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
+  },
+)
 
 export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
   try {

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Response
-from sqlalchemy import func, or_, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.access_pass import AccessPass, AccessPassStatus
@@ -56,6 +56,7 @@ from app.services import membership_grant
 from app.spaces import retained_reservations
 from app.spaces import area_policies
 from app.spaces.schemas import (
+    PublicCollectiveAbout,
     AccessRequestOut,
     CompleteStepRequest,
     CompleteStepResponse,
@@ -295,23 +296,67 @@ public_router = APIRouter(prefix="/api/public", tags=["public"])
 # Public (unauthenticated) discovery endpoint
 # ---------------------------------------------------------------------------
 
+#: Collectives that appear on public discovery surfaces despite not
+#: being ordinarily public. Named, one entry, and deliberately not a
+#: rule.
+#:
+#: The temptation was to express this structurally — "any Collective
+#: with ``auto_grant_role`` is discoverable" — which would have been
+#: one predicate and no list. It is wrong, because automatically
+#: managed membership and public discoverability are separate
+#: concepts: the flag means "the platform decides who belongs here",
+#: and a future operational Collective carrying it would become
+#: publicly listed as a side effect of a decision about membership.
+#:
+#: So the exception is a membership of one, by slug. World Builders is
+#: the platform's own Collective for creators; it has a public case to
+#: make and nothing to hide at card level. Adding a second entry
+#: should feel like a decision, which is the point.
+#:
+#: Note what this does NOT do. The Collective stays ``is_public=False``
+#: and ``auto_grant_role='creator'``, so ``get_space`` still answers
+#: 401 to an anonymous caller, ``join_space`` still answers 403 to
+#: everybody, its member areas are still gated, and
+#: ``places.routes._collective_is_publicly_listable`` — a separate copy
+#: of the old rule — still excludes it from Discover Places. The only
+#: thing that changes is whether a ``PublicSpaceCard`` is built for it.
+PUBLICLY_DISCOVERABLE_MANAGED_SLUGS: frozenset[str] = frozenset({
+    "world-builders",
+})
+
+
 def _public_space_query(db: Session):
     """The single source of truth for "which Spaces may be shown on
     a public surface". Any change here rewires both the list endpoint
     and the single-slug endpoint below in lock-step.
 
-    Predicates (kept identical to the historical list filter so no
-    caller sees a regression):
+    Predicates:
       * ``status == 'active'``     — never surface drafts / archived
       * ``is_public == true``      — private Collectives are invisible
-      * ``auto_grant_role IS NULL``— hides operational Spaces such as
-                                     World Builders, whose membership
-                                     is managed automatically.
+      * ``auto_grant_role IS NULL``— hides operational Spaces whose
+                                     membership is managed
+                                     automatically
+
+    ...with one named exception, :data:`PUBLICLY_DISCOVERABLE_MANAGED_SLUGS`,
+    which overrides the last two for the Collectives listed there. See
+    that constant for why it is a list rather than a rule, and for
+    everything the exception deliberately does not open.
+
+    The exception is safe to express here, at the query, because both
+    callers return the restricted ``PublicSpaceCard`` shape — name,
+    tagline, description, artwork, counts and pricing. Nothing in it
+    is member content: the full ``SpaceResponse``, with its guidance
+    bodies and About copy, comes from ``get_space``, which is
+    untouched and still refuses anonymous callers on a non-public
+    Collective.
     """
-    return db.query(Space).filter(
-        Space.status == "active",
+    ordinary = and_(
         Space.is_public.is_(True),
         Space.auto_grant_role.is_(None),
+    )
+    return db.query(Space).filter(
+        Space.status == "active",
+        or_(ordinary, Space.slug.in_(PUBLICLY_DISCOVERABLE_MANAGED_SLUGS)),
     )
 
 
@@ -343,6 +388,91 @@ def get_public_space(slug: str, db: Session = Depends(get_db)) -> PublicSpaceCar
     # Hydration always returns exactly one card for a single input row;
     # a defensive index guard would only mask a bug.
     return cards[0]
+
+
+@public_router.get(
+    "/spaces/{slug}/about",
+    response_model=PublicCollectiveAbout,
+    summary="The public introduction to a discoverable Collective",
+)
+def get_public_collective_about(
+    slug: str, db: Session = Depends(get_db),
+) -> PublicCollectiveAbout:
+    """The public About payload — an allowlist, for one named Collective.
+
+    World Builders is discoverable on Explore and private inside. A
+    prospective creator has to be able to read what it offers before
+    becoming one, and the Collective's own ``get_space`` answers 404 to
+    them now that ``visibility='private'`` is enforced. This is the
+    gap, filled without widening that gate.
+
+    Scoped twice, deliberately:
+
+    * to ``PUBLICLY_DISCOVERABLE_MANAGED_SLUGS`` — a Collective that is
+      private and *not* on a public surface has no public introduction
+      to give, and this endpoint must not become a way to read one;
+    * to ``status == 'active'``, like every other public route.
+
+    Anything else is a 404, which is also what a slug that does not
+    exist returns — the endpoint cannot be used to discover that a
+    private Collective is there.
+
+    No authentication, and no per-viewer anything: the response is
+    identical for every caller, so it is safe to cache and safe for a
+    crawler. That is the point — this page is meant to be indexed.
+    """
+    space = (
+        db.query(Space)
+        .filter(
+            Space.slug == slug,
+            Space.status == "active",
+            Space.slug.in_(PUBLICLY_DISCOVERABLE_MANAGED_SLUGS),
+        )
+        .one_or_none()
+    )
+    if space is None:
+        raise HTTPException(status_code=404, detail="Collective not found.")
+
+    hero = thumb = name = None
+    if space.location_id:
+        row = (
+            db.query(
+                Location.hero_artwork_url,
+                Location.thumbnail_artwork_url,
+                Location.name,
+            )
+            .filter(Location.id == space.location_id)
+            .one_or_none()
+        )
+        if row is not None:
+            hero, thumb, name = row
+
+    creator_name = None
+    if space.creator_id:
+        creator_row = (
+            db.query(User.name).filter(User.id == space.creator_id).one_or_none()
+        )
+        creator_name = creator_row[0] if creator_row else None
+
+    # Built field by field from the allowlist rather than by excluding
+    # fields from the full model. Excluding is the fragile direction: a
+    # field added to ``SpaceResponse`` later would be public until
+    # somebody remembered to exclude it.
+    return PublicCollectiveAbout(
+        slug=space.slug,
+        name=space.name,
+        tagline=space.tagline,
+        description=space.description,
+        about_content=space.about_content,
+        cover_image_url=space.cover_image_url,
+        logo_url=space.logo_url,
+        location_hero_artwork_url=hero,
+        location_thumbnail_artwork_url=thumb,
+        location_name=name,
+        themes=space.themes or [],
+        creator_name=creator_name,
+        creator_only=space.auto_grant_role is not None,
+    )
 
 
 def hydrate_public_space_cards(
@@ -453,6 +583,10 @@ def hydrate_public_space_cards(
             member_count=member_counts.get(s.id, 0),
             creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
             join_policy=join_policy.resolve(s.join_policy),
+            # True only for the platform-managed Collectives the
+            # exception above admits — every ordinary card is False,
+            # so no existing consumer changes behaviour.
+            creator_only=s.auto_grant_role is not None,
             themes=s.themes or [],
             pricing_type=s.pricing_type or 'free',
             pricing_amount_cents=s.pricing_amount_cents,
@@ -959,6 +1093,31 @@ def get_space(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
     if not space.is_public and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+    # ``visibility='private'`` — this payload needs a relationship, not
+    # merely an account.
+    #
+    # It carries ``guidance_start_body``, ``guidance_focus_body``,
+    # ``guidance_links_body``, ``about_content``, ``welcome_message``,
+    # ``home_tiles``, the Pathway list and the member counts. Until the
+    # ``private`` level was enforced, every one of those was readable by
+    # any signed-in stranger, because ``is_public=False`` was doing duty
+    # as "needs an account" — correct for ``link``, far too loose for
+    # ``private``.
+    #
+    # 404 rather than 403, matching ``_get_space_visible_to`` and
+    # ``require_area``: a refusal must not confirm the Collective
+    # exists to somebody who may not see it.
+    #
+    # The public introduction for such a Collective comes from
+    # ``get_public_collective_about`` instead — an explicit allowlist,
+    # with none of the fields above in it.
+    if area_policies.requires_relationship_to_read(space):
+        from app.services.space_viewer import resolve_space_viewer
+
+        if not resolve_space_viewer(db, current_user, space).qualifies:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.",
+            )
     # Authoritative aggregate counts. These MUST be sourced from a
     # DB aggregate, never from a privacy-filtered directory list on
     # the frontend — otherwise ordinary-member sidebars silently
@@ -1574,6 +1733,25 @@ def request_access(
 ) -> dict:
     """Submit an access request to a private Space."""
     space = _get_space_or_404(slug, db)
+
+    # Found while auditing the doors for the World Builders release.
+    # ``join_space`` has always refused an auto-grant Collective — "access
+    # is managed automatically and cannot be joined manually" — but this
+    # endpoint did not, so a signed-in non-creator could lodge a pending
+    # access request against World Builders. Approving one writes a
+    # ``source='joined'`` membership, and the eligibility reconciler
+    # only ever touches ``source='auto_role'`` rows — so that membership
+    # would be permanent and invisible to the rule that is supposed to
+    # decide who belongs there.
+    #
+    # Same refusal and same wording as the join endpoint: there is one
+    # answer to "can I ask to be let in here?", and for these
+    # Collectives it is no.
+    if space.auto_grant_role is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to this collective is managed automatically by Fresh Collective and cannot be joined manually.",
+        )
 
     if space.is_public:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,

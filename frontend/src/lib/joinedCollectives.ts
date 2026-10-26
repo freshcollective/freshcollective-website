@@ -1,9 +1,9 @@
 import { cookies } from 'next/headers'
 
 import { activeJoinedSlugs } from '@/lib/collectiveDestination'
-import { getMyMemberships } from '@/lib/serverApi'
+import { getMe, getMyMemberships } from '@/lib/serverApi'
 import { SESSION_COOKIE } from '@/lib/session'
-import type { SpaceMembership } from '@/types/platform'
+import type { SpaceMembership, UserProfile } from '@/types/platform'
 
 /**
  * Which Collectives the viewer is already inside, for public
@@ -45,17 +45,34 @@ export interface ViewerCollectives {
   /** Slugs of Collectives the viewer is an active member of, creator-
    *  owned ones included. */
   joinedSlugs: string[]
+  /** Whether the viewer holds the platform ``creator`` role.
+   *
+   *  Only creator-only Collectives read this, and only to tell a
+   *  creator whose access has lapsed apart from somebody who has
+   *  never been one — see ``collectiveCardAction``. It is NOT an
+   *  eligibility check: the server owns that, and an eligible
+   *  creator's membership already appears in ``joinedSlugs``. */
+  isCreator: boolean
 }
 
 export async function getViewerCollectives(): Promise<ViewerCollectives> {
   const cookieStore = await cookies()
   if (!cookieStore.get(SESSION_COOKIE)) {
-    return { isLoggedIn: false, joinedSlugs: [] }
+    // The signed-out short-circuit, preserved: no membership request
+    // and no profile request. There is a test that fails if it goes.
+    return { isLoggedIn: false, joinedSlugs: [], isCreator: false }
   }
 
-  const memberships = (await getMyMemberships()) as SpaceMembership[]
+  // Both in one round trip. ``getMe`` is already warm on most pages
+  // that render Collective cards, and both helpers return a safe
+  // empty value when the API wobbles.
+  const [memberships, me] = await Promise.all([
+    getMyMemberships() as Promise<SpaceMembership[]>,
+    getMe() as Promise<UserProfile | null>,
+  ])
   return {
     isLoggedIn: true,
     joinedSlugs: activeJoinedSlugs(memberships),
+    isCreator: me?.role === 'creator',
   }
 }

@@ -110,6 +110,48 @@ CONFIGURABLE_AREAS: Final[tuple[str, ...]] = tuple(
 )
 
 
+#: ``Space.visibility`` levels. The column has carried these three
+#: since migration 063 and ``build_your_collective`` validates against
+#: them, but until now only one place in the codebase ever *read* it —
+#: ``services.member_visibility``, deciding whether a Creator's profile
+#: may name a Collective. Every access decision ran off ``is_public``
+#: instead, with the model noting that ``is_public`` is merely "kept in
+#: sync for read paths that haven't migrated yet".
+#:
+#: So ``link`` and ``private`` were indistinguishable in enforcement: a
+#: signed-in stranger could read either one's full payload and its
+#: public-policy catalogues. That is right for ``link`` — "anyone with
+#: the link, who has an account" is what the level means — and wrong
+#: for ``private``.
+VISIBILITY_PUBLIC: Final = "public"
+VISIBILITY_LINK: Final = "link"
+VISIBILITY_PRIVATE: Final = "private"
+
+
+def requires_relationship_to_read(space: Any) -> bool:
+    """Does reading this Collective's own information need a
+    relationship with it, rather than merely an account?
+
+    ``True`` only for ``visibility='private'``. ``public`` and ``link``
+    keep exactly the behaviour they have always had, which is the point
+    — this makes the strictest level mean something without touching
+    the two that ordinary creators actually use.
+
+    "Relationship" is ``services.space_viewer.SpaceViewer.qualifies``:
+    platform admin, the Collective's owner, or an active membership of
+    any role. A **paused** membership does not qualify, which is how a
+    suspended creator loses access without anything suspension-specific
+    being written here.
+
+    Deliberately a question about the Collective and not about the
+    viewer, so the two gates that ask it — ``spaces.routes.get_space``
+    for the full payload and ``area_access.resolve_area_access`` for
+    the member areas — cannot disagree about which Collectives are in
+    scope.
+    """
+    return str(getattr(space, "visibility", "") or "") == VISIBILITY_PRIVATE
+
+
 class AreaPolicyError(ValueError):
     """A creator-supplied area policy was refused."""
 

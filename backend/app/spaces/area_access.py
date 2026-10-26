@@ -102,6 +102,61 @@ def resolve_area_access(
             db, user_id=user.id, space_id=space.id, now=now,
         )
 
+    # A Collective that is not publicly visible has no public areas for
+    # somebody with no account.
+    #
+    # ``POLICY_PUBLIC`` means "anyone, signed in or not" — the right
+    # reading for a Collective anybody can find. On a Collective with
+    # ``is_public=False`` it was letting an anonymous caller through
+    # doors the Collective itself refuses to open:
+    # ``spaces.routes.get_space`` answers 401 for exactly that viewer,
+    # so ``GET /api/spaces/{slug}`` was closed while
+    # ``GET /api/spaces/{slug}/pathways`` and ``/offerings`` answered
+    # 200 with the full catalogue — titles, descriptions, cover images
+    # and step counts.
+    #
+    # Verified on World Builders in production before this changed: the
+    # Collective page 401'd, its public discovery card 404'd, and its
+    # Pathways catalogue listed "World Builders - Start Here" to
+    # anybody who asked. Step content was never exposed —
+    # ``_check_pathway_access`` still required membership — so this was
+    # a listing leak rather than a content one, but it contradicted
+    # every other answer the platform gave about that Collective.
+    #
+    # Scoped to **anonymous** viewers only, deliberately. A signed-in
+    # non-member reaching a non-public Collective is the
+    # ``visibility='link'`` model working as intended — "anyone with
+    # the link, who has an account" — and ``get_space`` has always
+    # allowed it. Narrowing that is a product decision about the
+    # visibility model rather than a bug fix, so it is reported instead
+    # of taken here.
+    #
+    # Members, leaders and platform admins are untouched: all are
+    # authenticated, so this never applies to them.
+    anonymous_on_unlisted = user is None and not space.is_public
+
+    # ``visibility='private'`` goes further: its public-policy areas
+    # need a *relationship*, not merely an account.
+    #
+    # The column had carried three levels since migration 063 while
+    # only ``services.member_visibility`` ever read it, so ``link`` and
+    # ``private`` were identical in enforcement — a signed-in stranger
+    # could list either one's Pathways. Right for ``link`` ("anyone
+    # with the link, who has an account"), wrong for ``private``.
+    #
+    # ``viewer.qualifies`` is admin, owner, or an active membership of
+    # any role. A **paused** membership does not qualify, which is how
+    # a suspended creator loses these areas with nothing
+    # suspension-specific written here.
+    #
+    # ``public`` and ``link`` Collectives are unaffected, which is the
+    # whole point: this makes the strictest level mean something
+    # without touching the two that ordinary creators use.
+    private_to_outsider = (
+        ap.requires_relationship_to_read(space) and not is_member
+    )
+    withhold_public_areas = anonymous_on_unlisted or private_to_outsider
+
     reachable = set()
     for area, policy in policies.items():
         # Offerings is a flagged feature *and* a scoped one. Dropping it
@@ -124,6 +179,8 @@ def resolve_area_access(
         if area == ap.AREA_OFFERINGS and not _offerings_available_for(space):
             continue
         if policy == ap.POLICY_PUBLIC:
+            if withhold_public_areas:
+                continue
             reachable.add(area)
         elif policy == ap.POLICY_MEMBERS:
             if is_member:
