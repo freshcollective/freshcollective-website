@@ -435,6 +435,15 @@ def get_public_collective_about(
 
     hero = thumb = name = None
     if space.location_id:
+        # Local import, matching ``hydrate_public_space_cards`` below —
+        # ``Location`` is deliberately not a top-level import in this
+        # module. Omitting it here shipped a 500 on this endpoint for
+        # any Collective that *has* a Location, which the tests missed
+        # because the migration-seeded ``world-builders`` row in
+        # ``fc_test`` has ``location_id = NULL`` while the production
+        # row has one. The regression test now sets a Location.
+        from app.models.platform import Location
+
         row = (
             db.query(
                 Location.hero_artwork_url,

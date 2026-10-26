@@ -1058,6 +1058,23 @@ class TestThePublicAboutPayload:
         space.identity_statement = "A place for creators."
         if space.creator_id is None:
             space.creator_id = make_user(role="admin").id
+        # A Location, because production has one and the seeded test row
+        # does not. That difference shipped a 500: the endpoint's
+        # ``Location`` lookup was never exercised, so a missing local
+        # import went unnoticed until the live Collective — which *has*
+        # a Location — hit it. The fixture now matches production.
+        from app.models.platform import Location
+
+        loc = Location(
+            id=f"loc_{uuid.uuid4().hex[:10]}",
+            key=f"k-{uuid.uuid4().hex[:8]}",
+            name="Island Sanctuary",
+            hero_artwork_url="/api/uploads/island-artwork/hero.webp",
+            thumbnail_artwork_url="/api/uploads/island-artwork/thumb.webp",
+        )
+        db.add(loc)
+        db.flush()
+        space.location_id = loc.id
         db.flush()
         return space
 
@@ -1074,6 +1091,15 @@ class TestThePublicAboutPayload:
 
         out = get_public_collective_about(wb.slug, db=db)
         assert out.about_content == "<h2>Our Story</h2>"
+        # The Location artwork, so the page looks like itself. This is
+        # the assertion whose absence let a 500 ship.
+        assert out.location_name == "Island Sanctuary"
+        assert out.location_hero_artwork_url == (
+            "/api/uploads/island-artwork/hero.webp"
+        )
+        assert out.location_thumbnail_artwork_url == (
+            "/api/uploads/island-artwork/thumb.webp"
+        )
         # Reviewed for public suitability before shipping — see the
         # release report. The field is the creator's own public story.
         assert "MEMBERS-ONLY" not in (out.about_content or "")
@@ -1129,6 +1155,26 @@ class TestThePublicAboutPayload:
         with pytest.raises(HTTPException) as exc:
             get_public_collective_about(other.slug, db=db)
         assert exc.value.status_code == 404
+
+    def test_it_answers_for_a_collective_with_no_location(
+        self, db, seeded_world_builders, make_user,
+    ):
+        """The other half of the pair. Both branches of the Location
+        lookup are now exercised — the one that runs and the one that
+        is skipped — because testing only the skipped one is what let a
+        500 reach production."""
+        from app.spaces.routes import get_public_collective_about
+
+        space = seeded_world_builders
+        space.visibility = "private"
+        space.location_id = None
+        if space.creator_id is None:
+            space.creator_id = make_user(role="admin").id
+        db.flush()
+
+        out = get_public_collective_about(space.slug, db=db)
+        assert out.location_name is None
+        assert out.location_hero_artwork_url is None
 
     def test_an_unknown_slug_is_the_same_answer(self, db):
         from app.spaces.routes import get_public_collective_about
