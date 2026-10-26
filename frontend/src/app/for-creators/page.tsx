@@ -14,11 +14,18 @@ import {
   PUBLIC_PLANS,
   commissionBullet,
 } from '@/lib/plans'
+import { CONTACT_INFO_EMAIL } from '@/lib/contact'
+import {
+  CREATOR_FAQ,
+  FEE_ROWS,
+  FEE_TABLE_HEADINGS,
+  creatorFaqJsonLd,
+} from '@/lib/creatorFaq'
 
 /**
  * /for-creators — editorial companion to the homepage.
  *
- * Structure: Hero → Journey → Plans → World Builders → Closing.
+ * Structure: Hero → Journey → Plans → World Builders → Closing → FAQ.
  * Every row is an editorial spread: artwork on one side, quiet framing
  * copy on the other. No pricing-table decoration, no eyebrow labels —
  * hierarchy is carried by typography, spacing and composition alone.
@@ -65,6 +72,11 @@ export default async function ForCreatorsPage() {
         body="Bring your ideas, experiences and community together in one place—and create something people genuinely want to return to."
         primaryCta={{ label: 'Choose your plan', href: '/for-creators#plans' }}
       />
+      {/* After the closing CTA on purpose. The CTA completes the
+          creator journey; the FAQ is reference material for somebody
+          who wants to keep reading, and putting it before the CTA made
+          the page ask its question and then keep talking. */}
+      <FaqSection />
     </SiteShell>
   )
 }
@@ -522,5 +534,223 @@ function WorldBuildersSection({ artUrl }: { artUrl: string | null }) {
         </div>
       </Container>
     </section>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FAQ — the practical questions, answered plainly.
+//
+// Native <details>/<summary> rather than a scripted accordion. It is
+// keyboard accessible, announced correctly by screen readers and works
+// with JavaScript disabled, which no hand-rolled disclosure gets for
+// free. Each question is independently collapsible: a one-at-a-time
+// accordion would mean either JavaScript or ``name``, and closing the
+// answer somebody is halfway through reading to open another is a
+// worse trade than two answers being open at once.
+//
+// Copy and structured data both come from ``lib/creatorFaq`` so the
+// FAQPage JSON-LD cannot drift from the visible answers.
+// ═══════════════════════════════════════════════════════════════════
+
+function FaqSection() {
+  return (
+    <section id="faq" className="py-20 sm:py-24" style={{ background: '#FFFFFF' }}>
+      <Container>
+        <div className="mx-auto max-w-[720px] text-center">
+          <h2
+            className="font-serif leading-[1.1]"
+            style={{
+              fontSize: 'clamp(1.875rem, 4.4vw, 2.75rem)',
+              letterSpacing: '-0.03em',
+              color: NAVY,
+            }}
+          >
+            Questions creators ask
+          </h2>
+          <p
+            className="mx-auto mt-5 max-w-[600px] text-[15.5px] italic leading-relaxed"
+            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+          >
+            The practical bits, answered plainly.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-12 max-w-[760px] sm:mt-14">
+          {CREATOR_FAQ.map((item) => (
+            <details
+              key={item.id}
+              id={item.id}
+              className="group border-b"
+              style={{ borderColor: 'rgba(12, 24, 38, 0.10)' }}
+            >
+              <summary
+                className="flex cursor-pointer list-none items-start justify-between gap-5 py-5 text-left [&::-webkit-details-marker]:hidden"
+              >
+                <span
+                  className="font-serif text-[17px] leading-snug sm:text-[18.5px]"
+                  style={{ color: NAVY }}
+                >
+                  {item.question}
+                </span>
+                {/* Rotates on open via Tailwind's group-open variant —
+                    no state, no JavaScript. aria-hidden because the
+                    summary element already announces its own expanded
+                    state. */}
+                <svg
+                  aria-hidden="true"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="mt-1 shrink-0 transition-transform duration-200 group-open:rotate-180"
+                  style={{ color: TEAL_DEEP }}
+                >
+                  <path
+                    d="M6 9l6 6 6-6"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </summary>
+
+              <div className="pb-6">
+                {item.paragraphs.map((text, i) => (
+                  <div key={text.slice(0, 24)}>
+                    <p
+                      className={`${i === 0 ? '' : 'mt-4 '}max-w-[640px] text-[15.5px] leading-relaxed`}
+                      style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
+                    >
+                      {text}
+                    </p>
+                    {item.feeTable && i === 0 && <FeeTable />}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+
+          <p
+            className="mt-8 text-[14.5px] leading-relaxed"
+            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+          >
+            Still wondering about something? Email{' '}
+            <a
+              href={`mailto:${CONTACT_INFO_EMAIL}`}
+              className="underline decoration-1 underline-offset-2 transition-colors"
+              style={{ color: TEAL_DEEP }}
+            >
+              {CONTACT_INFO_EMAIL}
+            </a>
+            , or read the full details in the{' '}
+            <Link
+              href="/world-guide/creator-agreement"
+              className="underline decoration-1 underline-offset-2 transition-colors"
+              style={{ color: TEAL_DEEP }}
+            >
+              Creator Agreement
+            </Link>{' '}
+            and{' '}
+            <Link
+              href="/world-guide/payment-refund-and-cancellation-policy"
+              className="underline decoration-1 underline-offset-2 transition-colors"
+              style={{ color: TEAL_DEEP }}
+            >
+              Payment, Refund and Cancellation Policy
+            </Link>
+            .
+          </p>
+        </div>
+      </Container>
+
+      {/* FAQPage structured data, serialised from the same copy rendered
+          above. Inside the section rather than the metadata export so it
+          sits beside what it describes. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(creatorFaqJsonLd()) }}
+      />
+    </section>
+  )
+}
+
+/**
+ * The worked fee examples.
+ *
+ * Scrolls inside its own container rather than stacking into
+ * definition rows: three money columns compared across two plans is a
+ * comparison, and a stacked version repeats the headings twice and
+ * makes the reader hold the numbers in their head. ``min-w`` is what
+ * forces the scroll to happen here instead of widening the page —
+ * without it the table squashes and the page itself scrolls, which is
+ * the failure this is written to avoid.
+ */
+function FeeTable() {
+  return (
+    <div className="mt-5 max-w-[640px]">
+      {/* Phone only. The table scrolls inside its own box, which is the
+          right behaviour and an invisible one — the third column sits
+          just past the right edge with nothing to say it is there.
+          ``sm:hidden`` because on a wider screen all three columns are
+          already visible and the hint would be telling the reader to do
+          something pointless.
+
+          aria-hidden: a screen-reader user is not swiping, and the
+          table is reachable by keyboard and by the usual table
+          navigation regardless. */}
+      <p
+        aria-hidden="true"
+        className="mb-2 text-[12.5px] italic sm:hidden"
+        style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+      >
+        Swipe to compare plans &rarr;
+      </p>
+      <div
+        className="overflow-x-auto rounded-xl border"
+        style={{ borderColor: 'rgba(12, 24, 38, 0.10)' }}
+      >
+        <table className="w-full min-w-[460px] border-collapse text-left">
+          <thead>
+            <tr style={{ background: 'rgba(12, 24, 38, 0.03)' }}>
+              {[FEE_TABLE_HEADINGS.sale, FEE_TABLE_HEADINGS.creator, FEE_TABLE_HEADINGS.portfolio].map((h) => (
+                <th
+                  key={h}
+                  scope="col"
+                  className="px-4 py-3 text-[12.5px] font-semibold leading-snug"
+                  style={{ color: NAVY }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {FEE_ROWS.map((row) => (
+              <tr
+                key={row.sale}
+                className="border-t"
+                style={{ borderColor: 'rgba(12, 24, 38, 0.08)' }}
+              >
+                <th
+                  scope="row"
+                  className="px-4 py-3 text-[13.5px] font-normal"
+                  style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
+                >
+                  {row.sale}
+                </th>
+                <td className="px-4 py-3 text-[13.5px]" style={{ color: NAVY }}>
+                  {row.creator}
+                </td>
+                <td className="px-4 py-3 text-[13.5px]" style={{ color: NAVY }}>
+                  {row.portfolio}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
