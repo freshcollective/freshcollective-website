@@ -52,6 +52,7 @@ export const PRIVATE_ONLY_FIELDS = [
   'next_gathering_starts_at',
   'published_offering_count',
   'show_member_directory',
+  'area_access',
 ] as const
 
 /**
@@ -145,6 +146,19 @@ export function publicAboutAsSpace(
     // The directory is not offered to a visitor at all; false is the
     // closed value, and the members endpoint refuses them regardless.
     show_member_directory: false,
+    // **Empty, and this one matters.** ``SpaceNav`` treats
+    // ``reachableAreas === undefined`` as "show every tab", so leaving
+    // this off rendered Pathways, Gatherings, Conversations, Messages
+    // and Members in the nav for a public visitor to a private
+    // Collective. Every one of them refuses on click — the backend is
+    // closed — but offering a door that cannot open is exactly the
+    // "About page becoming a doorway into protected resources" this
+    // release is meant to avoid.
+    //
+    // An empty list is the honest answer: a visitor reaches no area of
+    // this Collective. ``about`` is not listed because no route gates
+    // on it and the nav has no tab for it.
+    area_access: [],
   }
 }
 

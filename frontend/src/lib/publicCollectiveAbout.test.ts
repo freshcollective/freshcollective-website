@@ -97,6 +97,18 @@ describe('what the public About payload refuses to carry', () => {
     assert.equal(s.show_member_directory, false)
   })
 
+  it('offers no member tabs in the nav', () => {
+    // The leak this release nearly shipped: ``SpaceNav`` reads
+    // ``reachableAreas === undefined`` as "show every tab", so an
+    // absent ``area_access`` rendered Pathways, Gatherings,
+    // Conversations, Messages and Members for a public visitor to a
+    // private Collective. They all refuse on click, but offering a
+    // door that cannot open is what "the About page must not become a
+    // doorway" means.
+    assert.deepEqual(s.area_access, [])
+    assert.notEqual(s.area_access, undefined)
+  })
+
   it('carries no joining doors', () => {
     // There is no public joining here — ``join_space`` and
     // ``request_access`` both answer 403 for this Collective.
@@ -190,5 +202,31 @@ describe('the About page falls back without relaxing the private gate', () => {
     const src = page()
     assert.equal((src.match(/getSpace\(slug\)/g) ?? []).length, 2,
       'once in generateMetadata, once in the page — no third path')
+  })
+})
+
+
+describe('the Collective layout falls back too', () => {
+  const layout = () => read('app/spaces/[slug]/layout.tsx')
+
+  it('it tries the private payload first, then the public one', () => {
+    const src = layout()
+    const priv = src.indexOf('getSpace(slug)')
+    const pub = src.indexOf('getPublicCollectiveAbout(slug)')
+    assert.ok(priv > 0 && pub > priv, 'public is the fallback, not the default')
+  })
+
+  it('without this the whole route 404s', () => {
+    // The layout wraps the About page, so its ``notFound()`` fired
+    // before the page could render — the page produced correct markup
+    // and the response was still a 404. Found in production
+    // verification, not in the suite.
+    const src = layout()
+    assert.match(src, /privateSpace \? null : await getPublicCollectiveAbout/)
+    assert.match(src, /if \(!space\) notFound\(\)/)
+  })
+
+  it('it reads the same adapter as the page, not its own', () => {
+    assert.match(layout(), /publicAboutAsSpace/)
   })
 })

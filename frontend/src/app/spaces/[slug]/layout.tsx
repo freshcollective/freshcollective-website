@@ -4,7 +4,15 @@ import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
 import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
 import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
 import SiteShell from '@/components/layout/SiteShell'
-import { getSpace, getMe, getMyMemberships, getSpaceMessageThreads, getUnseenCounts } from '@/lib/serverApi'
+import {
+  getMe,
+  getMyMemberships,
+  getPublicCollectiveAbout,
+  getSpace,
+  getSpaceMessageThreads,
+  getUnseenCounts,
+} from '@/lib/serverApi'
+import { publicAboutAsSpace } from '@/lib/publicCollectiveAbout'
 import { unseenForCollective } from '@/lib/unseenForCollective'
 import type { SpaceMembership, UserProfile } from '@/types/platform'
 
@@ -16,11 +24,22 @@ interface Props {
 export default async function SpaceLayout({ children, params }: Props) {
   const { slug } = await params
 
-  const [space, user, memberships]: [
+  const [privateSpace, user, memberships]: [
     Awaited<ReturnType<typeof getSpace>>,
     UserProfile | null,
     SpaceMembership[],
   ] = await Promise.all([getSpace(slug), getMe(), getMyMemberships()])
+
+  // The same fallback the About page uses, and it has to be here too:
+  // this layout wraps that page, so its ``notFound()`` fired first and
+  // 404'd the whole route even though the page itself had rendered.
+  //
+  // The adapted payload reports ``area_access: []``, so ``SpaceNav``
+  // renders no member tabs — a public visitor is offered no door into
+  // a Collective they cannot enter.
+  const publicAbout = privateSpace ? null : await getPublicCollectiveAbout(slug)
+  const space = privateSpace
+    ?? (publicAbout ? publicAboutAsSpace(publicAbout) : null)
 
   if (!space) notFound()
 
