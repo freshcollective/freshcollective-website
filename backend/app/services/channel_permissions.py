@@ -451,9 +451,38 @@ def accessible_user_ids_for_channel(
             pathway.status.value if hasattr(pathway.status, "value")
             else str(pathway.status)
         )
-        if p_status in ("draft", "archived", "coming_soon"):
-            # Canonical rule: only caretakers can access these Pathways.
+        from app.services.pathway_access import (
+            RETIRED_STATUS,
+            WITHHELD_STATUSES,
+            users_retaining_acquired_access,
+        )
+
+        if p_status in WITHHELD_STATUSES:
+            # Canonical rule: only caretakers can reach these Pathways.
             return caretaker_ids
+        # Archived Pathways keep their purchasers, so the channel keeps
+        # them too — otherwise a member who still has the Pathway could
+        # read its conversation and never be offered as a mention.
+        #
+        # Narrowing, like the other two surfaces: the per-access-type
+        # sets below are computed as normal and then intersected with
+        # the holders, so nobody is added by the Pathway being
+        # archived. Caretakers are unioned back in at every return.
+        retained_ids: set[str] | None = None
+        if p_status == RETIRED_STATUS:
+            retained_ids = users_retaining_acquired_access(
+                db, space_id=space.id, pathway_id=pathway.id,
+            )
+
+        def _allow(candidates: set[str]) -> set[str]:
+            """Apply the archive narrowing, then add the caretakers.
+
+            One place, so the three access-type branches below cannot
+            each forget it differently."""
+            if retained_ids is not None:
+                candidates = candidates & retained_ids
+            return candidates | caretaker_ids
+
         active_member_ids = {
             row.user_id
             for row in db.query(SpaceMembership.user_id)
@@ -468,7 +497,7 @@ def accessible_user_ids_for_channel(
             else str(pathway.access_type or "free")
         )
         if access_type in ("free", "included"):
-            return active_member_ids | caretaker_ids
+            return _allow(active_member_ids)
         if access_type == "included_with_offer":
             # Unlock-holders come from the canonical helper so this set
             # cannot drift from the per-user predicate
@@ -478,7 +507,7 @@ def accessible_user_ids_for_channel(
             candidates = users_with_included_with_offer_access(
                 db, space_id=space.id, pathway_id=pathway.id,
             )
-            return (candidates & active_member_ids) | caretaker_ids
+            return _allow(candidates & active_member_ids)
         # one_time / subscription — active, non-expired PathwayEntitlement.
         now = datetime.utcnow()
         rows = db.query(PathwayEntitlement.user_id).filter(
@@ -487,7 +516,7 @@ def accessible_user_ids_for_channel(
             (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
         ).all()
         candidates = {r.user_id for r in rows}
-        return (candidates & active_member_ids) | caretaker_ids
+        return _allow(candidates & active_member_ids)
     if ct == "gathering" and channel.gathering_id:
         from app.models.platform import BookingStatus  # local import — avoids cycle
         rows = db.query(EventBooking.user_id).filter(

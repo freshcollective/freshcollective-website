@@ -8,6 +8,7 @@ Permission model:
 """
 
 import json
+import logging
 import pathlib
 import re
 from datetime import datetime, timedelta, timezone
@@ -258,6 +259,8 @@ from app.services.schedule_validation import (
     validate_recurring_installments_payload,
 )
 from app.spaces.schemas import SpaceSummary
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/creator", tags=["creator"])
 
@@ -3192,17 +3195,93 @@ def update_pathway(
     }
 
 
-@router.delete("/spaces/{slug}/pathways/{pathway_slug}", status_code=204)
+@router.delete(
+    "/spaces/{slug}/pathways/{pathway_slug}",
+    status_code=204,
+    summary=(
+        "Permanently delete a draft pathway that was never published "
+        "and that nobody has acquired, enrolled in or worked through"
+    ),
+)
 def delete_pathway(
     slug: str,
     pathway_slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> None:
+    """Delete, and only where there is nothing to preserve.
+
+    This endpoint used to be ``db.delete(pathway); db.commit()`` with no
+    checks at all, which is Sentry FC-API-D. Twenty foreign keys point
+    at ``pathways``; one carries ``RESTRICT``, so the database refused
+    some deletes as an unhandled 500 and permitted the rest — including
+    deletes that cascaded away members' entitlements, enrolments,
+    progress and written reflections, and left their payments pointing
+    at nothing. ``services.pathway_deletion`` holds the full dependency
+    census and the reasoning; see its module docstring.
+
+    The shape is ``delete_offering``'s, deliberately:
+
+    1. **Lock the row.** The eligibility checks are otherwise a read
+       followed by a write with a gap, and a concurrent publish lands in
+       that gap — ``update_pathway`` would set ``status='active'`` and
+       announce it while this request was still deciding on checks that
+       were true a moment ago.
+    2. **Refuse with 409**, naming the reason, when anything must
+       outlive the delete.
+    3. **Remove what this pathway owns** — its own never-sold draft
+       Payment Option and its own empty conversation Channel. Those
+       exist only to serve this pathway and nobody else can reach them,
+       so they are part of what gets deleted rather than blockers. That
+       distinction is the whole reason FC-API-D was a dead end: the
+       pathway could not be deleted because of its own Payment Option,
+       and then the Collective could not be deleted because of the same
+       option.
+    4. **Catch ``IntegrityError`` and answer 409.** A reference that
+       exists is a refusal, and a refusal is not a 500. This is the
+       backstop for any future foreign key nobody updated the census
+       for.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services import pathway_commerce, pathway_deletion
+
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     pathway = _get_pathway(space, pathway_slug, db)
-    db.delete(pathway)
-    db.commit()
+
+    db.query(Pathway).filter(Pathway.id == pathway.id).with_for_update().one()
+    db.refresh(pathway)
+
+    blocked = pathway_deletion.blocking_reference(db, pathway)
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
+
+    pathway_id = pathway.id
+    try:
+        pathway_commerce.delete_owned_commerce_rows(db, pathway)
+        pathway_deletion.delete_owned_conversation_channels(db, pathway)
+        db.delete(pathway)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning(
+            "pathway delete refused by a foreign key: id=%s space=%s",
+            pathway_id, space.id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Something else in this Collective still refers to this "
+                "pathway, so it cannot be permanently deleted. Nothing "
+                "has been changed."
+            ),
+        ) from None
+
+    logger.info(
+        "pathway deleted: id=%s space=%s by=%s",
+        pathway_id, space.id, current_user.id,
+    )
 
 
 @router.post("/spaces/{slug}/pathways/{pathway_slug}/cover", response_model=PathwayResponse)

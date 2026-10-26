@@ -77,6 +77,7 @@ from app.services.discount_pricing import (
 )
 from app.services import pathway_payment_options as pathway_options
 from app.services import checkout_supersession as _supersession
+from app.services import pathway_commerce as _pathway_commerce
 from app.services.checkout_orchestration import (
     _resolve_fee_bps_for_creator,
     check_option_fulfillable_or_raise,
@@ -432,6 +433,9 @@ def create_unified_checkout_session(
             payment_option_schedule_id=body.payment_option_schedule_id,
         )
         check_option_fulfillable_or_raise(recurring_resolved.payment_option)
+        _pathway_commerce.check_sellable_or_raise(
+            db, recurring_resolved.payment_option,
+        )
         check_same_option_not_active(
             db, user=current_user,
             payment_option=recurring_resolved.payment_option, now=now,
@@ -460,6 +464,13 @@ def create_unified_checkout_session(
         payment_option_schedule_id=body.payment_option_schedule_id,
     )
     check_option_fulfillable_or_raise(resolved.payment_option)
+    # Archiving a Pathway has to stop new purchases of it. Enforced at
+    # the door rather than by archiving the creator's Payment Options
+    # behind their back — ``pathway_commerce.unsellable_reason`` sets
+    # out why, and what a bundle deliberately keeps selling. Sits
+    # before the free path below, so a $0 archived Pathway is refused
+    # too.
+    _pathway_commerce.check_sellable_or_raise(db, resolved.payment_option)
     check_same_option_not_active(
         db, user=current_user,
         payment_option=resolved.payment_option, now=now,

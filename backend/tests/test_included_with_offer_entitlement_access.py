@@ -505,12 +505,19 @@ class TestDenials:
         )
 
     @pytest.mark.parametrize(
-        "status",
-        [PathwayStatus.draft, PathwayStatus.archived, PathwayStatus.coming_soon],
+        "status", [PathwayStatus.draft, PathwayStatus.coming_soon],
     )
-    def test_unavailable_pathway_status_still_denies(
+    def test_a_withheld_pathway_status_still_denies(
         self, db, make_space, make_user, status,
     ):
+        """``draft`` and ``coming_soon`` are flat refusals whatever the
+        member holds: one was never offered, the other is not open yet.
+
+        ``archived`` used to be in this list and deliberately is not any
+        more — it was revoking purchases. See
+        ``TestArchivedPathwaysKeepTheirPurchasers`` below, and
+        ``pathway_access.retains_acquired_access`` for the reasoning.
+        """
         space = make_space()
         user = make_user()
         _member(db, user, space)
@@ -524,6 +531,145 @@ class TestDenials:
     def test_anonymous_visitor_still_denied(self, db, make_space):
         space = make_space()
         pathway = _pathway(db, space)
+        db.commit()
+
+        assert compute_pathway_access(None, pathway, space, db) is False
+
+
+# ---------------------------------------------------------------------------
+# 3b · Archiving takes a Pathway out of circulation, not out of a
+#      member's hands
+# ---------------------------------------------------------------------------
+
+
+class TestArchivedPathwaysKeepTheirPurchasers:
+    """All three surfaces used to test ``status in ("draft",
+    "archived", "coming_soon")`` and refuse *before* looking at what
+    the member held, so archiving revoked every purchase — entitlement
+    row, progress and reflections all still in the database, all
+    unreachable.
+
+    Asserted through ``_assert_all_surfaces`` for the same reason the
+    rest of this file is: the original defect here was three surfaces
+    disagreeing, and a fourth copy of the status rule is exactly how
+    that would happen again.
+    """
+
+    def test_an_entitlement_holder_keeps_an_archived_pathway(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        user = make_user()
+        _member(db, user, space)
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        _grant(db, _option(db, space), pathway)
+        _entitlement(db, user=user, space=space, pathway=pathway)
+        channel = _channel(db, space, pathway)
+        db.commit()
+
+        _assert_all_surfaces(
+            db, user=user, pathway=pathway, space=space,
+            expected=True, channel=channel,
+        )
+
+    def test_a_pass_holder_keeps_an_archived_pathway(
+        self, db, make_space, make_user,
+    ):
+        """The other durable record. Same answer, because "what
+        survives archiving" and "what unlocks an
+        ``included_with_offer`` Pathway" are the same question."""
+        space = make_space()
+        user = make_user()
+        _member(db, user, space)
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        option = _option(db, space)
+        _grant(db, option, pathway)
+        _access_pass(db, user=user, space=space, option=option)
+        channel = _channel(db, space, pathway)
+        db.commit()
+
+        _assert_all_surfaces(
+            db, user=user, pathway=pathway, space=space,
+            expected=True, channel=channel,
+        )
+
+    def test_a_member_holding_nothing_is_denied(
+        self, db, make_space, make_user,
+    ):
+        """The narrowing half. Archiving is still how a creator takes a
+        Pathway out of circulation — it does not become a members'
+        freebie."""
+        space = make_space()
+        user = make_user()
+        _member(db, user, space)
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        _grant(db, _option(db, space), pathway)
+        channel = _channel(db, space, pathway)
+        db.commit()
+
+        _assert_all_surfaces(
+            db, user=user, pathway=pathway, space=space,
+            expected=False, channel=channel,
+        )
+
+    def test_a_revoked_entitlement_opens_nothing(
+        self, db, make_space, make_user,
+    ):
+        """"Preserve purchases" is not "grant access forever". The
+        record has to still be good."""
+        from app.models.platform import EntitlementStatus
+
+        space = make_space()
+        user = make_user()
+        _member(db, user, space)
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        _grant(db, _option(db, space), pathway)
+        _entitlement(
+            db, user=user, space=space, pathway=pathway,
+            status=EntitlementStatus.revoked,
+        )
+        db.commit()
+
+        assert compute_pathway_access(user, pathway, space, db) is False
+
+    def test_an_expired_entitlement_opens_nothing(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        user = make_user()
+        _member(db, user, space)
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        _grant(db, _option(db, space), pathway)
+        _entitlement(
+            db, user=user, space=space, pathway=pathway,
+            ends_at=datetime.utcnow() - timedelta(days=1),
+        )
+        db.commit()
+
+        assert compute_pathway_access(user, pathway, space, db) is False
+
+    def test_membership_is_still_required_where_it_always_was(
+        self, db, make_space, make_user,
+    ):
+        """The archive rule is applied *in addition to* the access-type
+        rule, never instead of it. An ``included_with_offer`` Pathway
+        requires active membership, and archiving does not waive that —
+        otherwise archiving would widen access, which is the one thing
+        it must not do."""
+        space = make_space()
+        user = make_user()  # deliberately not a member
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
+        _grant(db, _option(db, space), pathway)
+        _entitlement(db, user=user, space=space, pathway=pathway)
+        db.commit()
+
+        assert compute_pathway_access(user, pathway, space, db) is False
+
+    def test_an_anonymous_visitor_is_still_denied(self, db, make_space):
+        """Nobody anonymous holds anything, so this stays a flat
+        refusal — an archived Pathway is never publicly reachable."""
+        space = make_space()
+        pathway = _pathway(db, space, status=PathwayStatus.archived)
         db.commit()
 
         assert compute_pathway_access(None, pathway, space, db) is False

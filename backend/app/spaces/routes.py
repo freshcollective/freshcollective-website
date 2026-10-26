@@ -760,8 +760,10 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
 # backward compatibility with in-module callers.
 from app.services.pathway_access import compute_pathway_access as _compute_pathway_access  # noqa: E402
 from app.services.pathway_access import (  # noqa: E402
+    RETIRED_STATUS as _RETIRED_STATUS,
     has_active_pathway_entitlement as _has_active_pathway_entitlement,
     included_with_offer_unlocked as _included_with_offer_unlocked,
+    retains_acquired_access as _retains_acquired_access,
 )
 
 
@@ -778,8 +780,11 @@ def _check_pathway_access(
       - platform admin → always allowed
       - Space owner → always allowed
       - active SpaceMembership(role in creator/moderator) → always allowed
-      - draft/archived pathway → denied to everyone else
+      - draft pathway → denied to everyone else
       - coming_soon pathway → denied (About page is separate, not gated here)
+      - archived pathway → denied UNLESS the caller holds a durable
+        record of having acquired it, and then the ordinary rule for
+        its access type still has to pass as well
       - free pathway (active) → allowed
       - included pathway (active) → allowed for space members
       - one_time/subscription pathway → requires active PathwayEntitlement row
@@ -814,10 +819,31 @@ def _check_pathway_access(
     p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
     access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
 
-    if p_status in ("draft", "archived"):
+    if p_status == "draft":
         raise HTTPException(status_code=403, detail="This pathway is not available.")
     if p_status == "coming_soon":
         raise HTTPException(status_code=403, detail="This pathway is coming soon.")
+
+    # Archived. Mirror of the same branch in
+    # ``services.pathway_access.compute_pathway_access`` — kept in
+    # lockstep by sharing the predicate rather than by matching the
+    # query by hand, which is how the three surfaces drifted before.
+    #
+    # An EXTRA condition, not a replacement: the access-type rules
+    # below still run, so an archived ``included_with_offer`` Pathway
+    # still needs active membership and an archived ``one_time`` one
+    # still needs a live entitlement. Nobody gains anything by a
+    # Pathway being archived.
+    if p_status == _RETIRED_STATUS and not _retains_acquired_access(
+        db, user_id=user.id, space_id=space.id, pathway_id=pathway.id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This pathway has been archived and is no longer "
+                "available."
+            ),
+        )
 
     if access_type == "free":
         return
@@ -1740,7 +1766,31 @@ def list_pathways(
     # members-only published Pathway is listed and renders locked.
     _listed = pathway_visibility.listed_pathway_filter(is_space_manager)
     if _listed is not None:
-        query = query.filter(_listed)
+        # One personal exception: an archived Pathway this caller still
+        # holds. Archiving no longer revokes a purchase, and a Pathway
+        # that is open to a member but absent from their list is open
+        # in name only.
+        #
+        # Personal, not public. The ids are resolved for this user, so
+        # an anonymous caller adds nothing (there is no user to ask
+        # about) and a member holding nothing gets an empty set. Every
+        # genuinely public surface — the Explore counts,
+        # ``hydrate_public_space_cards``, the anonymous
+        # ``SpaceResponse`` payload — reads
+        # ``pathway_visibility`` directly and still excludes archived
+        # Pathways outright.
+        _retained: set[str] = set()
+        if current_user is not None:
+            from app.services.pathway_access import (
+                retained_archived_pathway_ids,
+            )
+            _retained = retained_archived_pathway_ids(
+                db, user_id=current_user.id, space_id=space.id,
+            )
+        if _retained:
+            query = query.filter(_listed | Pathway.id.in_(_retained))
+        else:
+            query = query.filter(_listed)
 
     pathways = query.order_by(Pathway.position).all()
 

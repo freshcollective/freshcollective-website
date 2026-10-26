@@ -6,6 +6,19 @@ import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { CreatorPathway, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import { unitCountLabel } from '@/lib/pathwayTerminology'
+import {
+  ARCHIVE_CONFIRM_PARAGRAPHS,
+  DELETE_CONFIRM_PARAGRAPHS,
+  GENERIC_ARCHIVE_ERROR,
+  GENERIC_DELETE_ERROR,
+  GENERIC_RESTORE_ERROR,
+  NOT_DELETABLE_PARAGRAPHS,
+  RESTORED_STATUS,
+  actionErrorMessage,
+  isArchivableStatus,
+  isDeletableStatus,
+  isRestorableStatus,
+} from '@/lib/pathwayLifecycle'
 
 /**
  * Creator Studio → Pathways.
@@ -14,9 +27,15 @@ import { unitCountLabel } from '@/lib/pathwayTerminology'
  * anchored by artwork (its own cover, the collective's Location, or a
  * quiet neutral fallback) and grouped by lifecycle state.
  *
- * The page shows the current *catalogue of experiences*: Live, Coming
- * soon, and Building. Archived is not surfaced here — deletion is the
- * way to remove a pathway from the collective.
+ * The page shows the whole catalogue, grouped by lifecycle state:
+ * Live, Coming soon, Building, and Archived.
+ *
+ * Archived used to be hidden here, on the reasoning that "deletion is
+ * the way to remove a pathway from the collective". That left archived
+ * pathways in a trap: the Settings status dropdown has always offered
+ * Archived, and choosing it made the pathway vanish from this page
+ * with no route back except typing its settings URL from memory. The
+ * group below is that route, and it carries Restore.
  */
 
 // ---------------------------------------------------------------------------
@@ -55,10 +74,11 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-// Ordered so the page reads Live → Coming soon → Building. Archived is
-// intentionally excluded from this page — creators delete unwanted
-// pathways instead. New public statuses can be added by extending this
-// list; only groups with items render.
+// Ordered so the page reads Live → Coming soon → Building →
+// Archived: in front of members first, then in progress, then put
+// away. New statuses can be added by extending this list; only groups
+// with items render, so a collective with nothing archived looks
+// exactly as it did before.
 const STATUS_ORDER: {
   key: string
   label: string
@@ -68,6 +88,7 @@ const STATUS_ORDER: {
   { key: 'live',        label: 'Live',        helper: 'Available for members to begin.',                match: (p) => p.status === 'active' },
   { key: 'coming_soon', label: 'Coming soon', helper: 'Ready and waiting for release.',                 match: (p) => p.status === 'coming_soon' },
   { key: 'building',    label: 'Building',    helper: "Only visible to you while you're creating.",     match: (p) => p.status === 'draft' },
+  { key: 'archived',    label: 'Archived',    helper: 'Not offered any more. Members who already have access keep it.', match: (p) => p.status === 'archived' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -87,7 +108,12 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
   const [pathways, setPathways] = useState<CreatorPathway[]>(initialPathways)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState<CreatorPathway | null>(null)
+  // Which pathway is awaiting confirmation, and for which action.
+  // Restore is absent on purpose: it is reversible and puts the
+  // pathway back as a draft, so there is nothing to warn about.
+  const [confirming, setConfirming] = useState<
+    { pathway: CreatorPathway; action: 'delete' | 'archive' } | null
+  >(null)
 
   // ── Collective-level artwork fallback (resolved once) ──────────────
   const collectiveFallback = resolveMediaUrl(
@@ -99,6 +125,21 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
 
   // ── Actions ────────────────────────────────────────────────────────
 
+  /**
+   * Delete, and say what happened when it doesn't.
+   *
+   * This used to answer every failure with "Please try again", which
+   * was the worst possible response to the one failure that actually
+   * occurs: the API now refuses with a 409 and a sentence naming the
+   * record it is protecting — a member's entitlement, a shared Payment
+   * Option, a comment on a step. "Try again" invites the creator to
+   * repeat an action that will never succeed, and tells them nothing
+   * about what to do instead.
+   *
+   * The choice of message lives in ``lib/pathwayDelete`` so it can be
+   * tested without a browser, and so the component cannot drift from
+   * it.
+   */
   async function performDelete(pathway: CreatorPathway) {
     if (!activeSpace) return
     setBusyId(pathway.id)
@@ -109,12 +150,65 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
         { method: 'DELETE', credentials: 'include' },
       )
       if (!res.ok) {
-        setError('Could not delete this pathway. Please try again.')
+        setError(actionErrorMessage(
+          await res.json().catch(() => null), GENERIC_DELETE_ERROR,
+        ))
         return
       }
       setPathways((prev) => prev.filter((p) => p.id !== pathway.id))
     } catch {
-      setError('Could not delete this pathway. Please try again.')
+      // The network, not a refusal — nothing specific to report.
+      setError(GENERIC_DELETE_ERROR)
+    } finally {
+      setBusyId(null)
+      setConfirming(null)
+    }
+  }
+
+  /**
+   * Archive and Restore are the same request with a different status,
+   * so they are one function.
+   *
+   * The row is updated in place rather than refetched: the list is
+   * already grouped by status, so moving the status moves the card
+   * into its new group on the next render. Nothing else about the
+   * pathway changes — archiving is a status change and nothing more,
+   * which is exactly why it is safe to offer here.
+   */
+  async function setStatus(pathway: CreatorPathway, status: string) {
+    if (!activeSpace) return
+    const fallback = status === RESTORED_STATUS
+      ? GENERIC_RESTORE_ERROR
+      : GENERIC_ARCHIVE_ERROR
+    setBusyId(pathway.id)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${activeSpace.slug}/pathways/${pathway.slug}`),
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        },
+      )
+      if (!res.ok) {
+        setError(actionErrorMessage(
+          await res.json().catch(() => null), fallback,
+        ))
+        return
+      }
+      const updated = await res.json().catch(() => null)
+      const nextStatus: string = (
+        typeof updated?.status === 'string' ? updated.status : status
+      )
+      setPathways((prev) => prev.map(
+        (p) => (p.id === pathway.id
+          ? { ...p, status: nextStatus as CreatorPathway['status'] }
+          : p),
+      ))
+    } catch {
+      setError(fallback)
     } finally {
       setBusyId(null)
       setConfirming(null)
@@ -137,10 +231,9 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
     )
   }
 
-  // Filter out archived pathways entirely — they don't appear on this
-  // page anymore. Any archived rows still in the underlying data are
-  // silently omitted from the gallery.
-  const visiblePathways = pathways.filter((p) => p.status !== 'archived')
+  // Every status is shown now, archived included — see the Archived
+  // group in STATUS_ORDER above and the trap it exists to close.
+  const visiblePathways = pathways
 
   if (visiblePathways.length === 0) {
     return (
@@ -230,7 +323,9 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
                     pathway={pathway}
                     collectiveFallback={collectiveFallback}
                     busy={busyId === pathway.id}
-                    onDelete={() => setConfirming(pathway)}
+                    onDelete={() => setConfirming({ pathway, action: 'delete' })}
+                    onArchive={() => setConfirming({ pathway, action: 'archive' })}
+                    onRestore={() => setStatus(pathway, RESTORED_STATUS)}
                   />
                 ))}
               </div>
@@ -240,11 +335,16 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
       </div>
 
       {confirming && (
-        <DeleteConfirmDialog
-          pathway={confirming}
-          busy={busyId === confirming.id}
+        <LifecycleConfirmDialog
+          pathway={confirming.pathway}
+          action={confirming.action}
+          busy={busyId === confirming.pathway.id}
           onCancel={() => setConfirming(null)}
-          onConfirm={() => performDelete(confirming)}
+          onConfirm={() => (
+            confirming.action === 'delete'
+              ? performDelete(confirming.pathway)
+              : setStatus(confirming.pathway, 'archived')
+          )}
         />
       )}
     </>
@@ -257,12 +357,14 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
 // ---------------------------------------------------------------------------
 
 function PathwayCard({
-  pathway, collectiveFallback, busy, onDelete,
+  pathway, collectiveFallback, busy, onDelete, onArchive, onRestore,
 }: {
   pathway: CreatorPathway
   collectiveFallback: string | null
   busy: boolean
   onDelete: () => void
+  onArchive: () => void
+  onRestore: () => void
 }) {
   const artwork = resolveMediaUrl(pathway.cover_image_url ?? undefined) ?? collectiveFallback
 
@@ -344,7 +446,8 @@ function PathwayCard({
         </p>
 
         {/* Footer: Continue editing → is the primary; overflow holds
-            Preview + Delete. */}
+            Preview and whichever lifecycle actions this status
+            offers. */}
         <div className="mt-5 flex items-center justify-between gap-2 pt-4" style={{ borderTop: '1px solid rgba(12,24,38,0.06)' }}>
           <Link
             href={`/creator-studio/pathways/${pathway.slug}`}
@@ -355,8 +458,11 @@ function PathwayCard({
           </Link>
           <OverflowMenu
             title={pathway.title}
+            status={pathway.status}
             previewHref={previewHref}
             onDelete={onDelete}
+            onArchive={onArchive}
+            onRestore={onRestore}
             disabled={busy}
           />
         </div>
@@ -413,11 +519,14 @@ function AccessChip({ label, onArtwork }: { label: string; onArtwork: boolean })
 // ---------------------------------------------------------------------------
 
 function OverflowMenu({
-  title, previewHref, onDelete, disabled,
+  title, status, previewHref, onDelete, onArchive, onRestore, disabled,
 }: {
   title: string
+  status: string
   previewHref: string
   onDelete: () => void
+  onArchive: () => void
+  onRestore: () => void
   disabled: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -477,14 +586,42 @@ function OverflowMenu({
           >
             Preview
           </a>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => { setOpen(false); onDelete() }}
-            className="block w-full px-4 py-2 text-left text-[13px] text-red-600 transition-colors hover:bg-red-50"
-          >
-            Delete
-          </button>
+          {/*
+            One action per lifecycle state, so the menu never offers a
+            press the API will decline. ``isDeletableStatus`` and
+            friends mirror the server's own rules — see
+            ``lib/pathwayLifecycle``.
+          */}
+          {isRestorableStatus(status) && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onRestore() }}
+              className="block w-full px-4 py-2 text-left text-[13px] text-teal-700 transition-colors hover:bg-teal-50"
+            >
+              Restore
+            </button>
+          )}
+          {isArchivableStatus(status) && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onArchive() }}
+              className="block w-full px-4 py-2 text-left text-[13px] text-slate-800 transition-colors hover:bg-slate-50"
+            >
+              Archive
+            </button>
+          )}
+          {isDeletableStatus(status) && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onDelete() }}
+              className="block w-full px-4 py-2 text-left text-[13px] text-red-600 transition-colors hover:bg-red-50"
+            >
+              Delete
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -493,26 +630,74 @@ function OverflowMenu({
 
 
 // ---------------------------------------------------------------------------
-// Delete confirmation dialog — custom modal so we can control the copy
-// and the button labels ("Cancel" / "Delete pathway") which the native
-// confirm() dialog cannot express.
+// Lifecycle confirmation dialog — one shell, two actions
 // ---------------------------------------------------------------------------
+//
+// A custom modal rather than ``confirm()`` so the copy and the button
+// labels can say what actually happens. One component for both Archive
+// and Delete because they share the shell exactly, and a second copy
+// of it would drift.
+//
+// Restore deliberately has no dialog: it returns the pathway to Draft,
+// where nobody but the creator can see it, and it can be undone by
+// archiving again.
 
-function DeleteConfirmDialog({
-  pathway, busy, onCancel, onConfirm,
+/**
+ * What each action tells the creator before they commit to it.
+ *
+ * The wording lives in ``lib/pathwayLifecycle`` so it can be asserted
+ * directly rather than scraped out of this file — see the note there
+ * about why a source scrape is the wrong test for copy.
+ */
+function dialogCopy(
+  pathway: CreatorPathway, action: 'delete' | 'archive',
+): {
+  title: string
+  paragraphs: readonly string[]
+  confirm: string
+  busy: string
+  danger: boolean
+} {
+  if (action === 'archive') {
+    return {
+      title: `Archive \u201C${pathway.title}\u201D?`,
+      paragraphs: ARCHIVE_CONFIRM_PARAGRAPHS,
+      confirm: 'Archive pathway',
+      busy: 'Archiving…',
+      danger: false,
+    }
+  }
+  if (isDeletableStatus(pathway.status)) {
+    return {
+      title: `Delete \u201C${pathway.title}\u201D?`,
+      paragraphs: DELETE_CONFIRM_PARAGRAPHS,
+      confirm: 'Delete pathway',
+      busy: 'Deleting…',
+      danger: true,
+    }
+  }
+  // Reachable only if a status changes under an open menu.
+  return {
+    title: `\u201C${pathway.title}\u201D cannot be deleted`,
+    paragraphs: NOT_DELETABLE_PARAGRAPHS,
+    confirm: '',
+    busy: '',
+    danger: false,
+  }
+}
+
+
+function LifecycleConfirmDialog({
+  pathway, action, busy, onCancel, onConfirm,
 }: {
   pathway: CreatorPathway
+  action: 'delete' | 'archive'
   busy: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
-  // "Has been live" heuristic — the strongest signal we have from the
-  // existing summary is the current status. A pathway currently ``active``
-  // is being consumed by members right now; deleting it will remove any
-  // member progress. If the API gains a "has_had_members" or historical
-  // signal, prefer that.
-  // TODO: refine with real member-activity data once available.
-  const hasBeenLive = pathway.status === 'active'
+  const copy = dialogCopy(pathway, action)
+  const actionable = copy.confirm !== ''
 
   // Trap Escape to cancel.
   useEffect(() => {
@@ -528,7 +713,7 @@ function DeleteConfirmDialog({
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="delete-pathway-title"
+      aria-labelledby="pathway-lifecycle-title"
     >
       <div
         className="absolute inset-0"
@@ -544,25 +729,14 @@ function DeleteConfirmDialog({
       >
         <div className="px-6 pt-6 pb-2">
           <h2
-            id="delete-pathway-title"
+            id="pathway-lifecycle-title"
             className="font-serif text-[22px] leading-tight text-navy-900"
           >
-            Delete &ldquo;{pathway.title}&rdquo;?
+            {copy.title}
           </h2>
         </div>
         <div className="space-y-3 px-6 pb-6 pt-3 text-[14px] leading-relaxed text-slate-700">
-          {hasBeenLive ? (
-            <>
-              <p>Members have accessed this pathway.</p>
-              <p>Deleting it will permanently remove the pathway and any associated member progress.</p>
-              <p>This action cannot be undone.</p>
-            </>
-          ) : (
-            <>
-              <p>This will permanently remove the pathway.</p>
-              <p>This action cannot be undone.</p>
-            </>
-          )}
+          {copy.paragraphs.map((text) => <p key={text}>{text}</p>)}
         </div>
         <div
           className="flex items-center justify-end gap-2 px-6 py-4"
@@ -572,20 +746,34 @@ function DeleteConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
+            autoFocus={!actionable}
             className="rounded-lg px-4 py-2 text-[13.5px] font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:opacity-50"
           >
-            Cancel
+            {actionable ? 'Cancel' : 'Close'}
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            autoFocus
-            className="rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-60"
-            style={{ background: '#dc2626' }}
-          >
-            {busy ? 'Deleting…' : 'Delete pathway'}
-          </button>
+          {/* No confirm button on an action the API would decline.
+              Offering one and letting the server refuse is a worse
+              experience than not offering it: the creator presses it,
+              waits, and gets a sentence they could have read first. */}
+          {actionable && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={busy}
+              autoFocus
+              className={
+                'rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white '
+                + 'transition-colors focus:outline-none focus-visible:ring-2 '
+                + (copy.danger
+                  ? 'hover:bg-red-700 focus-visible:ring-red-400 '
+                  : 'hover:opacity-90 focus-visible:ring-teal-400 ')
+                + 'disabled:opacity-60'
+              }
+              style={{ background: copy.danger ? '#dc2626' : 'var(--color-teal-700, #0f766e)' }}
+            >
+              {busy ? copy.busy : copy.confirm}
+            </button>
+          )}
         </div>
       </div>
     </div>

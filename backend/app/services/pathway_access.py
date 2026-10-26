@@ -70,6 +70,7 @@ from app.models.platform import (
     EntitlementStatus,
     Pathway,
     PathwayEntitlement,
+    PathwayStatus,
     Space,
     SpaceMembership,
     SpaceMembershipStatus,
@@ -89,6 +90,16 @@ from app.models.user import User
 # they had all drifted the same way — see the ``included_with_offer``
 # note in the module docstring. The queries now live here once.
 # ---------------------------------------------------------------------------
+
+
+#: Statuses that take a Pathway out of circulation completely. Nobody
+#: but a caretaker may reach it, whatever they hold — a ``draft`` was
+#: never offered, and a ``coming_soon`` one is not open yet.
+WITHHELD_STATUSES: tuple[str, ...] = ("draft", "coming_soon")
+
+#: Out of circulation, but acquired access survives. The Pathway
+#: analogue of a retired Offering.
+RETIRED_STATUS = "archived"
 
 
 def unlock_option_ids_for_pathway(db: Session, pathway_id: str):
@@ -231,6 +242,158 @@ def users_with_included_with_offer_access(
     return pass_holders | entitled
 
 
+def retains_acquired_access(
+    db: Session, *, user_id: str, space_id: str, pathway_id: str,
+    now: datetime | None = None,
+) -> bool:
+    """Does this user hold a record of having acquired this Pathway?
+
+    The one extra question an archived Pathway asks, and the reason it
+    is a question rather than a flat refusal.
+
+    Archiving used to revoke every purchase
+    ---------------------------------------
+    All three access surfaces tested ``status in ("draft", "archived",
+    "coming_soon")`` and refused **before** looking at what the member
+    held. So a member who had bought a Pathway outright lost it the
+    moment its creator tidied their catalogue — their entitlement row,
+    their progress and their reflections all still in the database,
+    and all unreachable.
+
+    That is not what archiving means anywhere else on the platform.
+    ``retire_offering`` says it plainly: "Nothing about existing
+    ownership is touched — entitlements are not read here, let alone
+    revoked, and download authorisation never consults Offering
+    status." And one module below, ``unlock_option_ids_for_pathway``
+    has always treated an **archived Payment Option** as one whose
+    "historical buyers keep what they paid for". The Pathway status
+    gate was the only place that disagreed.
+
+    What counts
+    -----------
+    Either durable record, exactly the two
+    :func:`included_with_offer_unlocked` already recognises:
+
+    * an active, unexpired ``PathwayEntitlement`` for this Pathway —
+      what ``purchase_fulfilment`` writes for a ``pathway`` grant, and
+      where a manual Creator grant lands too;
+    * an active, unexpired ``AccessPass`` in this Collective on an
+      Option that includes this Pathway.
+
+    Both are revocation- and expiry-aware, which is what keeps
+    "preserve purchases" from becoming "grant access forever": a
+    revoked entitlement or a lapsed pass opens nothing, archived or
+    not.
+
+    What deliberately does not count
+    --------------------------------
+    Membership. A ``free`` or plain ``included`` Pathway has no
+    acquisition record behind it — access came from being a member, and
+    archiving is how a creator stops offering it. Letting membership
+    alone open an archived Pathway would make archiving mean nothing
+    for the majority of Pathways, and would be the "additional access"
+    this change is specifically not meant to grant.
+
+    This is a **narrowing** predicate, never a widening one. Callers
+    apply it *in addition to* the ordinary access-type rule rather than
+    instead of it, so an archived ``included_with_offer`` Pathway still
+    requires active membership and an archived ``one_time`` one still
+    requires a live entitlement. Nobody gains access by a Pathway being
+    archived.
+    """
+    return (
+        has_active_pathway_entitlement(
+            db, user_id=user_id, pathway_id=pathway_id, now=now,
+        )
+        or has_offer_access_pass(
+            db, user_id=user_id, space_id=space_id,
+            pathway_id=pathway_id, now=now,
+        )
+    )
+
+
+def users_retaining_acquired_access(
+    db: Session, *, space_id: str, pathway_id: str,
+    now: datetime | None = None,
+) -> set[str]:
+    """Set form of :func:`retains_acquired_access`, for the
+    mention-autocomplete path which needs every eligible user at once.
+
+    Shares its query with
+    :func:`users_with_included_with_offer_access` — the two questions
+    have the same answer, because "what unlocks an
+    ``included_with_offer`` Pathway" and "what survives archiving" are
+    both "a durable record of having acquired it".
+    """
+    return users_with_included_with_offer_access(
+        db, space_id=space_id, pathway_id=pathway_id, now=now,
+    )
+
+
+def retained_archived_pathway_ids(
+    db: Session, *, user_id: str, space_id: str,
+    now: datetime | None = None,
+) -> set[str]:
+    """Archived Pathways in this Collective that this user still holds.
+
+    Preserving access to an archived Pathway is worth nothing if there
+    is no way to reach it. The member Pathways tab lists
+    ``pathway_visibility.LISTED_STATUSES`` only — ``active`` and
+    ``coming_soon`` — so after the access change an archived Pathway a
+    member had bought was open to them and invisible to them at the
+    same time.
+
+    This is what lets the tab make a **personal** exception without
+    making a public one. It returns ids for one user; an anonymous
+    caller never reaches it, and a member who holds nothing gets an
+    empty set, so the Pathway stays undiscoverable to everybody who
+    does not already have it. Public counts and the anonymous
+    ``SpaceResponse`` payload are untouched and still exclude archived
+    Pathways entirely.
+
+    The two arms are the same two records as
+    :func:`retains_acquired_access`, in set form.
+    """
+    at = now if now is not None else datetime.utcnow()
+
+    archived = (
+        db.query(Pathway.id)
+        .filter(
+            Pathway.space_id == space_id,
+            Pathway.status == PathwayStatus.archived,
+        )
+    )
+    archived_ids = {row[0] for row in archived.all()}
+    if not archived_ids:
+        return set()
+
+    held = {
+        row[0]
+        for row in db.query(PathwayEntitlement.pathway_id)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id.in_(archived_ids),
+            PathwayEntitlement.status == EntitlementStatus.active,
+            (PathwayEntitlement.ends_at.is_(None)
+             | (PathwayEntitlement.ends_at > at)),
+        )
+        .all()
+    }
+
+    # The pass arm. One query per remaining Pathway rather than a
+    # bespoke join, so the "which Options include this Pathway" rule
+    # stays owned by ``unlock_option_ids_for_pathway`` instead of being
+    # re-expressed here. The loop is over a creator's archived
+    # Pathways, which is a handful at most.
+    for pathway_id in archived_ids - held:
+        if has_offer_access_pass(
+            db, user_id=user_id, space_id=space_id,
+            pathway_id=pathway_id, now=at,
+        ):
+            held.add(pathway_id)
+    return held
+
+
 def compute_pathway_access(
     user: User | None,
     pathway: Pathway,
@@ -247,11 +410,20 @@ def compute_pathway_access(
     access. Manager-level bypass (draft / archived / coming_soon /
     paid) requires platform admin, Space ownership, or an active
     creator/moderator ``SpaceMembership`` on this specific Collective.
+
+    ``archived`` is the one status that asks a second question rather
+    than refusing outright: the ordinary access-type rule **and** a
+    durable record of having acquired the Pathway. See
+    :func:`retains_acquired_access` for why, and for what that
+    deliberately excludes.
     """
     if user is None:
         p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
         access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
-        if p_status in ("draft", "archived", "coming_soon"):
+        # An anonymous visitor holds nothing, so ``archived`` stays a
+        # flat refusal here. An archived Pathway is never publicly
+        # reachable, free or not.
+        if p_status in WITHHELD_STATUSES or p_status == RETIRED_STATUS:
             return False
         return access_type == "free"
     if user.role == "admin":
@@ -272,7 +444,18 @@ def compute_pathway_access(
         return True
     p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
     access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
-    if p_status in ("draft", "archived", "coming_soon"):
+    if p_status in WITHHELD_STATUSES:
+        return False
+    # Archived: out of circulation, but a purchase is not undone by a
+    # creator tidying their catalogue. Applied as an EXTRA requirement
+    # on top of the access-type rules below, never instead of them —
+    # see ``retains_acquired_access``. So membership-dependent and
+    # payment-dependent Pathways keep every condition they had, and
+    # ``free`` / plain ``included`` ones close, because there is no
+    # acquisition behind them to preserve.
+    if p_status == RETIRED_STATUS and not retains_acquired_access(
+        db, user_id=user.id, space_id=space.id, pathway_id=pathway.id,
+    ):
         return False
     if access_type == "free":
         return True
