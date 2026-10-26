@@ -14,6 +14,7 @@ import pytest
 from app.spaces.home_config import (
     TILE_KEYS,
     HomeConfigError,
+    merge_unavailable,
     resolve,
     validate,
 )
@@ -220,3 +221,376 @@ class TestPermissions:
         finally:
             from app.main import app
             app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Offerings — the seventh tile
+# ---------------------------------------------------------------------------
+
+
+class TestTheOfferingsTile:
+    """Offerings joined the vocabulary with no migration, which is the
+    whole point of ``TILE_KEYS``: *"Adding a tile here is all it takes
+    for every existing Collective to gain it."*
+
+    These tests pin both halves of that claim — the new tile arrives in
+    the right place, and nothing a creator has already saved moves.
+    """
+
+    def test_it_sits_immediately_after_pathways_by_default(self):
+        got = keys(resolve(None, show_member_directory=True))
+        assert got.index("offerings") == got.index("pathways") + 1
+
+    def test_the_default_order_is_the_approved_one(self):
+        assert list(TILE_KEYS) == [
+            "gatherings", "pathways", "offerings", "conversations",
+            "messages", "members", "about",
+        ]
+
+    def test_a_collective_that_configured_before_it_existed_still_gains_it(self):
+        """The migration-free path, stated as the behaviour rather than
+        the mechanism. This is a configuration saved when the
+        vocabulary had six keys."""
+        stored = {"tiles": [
+            {"key": "about", "visible": True},
+            {"key": "gatherings", "visible": True},
+            {"key": "pathways", "visible": False},
+            {"key": "conversations", "visible": True},
+            {"key": "messages", "visible": True},
+            {"key": "members", "visible": True},
+        ]}
+        got = keys(resolve(stored, show_member_directory=True))
+        assert "offerings" in got
+
+    def test_an_existing_configuration_keeps_its_exact_order(self):
+        """The guarantee that matters most: a creator's saved layout is
+        not rearranged to make room. Their tiles stay in their order and
+        Offerings is appended — never spliced into position 3, which
+        would silently redesign their Home."""
+        stored = {"tiles": [
+            {"key": "about"},
+            {"key": "gatherings"},
+            {"key": "conversations"},
+        ]}
+        got = keys(resolve(stored, show_member_directory=True))
+        assert got[:3] == ["about", "gatherings", "conversations"]
+        assert got.index("offerings") > 2
+
+    def test_an_existing_configuration_keeps_its_copy_and_images(self):
+        stored = {"tiles": [
+            {
+                "key": "gatherings",
+                "description": "Our Tuesday circle.",
+                "image_url": "https://example.test/g.jpg",
+                "visible": True,
+            },
+            {"key": "pathways", "visible": False},
+        ]}
+        got = resolve(stored, show_member_directory=True)
+        by_key = {t["key"]: t for t in got}
+        assert by_key["gatherings"]["description"] == "Our Tuesday circle."
+        assert by_key["gatherings"]["image_url"] == "https://example.test/g.jpg"
+        # Hidden stays hidden; the new tile has not disturbed it.
+        assert "pathways" not in by_key
+
+    def test_a_creator_can_hide_it(self):
+        stored = {"tiles": [{"key": "offerings", "visible": False}]}
+        assert "offerings" not in keys(
+            resolve(stored, show_member_directory=True),
+        )
+
+    def test_a_creator_can_reorder_it(self):
+        stored = {"tiles": [
+            {"key": "offerings"}, {"key": "gatherings"},
+        ]}
+        got = keys(resolve(stored, show_member_directory=True))
+        assert got[:2] == ["offerings", "gatherings"]
+
+    def test_a_creator_can_describe_and_illustrate_it(self):
+        cfg = validate({"tiles": [{
+            "key": "offerings",
+            "description": "Workbooks and audio for your own time.",
+            "image_url": "/api/uploads/media/abc.jpg",
+        }]})
+        got = resolve(cfg, show_member_directory=True)
+        tile = next(t for t in got if t["key"] == "offerings")
+        assert tile["description"] == "Workbooks and audio for your own time."
+        assert tile["image_url"] == "/api/uploads/media/abc.jpg"
+
+    def test_an_unreachable_area_removes_it(self):
+        """How a Collective outside the Offerings pilot gets no tile.
+
+        ``resolve`` knows nothing about pilots or feature flags — it is
+        handed the areas this viewer can reach, and ``area_access``
+        drops Offerings when ``offerings_available_for`` says no. One
+        switch, and the tab, the catalogue route and the tile disappear
+        together.
+        """
+        reachable = frozenset(k for k in TILE_KEYS if k != "offerings")
+        got = keys(resolve(
+            None, show_member_directory=True, reachable_areas=reachable,
+        ))
+        assert "offerings" not in got
+        # And nothing else was collateral.
+        assert got == [k for k in TILE_KEYS if k != "offerings"]
+
+    def test_a_creator_cannot_configure_it_back_on(self):
+        """Same rule the Members tile has: a stored ``visible: True``
+        does not beat the platform's own answer about availability."""
+        stored = {"tiles": [{"key": "offerings", "visible": True}]}
+        got = keys(resolve(
+            stored, show_member_directory=True,
+            reachable_areas=frozenset(k for k in TILE_KEYS if k != "offerings"),
+        ))
+        assert "offerings" not in got
+
+
+# ---------------------------------------------------------------------------
+# A tile the editor could not show keeps its configuration
+# ---------------------------------------------------------------------------
+
+
+class TestUnavailableTilesAreCarriedForward:
+    """``available_keys`` narrows the vocabulary by two platform
+    switches a creator does not own — ``show_member_directory`` and the
+    Offerings flag plus pilot scope. The editor renders no row for
+    anything outside it, and the save is a whole-document PUT.
+
+    So without ``merge_unavailable``, a creator who had set up a tile,
+    lost access to the feature behind it, and then changed something
+    unrelated had that tile's description, image, visibility and
+    position quietly deleted — and getting the feature back handed them
+    a default tile at the end of the list instead of the one they built.
+
+    Deliberately keyed on availability rather than on Offerings, so the
+    Members tile gets the same protection without a second code path.
+    """
+
+    AVAILABLE = tuple(k for k in TILE_KEYS if k != "offerings")
+
+    def _stored(self, **offerings):
+        entry = {
+            "key": "offerings",
+            "visible": True,
+            "image_url": None,
+            "description": None,
+        }
+        entry.update(offerings)
+        return {"tiles": [
+            {
+                "key": "gatherings", "visible": True,
+                "image_url": None, "description": None,
+            },
+            entry,
+            {
+                "key": "conversations", "visible": True,
+                "image_url": None, "description": None,
+            },
+        ]}
+
+    def test_its_settings_survive_an_unrelated_save(self):
+        stored = self._stored(
+            description="Workbooks and audio.",
+            image_url="https://example.test/offerings.jpg",
+        )
+        # What the editor would send: it has no row for offerings.
+        cleaned = validate({"tiles": [
+            {"key": "gatherings", "description": "Tuesday circle."},
+            {"key": "conversations"},
+        ]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        by_key = {t["key"]: t for t in merged["tiles"]}
+        assert by_key["offerings"]["description"] == "Workbooks and audio."
+        assert by_key["offerings"]["image_url"] == (
+            "https://example.test/offerings.jpg"
+        )
+        # And the creator's actual edit landed.
+        assert by_key["gatherings"]["description"] == "Tuesday circle."
+
+    def test_its_hidden_state_survives(self):
+        """Visibility is a setting like any other. A creator who turned
+        the tile off should not find it on again when the feature
+        returns."""
+        stored = self._stored(visible=False)
+        cleaned = validate({"tiles": [{"key": "gatherings"}]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        offerings = next(
+            t for t in merged["tiles"] if t["key"] == "offerings"
+        )
+        assert offerings["visible"] is False
+
+    def test_it_keeps_the_tile_it_sat_before(self):
+        """Position is remembered against its neighbour, not an index,
+        so it survives the creator reordering everything else."""
+        stored = self._stored()
+        # Creator reverses the two tiles they can see.
+        cleaned = validate({"tiles": [
+            {"key": "conversations"}, {"key": "gatherings"},
+        ]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        keys_out = keys(merged["tiles"])
+        # It sat before conversations, and still does.
+        assert keys_out.index("offerings") == keys_out.index("conversations")- 1
+
+    def test_a_tile_stored_last_stays_last(self):
+        stored = {"tiles": [
+            {
+                "key": "gatherings", "visible": True,
+                "image_url": None, "description": None,
+            },
+            {
+                "key": "offerings", "visible": True,
+                "image_url": None, "description": "Last.",
+            },
+        ]}
+        cleaned = validate({"tiles": [{"key": "gatherings"}]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        assert keys(merged["tiles"]) == ["gatherings", "offerings"]
+
+    def test_it_is_still_hidden_from_the_member_home(self):
+        """Carrying the configuration forward must not make the tile
+        appear. ``resolve`` drops an unreachable area whatever is
+        stored, which is what keeps this safe rather than clever."""
+        stored = self._stored(description="Workbooks and audio.")
+        merged = merge_unavailable(
+            stored, validate({"tiles": [{"key": "gatherings"}]}),
+            available_keys=self.AVAILABLE,
+        )
+
+        got = keys(resolve(
+            merged, show_member_directory=True,
+            reachable_areas=frozenset(self.AVAILABLE),
+        ))
+        assert "offerings" not in got
+
+    def test_it_comes_back_configured_when_the_feature_returns(self):
+        """The point of the whole thing: regaining the feature restores
+        the tile the creator built, not a default one."""
+        stored = self._stored(
+            description="Workbooks and audio.",
+            image_url="/api/uploads/media/mine.jpg",
+        )
+        merged = merge_unavailable(
+            stored, validate({"tiles": [
+                {"key": "gatherings"}, {"key": "conversations"},
+            ]}),
+            available_keys=self.AVAILABLE,
+        )
+
+        # Pilot restored — every tile available again.
+        got = resolve(merged, show_member_directory=True)
+        offerings = next(t for t in got if t["key"] == "offerings")
+        assert offerings["description"] == "Workbooks and audio."
+        assert offerings["image_url"] == "/api/uploads/media/mine.jpg"
+
+    def test_the_members_tile_gets_the_same_protection(self):
+        """Applied to availability rather than to Offerings, so the
+        privacy switch behaves the same way without a second code
+        path."""
+        stored = {"tiles": [
+            {
+                "key": "members", "visible": True,
+                "image_url": None, "description": "Meet everyone.",
+            },
+            {
+                "key": "about", "visible": True,
+                "image_url": None, "description": None,
+            },
+        ]}
+        available = tuple(k for k in TILE_KEYS if k != "members")
+        cleaned = validate({"tiles": [{"key": "about"}]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=available,
+        )
+
+        by_key = {t["key"]: t for t in merged["tiles"]}
+        assert by_key["members"]["description"] == "Meet everyone."
+        # Still withheld while the directory is off.
+        assert "members" not in keys(
+            resolve(merged, show_member_directory=False),
+        )
+
+    def test_nothing_is_carried_forward_for_an_available_tile(self):
+        """The request stays authoritative for everything the editor
+        could show. A creator removing a tile from their layout must
+        not have it reinstated."""
+        stored = self._stored()
+        cleaned = validate({"tiles": [{"key": "gatherings"}]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=TILE_KEYS,
+        )
+
+        assert keys(merged["tiles"]) == ["gatherings"]
+
+    def test_a_creator_clearing_everything_still_keeps_it(self):
+        """``validate`` returns ``None`` for an empty document. Writing
+        that would delete exactly what this protects, so the carried
+        tile becomes the whole configuration."""
+        stored = self._stored(description="Workbooks and audio.")
+
+        merged = merge_unavailable(
+            stored, None, available_keys=self.AVAILABLE,
+        )
+
+        assert keys(merged["tiles"]) == ["offerings"]
+        assert merged["tiles"][0]["description"] == "Workbooks and audio."
+
+    def test_no_stored_configuration_changes_nothing(self):
+        cleaned = validate({"tiles": [{"key": "gatherings"}]})
+        assert merge_unavailable(
+            None, cleaned, available_keys=self.AVAILABLE,
+        ) == cleaned
+        assert merge_unavailable(
+            None, None, available_keys=self.AVAILABLE,
+        ) is None
+
+    def test_a_request_naming_the_tile_is_not_duplicated(self):
+        """Defence in depth. The editor cannot send a row it did not
+        render, but a hand-crafted request could — and two entries for
+        one key would make ordering ambiguous. ``resolve`` still
+        withholds it, so this is about the document staying coherent."""
+        stored = self._stored(description="Stored copy.")
+        cleaned = validate({"tiles": [
+            {"key": "gatherings"},
+            {"key": "offerings", "description": "Request copy."},
+        ]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        assert keys(merged["tiles"]).count("offerings") == 1
+
+    def test_an_unreadable_stored_row_is_dropped_not_fatal(self):
+        """A hand-edited column must not make a creator's save
+        impossible — they cannot fix a tile the editor will not show
+        them."""
+        stored = {"tiles": [
+            {"key": "gatherings", "visible": True},
+            {"key": "offerings", "image_url": "javascript:alert(1)"},
+        ]}
+        cleaned = validate({"tiles": [{"key": "gatherings"}]})
+
+        merged = merge_unavailable(
+            stored, cleaned, available_keys=self.AVAILABLE,
+        )
+
+        assert keys(merged["tiles"]) == ["gatherings"]

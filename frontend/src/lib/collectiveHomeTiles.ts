@@ -26,6 +26,7 @@ import { parseServerDatetime } from './dateTime.ts'
 export const HOME_TILE_DEFAULT_COPY = {
   gatherings: 'Sessions, events and ways to come together.',
   pathways: 'Courses, programs and guided experiences.',
+  offerings: 'Digital resources, tools and creations to explore.',
   conversations: 'See what members are sharing, asking and exploring together.',
   // Deliberately not "connect with people in your Collective". A
   // thread is keyed (space, creator, member) and the member endpoint
@@ -45,6 +46,7 @@ export const MAX_HOME_DESCRIPTION = 160
 export const HOME_TILE_LABEL: Record<TileKey, string> = {
   gatherings: 'Gatherings',
   pathways: 'Pathways',
+  offerings: 'Offerings',
   conversations: 'Conversations',
   messages: 'Messages',
   members: 'Members',
@@ -54,6 +56,11 @@ export const HOME_TILE_LABEL: Record<TileKey, string> = {
 const TILE_PATH: Record<TileKey, string> = {
   gatherings: 'events',
   pathways: 'pathways',
+  // The Collective's existing catalogue — ``/spaces/{slug}/offerings``,
+  // served by ``spaces/_offering_member_routes.list_member_offerings``.
+  // Published Offerings only, and answered without a session, so the
+  // tile leads somewhere real for a visitor as well as a member.
+  offerings: 'offerings',
   conversations: 'community',
   messages: 'messages',
   members: 'members',
@@ -63,6 +70,7 @@ const TILE_PATH: Record<TileKey, string> = {
 const TILE_CTA: Record<TileKey, string> = {
   gatherings: 'View gatherings →',
   pathways: 'View pathways →',
+  offerings: 'Explore offerings →',
   conversations: 'Join the conversation →',
   messages: 'Open messages →',
   members: 'Meet the members →',
@@ -71,7 +79,8 @@ const TILE_CTA: Record<TileKey, string> = {
 
 /** Canonical order, used when the server sent no resolved list. */
 export const DEFAULT_TILE_ORDER: TileKey[] = [
-  'gatherings', 'pathways', 'conversations', 'messages', 'members', 'about',
+  'gatherings', 'pathways', 'offerings', 'conversations', 'messages',
+  'members', 'about',
 ]
 
 export interface Tile {
@@ -127,6 +136,26 @@ function pathwaysMeta(space: SpaceResponse): string {
     : `${plural(count, 'pathway', 'pathways')} available`
 }
 
+/**
+ * "3 offerings available" / "No offerings yet".
+ *
+ * ``published_offering_count`` counts published Offerings only — the
+ * same rule the catalogue this tile leads to applies — so the number
+ * on the card and the number of cards behind it agree. Drafts and
+ * retired Offerings are in neither.
+ *
+ * Zero is stated rather than hidden, exactly as it is for gatherings
+ * and pathways. A creator who has enabled the tile has said they want
+ * the doorway; an empty shelf is a calm fact, not a reason to remove
+ * their choice from under them.
+ */
+function offeringsMeta(space: SpaceResponse): string {
+  const count = space.published_offering_count ?? 0
+  return count === 0
+    ? 'No offerings yet'
+    : `${plural(count, 'offering', 'offerings')} available`
+}
+
 function membersMeta(space: SpaceResponse): string | null {
   const total = (space.learner_count ?? 0) + (space.leader_count ?? 0)
   return total > 0 ? plural(total, 'member', 'members') : null
@@ -135,6 +164,7 @@ function membersMeta(space: SpaceResponse): string | null {
 function metaFor(key: TileKey, space: SpaceResponse): string | null {
   if (key === 'gatherings') return gatheringsMeta(space)
   if (key === 'pathways') return pathwaysMeta(space)
+  if (key === 'offerings') return offeringsMeta(space)
   if (key === 'members') return membersMeta(space)
   // Conversations: a post count is vanity and an unread count would
   // need read-state that does not exist.

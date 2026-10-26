@@ -85,6 +85,8 @@ export interface SpaceResponse {
    *  overrides over the platform defaults, privacy settings applied. */
   home_tiles?: { key: string; image_url?: string | null; description?: string | null }[]
   upcoming_gathering_count?: number
+  /** Published Offerings only; 0 when the viewer cannot reach the area. */
+  published_offering_count?: number
   next_gathering_starts_at?: string | null
   learner_count: number
   leader_count: number

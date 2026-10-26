@@ -230,6 +230,17 @@ const OFFERING_COVER_DISPLAY: Record<string, SlotDisplay> = Object.fromEntries(
 )
 Object.assign(DISPLAY_BY_KEY, OFFERING_COVER_DISPLAY)
 
+// ── Collective Home — Offerings doorway tile ──────────────────────
+// 4:3 to match the other Collective Home tiles, which share the card
+// proportion the homepage feature frames use. Not 3:2 like the covers
+// above: this is a doorway to a catalogue, not a cover for one
+// product.
+DISPLAY_BY_KEY.collective_home_offerings = {
+  aspectRatio: '4 / 3',
+  guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP.',
+  placeholderBody: 'The default artwork behind the Offerings tile on a member\u2019s Collective Home. Creators can upload their own instead. Until an image is added here the tile uses the Collective\u2019s own palette gradient.',
+}
+
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
   guidance: 'Drag & drop a JPG, PNG or WebP onto the preview — or use the buttons below.',
@@ -268,6 +279,18 @@ const GROUPS: Group[] = [
       'offering_cover_collections',
       'offering_cover_other_resources',
     ],
+  },
+  {
+    // Adjacent to the covers rather than inside them, deliberately.
+    // That group is the five per-product cover categories and its
+    // contents are pinned by name in ``offeringArtworkSlots.test.ts``;
+    // this is a doorway to a catalogue, which is a different job at a
+    // different aspect ratio. Sitting next to it is what makes an
+    // administrator looking for "the Offerings image" find both.
+    key: 'collective_home_offerings',
+    label: 'Offerings — Collective Home',
+    description: 'The default artwork behind the Offerings doorway tile on a member\u2019s Collective Home. Shown for every Collective that has not chosen its own tile image. Creators can upload their own instead.',
+    keys: ['collective_home_offerings'],
   },
   {
     key: 'homepage',

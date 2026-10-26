@@ -435,6 +435,32 @@ OFFERING_COVER_ARTWORK_KEYS: dict[str, dict[str, str]] = (
 PLATFORM_ARTWORK_KEYS.update(OFFERING_COVER_ARTWORK_KEYS)
 
 
+# The Collective Home doorway tile for Offerings.
+#
+# Registered as its own slot rather than borrowing an existing one. The
+# other six tiles point at ``homepage_*`` and ``member_onboarding_*``
+# keys authored for those areas — real reuse, documented in
+# ``frontend/src/lib/collectiveHomeArtwork.ts``. Offerings had no such
+# asset: ``homepage_resources`` is the artwork behind the homepage's
+# own editorial section, and sharing it would mean a change to one
+# surface silently redressing the other.
+#
+# Empty is a supported state, not a broken one. Until an administrator
+# uploads here, the tile falls through to the Collective's own
+# palette-derived gradient — the same third layer every other tile
+# has.
+PLATFORM_ARTWORK_KEYS["collective_home_offerings"] = {
+    "title": "Collective Home — Offerings tile",
+    "description": (
+        "The default artwork behind the Offerings doorway on a member's "
+        "Collective Home. Shown for every Collective that has not "
+        "chosen its own tile image, so replacing it updates them all. "
+        "A creator's own image overrides it, and with nothing uploaded "
+        "the tile uses the Collective's palette gradient."
+    ),
+}
+
+
 admin_router = APIRouter(prefix="/api/admin/platform-artwork", tags=["admin-platform-artwork"])
 public_router = APIRouter(prefix="/api/platform-artwork", tags=["platform-artwork"])
 

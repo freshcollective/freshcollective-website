@@ -351,11 +351,20 @@ function InsideCollectiveSection({ artFor }: { artFor: (key: string) => string |
       artAlt: 'Members in conversation inside a Fresh Collective community',
     },
     {
-      title: 'Resources you can return to.',
-      body: 'Practical materials for members to use in their own time — recordings, guides, workbooks and worksheets, all kept in one place. A reference shelf that grows as the Collective does.',
+      // Was "Resources you can return to." The section has always
+      // described Offerings; it predated the name. Renamed rather than
+      // joined by a fifth row, so the page keeps four features and
+      // nothing is said twice.
+      //
+      // ``homepage_resources`` stays as the artwork: it is uploaded,
+      // it depicts the right thing, and the Collective Home tile has
+      // its own ``collective_home_offerings`` slot so the two surfaces
+      // can be redressed independently.
+      title: 'Offerings to explore.',
+      body: 'Discover digital resources created to inspire, support and enrich your journey. From practical workbooks and guides to audio experiences and downloadable tools, each Offering is something you can make your own.',
       artKey: 'homepage_resources',
       atmosphereSlug: 'inside-resources',
-      artAlt: 'Resources shared inside a Fresh Collective community',
+      artAlt: 'Offerings shared inside a Fresh Collective community',
     },
   ]
 
@@ -369,7 +378,7 @@ function InsideCollectiveSection({ artFor }: { artFor: (key: string) => string |
               <span style={{ color: TEAL_DEEP }}>Collective.</span>
             </>
           }
-          body="Your Collective can hold different experiences — Pathways for members to walk, Gatherings to attend, Conversations to continue and Resources to return to. Together, they give your people reasons to stay connected between the moments you lead."
+          body="Your Collective can hold different experiences — Pathways for members to walk, Gatherings to attend, Conversations to continue and Offerings to explore. Together, they give your people reasons to stay connected between the moments you lead."
           className="mb-12 md:mb-14"
         />
 

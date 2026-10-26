@@ -174,3 +174,77 @@ describe('the creator cover picker', () => {
     }
   })
 })
+
+
+describe('the Offerings Collective Home tile slot', () => {
+  /**
+   * Where an administrator finds the image, and why it is its own slot.
+   *
+   * The other six Collective Home tiles borrow artwork authored for
+   * another surface — ``homepage_gatherings``, ``member_onboarding_
+   * welcome`` and so on, which is real reuse. Offerings had no such
+   * asset: ``homepage_resources`` dresses the homepage's own editorial
+   * section about Offerings, and sharing it would mean replacing one
+   * image silently redressed the other.
+   */
+
+  test('it has its own section, next to the cover categories', () => {
+    const labels = groupLabels()
+    const covers = labels.indexOf('Default Offering Artwork')
+    const tile = labels.indexOf('Offerings — Collective Home')
+    assert.ok(tile !== -1, 'the section is missing from GROUPS')
+    assert.equal(tile, covers + 1, 'it should sit directly after the covers')
+  })
+
+  test('it holds exactly the one slot', () => {
+    assert.deepEqual(
+      groupKeys('collective_home_offerings'), ['collective_home_offerings'],
+    )
+  })
+
+  test('the slot is not mixed into the cover categories', () => {
+    // That group's contents are pinned by name above; a doorway tile is
+    // a different job at a different aspect ratio.
+    assert.ok(
+      !groupKeys('default_offering_artwork')
+        .includes('collective_home_offerings'),
+    )
+  })
+
+  test('it is registered in the backend artwork registry', () => {
+    // One artwork system, not two. The default is a ``platform_artwork``
+    // row resolved by key at read time — never a file delivered from
+    // the repository, which is the mistake ``services.offering_covers``
+    // was written to undo.
+    const registry = readFileSync(
+      join(SRC, '../../backend/app/admin/platform_artwork.py'), 'utf8',
+    )
+    assert.match(registry, /"collective_home_offerings"/)
+  })
+
+  test('it declares the Collective Home tile proportion', () => {
+    // 4:3, matching the other tiles — not the covers' 3:2.
+    const code = codeOnly(read(CLIENT))
+    const at = code.indexOf('DISPLAY_BY_KEY.collective_home_offerings')
+    assert.ok(at !== -1, 'the display config is missing')
+    assert.match(code.slice(at, at + 700), /aspectRatio: '4 \/ 3'/)
+  })
+
+  test('the empty state is described, not left blank', () => {
+    // It ships empty, until the image is uploaded here. The admin is
+    // told what members see meanwhile.
+    const code = codeOnly(read(CLIENT))
+    const at = code.indexOf('DISPLAY_BY_KEY.collective_home_offerings')
+    assert.match(code.slice(at, at + 700), /palette gradient/i)
+  })
+
+  test('the tile reads this key and not a borrowed one', () => {
+    const artwork = read('lib/collectiveHomeArtwork.ts')
+    const code = codeOnly(artwork)
+    assert.match(code, /offerings: 'collective_home_offerings'/)
+    assert.ok(
+      !/offerings: 'homepage_resources'/.test(code),
+      'the tile must not share the homepage section artwork',
+    )
+  })
+})

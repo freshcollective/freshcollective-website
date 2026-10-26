@@ -2086,16 +2086,49 @@ class HomeConfigOut(BaseModel):
     available_keys: list[str]
 
 
+def _available_tile_keys(space: Space) -> list[str]:
+    """The tile vocabulary this Collective may actually configure.
+
+    Two platform switches narrow it, and neither is the creator's to
+    override:
+
+    * ``show_member_directory`` — the Members tile is a privacy
+      setting, and the editor must not offer a control that
+      ``home_config.resolve`` will then drop.
+    * **Offerings availability** — the feature flag and the pilot
+      scope, asked of ``offering_pilot.offerings_available_for``, which
+      is the same function ``area_access`` consults. A Collective
+      outside the pilot has no Offerings tab, no catalogue route and no
+      Offerings tile on its Home, so offering the control here would
+      be a setting with nowhere to take effect.
+
+    Deliberately asked of the pilot module rather than reimplemented:
+    one answer to "is Offerings on for this Collective", and the
+    editor, the member Home and the catalogue all read it.
+    """
+    from app.services.offering_pilot import offerings_available_for
+
+    offerings_on = offerings_available_for(space)
+    return [
+        key for key in home_config_module.TILE_KEYS
+        if (key != "members" or space.show_member_directory)
+        and (key != "offerings" or offerings_on)
+    ]
+
+
 def _home_config_out(space: Space) -> HomeConfigOut:
     return HomeConfigOut(
         home_config=space.home_config,
+        # The preview of what members will see, so it is filtered by
+        # the same availability the member Home applies. Without this
+        # the panel promised an Offerings tile to a Collective whose
+        # Home would not render one.
         home_tiles=home_config_module.resolve(
-            space.home_config, show_member_directory=space.show_member_directory,
+            space.home_config,
+            show_member_directory=space.show_member_directory,
+            reachable_areas=frozenset(_available_tile_keys(space)),
         ),
-        available_keys=[
-            key for key in home_config_module.TILE_KEYS
-            if key != "members" or space.show_member_directory
-        ],
+        available_keys=_available_tile_keys(space),
     )
 
 
@@ -2132,6 +2165,23 @@ def update_home_config(
         cleaned = home_config_module.validate(body.model_dump())
     except home_config_module.HomeConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Reattach tiles the editor could not show this creator.
+    #
+    # A whole-document PUT means the request *is* the new document, and
+    # the editor only renders rows for ``_available_tile_keys``. So
+    # without this, a creator who had set up a tile, lost access to the
+    # feature behind it, and then changed something unrelated had that
+    # tile's description, image, visibility and position silently
+    # deleted — and regaining the feature handed them a default tile at
+    # the end of the list rather than the one they had built.
+    #
+    # Nothing from the request is trusted here: the merge re-stores only
+    # what was already in the column. See ``merge_unavailable``.
+    cleaned = home_config_module.merge_unavailable(
+        space.home_config, cleaned,
+        available_keys=_available_tile_keys(space),
+    )
 
     space.home_config = cleaned
     db.commit()

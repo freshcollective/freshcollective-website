@@ -1044,6 +1044,30 @@ def get_space(
     # answer instead of each deciding for itself.
     areas = area_access.resolve_area_access(db, space, current_user)
 
+    # Published Offerings, for the Offerings tile's small live signal.
+    #
+    # Published only — the same rule ``list_member_offerings`` applies,
+    # and for the same reason: a draft is private, and a retired
+    # Offering has stopped selling. A count that included either would
+    # promise a catalogue bigger than the one the tile leads to.
+    #
+    # Skipped entirely unless this viewer can reach the area, so a
+    # Collective outside the Offerings pilot pays nothing for a tile it
+    # will not render. One COUNT when it does, matching the gathering
+    # count above.
+    published_offering_count = 0
+    if area_policies.AREA_OFFERINGS in areas.reachable:
+        from app.models.offering import Offering, OfferingStatus
+
+        published_offering_count = (
+            db.query(func.count(Offering.id))
+            .filter(
+                Offering.space_id == space.id,
+                Offering.status == OfferingStatus.published.value,
+            )
+            .scalar() or 0
+        )
+
     # This payload is now viewer-specific: ``area_access``,
     # ``home_tiles`` and the counts differ between a visitor, a member
     # and an entitled member. It must never land in a shared cache
@@ -1082,6 +1106,7 @@ def get_space(
         ),
         "upcoming_gathering_count": int(upcoming_gathering_count),
         "next_gathering_starts_at": next_gathering_starts_at,
+        "published_offering_count": int(published_offering_count),
         "learner_count": learner_count,
         "leader_count": leader_count,
         "location": location_dict,

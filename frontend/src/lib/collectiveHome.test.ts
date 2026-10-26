@@ -4,7 +4,13 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { buildTiles, HOME_TILE_DEFAULT_COPY, MAX_HOME_DESCRIPTION } from './collectiveHomeTiles.ts'
+import {
+  buildTiles,
+  DEFAULT_TILE_ORDER,
+  HOME_TILE_DEFAULT_COPY,
+  HOME_TILE_LABEL,
+  MAX_HOME_DESCRIPTION,
+} from './collectiveHomeTiles.ts'
 import { tileFallbackBackground, tileImageUrl, TILE_PLATFORM_ARTWORK } from './collectiveHomeArtwork.ts'
 import { readableOnWhite } from './collectivePalette.ts'
 import type { CollectivePaletteMeta } from './collectivePalette.ts'
@@ -42,14 +48,17 @@ const keys = (s: SpaceResponse) => buildTiles(s).map((t) => t.key)
 describe('tile set', () => {
   test('a fully-populated Collective shows every member area', () => {
     assert.deepEqual(keys(space()), [
-      'gatherings', 'pathways', 'conversations', 'messages', 'members', 'about',
+      'gatherings', 'pathways', 'offerings', 'conversations', 'messages',
+      'members', 'about',
     ])
   })
 
   test('Members disappears when the directory is switched off', () => {
     const k = keys(space({ show_member_directory: false }))
     assert.ok(!k.includes('members'))
-    assert.deepEqual(k, ['gatherings', 'pathways', 'conversations', 'messages', 'about'])
+    assert.deepEqual(k, [
+      'gatherings', 'pathways', 'offerings', 'conversations', 'messages', 'about',
+    ])
   })
 
   test('About is always present', () => {
@@ -211,7 +220,8 @@ describe('route + theme contract', () => {
 describe('creator configuration', () => {
   test('a Collective that has never opened the editor gets the defaults', () => {
     assert.deepEqual(keys(space({ home_tiles: undefined })), [
-      'gatherings', 'pathways', 'conversations', 'messages', 'members', 'about',
+      'gatherings', 'pathways', 'offerings', 'conversations', 'messages',
+      'members', 'about',
     ])
   })
 
@@ -219,7 +229,9 @@ describe('creator configuration', () => {
     // Not as "hide everything" — a Home with no doorways is a dead end,
     // and an empty array is far more likely to be a payload problem
     // than a deliberate choice.
-    assert.equal(keys(space({ home_tiles: [] })).length, 6)
+    assert.equal(
+      keys(space({ home_tiles: [] })).length, DEFAULT_TILE_ORDER.length,
+    )
   })
 
   test('the creator order is the render order', () => {
@@ -296,9 +308,14 @@ describe('tile artwork', () => {
   })
 
   test('with no creator image, each tile takes its own platform artwork', () => {
-    const urls = ['gatherings', 'pathways', 'conversations', 'messages', 'members', 'about']
-      .map((k) => tileImageUrl(k, null, allArtwork))
-    assert.equal(new Set(urls).size, urls.length, 'six doorways, six different images')
+    // Read from DEFAULT_TILE_ORDER rather than listed by hand, so a
+    // new tile is covered the moment it joins the vocabulary instead
+    // of quietly sitting outside this assertion.
+    const urls = DEFAULT_TILE_ORDER.map((k) => tileImageUrl(k, null, allArtwork))
+    assert.equal(
+      new Set(urls).size, urls.length,
+      'every doorway should take its own image',
+    )
   })
 
   test('the artwork keys are real platform assets, not invented names', () => {
@@ -324,7 +341,7 @@ describe('themed fallback artwork', () => {
     // The Phase 1 complaint, in one assertion: World Builders showed
     // the same gradient on every tile.
     const p = palette()
-    const backgrounds = ['gatherings', 'pathways', 'conversations', 'messages', 'members', 'about']
+    const backgrounds = DEFAULT_TILE_ORDER
       .map((k) => tileFallbackBackground(k, p, 'world-builders'))
     assert.equal(new Set(backgrounds).size, backgrounds.length)
   })
@@ -686,5 +703,140 @@ describe('the member-side sidebar', () => {
 
   test('This week is still driven by live Gatherings, not by stored text', () => {
     assert.match(panel(), /\{ title: 'This week', body: null, override: focusOverride/)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// The Offerings tile
+// ---------------------------------------------------------------------------
+
+describe('the Offerings tile', () => {
+  test('it sits immediately after Pathways by default', () => {
+    const k = keys(space())
+    assert.equal(k.indexOf('offerings'), k.indexOf('pathways') + 1)
+  })
+
+  test('the canonical order is the approved one', () => {
+    assert.deepEqual(DEFAULT_TILE_ORDER, [
+      'gatherings', 'pathways', 'offerings', 'conversations', 'messages',
+      'members', 'about',
+    ])
+  })
+
+  test('it carries the approved label, copy and call to action', () => {
+    const tile = buildTiles(space()).find((t) => t.key === 'offerings')!
+    assert.equal(tile.name, 'Offerings')
+    assert.equal(
+      tile.description,
+      'Digital resources, tools and creations to explore.',
+    )
+    assert.equal(tile.cta, 'Explore offerings →')
+  })
+
+  test('it links to the Collective\u2019s existing catalogue', () => {
+    const tile = buildTiles(space({ slug: 'moonlit-circle' }))
+      .find((t) => t.key === 'offerings')!
+    assert.equal(tile.href, '/spaces/moonlit-circle/offerings')
+  })
+
+  test('the count reads published Offerings', () => {
+    const one = buildTiles(space({ published_offering_count: 1 }))
+      .find((t) => t.key === 'offerings')!
+    assert.equal(one.meta, '1 offering available')
+
+    const many = buildTiles(space({ published_offering_count: 4 }))
+      .find((t) => t.key === 'offerings')!
+    assert.equal(many.meta, '4 offerings available')
+  })
+
+  test('zero is stated, not hidden', () => {
+    // The same rule Gatherings and Pathways follow. A creator who
+    // enabled the doorway has said they want it; an empty shelf is a
+    // calm fact, not a reason to remove their choice.
+    for (const count of [0, undefined]) {
+      const tile = buildTiles(space({ published_offering_count: count }))
+        .find((t) => t.key === 'offerings')!
+      assert.equal(tile.meta, 'No offerings yet')
+    }
+  })
+
+  test('a creator\u2019s description replaces the platform copy', () => {
+    const tile = buildTiles(space({
+      home_tiles: [{ key: 'offerings', description: 'Workbooks and audio.' }],
+    })).find((t) => t.key === 'offerings')!
+    assert.equal(tile.description, 'Workbooks and audio.')
+  })
+
+  test('a creator\u2019s image wins over the platform default', () => {
+    assert.equal(
+      tileImageUrl('offerings', '/api/uploads/media/mine.jpg', () => '/plat.jpg'),
+      '/api/uploads/media/mine.jpg',
+    )
+  })
+
+  test('the platform default comes from its own artwork slot', () => {
+    // Its own, not borrowed. ``homepage_resources`` dresses the
+    // homepage's editorial section about Offerings; sharing it would
+    // mean replacing one image silently redressed the other surface.
+    assert.equal(
+      TILE_PLATFORM_ARTWORK.offerings, 'collective_home_offerings',
+    )
+    assert.notEqual(
+      TILE_PLATFORM_ARTWORK.offerings, 'homepage_resources',
+    )
+    assert.equal(
+      tileImageUrl('offerings', null, (k) =>
+        (k === 'collective_home_offerings' ? '/art/offerings.jpg' : null)),
+      '/art/offerings.jpg',
+    )
+  })
+
+  test('an empty artwork slot falls through to the gradient', () => {
+    // The state this ships in, until the image is uploaded through
+    // World Settings → Artwork. Never a blank box.
+    assert.equal(tileImageUrl('offerings', null, () => null), null)
+    const themed: CollectivePaletteMeta = {
+      key: 'test', name: 'Test',
+      palette: {
+        primary: '#38A09E', secondary: '#1F4E5F',
+        accent: '#F2B441', background: '#FFFFFF',
+      },
+    }
+    assert.match(
+      tileFallbackBackground('offerings', themed, 'moonlit-circle'),
+      /linear-gradient/,
+    )
+    // And with no palette either, still something rather than nothing.
+    assert.ok(
+      tileFallbackBackground('offerings', null, 'moonlit-circle').length > 0,
+    )
+  })
+
+  test('a creator can hide it', () => {
+    const k = keys(space({
+      home_tiles: [{ key: 'gatherings' }, { key: 'pathways' }],
+    }))
+    assert.ok(!k.includes('offerings'))
+  })
+
+  test('a creator can reorder it', () => {
+    const k = keys(space({
+      home_tiles: [{ key: 'offerings' }, { key: 'gatherings' }],
+    }))
+    assert.deepEqual(k, ['offerings', 'gatherings'])
+  })
+
+  test('every tile key has a label, copy, link and call to action', () => {
+    // Adding a key to one map and forgetting another would render a
+    // card with an undefined caption or a dead link.
+    for (const key of DEFAULT_TILE_ORDER) {
+      assert.ok(HOME_TILE_LABEL[key], `label missing: ${key}`)
+      assert.ok(HOME_TILE_DEFAULT_COPY[key], `copy missing: ${key}`)
+      const tile = buildTiles(space()).find((t) => t.key === key)
+      assert.ok(tile, `tile missing: ${key}`)
+      assert.match(tile.href, /^\/spaces\/[^/]+\/.+/, `href bad: ${key}`)
+      assert.match(tile.cta, /→$/, `cta bad: ${key}`)
+    }
   })
 })

@@ -1,9 +1,9 @@
 /**
  * Artwork for a Collective Home tile.
  *
- * Phase 1 used the Collective's cover for every tile, which made five
- * doorways look like five copies of the same card, and a Collective
- * with no cover got the same teal gradient five times over. The fix is
+ * Phase 1 used the Collective's cover for every tile, which made every
+ * doorway look like a copy of the same card, and a Collective with no
+ * cover got the same teal gradient over and over. The fix is
  * that each tile should look like the place it leads to, before any
  * creator has configured anything.
  *
@@ -45,6 +45,14 @@ import { getCollectiveCoverStyle } from './coverArt.ts'
 export const TILE_PLATFORM_ARTWORK: Record<string, string> = {
   gatherings: 'homepage_gatherings',
   pathways: 'homepage_pathways',
+  // The one tile with a slot of its own rather than a borrowed one.
+  // ``homepage_resources`` is the artwork behind the homepage's own
+  // editorial section about Offerings, and sharing it would mean a
+  // change to either surface silently redressing the other. Registered
+  // in ``app/admin/platform_artwork.py``; empty until an administrator
+  // uploads, which falls through to the gradient below like any other
+  // unfilled slot.
+  offerings: 'collective_home_offerings',
   conversations: 'homepage_conversations',
   messages: 'homepage_ways_to_connect',
   members: 'homepage_friction_conversation',
@@ -52,7 +60,7 @@ export const TILE_PLATFORM_ARTWORK: Record<string, string> = {
 }
 
 /**
- * Deterministic per-tile variation, so the five gradients on one Home
+ * Deterministic per-tile variation, so the gradients on one Home
  * differ from each other while every one of them is unmistakably this
  * Collective's colours. The numbers are an angle and two mixing
  * weights — arbitrary but fixed, which is the point: the same tile in
@@ -61,6 +69,7 @@ export const TILE_PLATFORM_ARTWORK: Record<string, string> = {
 const TILE_VARIANT: Record<string, { angle: number; from: number; to: number }> = {
   gatherings:    { angle: 145, from: 0.00, to: 0.28 },
   pathways:      { angle: 165, from: 0.16, to: 0.04 },
+  offerings:     { angle: 135, from: 0.24, to: 0.06 },
   conversations: { angle: 125, from: 0.08, to: 0.34 },
   messages:      { angle: 185, from: 0.22, to: 0.10 },
   members:       { angle: 205, from: 0.04, to: 0.22 },

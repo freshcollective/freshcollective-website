@@ -126,6 +126,10 @@ class SpaceResponse(BaseModel):
     home_tiles: list[dict] = []
     upcoming_gathering_count: int = 0
     next_gathering_starts_at: datetime | None = None
+    # Published Offerings only, and 0 whenever this viewer cannot reach
+    # the Offerings area — a Collective outside the pilot never pays
+    # for a count it will not show.
+    published_offering_count: int = 0
     learner_count: int = 0
     leader_count: int = 0
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
