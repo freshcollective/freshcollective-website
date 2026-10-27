@@ -262,20 +262,40 @@ export const CSP_REPORT_ONLY = buildCsp(process.env.NEXT_PUBLIC_SENTRY_DSN)
 // encrypted-media for DRM'd video). ``payment=(self)`` future-proofs
 // the day Stripe Payment Request buttons ship; today the redirect
 // flow doesn't require it.
+/**
+ * YouTube's own origins, including the privacy-enhanced host.
+ *
+ * ``frame-src`` has allowed ``youtube-nocookie.com`` from the start —
+ * it is one of the YouTube hosts in ``EMBED_PROVIDERS``, and the CSP
+ * is derived from that list. Permissions-Policy was written by hand
+ * and named only ``youtube.com``, so a nocookie player could be
+ * framed and then refused fullscreen, picture-in-picture, encrypted
+ * media and the start of playback: a video that appears to embed
+ * correctly and then will not go fullscreen.
+ *
+ * Nothing had exercised it until the homepage tour, which is
+ * deliberately on the nocookie host. The grant here is exactly what
+ * ``youtube.com`` already had, extended to the same company's other
+ * hostname — not a new third party.
+ */
+const YOUTUBE_ORIGINS =
+  '"https://youtube.com" "https://www.youtube.com" '
+  + '"https://youtube-nocookie.com" "https://www.youtube-nocookie.com"'
+
 const PERMISSIONS_POLICY = [
   'accelerometer=()',
-  'autoplay=(self "https://youtube.com" "https://www.youtube.com" "https://player.vimeo.com" "https://fast.wistia.net")',
+  `autoplay=(self ${YOUTUBE_ORIGINS} "https://player.vimeo.com" "https://fast.wistia.net")`,
   'camera=()',
   'display-capture=()',
-  'encrypted-media=(self "https://youtube.com" "https://www.youtube.com" "https://player.vimeo.com" "https://fast.wistia.net")',
-  'fullscreen=(self "https://youtube.com" "https://www.youtube.com" "https://player.vimeo.com" "https://fast.wistia.net" "https://loom.com" "https://www.loom.com")',
+  `encrypted-media=(self ${YOUTUBE_ORIGINS} "https://player.vimeo.com" "https://fast.wistia.net")`,
+  `fullscreen=(self ${YOUTUBE_ORIGINS} "https://player.vimeo.com" "https://fast.wistia.net" "https://loom.com" "https://www.loom.com")`,
   'geolocation=()',
   'gyroscope=()',
   'magnetometer=()',
   'microphone=()',
   'midi=()',
   'payment=(self)',
-  'picture-in-picture=(self "https://youtube.com" "https://www.youtube.com" "https://player.vimeo.com")',
+  `picture-in-picture=(self ${YOUTUBE_ORIGINS} "https://player.vimeo.com")`,
   'publickey-credentials-get=()',
   'sync-xhr=()',
   'usb=()',

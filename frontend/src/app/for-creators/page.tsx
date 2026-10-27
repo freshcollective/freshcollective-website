@@ -15,6 +15,7 @@ import {
   commissionBullet,
 } from '@/lib/plans'
 import { CONTACT_INFO_EMAIL } from '@/lib/contact'
+import ShowAroundInvitation from '@/components/marketing/ShowAroundInvitation'
 import {
   CREATOR_FAQ,
   FEE_ROWS,
@@ -632,6 +633,14 @@ function FaqSection() {
               </div>
             </details>
           ))}
+
+          {/* Supporting content, not an eighth question — so it sits
+              outside the accordion and outside the FAQPage JSON-LD,
+              which still serialises exactly the seven entries in
+              ``CREATOR_FAQ``. Above the contact and policy line
+              because this is the warmer of the two offers and that
+              line is the page's closing small print. */}
+          <ShowAroundInvitation className="mt-10" />
 
           <p
             className="mt-8 text-[14.5px] leading-relaxed"

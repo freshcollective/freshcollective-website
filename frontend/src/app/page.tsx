@@ -4,6 +4,7 @@ import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
 import HomeWhatThisIs from '@/components/home/HomeWhatThisIs'
+import HomeIntroVideo from '@/components/home/HomeIntroVideo'
 import HomeFriction from '@/components/home/HomeFriction'
 import HomeOnboardingWalkthrough from '@/components/home/HomeOnboardingWalkthrough'
 import HomeWorldBuilders from '@/components/home/HomeWorldBuilders'
@@ -89,6 +90,13 @@ export default async function HomePage() {
     <SiteShell heroHeader>
       <HomeHero />
       <HomeWhatThisIs />
+      {/* The tour sits straight after the one-sentence statement of
+          what this is, and before the friction story — so a visitor
+          who would rather be shown than told can be, at the first
+          moment the page has said enough for the video to make
+          sense. Click-to-play, so nothing of YouTube's loads for the
+          visitors who scroll past it. */}
+      <HomeIntroVideo />
       <HomeFriction imageSrc={artFor('homepage_friction_conversation')} />
       <ExploreSection artFor={artFor} />
       <InsideCollectiveSection artFor={artFor} />
