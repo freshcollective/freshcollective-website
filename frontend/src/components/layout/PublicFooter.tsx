@@ -38,6 +38,9 @@ export default function PublicFooter() {
 
           <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2.5 pt-1">
             {[
+              // First, because it is the one link here that explains
+              // the place rather than moving you through it.
+              { href: '/about',  label: 'About Fresh Collective' },
               { href: '/spaces', label: 'Explore Collectives' },
               { href: '/login',  label: 'Log in' },
               { href: '/signup', label: 'Join' },

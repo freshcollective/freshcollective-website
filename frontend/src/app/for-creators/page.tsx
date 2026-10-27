@@ -77,6 +77,7 @@ export default async function ForCreatorsPage() {
           who wants to keep reading, and putting it before the CTA made
           the page ask its question and then keep talking. */}
       <FaqSection />
+      <AboutStoryLink />
     </SiteShell>
   )
 }
@@ -752,5 +753,41 @@ function FeeTable() {
         </table>
       </div>
     </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ABOUT LINK — one quiet line to the story behind the platform
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * A single text link to ``/about``.
+ *
+ * Placed after the FAQ, at the very end of the page, for two reasons.
+ * It is the last thing a reader meets, so it cannot interrupt the
+ * creator journey — the hero, the plans, the World Builders section
+ * and the closing CTA all run their course first. And it answers the
+ * question somebody naturally has once they have finished reading
+ * about the plans and the fees: who built this, and why. Nothing
+ * above it changes.
+ *
+ * Deliberately a line of text rather than a button. There is already
+ * one primary action on this page and it is "Choose your plan"; a
+ * second button would compete with it.
+ */
+function AboutStoryLink() {
+  return (
+    <Container className="pb-20 md:pb-28">
+      <div className="mx-auto max-w-2xl text-center">
+        <Link
+          href="/about"
+          className="text-[14.5px] underline decoration-1 underline-offset-4 transition-colors hover:opacity-80"
+          style={{ color: TEAL_DEEP, textDecorationColor: 'rgba(36,107,106,0.35)' }}
+        >
+          Discover why Fresh Collective exists →
+        </Link>
+      </div>
+    </Container>
   )
 }
