@@ -50,7 +50,7 @@ describe('the invitation reads as approved', () => {
   test('the action', () => {
     assert.equal(
       SHOW_AROUND_LINK_LABEL,
-      'Email Linds to arrange a 15-minute show-around →',
+      'Email Lindsey to arrange a 15-minute show-around →',
     )
   })
 

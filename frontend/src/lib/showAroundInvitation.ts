@@ -22,7 +22,7 @@ export const SHOW_AROUND_QUESTION = 'Rather see it with a person?'
  *  video is the feature of its section and the plans are the action
  *  on For Creators, and a second button would compete with both. */
 export const SHOW_AROUND_LINK_LABEL =
-  'Email Linds to arrange a 15-minute show-around →'
+  'Email Lindsey to arrange a 15-minute show-around →'
 
 /**
  * The subject line, prefilled.
