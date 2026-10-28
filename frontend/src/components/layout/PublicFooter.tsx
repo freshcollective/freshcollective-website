@@ -4,6 +4,7 @@ import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import Container from './Container'
 import FooterContact from './FooterContact'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
+import { PUBLIC_JOIN_LABEL } from '@/lib/publicNav'
 
 export default function PublicFooter() {
   return (
@@ -43,7 +44,7 @@ export default function PublicFooter() {
               { href: '/about',  label: 'About Fresh Collective' },
               { href: '/spaces', label: 'Explore Collectives' },
               { href: '/login',  label: 'Log in' },
-              { href: '/signup', label: 'Join' },
+              { href: '/signup', label: PUBLIC_JOIN_LABEL },
             ].map(({ href, label }) => (
               <Link
                 key={href}

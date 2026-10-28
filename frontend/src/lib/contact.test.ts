@@ -57,9 +57,13 @@ describe('the public footer offers both addresses, not a mailto', () => {
 
   test('the existing navigation is intact', () => {
     const src = codeOnly(FOOTER)
-    for (const label of ['Explore Collectives', 'Log in', 'Join']) {
+    for (const label of ['Explore Collectives', 'Log in']) {
       assert.ok(src.includes(label), `${label} is missing from the footer`)
     }
+    // The signup entry is no longer a literal here: its wording is
+    // shared with the two headers so the three cannot drift apart.
+    // See ``publicNavLabel.test.ts``.
+    assert.ok(src.includes('PUBLIC_JOIN_LABEL'), 'the signup entry is missing from the footer')
   })
 
   test('the governance nav is untouched', () => {

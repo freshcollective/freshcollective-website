@@ -110,17 +110,15 @@ describe('nothing about signing up changed', () => {
     assert.ok(page.includes("redirect(next && next.startsWith('/') ? next : '/dashboard')"))
   })
 
-  test('the header still offers Join, pointing at signup', () => {
-    // The desktop header says "Join"; the mobile drawer has room for
-    // "Join Fresh Collective" and already says so, which is the
-    // ambiguity this sentence exists to settle on the page itself.
-    for (const [file, label] of [
-      ['src/components/layout/PublicHeader.tsx', 'Join'],
-      ['src/components/layout/MobileNav.tsx', 'Join Fresh Collective'],
-    ] as const) {
+  test('the navigation still offers signup', () => {
+    // The wording itself is pinned in ``publicNavLabel.test.ts``;
+    // here all that matters is the route still exists.
+    for (const file of [
+      'src/components/layout/PublicHeader.tsx',
+      'src/components/layout/MobileNav.tsx',
+    ]) {
       const src = readFileSync(file, 'utf8')
       assert.ok(src.includes('href="/signup"'), `${file} no longer links to signup`)
-      assert.ok(src.includes(label), `${file} no longer says "${label}"`)
     }
   })
 })

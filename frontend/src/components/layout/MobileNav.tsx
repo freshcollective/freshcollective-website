@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { PUBLIC_JOIN_LABEL } from '@/lib/publicNav'
 
 interface Props {
   isLoggedIn: boolean
@@ -158,7 +159,7 @@ export default function MobileNav({ isLoggedIn, discoveryOn, waysToConnectOn, da
                       boxShadow: 'var(--fc-shadow-btn)',
                     }}
                   >
-                    Join Fresh Collective
+                    {PUBLIC_JOIN_LABEL}
                   </Link>
                 </>
               )}

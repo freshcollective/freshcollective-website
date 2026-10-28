@@ -8,6 +8,7 @@ import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
+import { PUBLIC_JOIN_LABEL } from '@/lib/publicNav'
 
 interface MeResponse {
   id: string
@@ -91,7 +92,7 @@ export default async function PublicHeader({
             share makes the middle one a true third of the container,
             which is centred on the page by construction — no measured
             offset to keep in sync with the buttons beside it. */}
-        <Container className="flex h-14 items-center justify-between gap-8">
+        <Container className="flex h-14 items-center justify-between gap-6 lg:gap-8">
 
           {brand
             ? <BrandLockup tone="dark" href="/" />
@@ -131,14 +132,14 @@ export default async function PublicHeader({
                 </Link>
                 <Link
                   href="/signup"
-                  className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-all hover:opacity-90"
+                  className="whitespace-nowrap rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-all hover:opacity-90"
                   style={{
                     border: '1px solid rgba(255,255,255,0.22)',
                     background: 'rgba(255,255,255,0.10)',
                     backdropFilter: 'blur(8px)',
                   }}
                 >
-                  Join
+                  {PUBLIC_JOIN_LABEL}
                 </Link>
               </>
             )}
@@ -159,7 +160,7 @@ export default async function PublicHeader({
         borderBottom: '1px solid #E8E8E5',
       }}
     >
-      <Container className="flex h-16 items-center justify-between gap-8">
+      <Container className="flex h-16 items-center justify-between gap-6 lg:gap-8">
 
         {brand
           ? <BrandLockup tone="light" href="/" />
@@ -205,13 +206,13 @@ export default async function PublicHeader({
               </Link>
               <Link
                 href="/signup"
-                className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="whitespace-nowrap rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{
                   background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
                   boxShadow: '0 2px 12px rgba(56,160,158,0.30)',
                 }}
               >
-                Join
+                {PUBLIC_JOIN_LABEL}
               </Link>
             </>
           )}
