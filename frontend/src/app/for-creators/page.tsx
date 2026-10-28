@@ -16,6 +16,7 @@ import {
 } from '@/lib/plans'
 import { CONTACT_INFO_EMAIL } from '@/lib/contact'
 import ShowAroundInvitation from '@/components/marketing/ShowAroundInvitation'
+import CollectiveShowcase from '@/components/marketing/CollectiveShowcase'
 import {
   CREATOR_FAQ,
   FEE_ROWS,
@@ -26,7 +27,8 @@ import {
 /**
  * /for-creators — editorial companion to the homepage.
  *
- * Structure: Hero → Journey → Plans → World Builders → Closing → FAQ.
+ * Structure: Hero → Showcase → Journey → Plans → World Builders →
+ * Closing → FAQ.
  * Every row is an editorial spread: artwork on one side, quiet framing
  * copy on the other. No pricing-table decoration, no eyebrow labels —
  * hierarchy is carried by typography, spacing and composition alone.
@@ -65,6 +67,12 @@ export default async function ForCreatorsPage() {
   return (
     <SiteShell>
       <Hero artUrl={artFor('homepage_creator_studio')} />
+      {/* Straight after the hero and before the how-to, so the
+          question the hero raises — what would mine look like? —
+          is answered with a real Collective before the page starts
+          explaining anything. Static screenshots only: Moonlit
+          Circle is private and nothing here reaches it. */}
+      <CollectiveShowcase />
       <Journey />
       <PlansSection artFor={artFor} />
       <WorldBuildersSection artUrl={artFor('for_creators_world_builders')} />
