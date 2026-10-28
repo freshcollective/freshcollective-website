@@ -54,7 +54,17 @@ export default function REALJourneyPage() {
                 <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
                 Where it all begins
               </p>
-              <h1 className="mb-6 font-serif text-5xl leading-tight text-white md:text-6xl">
+              {/* Inline colour: a Tailwind text-colour class on a
+                  heading is overridden by the unlayered ``h1…h6``
+                  rule in ``globals.css``, which left "The" and
+                  "Journey" navy on the navy-950 hero — invisible,
+                  with only the gold ``<em>`` surviving (an ``em`` is
+                  not a heading, so its own class still applied). See
+                  ``headingColour.test.ts``. */}
+              <h1
+                className="mb-6 font-serif text-5xl leading-tight md:text-6xl"
+                style={{ color: '#FFFFFF' }}
+              >
                 The <em className="text-gold-400">REAL</em> Journey
               </h1>
               <p className="mb-10 text-lg leading-relaxed text-navy-300">

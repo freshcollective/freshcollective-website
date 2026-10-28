@@ -35,7 +35,13 @@ export default async function InvitePage({ params }: Props) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#55D7D2' }}>
             You&apos;re invited
           </p>
-          <h1 className="mt-2 font-serif text-xl font-semibold text-white">{invite.space_name}</h1>
+          {/* Inline colour: a Tailwind text-colour class on a heading
+              is overridden by the unlayered ``h1…h6`` rule in
+              ``globals.css``, which left the Collective's name navy
+              on this near-black card. See ``headingColour.test.ts``. */}
+          <h1 className="mt-2 font-serif text-xl font-semibold" style={{ color: '#FFFFFF' }}>
+            {invite.space_name}
+          </h1>
           {invite.name && (
             <p className="mt-1 text-[13px]" style={{ color: '#FFFFFF' }}>
               Hi {invite.name},

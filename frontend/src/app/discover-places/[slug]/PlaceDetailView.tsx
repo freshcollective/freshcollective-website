@@ -139,7 +139,13 @@ function PlaceHero({ place }: { place: PublicPlaceDetail }) {
             >
               ← Discover Places
             </Link>
-            <h1 className="font-serif text-[36px] leading-tight text-white md:text-[48px]">
+            {/* Inline colour: a Tailwind text-colour class on a
+                heading is overridden by the unlayered ``h1…h6`` rule
+                in ``globals.css``. See ``headingColour.test.ts``. */}
+            <h1
+              className="font-serif text-[36px] leading-tight md:text-[48px]"
+              style={{ color: '#FFFFFF' }}
+            >
               {place.name}
             </h1>
             <p className="mt-1 text-[13.5px] text-white/85">

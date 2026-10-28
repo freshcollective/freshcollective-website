@@ -199,7 +199,19 @@ export default async function MemberGatheringSeriesPage({
               <p className="text-[11px] font-semibold uppercase tracking-wider text-white/90">
                 {dateRange}
               </p>
-              <h1 className="mt-1 font-serif text-2xl leading-tight text-white md:text-3xl">
+              {/* Colour is set inline, not with ``text-white``.
+                  ``globals.css`` styles ``h1…h6`` outside any cascade
+                  layer, and unlayered rules beat everything in
+                  ``@layer utilities`` whatever their specificity — so
+                  a Tailwind text-colour class on a heading is
+                  silently discarded and the title renders navy on the
+                  darkened photograph. The Gathering hero next door
+                  has always set this inline, which is why it was
+                  never affected. See ``headingColour.test.ts``. */}
+              <h1
+                className="mt-1 font-serif text-2xl leading-tight md:text-3xl"
+                style={{ color: '#FFFFFF' }}
+              >
                 {detail.title}
               </h1>
             </div>
