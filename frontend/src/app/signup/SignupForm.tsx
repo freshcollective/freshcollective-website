@@ -129,6 +129,24 @@ export default function SignupForm({
             >
               Your world begins here.
             </p>
+            {/*
+              What the "Join" button in the header actually joins.
+
+              It reads as an invitation to join something in
+              particular, and this is the page that has to say what:
+              an account, free, and separate from joining any
+              Collective — which happens afterwards, by choice, and
+              may cost something.
+
+              Only on this branch. A visitor who arrived from a
+              Pathway or a Gathering checkout link already has a line
+              above telling them what they are creating an account
+              for, and "then find Collectives to join" would argue
+              with it — they have found one.
+            */}
+            <p className="mt-2.5 text-sm leading-relaxed" style={{ color: '#5A6B7D' }}>
+              Create your free account, then find Collectives to join.
+            </p>
           </>
         )}
       </div>
