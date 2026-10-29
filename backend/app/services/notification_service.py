@@ -119,11 +119,19 @@ def send_notification(
     url: str | None = None,
     space_id: str | None = None,
     pref_key: str | None = None,
+    email_subject: str | None = None,
+    email_subheading: str | None = None,
 ) -> None:
     """
     Background-task-safe: creates its own DB session.
     Creates an in-app notification.  If pref_key and space_id are given,
     checks the user's email preference before sending an email.
+
+    ``email_subject`` and ``email_subheading`` let a caller give the
+    email more context than the in-app notification needs. A direct
+    message uses them to name the Collective: in the app the member is
+    already inside it, but an inbox holding mail from several
+    Collectives is not. Both default to the existing behaviour.
     """
     db = SessionLocal()
     try:
@@ -144,8 +152,17 @@ def send_notification(
         if should_email:
             user = db.query(User).filter(User.id == recipient_id).first()
             if user:
-                html = notification_email_html(title=title, message=message, url=url)
-                email_service.send(to=user.email, subject=title, html_body=html)
+                html = notification_email_html(
+                    title=title,
+                    message=message,
+                    url=url,
+                    subheading=email_subheading,
+                )
+                email_service.send(
+                    to=user.email,
+                    subject=email_subject or title,
+                    html_body=html,
+                )
                 # Record email sent timestamp
                 notif.email_sent_at = datetime.utcnow()
                 db.commit()

@@ -84,10 +84,34 @@ def notification_email_html(
     message: str,
     url: str | None,
     action_label: str = "View",
+    subheading: str | None = None,
 ) -> str:
+    """Render a legacy notification email.
+
+    ``url`` may be an app-relative path. Every caller in
+    ``notification_service`` passes one — ``/spaces/{slug}/messages/{id}``
+    and its siblings — which is correct for an in-app notification and
+    useless in an email: the button had nothing to resolve against and
+    the visible fallback line showed a bare path. ``public_app_url``
+    turns it into the member-facing address, and leaves an already
+    absolute URL alone so a caller that passes one is unaffected.
+    """
     return render_email(
         preheader=message[:150],
         heading=title,
+        subheading=subheading,
         body_paragraphs=[message],
-        action=(action_label, url) if url else None,
+        action=(action_label, _absolute(url)) if url else None,
     )
+
+
+def _absolute(url: str | None) -> str | None:
+    """App-relative path -> member-facing absolute URL. Idempotent."""
+    if not url:
+        return url
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("mailto:"):
+        return url
+    from app.core.public_url import public_app_url
+    return public_app_url(url)

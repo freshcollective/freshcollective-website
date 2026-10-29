@@ -3131,7 +3131,8 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
             <button
               type="button"
               onClick={() => setBroadcastOpen(true)}
-              className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-navy-900 transition-colors hover:border-teal-400"
+              className="whitespace-nowrap rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ background: '#38A09E' }}
             >
               Message all members
             </button>

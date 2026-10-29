@@ -72,6 +72,7 @@ def render_email(
     body_paragraphs: list[str],
     action: tuple[str, str] | None = None,   # (label, url)
     eyebrow: str | None = None,              # optional small label above the heading
+    subheading: str | None = None,           # optional quiet line *under* the heading
     signoff: str | None = None,              # optional italic single-line signoff
     db: Any = None,
     brand_logo_url: str | None = None,
@@ -86,6 +87,7 @@ def render_email(
     safe_preheader = _html.escape(preheader)
     safe_heading   = _html.escape(heading)
     safe_eyebrow   = _html.escape(eyebrow) if eyebrow else None
+    safe_subheading = _html.escape(subheading) if subheading else None
     safe_signoff   = _html.escape(signoff) if signoff else None
 
     paras_html = "\n".join(
@@ -100,6 +102,18 @@ def render_email(
         </tr>'''
         for p in body_paragraphs
     )
+
+    # A quiet line under the heading — which Collective this is about.
+    # Deliberately not an eyebrow: Fresh Collective does not use small
+    # uppercase labels above headings, and "Moonlit Circle" belongs
+    # under "Message from Ada", not over it.
+    subheading_html = ""
+    if safe_subheading:
+        subheading_html = f'''
+              <p style="margin:6px 0 0 0;font-size:14px;line-height:1.4;
+                        color:{_INK_MUTED};font-family:{_FONT_STACK_SANS};">
+                {safe_subheading}
+              </p>'''
 
     action_html = ""
     if action is not None:
@@ -195,7 +209,7 @@ def render_email(
                          color:{_INK_HEADING};font-family:{_FONT_STACK_SERIF};
                          font-weight:400;letter-spacing:-0.01em;">
                 {safe_heading}
-              </h1>
+              </h1>{subheading_html}
             </td>
           </tr>
 

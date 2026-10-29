@@ -391,6 +391,7 @@ def _deliver_to_member(
         recipient_id=member_id,
         sender_name=sender_name,
         space_id=space.id,
+        space_name=space.name,
         thread_url=thread_url,
         preview=text[:80],
     )
@@ -791,6 +792,7 @@ def _notify_direct_message(
     space_id: str,
     thread_url: str | None,
     preview: str,
+    space_name: str | None = None,
 ) -> None:
     # M5c cutover guard — when dm.message.sent is live, the routing
     # pipeline handles delivery and this legacy notify no-ops.
@@ -798,12 +800,22 @@ def _notify_direct_message(
     if is_event_live("dm.message.sent"):
         return
     from app.services.notification_service import send_notification
+    # In the app the member is already inside the Collective, so the
+    # title needs no more than the sender. An inbox is not: a member of
+    # several Collectives needs to know which one wrote. The subject
+    # carries it, and the email repeats it under the heading.
+    title = f"Message from {sender_name}"
     send_notification(
         recipient_id=recipient_id,
         notification_type="direct_message",
-        title=f"Message from {sender_name}",
+        title=title,
         message=preview if len(preview) < 80 else preview[:77] + "…",
         url=thread_url,
         space_id=space_id,
         pref_key="direct_message_email",
+        email_subject=(
+            f"New message from {sender_name} · {space_name}"
+            if space_name else f"New message from {sender_name}"
+        ),
+        email_subheading=space_name,
     )
