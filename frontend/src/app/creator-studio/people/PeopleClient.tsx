@@ -170,6 +170,159 @@ const ACCESS_STATE_STYLE: Record<string, { background: string; color: string }> 
   archived:    { background: 'rgba(148,163,184,0.10)', color: '#64748b' },
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// Message all members
+//
+// A Collective-wide message is N private messages, not an announcement:
+// each member receives it in their own thread with the creator and can
+// reply there, and no member can tell that anyone else received it.
+//
+// Its own button beside the people list rather than a mode hidden
+// inside one member's message modal — a creator who wants to write to
+// everyone should not have to start by picking somebody.
+// ───────────────────────────────────────────────────────────────────────
+
+function BroadcastModal({ spaceSlug, spaceName, onClose }: {
+  spaceSlug: string
+  spaceName: string
+  onClose: () => void
+}) {
+  const [body, setBody]       = useState('')
+  const [count, setCount]     = useState<number | null>(null)
+  const [stage, setStage]     = useState<'compose' | 'confirm' | 'sending' | 'done'>('compose')
+  const [result, setResult]   = useState<{ recipients: number; sent: number; failed: number } | null>(null)
+  const [error, setError]     = useState<string | null>(null)
+
+  // The exact number, from the server. The people list on this page is
+  // filtered and paginated, so counting it here would be a guess.
+  useEffect(() => {
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages/broadcast/recipients`), {
+      credentials: 'include',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCount(d?.count ?? null))
+      .catch(() => setCount(null))
+  }, [spaceSlug])
+
+  async function send() {
+    setStage('sending')
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages/broadcast`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => null)
+        setError(d?.detail ?? 'The message could not be sent.')
+        setStage('compose')
+        return
+      }
+      setResult(await res.json())
+      setStage('done')
+    } catch {
+      setError('The message could not be sent.')
+      setStage('compose')
+    }
+  }
+
+  const trimmed = body.trim()
+  const people = count === 1 ? '1 member' : `${count} members`
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 sm:max-w-[560px] sm:rounded-2xl sm:p-6">
+        {stage === 'done' && result ? (
+          <>
+            <h2 className="text-[16px] font-semibold text-navy-900">Message sent</h2>
+            <p className="mt-2 text-[14px] text-black">
+              Delivered to {result.sent} of {result.recipients}{' '}
+              {result.recipients === 1 ? 'member' : 'members'}. Each one has it in
+              their own conversation with you, and can reply there.
+            </p>
+            {result.failed > 0 && (
+              <p className="mt-2 rounded-lg px-3 py-2 text-[13px]"
+                 style={{ background: 'rgba(185, 28, 28, 0.06)', color: '#991B1B' }}>
+                {result.failed} {result.failed === 1 ? 'message' : 'messages'} could not
+                be created. Nobody received a duplicate — you can send again to just
+                those members individually.
+              </p>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={onClose}
+                className="rounded-xl bg-navy-900 px-4 py-2 text-[13px] font-semibold text-white">
+                Done
+              </button>
+            </div>
+          </>
+        ) : stage === 'confirm' ? (
+          <>
+            <h2 className="text-[16px] font-semibold text-navy-900">
+              Send to {count === null ? 'every member' : people}?
+            </h2>
+            <p className="mt-2 text-[14px] text-black">
+              Everyone active in {spaceName} will receive this in their own private
+              conversation with you. They can reply to you there, and no one can see
+              who else received it.
+            </p>
+            <p className="mt-3 whitespace-pre-wrap rounded-lg px-3 py-2 text-[14px] text-navy-900"
+               style={{ background: 'rgba(12,24,38,0.04)' }}>
+              {trimmed}
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setStage('compose')}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-navy-900">
+                Back
+              </button>
+              <button type="button" onClick={send}
+                className="rounded-xl bg-navy-900 px-4 py-2 text-[13px] font-semibold text-white">
+                Send to {count === null ? 'everyone' : people}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-[16px] font-semibold text-navy-900">Message all members</h2>
+            <p className="mt-1 text-[13px] text-black">
+              {count === null
+                ? 'Everyone active in this Collective receives this privately.'
+                : `${people} will receive this privately, each in their own conversation with you.`}
+            </p>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={6}
+              autoFocus
+              placeholder="What would you like to say?"
+              className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+            />
+            {error && (
+              <p className="mt-2 text-[13px]" style={{ color: '#991B1B' }}>{error}</p>
+            )}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={onClose}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-navy-900">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!trimmed || count === 0 || stage === 'sending'}
+                onClick={() => setStage('confirm')}
+                className="rounded-xl bg-navy-900 px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {stage === 'sending' ? 'Sending…' : 'Review and send'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
 function AccessPill({ state, label }: { state: string; label: string }) {
   const style = ACCESS_STATE_STYLE[state] ?? ACCESS_STATE_STYLE.locked
   return (
@@ -2873,6 +3026,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
   const [addPersonOpen, setAddPersonOpen]               = useState(false)
   const [selectedMember, setSelectedMember]             = useState<CreatorMemberDetail | null>(null)
   const [selectedManualMember, setSelectedManualMember] = useState<ManualMember | null>(null)
+  const [broadcastOpen, setBroadcastOpen] = useState(false)
   const [search, setSearch]                             = useState('')
   const [accessRequests, setAccessRequests]             = useState<AccessRequest[]>(initialAccessRequests)
 
@@ -2958,6 +3112,14 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
         ))}
       </div>
 
+      {broadcastOpen && (
+        <BroadcastModal
+          spaceSlug={spaceSlug}
+          spaceName={spaceName}
+          onClose={() => setBroadcastOpen(false)}
+        />
+      )}
+
       {/* ── Collective link ── */}
       <InviteLinkCard spaceSlug={spaceSlug} isPublic={spaceIsPublic} />
 
@@ -2965,6 +3127,14 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <SectionHeading title="Current people" count={membersList.length} />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBroadcastOpen(true)}
+              className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-navy-900 transition-colors hover:border-teal-400"
+            >
+              Message all members
+            </button>
           <input
             type="text"
             placeholder="Search by name or email…"
@@ -2972,6 +3142,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
             onChange={(e) => setSearch(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
           />
+          </div>
         </div>
 
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
