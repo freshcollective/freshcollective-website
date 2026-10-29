@@ -44,6 +44,7 @@ type SurfacedPrefKey =
   | 'new_post_email'
   | 'comment_reply_email'
   | 'new_pathway_email'
+  | 'direct_message_email'
 
 interface PrefControl {
   key: SurfacedPrefKey
@@ -57,6 +58,18 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    // First, and on its own. Everything else here is something that
+    // happened in the Collective; this is somebody writing to you.
+    label: 'Messages',
+    controls: [
+      {
+        key: 'direct_message_email',
+        label: 'Direct messages',
+        description: 'Hear when the creator sends you a private message.',
+      },
+    ],
+  },
   {
     label: 'Community Updates',
     controls: [

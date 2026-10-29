@@ -782,6 +782,7 @@ class NotificationPrefsResponse(BaseModel):
     comment_reply_email: bool
     pathway_comment_email: bool
     new_pathway_email: bool
+    direct_message_email: bool
     # Push (TODO: wire up delivery when push system is implemented)
     push_enabled: bool
     push_gathering_reminders: bool
@@ -904,6 +905,7 @@ class NotificationPrefsUpdate(BaseModel):
     comment_reply_email: bool | None = None
     pathway_comment_email: bool | None = None
     new_pathway_email: bool | None = None
+    direct_message_email: bool | None = None
     push_enabled: bool | None = None
     push_gathering_reminders: bool | None = None
     push_replies: bool | None = None

@@ -715,6 +715,7 @@ export interface NotificationPrefs {
   gathering_reminder_email: boolean
   new_post_email: boolean
   comment_reply_email: boolean
+  direct_message_email: boolean
   pathway_comment_email: boolean
   new_pathway_email: boolean
   push_enabled: boolean

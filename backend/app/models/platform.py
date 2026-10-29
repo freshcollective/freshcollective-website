@@ -2012,6 +2012,13 @@ class SpaceMemberNotificationPrefs(Base):
     comment_reply_email: Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
     pathway_comment_email: Mapped[bool]     = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
     new_pathway_email: Mapped[bool]         = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    # Read by ``notification_service._get_notification_pref`` since direct
+    # messages shipped; the column itself arrived in migration 169. Until
+    # then the lookup's two branches disagreed — no row meant True from the
+    # defaults dict, a saved row meant a missing attribute and a silent
+    # False. Default True so the column states the intent the defaults
+    # dict always carried.
+    direct_message_email: Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
     # ── Push (TODO: wire up delivery when push system is implemented) ──
     push_enabled: Mapped[bool]              = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     push_gathering_reminders: Mapped[bool]  = mapped_column(Boolean, nullable=False, default=False, server_default="false")
