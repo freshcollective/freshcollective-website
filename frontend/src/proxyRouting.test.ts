@@ -94,7 +94,36 @@ describe('isProtectedRoute', () => {
       '/spaces/foo/events',
       '/spaces/foo/community',
       '/spaces/foo/members',
+      '/spaces/foo/offerings',
+      '/spaces/foo/about',
+    ]) {
+      assert.equal(isProtectedRoute(path), false, path)
+    }
+  })
+
+  test('…except messages, which no Collective can open', () => {
+    // This list used to include '/spaces/foo/messages'. It is the one
+    // Collective route whose answer does not depend on the Collective:
+    // the backend fixes it at members-only in a single-element tuple
+    // (AREA_MESSAGES: (POLICY_MEMBERS,) in app/spaces/area_policies.py),
+    // which that file defines as "a creator cannot change it". So the
+    // URL's shape really is the whole answer, and it belongs with
+    // /dashboard rather than with /events.
+    for (const path of [
       '/spaces/foo/messages',
+      '/spaces/foo/messages/',
+      '/spaces/foo/messages/mt_123',
+    ]) {
+      assert.equal(isProtectedRoute(path), true, path)
+    }
+  })
+
+  test('the guard stops at the segment boundary', () => {
+    // A route merely beginning with the same letters is not messages.
+    for (const path of [
+      '/spaces/foo/messagesfoo',
+      '/spaces/foo/messaging',
+      '/spaces/messages',
     ]) {
       assert.equal(isProtectedRoute(path), false, path)
     }
@@ -310,4 +339,72 @@ describe('extractCreatorSpaceSlug — URL is authoritative under /creator/spaces
     assert.equal(extractCreatorSpaceSlug('/admin'), null)
   })
 
+})
+
+
+// ---------------------------------------------------------------------------
+// Following a direct-message link from an email
+// ---------------------------------------------------------------------------
+
+describe('a message link reaches the conversation, signed in or not', () => {
+  const PRIVATE = '/spaces/moonlit-circle/messages/mt_7f3a19c2'
+  const PUBLIC  = '/spaces/embody/messages/mt_7f3a19c2'
+
+  test('anonymous is sent to login, keeping the destination', () => {
+    // The whole point: the member clicked a link to one conversation
+    // and must land in that conversation, not on a dashboard.
+    for (const path of [PRIVATE, PUBLIC]) {
+      assert.deepEqual(decide(path, false), {
+        action: 'redirect', to: '/login', next: path,
+      })
+    }
+  })
+
+  test('the login door is the member one, never the admin one', () => {
+    assert.equal(decide(PRIVATE, false).to, '/login')
+  })
+
+  test('an authenticated visitor passes straight through', () => {
+    // Whether they may read it is the page's and the API\'s business,
+    // not the proxy\'s. A signed-in non-member still meets notFound().
+    for (const path of [PRIVATE, PUBLIC]) {
+      assert.deepEqual(decide(path, true), { action: 'next' })
+    }
+  })
+
+  test('private and public Collectives now answer identically', () => {
+    // Before this rule they did not: anonymous got a redirect on a
+    // public Collective and a 404 on a private one, which told the
+    // caller which was which. Nothing is learned before signing in.
+    const priv = decide(PRIVATE, false)
+    const pub  = decide(PUBLIC, false)
+    // Same outcome and same door; only the destination differs, and
+    // that is the caller's own URL coming back to them.
+    assert.equal(priv.action, pub.action)
+    assert.equal(priv.to, pub.to)
+    assert.equal(priv.next, PRIVATE)
+    assert.equal(pub.next, PUBLIC)
+    assert.deepEqual(decide(PRIVATE, true), decide(PUBLIC, true))
+  })
+
+  test('no other Collective route changed behaviour', () => {
+    // The regression this file exists to prevent: a redirect rule that
+    // spreads beyond the one area it was written for.
+    for (const path of [
+      '/spaces/moonlit-circle',
+      '/spaces/moonlit-circle/about',
+      '/spaces/moonlit-circle/pathways',
+      '/spaces/moonlit-circle/pathways/p/steps/1',
+      '/spaces/moonlit-circle/events',
+      '/spaces/moonlit-circle/events/e1',
+      '/spaces/moonlit-circle/community',
+      '/spaces/moonlit-circle/members',
+      '/spaces/moonlit-circle/offerings',
+      '/spaces/moonlit-circle/gathering-series/s1',
+      '/spaces',
+    ]) {
+      assert.deepEqual(decide(path, false), { action: 'next' }, path)
+      assert.deepEqual(decide(path, true), { action: 'next' }, path)
+    }
+  })
 })

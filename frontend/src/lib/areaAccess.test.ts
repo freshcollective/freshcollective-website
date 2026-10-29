@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { canReachArea } from './collectiveAreas.ts'
+import { isProtectedRoute } from '../proxyRouting.ts'
 
 /**
  * One resolved answer, read everywhere.
@@ -97,8 +98,29 @@ describe('every surface reads that one set', () => {
 describe('the proxy no longer competes', () => {
   const proxy = () => read('proxyRouting.ts')
 
-  test('Collective routes are not decided from a URL shape', () => {
-    assert.match(proxy(), /function isSpacesRouteProtected\(_pathname: string\): boolean \{\s*\n\s*return false/)
+  test('no CONFIGURABLE Collective area is decided from a URL shape', () => {
+    // This used to pin ``isSpacesRouteProtected`` as literally
+    // ``return false``. It no longer is: ``/spaces/x/messages`` is
+    // gated there, because it is the one Collective area a creator
+    // cannot open — the backend fixes it at members-only in a
+    // single-element tuple (AREA_MESSAGES in area_policies.py).
+    //
+    // The invariant the old assertion was protecting is unchanged and
+    // is now checked by behaviour rather than by source text: every
+    // area whose access *does* depend on the Collective is still left
+    // entirely to the server.
+    for (const area of [
+      'about', 'home', 'pathways', 'events', 'community',
+      'members', 'offerings', 'gathering-series',
+    ]) {
+      const path = `/spaces/any-collective/${area}`
+      assert.equal(isProtectedRoute(path), false, path)
+    }
+  })
+
+  test('messages is the only Collective route the proxy gates', () => {
+    assert.equal(isProtectedRoute('/spaces/any-collective/messages'), true)
+    assert.equal(isProtectedRoute('/spaces/any-collective/messages/mt_1'), true)
   })
 
   test('but unconditionally private roots keep their guard', () => {

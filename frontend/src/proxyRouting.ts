@@ -36,8 +36,43 @@
  * /settings, /profile, /onboarding) keep their proxy protection,
  * where a URL's shape really is the whole answer.
  */
-function isSpacesRouteProtected(_pathname: string): boolean {
-  return false
+/**
+ * The one exception, and why it is not a reversal of the above.
+ *
+ * ``/spaces/{slug}/messages`` is a member's private correspondence.
+ * Unlike Gatherings or Pathways, it is not configurable: the platform
+ * fixes it at members-only, and the backend says so in one value —
+ * ``AREA_MESSAGES: (POLICY_MEMBERS,)`` in ``app/spaces/area_policies.py``,
+ * a single-element tuple, which that file defines as "fixed: a creator
+ * cannot change it and the Creator Studio panel does not offer it".
+ *
+ * So this is not a second authority guessing at a per-Collective
+ * answer. It is the case the note above sets aside — "unconditionally
+ * private … where a URL's shape really is the whole answer" — and it
+ * belongs with ``/dashboard`` and ``/settings``, not with the areas
+ * whose access only the API can know.
+ *
+ * What it fixes: a member following a direct-message link from their
+ * email while signed out. The page's own
+ * ``requireAuthenticatedUser()`` would send them to login and back,
+ * but it never ran — ``spaces/[slug]/layout.tsx`` resolves the
+ * Collective first, gets nothing for a private one viewed
+ * anonymously, and calls ``notFound()``. The member saw "page not
+ * found" where their conversation should have been.
+ *
+ * It also closes a disclosure that existed before it: anonymous
+ * visitors used to get 307 on a public Collective's messages URL and
+ * 404 on a private one, which told them which was which. Now both
+ * redirect to login, and nothing is learned before signing in.
+ *
+ * Authenticated visitors are untouched. They pass through exactly as
+ * before, to the same layout and the same ``notFound()`` — a signed-in
+ * non-member gains nothing here.
+ */
+const SPACE_MESSAGES_URL = /^\/spaces\/[^/?#]+\/messages(?:\/|$)/
+
+function isSpacesRouteProtected(pathname: string): boolean {
+  return SPACE_MESSAGES_URL.test(pathname)
 }
 
 /**
