@@ -79,6 +79,7 @@ from app.models.payment import (
     PaymentTransaction,
     PaymentTransactionStatus,
     PaymentTransactionType,
+    PayoutModel,
     PayoutStatus,
 )
 from app.models.platform import BookingStatus, Event, EventBooking, Space
@@ -775,6 +776,16 @@ def release_hold_for_transaction(
         return
 
     txn.status = final_status
+    # A ledger row is born carrying ``payout_status='pending'``, set when
+    # the Checkout Session opens and before any money exists. The two
+    # sibling release paths in the webhook handler clear it on their way
+    # to a terminal status; this one did not, so every expired or failed
+    # Gathering-ticket checkout left behind a creator payout obligation
+    # for money no member ever paid. Connect rows are left alone — theirs
+    # was never ``pending`` and ``connect_transfer_status`` is their
+    # authority.
+    if txn.payout_model != PayoutModel.connect.value:
+        txn.payout_status = PayoutStatus.not_applicable
 
     booking = (
         db.query(EventBooking)

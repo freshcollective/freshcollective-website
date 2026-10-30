@@ -12,9 +12,12 @@ import {
   PERIOD_OPTIONS,
   comparisonSentence,
   describeHealth,
+  formatRate,
   formatValue,
+  humaniseClass,
   isComparable,
   isMoney,
+  outstandingBreakdown,
   qualifierNote,
 } from './insights.ts'
 
@@ -53,6 +56,7 @@ function definition(over: Partial<MetricDefinition> = {}): MetricDefinition {
     source_of_truth: 'space_members',
     grain: 'period',
     aggregation: 'additive',
+    unit: 'count',
     date_basis: 'membership_joined',
     access: 'platform_only',
     availability: 'full',
@@ -185,31 +189,103 @@ describe('the data-health indicator reports the awkward state first', () => {
 })
 
 describe('a figure is formatted as whatever it actually is', () => {
-  test('money is read from the key, since everything is stored in cents', () => {
-    assert.ok(isMoney('platform_fee_revenue_cents'))
-    assert.ok(!isMoney('unique_members'))
+  test('money is formatted as currency, by its declared unit', () => {
     assert.equal(
-      formatValue(metric({ key: 'platform_fee_revenue_cents', value: 123456 })),
+      formatValue(
+        metric({
+          key: 'platform_fee_revenue_cents',
+          value: 123456,
+          definition: definition({
+            key: 'platform_fee_revenue_cents',
+            unit: 'money_cents',
+          }),
+        }),
+      ),
       '$1,235',
     )
   })
 
-  test('a ratio is shown as a percentage, by its declared aggregation', () => {
+  test('a definition with no unit still formats money as money', () => {
+    // fc-web and fc-api deploy independently and in no guaranteed order,
+    // so the browser can hold a definition from before the unit existed.
+    // A money total rendered as a bare integer is a hundredfold error,
+    // not a cosmetic one, so the key convention remains the fallback.
+    const noUnit = definition({ key: 'platform_fee_revenue_cents' })
+    delete (noUnit as { unit?: unknown }).unit
+    assert.equal(
+      formatValue(
+        metric({ key: 'platform_fee_revenue_cents', value: 123456, definition: noUnit }),
+      ),
+      '$1,235',
+    )
+    assert.ok(isMoney('platform_fee_revenue_cents'))
+    assert.ok(!isMoney('unique_members'))
+  })
+
+  test('a rate reads as a decimal, not a percentage', () => {
+    // The defect this replaces: `memberships_per_member` aggregates as a
+    // ratio, this module read "ratio" as "percentage", and 1.83
+    // memberships per person was shown as 183%. A rate is not a part of
+    // anything, so it has no percentage form.
+    const m = metric({
+      key: 'memberships_per_member',
+      value: 1.83,
+      definition: definition({
+        key: 'memberships_per_member',
+        aggregation: 'ratio',
+        unit: 'rate',
+        grain: 'snapshot',
+      }),
+    })
+    assert.equal(formatValue(m), '1.83')
+    assert.ok(!formatValue(m).includes('%'))
+  })
+
+  test('a whole-number rate drops its empty decimals', () => {
+    assert.equal(formatRate(2), '2')
+    assert.equal(formatRate(1.5), '1.50')
+  })
+
+  test('a proportion still reads as a percentage', () => {
     const m = metric({
       key: 'member_retention',
       value: 0.126,
-      definition: definition({ key: 'member_retention', aggregation: 'ratio' }),
+      definition: definition({
+        key: 'member_retention',
+        aggregation: 'ratio',
+        unit: 'proportion',
+      }),
     })
     assert.equal(formatValue(m), '13%')
   })
 
-  test('a small ratio keeps a decimal place rather than rounding to nothing', () => {
+  test('a small proportion keeps a decimal rather than rounding away', () => {
     const m = metric({
       key: 'member_retention',
       value: 0.042,
-      definition: definition({ key: 'member_retention', aggregation: 'ratio' }),
+      definition: definition({
+        key: 'member_retention',
+        aggregation: 'ratio',
+        unit: 'proportion',
+      }),
     })
     assert.equal(formatValue(m), '4.2%')
+  })
+
+  test('the unit decides, not the aggregation', () => {
+    // Two metrics with identical aggregation and different units must
+    // format differently — otherwise the registry's declaration is
+    // decorative and the next rate gets the same bug.
+    const shared = { aggregation: 'ratio' as const, value: 0.5 }
+    const asRate = metric({
+      ...shared,
+      definition: definition({ aggregation: 'ratio', unit: 'rate' }),
+    })
+    const asProportion = metric({
+      ...shared,
+      definition: definition({ aggregation: 'ratio', unit: 'proportion' }),
+    })
+    assert.notEqual(formatValue(asRate), formatValue(asProportion))
   })
 
   test('an absent figure is a dash, never a zero', () => {
@@ -386,6 +462,90 @@ describe('the pages present figures rather than deriving them', () => {
     assert.ok(shell.includes("href=\"/admin/insights/data-health\""))
     // It sits outside the six tabs by design.
     assert.ok(!shell.includes("href: '/admin/insights/data-health'"))
+  })
+})
+
+describe('who an outstanding balance is owed to', () => {
+  const split = (q: Record<string, unknown>) =>
+    outstandingBreakdown(
+      metric({ key: 'outstanding_payouts_cents', value: 156000, qualifiers: q }),
+    )
+
+  test('the two splits are read off the result, not computed here', () => {
+    const b = split({
+      owed_to_external_creators_cents: 0,
+      owed_to_founder_operated_collectives_cents: 156000,
+      by_reporting_class_cents: {
+        production: 155800,
+        demonstration: 200,
+        internal_operations: 0,
+        unclassified: 0,
+      },
+    })
+    assert.equal(b?.externalCents, 0)
+    assert.equal(b?.founderCents, 156000)
+    assert.deepEqual(b?.byClass, { production: 155800, demonstration: 200 })
+  })
+
+  test('zero classes are dropped so a line of zeroes is never shown', () => {
+    const b = split({
+      owed_to_external_creators_cents: 100,
+      owed_to_founder_operated_collectives_cents: 0,
+      by_reporting_class_cents: { production: 0, unclassified: 100 },
+    })
+    assert.deepEqual(b?.byClass, { unclassified: 100 })
+  })
+
+  test('missing qualifiers give nothing rather than zeroes', () => {
+    // Asserting "nothing is owed to anybody" from an absent field would
+    // be the most misleading possible reading of this particular figure.
+    assert.equal(split({}), null)
+    assert.equal(outstandingBreakdown(null), null)
+  })
+
+  test('a partial qualifier set is rejected rather than half-read', () => {
+    assert.equal(split({ owed_to_external_creators_cents: 100 }), null)
+  })
+
+  test('class names are written for a person', () => {
+    assert.equal(humaniseClass('internal_operations'), 'Internal operations')
+    assert.equal(humaniseClass('demonstration'), 'Demonstration')
+  })
+})
+
+describe('the Money page distinguishes whose obligation it is', () => {
+  const MONEY = read('src/app/admin/insights/money/page.tsx')
+
+  test('the ownership split is shown, not just fetched', () => {
+    assert.ok(MONEY.includes('<WhoIsOwedNote'))
+    assert.ok(MONEY.includes('outstandingBreakdown('))
+  })
+
+  test('founder-operated money is never labelled a creator obligation', () => {
+    const flat = flatten(withoutDocComments(MONEY))
+    // The two amounts must carry different labels; one standing in for
+    // both is the misreport this whole change exists to end.
+    assert.ok(flat.includes('Independent creators'))
+    assert.ok(flat.includes('Collectives you operate'))
+  })
+
+  test('the page says a bank payout does not clear a creator payout', () => {
+    const flat = flatten(withoutDocComments(MONEY))
+    assert.match(flat, /bank account is not a creator\s*payout/)
+  })
+
+  test('nothing on the page claims founder earnings are settled', () => {
+    const flat = flatten(withoutDocComments(MONEY))
+    for (const m of flat.matchAll(/settled/gi)) {
+      const lead = flat.slice(Math.max(0, m.index - 60), m.index)
+      assert.match(
+        lead,
+        /\bnot\b/,
+        `"settled" must only appear in a denial, near: ${flat
+          .slice(Math.max(0, m.index - 80), m.index + 20)
+          .trim()}`,
+      )
+    }
   })
 })
 

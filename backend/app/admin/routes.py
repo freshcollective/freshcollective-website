@@ -859,19 +859,16 @@ async def get_stats(
 # September revenue through /commerce/overview. One definition, imported,
 # is the only way that stays fixed.
 from app.reporting.dates import settlement_date as _financial_date
+from app.reporting.eligibility import MEMBER_TXN_TYPES as _MEMBER_TXN_TYPES_SHARED
 
-_MEMBER_TXN_TYPES = {
-    PaymentTransactionType.member_pathway_purchase,
-    PaymentTransactionType.member_collective_purchase,
-    PaymentTransactionType.member_pathway_subscription,
-    PaymentTransactionType.member_collective_subscription,
-    PaymentTransactionType.gathering_ticket_purchase,
-    PaymentTransactionType.member_series_pass_purchase,
-    # Unified B4B checkout — the type modern PaymentOption purchases
-    # write. Historically absent from this set, which silently
-    # excluded every EMBODY row from admin revenue metrics.
-    PaymentTransactionType.member_payment_option_purchase,
-}
+#: Imported, never redeclared. This set and the BI metric registry's
+#: had drifted apart — the registry's copy was missing
+#: ``member_payment_option_purchase`` and ``member_series_pass_purchase``,
+#: which silently excluded every EMBODY purchase from World Insights
+#: revenue while still counting it as an outstanding payout. One
+#: definition now, in ``app.reporting.eligibility``, with a test that
+#: fails if a second appears.
+_MEMBER_TXN_TYPES = set(_MEMBER_TXN_TYPES_SHARED)
 _REVENUE_STATUSES = {PaymentTransactionStatus.succeeded}
 _REFUNDED_STATUSES = {
     PaymentTransactionStatus.refunded,

@@ -32,17 +32,12 @@ instead of blending two kinds of knowledge silently.
 
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.payment import (
-    PaymentTransaction,
-    PaymentTransactionStatus,
-    PaymentTransactionType,
-    PayoutStatus,
-)
+from app.models.payment import PaymentTransaction, PayoutStatus
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.reporting.registry import (
     REGISTRY,
     Aggregation,
@@ -51,34 +46,26 @@ from app.reporting.registry import (
     Grain,
     Metric,
     MetricValue,
+    Unit,
     Window,
 )
 from app.reporting.dates import settlement_date
+from app.reporting.eligibility import (
+    creator_plan_filters,
+    member_purchase_filters,
+    payout_obligation_filters,
+)
 from app.reporting.scope import Access, ReportScope
 
 # ---------------------------------------------------------------------------
 # Shared building blocks
 # ---------------------------------------------------------------------------
 
-#: Member purchases — what a member paid a creator for something. These
-#: make up gross volume, which is explicitly NOT Fresh Collective's
-#: revenue. Mirrors ``_MEMBER_TXN_TYPES`` in the admin routes.
-MEMBER_TXN_TYPES = (
-    PaymentTransactionType.member_pathway_purchase,
-    PaymentTransactionType.member_collective_purchase,
-    PaymentTransactionType.member_pathway_subscription,
-    PaymentTransactionType.member_collective_subscription,
-    PaymentTransactionType.gathering_ticket_purchase,
-)
-
-#: Statuses where money genuinely moved. A partially refunded payment is
-#: still a settled sale; the refund is accounted for separately, on its
-#: own date.
-SETTLED_STATUSES = (
-    PaymentTransactionStatus.succeeded,
-    PaymentTransactionStatus.partially_refunded,
-    PaymentTransactionStatus.refunded,
-)
+# Which rows a money metric may see comes from
+# ``app.reporting.eligibility`` and is deliberately not redeclared here.
+# A second copy of the member transaction type set is what let EMBODY's
+# purchases fall out of every revenue metric while still counting towards
+# outstanding payouts; see that module's docstring.
 
 
 #: The canonical financial date, shared with the admin reporting helpers
@@ -87,10 +74,38 @@ SETTLED_STATUSES = (
 _settlement_date_column = settlement_date
 
 
+def _platform_mode() -> str:
+    """The Stripe mode this deployment is running in.
+
+    Read at query time rather than captured at import, so a test that
+    swaps the configured keys is reflected rather than ignored.
+    """
+    from app.core.config import settings
+
+    return settings.stripe_mode
+
+
 def _member_txn_query(db: Session, scope: ReportScope):
+    """Settled member purchases, the basis of every revenue metric."""
     q = db.query(PaymentTransaction).filter(
-        PaymentTransaction.transaction_type.in_([t.value for t in MEMBER_TXN_TYPES]),
-        PaymentTransaction.status.in_([s.value for s in SETTLED_STATUSES]),
+        *member_purchase_filters(_platform_mode())
+    )
+    return _apply_scope(q, scope)
+
+
+def _payout_query(db: Session, scope: ReportScope):
+    """Rows that can carry a creator payout, paid or still owed.
+
+    Shared by the paid and outstanding figures so the two cannot disagree
+    about who is in scope — one is the other's complement, and a row
+    that leaves one total must arrive in the other.
+
+    The mode comes from the running deployment rather than a parameter,
+    matching ``/admin/commerce/transactions``, so a caretaker is never
+    shown sandbox rows as a liability.
+    """
+    q = db.query(PaymentTransaction).filter(
+        *payout_obligation_filters(_platform_mode())
     )
     return _apply_scope(q, scope)
 
@@ -299,9 +314,7 @@ def _subscription_revenue(db: Session, scope: ReportScope, window: Window) -> Me
     their earnings reporting would misstate both.
     """
     q = db.query(PaymentTransaction).filter(
-        PaymentTransaction.transaction_type
-        == PaymentTransactionType.creator_subscription_payment.value,
-        PaymentTransaction.status.in_([s.value for s in SETTLED_STATUSES]),
+        *creator_plan_filters(_platform_mode()),
     )
     q = _window(q, _settlement_date_column(), window)
     total = q.with_entities(
@@ -339,7 +352,12 @@ def _refunds(db: Session, scope: ReportScope, window: Window) -> MetricValue:
     revenue should not change because somebody was refunded in the next
     one.
     """
+    # Member purchases only. Without the type filter a refunded *creator
+    # plan fee* — Fresh Collective's own revenue going back to a creator —
+    # was reported as money returned to a member, on a page whose whole
+    # organising idea is keeping those two apart.
     q = db.query(PaymentTransaction).filter(
+        *member_purchase_filters(_platform_mode()),
         PaymentTransaction.refunded_amount_cents > 0,
         PaymentTransaction.last_refunded_at.isnot(None),
     )
@@ -387,12 +405,17 @@ REGISTRY.add(Metric(
 
 
 def _paid_out(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-    """Cash actually transferred, on the date it was marked paid."""
-    q = db.query(PaymentTransaction).filter(
+    """Cash actually transferred, on the date it was marked paid.
+
+    Only ever written by a recorded payout batch. A Stripe payout into
+    Fresh Collective's own bank account is a different event and does not
+    appear here — nor should it, since money reaching the platform is not
+    the same act as money reaching a creator.
+    """
+    q = _payout_query(db, scope).filter(
         PaymentTransaction.payout_status == PayoutStatus.paid.value,
         PaymentTransaction.payout_marked_at.isnot(None),
     )
-    q = _apply_scope(q, scope)
     q = _window(q, PaymentTransaction.payout_marked_at, window)
     total = q.with_entities(
         func.coalesce(
@@ -414,33 +437,130 @@ REGISTRY.add(Metric(
         "the payout was recorded. A cash movement — not the same question as "
         "what creators have earned."
     ),
-    source_of_truth="payment_transactions where payout_status = paid",
+    source_of_truth=(
+        "payment_transactions where payout_status = paid, written only by a "
+        "recorded payout batch"
+    ),
     grain=Grain.period,
     aggregation=Aggregation.additive,
     date_basis=DateBasis.payout_marked,
     access=Access.creator_visible,
     availability=Availability.full,
+    limitations=(
+        "Recorded payout batches only. A Stripe payout into Fresh "
+        "Collective's own bank account is a different event and is not "
+        "counted here, and Connect transfers are tracked separately."
+    ),
     dimensions=("space_id", "creator_user_id"),
     compute=_paid_out,
 ))
 
 
 def _outstanding_payouts(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-    """What is still owed. A liability, measured now, not over a period."""
-    q = db.query(PaymentTransaction).filter(
+    """What is still owed. A liability, measured now, not over a period.
+
+    The complement of ``paid_out_cents`` over the same population, which
+    is why both run through ``_payout_query``. Before that was true this
+    figure counted abandoned checkouts, sandbox rows and platform-owned
+    Collectives, and reported a liability larger than the earnings it was
+    supposedly a share of.
+
+    Connect rows never appear: their share reaches the creator through
+    Stripe and they are created ``payout_status='not_applicable'`` so
+    that Fresh Collective's manual payout queue cannot claim money Stripe
+    has already sent.
+
+    The ownership split is reporting only. It does not change the total
+    and settles nothing — see ``_ownership_split``.
+    """
+    q = _payout_query(db, scope).filter(
         PaymentTransaction.payout_status == PayoutStatus.pending.value,
     )
-    q = _apply_scope(q, scope)
-    total = q.with_entities(
-        func.coalesce(
-            func.sum(
-                func.coalesce(PaymentTransaction.net_creator_amount_cents, 0)
-                - func.coalesce(PaymentTransaction.refunded_creator_amount_cents, 0)
-            ),
-            0,
+    retained = func.coalesce(
+        PaymentTransaction.net_creator_amount_cents, 0
+    ) - func.coalesce(PaymentTransaction.refunded_creator_amount_cents, 0)
+    total = q.with_entities(func.coalesce(func.sum(retained), 0)).scalar() or 0
+    return MetricValue(
+        key="outstanding_payouts_cents",
+        value=int(total),
+        qualifiers=_ownership_split(q, retained),
+    )
+
+
+def _ownership_split(q, retained) -> dict:
+    """Split an obligation by who is actually owed it.
+
+    Fresh Collective's owner is also the creator of some Collectives, so
+    part of this liability is the platform owing itself. Reporting that
+    beside a third-party obligation without distinguishing them overstates
+    what the business owes other people — the whole of the $1,560 found in
+    the October reconciliation turned out to be of this kind.
+
+    Two separate questions are answered, and they are deliberately not
+    merged:
+
+    **Who holds it.** A Collective counts as founder-operated when its
+    creator holds the ``admin`` role. Derived from the data rather than
+    naming a person, so it stays true as the platform grows.
+
+    **What kind of activity it is.** ``spaces.reporting_class`` —
+    ``production``, ``internal_operations`` or ``demonstration``. It is
+    NULL until an operator assigns one and nothing is ever inferred from
+    a Collective's name, so unclassified Collectives are reported as
+    ``unclassified`` rather than quietly folded into production. A
+    demonstration Collective's live Stripe charge is still a real
+    financial movement and is never dropped from the total.
+
+    Reporting only. Nothing here marks anything settled, changes a payout
+    status or reclassifies a row. Whether founder earnings *should* be
+    treated as settled is an open accounting decision.
+    """
+    founder_space_ids = (
+        select(Space.id)
+        .join(User, User.id == Space.creator_id)
+        .where(User.role == UserRole.admin.value)
+    )
+
+    def _sum_where(condition):
+        return func.coalesce(
+            func.sum(case((condition, retained), else_=0)), 0
         )
-    ).scalar() or 0
-    return MetricValue(key="outstanding_payouts_cents", value=int(total))
+
+    is_founder = PaymentTransaction.space_id.in_(founder_space_ids)
+    classified = {
+        name: select(Space.id).where(Space.reporting_class == name)
+        for name in ("production", "internal_operations", "demonstration")
+    }
+    unclassified = select(Space.id).where(Space.reporting_class.is_(None))
+
+    external, founder, *by_class = q.with_entities(
+        _sum_where(~is_founder),
+        _sum_where(is_founder),
+        *(
+            _sum_where(PaymentTransaction.space_id.in_(ids))
+            for ids in (*classified.values(), unclassified)
+        ),
+    ).one()
+
+    names = (*classified.keys(), "unclassified")
+    return {
+        "owed_to_external_creators_cents": int(external or 0),
+        "owed_to_founder_operated_collectives_cents": int(founder or 0),
+        "by_reporting_class_cents": {
+            name: int(amount or 0) for name, amount in zip(names, by_class)
+        },
+        "ownership_note": (
+            "Founder-operated means the Collective's creator is a platform "
+            "administrator. Both amounts are earned and unpaid as recorded; "
+            "neither has been treated as settled."
+        ),
+        "classification_note": (
+            "Reporting class is assigned by an operator and is never "
+            "inferred. Unclassified Collectives are counted as such rather "
+            "than assumed to be production, and a demonstration "
+            "Collective's live charge is still a real financial movement."
+        ),
+    }
 
 
 REGISTRY.add(Metric(
@@ -450,12 +570,21 @@ REGISTRY.add(Metric(
         "Creator earnings awaiting transfer. A liability at this moment, so "
         "a reporting period does not narrow it."
     ),
-    source_of_truth="payment_transactions where payout_status = pending",
+    source_of_truth=(
+        "payment_transactions where payout_status = pending, over settled "
+        "member purchases with a creator, in the platform's Stripe mode"
+    ),
     grain=Grain.snapshot,
     aggregation=Aggregation.snapshot,
     date_basis=DateBasis.none,
     access=Access.creator_visible,
     availability=Availability.full,
+    limitations=(
+        "Stripe Connect earnings are not here — those reach the creator "
+        "through Stripe and are tracked by their transfer status. Part of "
+        "this total may be owed to Collectives the platform owner operates; "
+        "the breakdown beside it separates the two."
+    ),
     dimensions=("space_id", "creator_user_id"),
     compute=_outstanding_payouts,
 ))
@@ -871,13 +1000,19 @@ def _memberships_per_member(
 REGISTRY.add(Metric(
     key="memberships_per_member",
     display_name="Memberships per member",
-    definition="Active memberships divided by unique members.",
+    definition=(
+        "Active memberships divided by unique members — how many "
+        "Collectives the average person belongs to."
+    ),
     source_of_truth="derived from unique_members and total_memberships",
     grain=Grain.snapshot,
     aggregation=Aggregation.ratio,
     date_basis=DateBasis.none,
     access=Access.creator_visible,
     availability=Availability.full,
+    # A rate, not a proportion. 1.83 memberships per person is not 183%
+    # of anything, and reading it as a percentage was a real misreport.
+    unit=Unit.rate,
     limitations="A ratio — recompute it, never average two periods' values.",
     compute=_memberships_per_member,
 ))

@@ -72,6 +72,8 @@ class MetricDefinitionOut(BaseModel):
     source_of_truth: str
     grain: str
     aggregation: str
+    #: How the number reads: count, money_cents, proportion or rate.
+    unit: str
     date_basis: str
     access: str
     availability: str
@@ -114,6 +116,7 @@ def _definition(m: Metric) -> MetricDefinitionOut:
         source_of_truth=m.source_of_truth,
         grain=m.grain.value,
         aggregation=m.aggregation.value,
+        unit=m.resolved_unit.value,
         date_basis=m.date_basis.value,
         access=m.access.value,
         availability=m.availability.value,

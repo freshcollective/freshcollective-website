@@ -102,6 +102,30 @@ class Availability(str, enum.Enum):
     partial = "partial"
 
 
+class Unit(str, enum.Enum):
+    """What kind of quantity a metric's number is.
+
+    Separate from :class:`Aggregation` on purpose. Aggregation says how
+    values combine; a unit says how one is *read*. Conflating them
+    produced a real misreport: ``memberships_per_member`` aggregates as
+    a ratio, the dashboard inferred "ratio means percentage", and 1.83
+    memberships per person appeared as **183%**.
+
+    A ratio of two unlike things is a rate and reads as a decimal. A
+    ratio of a part to its whole is a proportion and reads as a
+    percentage. Only the metric knows which it is, so it says.
+    """
+
+    #: A whole number of things — people, memberships, Collectives.
+    count = "count"
+    #: An integer number of cents, formatted as currency.
+    money_cents = "money_cents"
+    #: A part of a whole, between 0 and 1. Read as a percentage.
+    proportion = "proportion"
+    #: One quantity per another unlike quantity. Read as a decimal.
+    rate = "rate"
+
+
 @dataclass(frozen=True)
 class Window:
     """A half-open ``[starts_at, ends_at)`` period in naive UTC.
@@ -157,12 +181,25 @@ class Metric:
     #: What this metric cannot tell you, stated plainly. Shown next to
     #: the figure rather than discovered later.
     limitations: str | None = None
+    #: How the number reads. Left unset it is inferred from the key —
+    #: ``*_cents`` is money, anything else a count — which is right for
+    #: every metric that does not say otherwise. A proportion or a rate
+    #: must declare itself, because neither can be guessed from a value
+    #: without being wrong half the time.
+    unit: Unit | None = None
     #: Filters the calculation honours, beyond the period.
     dimensions: tuple[str, ...] = ()
     #: True when the value is about identifiable people and should not
     #: be exported casually. No metric exposes member-authored content.
     personal_data: bool = False
     compute: Callable[[Session, ReportScope, Window], MetricValue] | None = None
+
+    @property
+    def resolved_unit(self) -> Unit:
+        """The declared unit, or the one the key implies."""
+        if self.unit is not None:
+            return self.unit
+        return Unit.money_cents if self.key.endswith("_cents") else Unit.count
 
     def evaluate(
         self, db: Session, scope: ReportScope, window: Window,

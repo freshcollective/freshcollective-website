@@ -30,6 +30,16 @@ export type DateBasis =
 
 export type Availability = 'full' | 'from_instrumentation' | 'partial'
 
+/**
+ * How a number reads — declared by the metric, never inferred here.
+ *
+ * Separate from `Aggregation`, which says how values combine. Treating
+ * the two as one thing produced a real misreport: `memberships_per_member`
+ * aggregates as a ratio, this module read "ratio" as "percentage", and
+ * 1.83 memberships per person was displayed as 183%.
+ */
+export type Unit = 'count' | 'money_cents' | 'proportion' | 'rate'
+
 export interface MetricDefinition {
   key: string
   display_name: string
@@ -38,6 +48,15 @@ export interface MetricDefinition {
   source_of_truth: string
   grain: 'snapshot' | 'period'
   aggregation: Aggregation
+  /**
+   * What kind of quantity this is. Drives formatting.
+   *
+   * Optional because the two services deploy independently and in no
+   * guaranteed order, so fc-web can briefly be newer than fc-api and
+   * receive a definition without it. `formatValue` falls back to the
+   * key convention for exactly that window.
+   */
+  unit?: Unit
   date_basis: DateBasis
   access: 'platform_only' | 'creator_visible'
   availability: Availability
@@ -230,17 +249,41 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat('en-AU').format(value)
 }
 
-/** Ratios arrive as fractions; people read percentages. */
-export function formatRatio(value: number): string {
+/** A proportion of a whole. Arrives as a fraction; people read percent. */
+export function formatProportion(value: number): string {
   return `${(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`
 }
 
-/** Format by what the metric actually is, rather than by guessing. */
+/**
+ * A rate — one quantity per another unlike quantity.
+ *
+ * Read as a decimal, because it is not a part of anything. 1.83
+ * memberships per person is not 183% of a person.
+ */
+export function formatRate(value: number): string {
+  return value.toFixed(2).replace(/\.00$/, '')
+}
+
+/**
+ * Format by what the metric says it is.
+ *
+ * The unit comes from the registry, so a new metric cannot be formatted
+ * wrongly by this module failing to guess. `isMoney` stays as a fallback
+ * for the key convention, in case a figure arrives before its unit does.
+ */
 export function formatValue(m: MetricValue): string {
   if (m.value === null) return '—'
-  if (isMoney(m.key)) return formatMoney(m.value)
-  if (m.definition.aggregation === 'ratio') return formatRatio(m.value)
-  return formatCount(m.value)
+  switch (m.definition.unit) {
+    case 'money_cents':
+      return formatMoney(m.value)
+    case 'proportion':
+      return formatProportion(m.value)
+    case 'rate':
+      return formatRate(m.value)
+    case 'count':
+      return formatCount(m.value)
+  }
+  return isMoney(m.key) ? formatMoney(m.value) : formatCount(m.value)
 }
 
 /**
@@ -342,4 +385,44 @@ export function describeHealth(
     return { hue: 'navy', label: 'Daily trends not built yet' }
   }
   return { hue: 'teal', label: 'Data looks healthy' }
+}
+
+/** Who an outstanding balance is actually owed to, and what kind of
+ *  activity it came from. Both splits are reporting only — nothing in
+ *  them has been treated as settled. */
+export interface OutstandingBreakdown {
+  externalCents: number
+  founderCents: number
+  byClass: Record<string, number>
+}
+
+/**
+ * Read the ownership and classification split off an outstanding figure.
+ *
+ * Returns null rather than zeroes when the qualifiers are absent, so a
+ * page shows nothing instead of asserting that nothing is owed to
+ * anybody — a distinction that matters on exactly this figure.
+ */
+export function outstandingBreakdown(
+  m: MetricValue | null,
+): OutstandingBreakdown | null {
+  const q = m?.qualifiers
+  if (!q) return null
+  const external = q.owed_to_external_creators_cents
+  const founder = q.owed_to_founder_operated_collectives_cents
+  if (typeof external !== 'number' || typeof founder !== 'number') return null
+  const raw = q.by_reporting_class_cents
+  const byClass: Record<string, number> = {}
+  if (raw && typeof raw === 'object') {
+    for (const [name, amount] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof amount === 'number' && amount > 0) byClass[name] = amount
+    }
+  }
+  return { externalCents: external, founderCents: founder, byClass }
+}
+
+/** `internal_operations` → `Internal operations`. */
+export function humaniseClass(name: string): string {
+  const words = name.replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }

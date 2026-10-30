@@ -26,9 +26,11 @@ from app.models.access_pass import (
     AccessPassType,
 )
 from app.models.payment import (
+    ConnectTransferStatus,
     PaymentTransaction,
     PaymentTransactionStatus,
     PaymentTransactionType,
+    PayoutModel,
     PayoutStatus,
 )
 from app.models.platform import BookingStatus, EventBooking
@@ -518,6 +520,91 @@ class TestExpiryAndFailure:
         )
         db.refresh(outcome.transaction)
         assert outcome.transaction.status == PaymentTransactionStatus.cancelled
+
+    def test_an_expired_checkout_leaves_no_payout_obligation(
+        self, db, make_event, make_user,
+    ):
+        """The hold row is created carrying ``payout_status='pending'``,
+        set when the Checkout Session opens and before any money exists.
+        The webhook's two sibling release paths cleared it; this one did
+        not, so every expired Gathering-ticket checkout left behind a
+        creator payout obligation for money nobody paid.
+
+        Reported as a liability in ``outstanding_payouts_cents`` until
+        that metric also gained a settled-status filter — belt and
+        braces, because the right place to stop it is at the source."""
+        event = make_event()
+        outcome = self._seed_hold(db, event, make_user())
+        assert outcome.transaction.payout_status == PayoutStatus.pending, (
+            "precondition: the hold starts out marked for payout"
+        )
+        gt.release_hold_for_transaction(
+            db, transaction_id=outcome.transaction.id,
+            final_status=PaymentTransactionStatus.cancelled,
+            reason="checkout_expired",
+        )
+        db.refresh(outcome.transaction)
+        assert outcome.transaction.payout_status == PayoutStatus.not_applicable
+
+    def test_a_failed_payment_leaves_no_payout_obligation(
+        self, db, make_event, make_user,
+    ):
+        event = make_event()
+        outcome = self._seed_hold(db, event, make_user())
+        gt.release_hold_for_transaction(
+            db, transaction_id=outcome.transaction.id,
+            final_status=PaymentTransactionStatus.failed,
+            reason="payment_failed",
+        )
+        db.refresh(outcome.transaction)
+        assert outcome.transaction.payout_status == PayoutStatus.not_applicable
+
+    def test_a_connect_rows_transfer_state_is_left_alone(
+        self, db, make_event, make_user,
+    ):
+        """A Connect row was never ``pending`` — its share reaches the
+        creator through Stripe and ``connect_transfer_status`` is the
+        authority. Overwriting its payout status here would put money
+        Stripe already sent back into Fresh Collective's manual queue,
+        which is a bug the webhook handler carries a comment about."""
+        event = make_event()
+        outcome = self._seed_hold(db, event, make_user())
+        txn = outcome.transaction
+        txn.payout_model = PayoutModel.connect
+        txn.connect_destination_account_id = "acct_release_fixture"
+        txn.connect_transfer_status = ConnectTransferStatus.awaiting_payment
+        txn.payout_status = PayoutStatus.not_applicable
+        db.flush()
+
+        gt.release_hold_for_transaction(
+            db, transaction_id=txn.id,
+            final_status=PaymentTransactionStatus.cancelled,
+            reason="checkout_expired",
+        )
+        db.refresh(txn)
+        assert txn.payout_status == PayoutStatus.not_applicable
+        assert txn.connect_transfer_status == (
+            ConnectTransferStatus.awaiting_payment
+        )
+
+    def test_payout_status_release_is_idempotent(
+        self, db, make_event, make_user,
+    ):
+        """A second release must not resurrect state — Stripe can deliver
+        both an expiry and a failure for the same session."""
+        event = make_event()
+        outcome = self._seed_hold(db, event, make_user())
+        for status in (
+            PaymentTransactionStatus.cancelled,
+            PaymentTransactionStatus.failed,
+        ):
+            gt.release_hold_for_transaction(
+                db, transaction_id=outcome.transaction.id,
+                final_status=status, reason="x",
+            )
+        db.refresh(outcome.transaction)
+        assert outcome.transaction.status == PaymentTransactionStatus.cancelled
+        assert outcome.transaction.payout_status == PayoutStatus.not_applicable
 
     def test_capacity_released_after_expiry(
         self, db, make_event, make_user,

@@ -10,6 +10,8 @@ import {
   type MetricResult,
   type PeriodKey,
   formatMoney,
+  humaniseClass,
+  outstandingBreakdown,
   pick,
   pickPrevious,
 } from '@/lib/insights'
@@ -145,6 +147,8 @@ export default function MoneyPage() {
             />
           </Band>
 
+          <WhoIsOwedNote data={data} />
+
           <Band
             title="Money that went back"
             note="Counted on the day the refund happened, so a closed month's figures never change afterwards."
@@ -185,6 +189,105 @@ function NotProfitNote() {
         profit — hosting, software, and everything else it takes to run Fresh
         Collective sit outside the platform and are not in this figure.
       </p>
+    </div>
+  )
+}
+
+/**
+ * Who the outstanding balance is actually owed to.
+ *
+ * The figure that started all of this read $1,560 "outstanding to
+ * creators" when every dollar of it belonged to Collectives the platform
+ * owner runs. That is not a third-party obligation and reporting it as
+ * one overstates what the business owes other people — but nor is it
+ * settled, because no payout has been recorded against it. Both things
+ * are true, so both are said.
+ *
+ * The classification line is shown only once an operator has assigned
+ * reporting classes. Until then it would be a row of zeroes beside
+ * "unclassified", which tells the reader nothing they cannot see.
+ */
+function WhoIsOwedNote({ data }: { data: MetricResult }) {
+  const split = outstandingBreakdown(pick(data, 'outstanding_payouts_cents'))
+  if (!split) return null
+  if (split.externalCents === 0 && split.founderCents === 0) return null
+
+  const classes = Object.entries(split.byClass).filter(
+    ([name]) => name !== 'unclassified',
+  )
+
+  return (
+    <div
+      className="mb-8 rounded-2xl p-5"
+      style={{
+        background: 'rgba(56, 116, 180, 0.06)',
+        border: '1px solid rgba(56, 116, 180, 0.22)',
+      }}
+    >
+      <h4
+        className="font-serif text-[15px] leading-tight"
+        style={{ color: INK }}
+      >
+        Who that is owed to
+      </h4>
+      <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+        <Owed
+          label="Independent creators"
+          amount={split.externalCents}
+          hint="A genuine obligation to somebody else."
+        />
+        <Owed
+          label="Collectives you operate"
+          amount={split.founderCents}
+          hint="Fresh Collective owing itself. Earned and unpaid as recorded, not treated as settled."
+        />
+      </dl>
+      {classes.length > 0 && (
+        <p className="mt-3 text-[12.5px]" style={{ color: INK_MUTED }}>
+          By activity:{' '}
+          {classes
+            .map(([name, cents]) => `${humaniseClass(name)} ${formatMoney(cents)}`)
+            .join(' · ')}
+        </p>
+      )}
+      <p
+        className="mt-3 text-[12.5px]"
+        style={{
+          color: INK_MUTED,
+          fontFamily: 'Georgia, serif',
+          fontStyle: 'italic',
+        }}
+      >
+        A Stripe payout into Fresh Collective&rsquo;s bank account is not a creator
+        payout, so nothing here is cleared by one.
+      </p>
+    </div>
+  )
+}
+
+function Owed({
+  label,
+  amount,
+  hint,
+}: {
+  label: string
+  amount: number
+  hint: string
+}) {
+  return (
+    <div>
+      <dt className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        {label}
+      </dt>
+      <dd
+        className="text-[19px] tabular-nums"
+        style={{ color: INK, fontWeight: 600 }}
+      >
+        {formatMoney(amount)}
+      </dd>
+      <dd className="text-[11.5px]" style={{ color: 'rgba(12, 24, 38, 0.42)' }}>
+        {hint}
+      </dd>
     </div>
   )
 }
