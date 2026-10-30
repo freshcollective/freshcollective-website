@@ -57,8 +57,10 @@ class MetricDaily(Base):
 
     value: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
-    #: ``observed`` or ``reconstructed``, for snapshots dated before
-    #: business-event recording began. NULL for flows.
+    #: How this figure came to be known — see
+    #: ``app.reporting.registry.Provenance``, which is the single
+    #: definition of the vocabulary. NULL for flows, which are always
+    #: measured across their own day.
     provenance: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     computed_at: Mapped[datetime] = mapped_column(
@@ -77,8 +79,13 @@ class MetricDaily(Base):
             "aggregation IN ('additive', 'snapshot')",
             name="ck_metric_daily_aggregation",
         ),
+        # Must list exactly ``Provenance``'s members. Held to that by
+        # ``tests/test_reporting_schema_contract.py``, which inserts each
+        # one — a constraint that merely looked plausible is what failed
+        # the first nightly run.
         CheckConstraint(
-            "provenance IS NULL OR provenance IN ('observed', 'reconstructed')",
+            "provenance IS NULL OR provenance IN "
+            "('observed', 'observed_late', 'reconstructed')",
             name="ck_metric_daily_provenance",
         ),
     )

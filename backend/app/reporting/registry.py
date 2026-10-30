@@ -102,6 +102,33 @@ class Availability(str, enum.Enum):
     partial = "partial"
 
 
+class Provenance(str, enum.Enum):
+    """How a stored daily figure came to be known.
+
+    Written into ``metric_daily.provenance`` and guarded by a CHECK
+    constraint, so this enum and the constraint must agree. They did not
+    once: ``observed_late`` was introduced with the observation-only
+    snapshots and the constraint still listed two values, which failed
+    the first nightly run with a ``CheckViolation``. The unit tests
+    evaluated the metric without ever storing the result, so nothing
+    noticed.
+
+    ``test_reporting_schema_contract.py`` now inserts every member of
+    this enum against the real database, which is the only check that
+    could have caught it.
+    """
+
+    #: Measured directly, at the time it describes.
+    observed = "observed"
+    #: Measured directly but after the day it describes — a missed night
+    #: repaired by the following one. The only observation that will ever
+    #: exist for that day, and labelled rather than passed off as timely.
+    observed_late = "observed_late"
+    #: Worked out from current rows rather than from recorded events.
+    #: Exact where the events exist, an approximation before that.
+    reconstructed = "reconstructed"
+
+
 class Unit(str, enum.Enum):
     """What kind of quantity a metric's number is.
 
