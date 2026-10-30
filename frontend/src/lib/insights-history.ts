@@ -329,6 +329,31 @@ export function stackTotals(seriesValues: (number | null)[][]): (number | null)[
 // ---------------------------------------------------------------------------
 
 /**
+ * How many x labels fit, from the width of the labels themselves.
+ *
+ * Previously a fixed pixels-per-label guess, which put two charts on
+ * one page either side of the cliff: the one with short series names
+ * had room for thirteen dates and the one with long names had room for
+ * twelve, so the first showed every week and the second showed every
+ * other week. Same page, same range, two different axes — which reads
+ * as a difference in the data.
+ *
+ * Measuring the real labels removes the cliff, because the answer stops
+ * depending on how much space the *other* labels on the chart took.
+ */
+export function xLabelCapacity(
+  labels: string[],
+  plotWidth: number,
+  fontSize = 12,
+): number {
+  const GUTTER = 14
+  const widest = labels.length
+    ? Math.max(...labels.map((l) => estimateTextWidth(l, fontSize)))
+    : 30
+  return Math.max(2, Math.floor(plotWidth / (widest + GUTTER)))
+}
+
+/**
  * Which bucket labels to print, so they never collide.
  *
  * Returns indices, always including the first and last. Thinning by a
@@ -430,8 +455,18 @@ export function describeGap(point: HistoryPoint): string {
   return 'No figure is available for this period.'
 }
 
-/** The qualification a point carries even when it has a value. */
-export function pointCaveats(point: HistoryPoint): string[] {
+/**
+ * What a point needs said about it in a tooltip, beyond its value.
+ *
+ * Takes the series as well as the point because provenance alone
+ * cannot tell a sound reconstruction from a doubtful one — only the
+ * metric's declared availability can, and reading them together is the
+ * whole point of `pointQuality`.
+ */
+export function pointCaveats(
+  point: HistoryPoint,
+  series: HistorySeries,
+): string[] {
   const out: string[] = []
   if (!point.complete) out.push('Still in progress — not a full period.')
   if (point.clipped) {
@@ -446,8 +481,14 @@ export function pointCaveats(point: HistoryPoint): string[] {
         'the rest were never recorded.',
     )
   }
-  if (point.provenance === 'reconstructed') {
-    out.push('Reconstructed from current records, not recorded at the time.')
+  const kind = pointQuality(point, series)
+  if (kind === 'reconstructed') {
+    out.push('Calculated from dated records — exact, not an estimate.')
+  }
+  if (kind === 'limited') {
+    out.push(
+      'Calculated afterwards; detail not recorded at the time may make this incomplete.',
+    )
   }
   if (point.provenance === 'observed_late') {
     out.push('Recorded a day or more after the period it describes.')
@@ -489,28 +530,6 @@ export function describeSeries(series: HistorySeries): string {
     `${series.display_name}: ${direction}, from ${from} (${first.label})` +
     ` to ${to} (${last.label}).${gapNote}`
   )
-}
-
-/** The provenance disclosure for a whole series, if it needs one. */
-export function seriesProvenanceNote(series: HistorySeries): string | null {
-  const points = series.points.filter((p) => p.available)
-  if (points.length === 0) return null
-  const kinds = new Set(points.map((p) => p.provenance).filter(Boolean))
-  if (kinds.size === 0) return null
-  const parts: string[] = []
-  if (kinds.has('reconstructed')) {
-    parts.push(
-      'Some periods are reconstructed from current records rather than ' +
-        'recorded at the time.',
-    )
-  }
-  if (kinds.has('observed_late')) {
-    parts.push(
-      'Some periods were recorded a day or more after the day they describe.',
-    )
-  }
-  if (parts.length === 0 && kinds.has('observed')) return null
-  return parts.join(' ') || null
 }
 
 /** True when any point is missing, so a panel can say so once. */
@@ -636,31 +655,258 @@ export const AVAILABILITY_PROSE: Record<string, string> = {
   partial: 'Reliable with the caveat noted below.',
 }
 
+// ---------------------------------------------------------------------------
+// How a figure came to be known
+// ---------------------------------------------------------------------------
+
 /**
- * The warnings that change how a figure should be read, as opposed to
- * the background a curious reader might want.
+ * The four kinds of history, kept apart.
  *
- * The split the panel is built around. A gap, a reconstruction, a
- * period emptied by the classification filter — each changes what the
- * chart in front of you means, so each stays on screen. Definitions,
- * sources and calculation rules do not change the reading and belong
- * behind a disclosure.
+ * The distinction that matters and that a single "warnings" list got
+ * wrong: **reconstructed is not a synonym for doubtful.** Unique members
+ * on 3 August is worked out from membership join and removal dates, both
+ * of which were written down at the time — it is exact, and flagging it
+ * beside a genuine gap taught the reader to distrust a figure that
+ * deserves trust.
+ *
+ * What separates the two is not the provenance but the metric's
+ * declared `availability`, which is the registry's own statement about
+ * whether the source records are sufficient:
+ *
+ * | provenance      | availability         | kind            |
+ * |-----------------|----------------------|-----------------|
+ * | observed        | any                  | `observed`      |
+ * | observed_late   | any                  | `observed`      |
+ * | reconstructed   | full                 | `reconstructed` |
+ * | reconstructed   | partial / from_instr | `limited`       |
+ * | (no value)      | any                  | `unavailable`   |
+ *
+ * Only `limited`, `incomplete` and `unavailable` are cautions. The
+ * other two are statements of fact about a sound number, and the panel
+ * marks them differently so the reader can tell at a glance which is
+ * which.
  */
-export function materialWarnings(series: HistorySeries[]): string[] {
-  const out: string[] = []
-  if (hasGaps(series)) {
-    out.push('Shaded periods have no figure — a gap, not a zero.')
+export type QualityKind =
+  | 'observed'
+  | 'reconstructed'
+  | 'limited'
+  | 'incomplete'
+  | 'unavailable'
+
+export interface QualityNote {
+  kind: QualityKind
+  text: string
+  /** True when this changes how much to trust the figure. */
+  caution: boolean
+}
+
+/** Whether a metric's source records are sufficient for all history. */
+function reconstructionIsSound(series: HistorySeries): boolean {
+  return series.availability === 'full'
+}
+
+/** The kind of history one point represents, for one series. */
+export function pointQuality(
+  point: HistoryPoint,
+  series: HistorySeries,
+): QualityKind {
+  if (!point.available || point.value === null) return 'unavailable'
+  if (point.partial_data) return 'incomplete'
+  if (point.provenance === 'reconstructed') {
+    return reconstructionIsSound(series) ? 'reconstructed' : 'limited'
   }
+  return 'observed'
+}
+
+//: Least reassuring wins when a period's series disagree, so a gap in
+//: one line is never hidden behind an observation in another.
+const SEVERITY: Record<QualityKind, number> = {
+  observed: 0,
+  reconstructed: 1,
+  incomplete: 2,
+  limited: 3,
+  unavailable: 4,
+}
+
+const QUALITY_PROSE: Record<QualityKind, string> = {
+  observed: 'Recorded at the time.',
+  reconstructed:
+    'Calculated afterwards from dated records — exact, not an estimate.',
+  limited:
+    'Calculated afterwards, and the detail needed to be certain was not recorded at the time, so it may be incomplete.',
+  incomplete: 'Built from fewer days than the period covers.',
+  unavailable: 'Cannot be established.',
+}
+
+export const QUALITY_LABEL: Record<QualityKind, string> = {
+  observed: 'Observed',
+  reconstructed: 'Reconstructed',
+  limited: 'Historical limitation',
+  incomplete: 'Part period',
+  unavailable: 'Unavailable',
+}
+
+/**
+ * What a reader needs to know about how this chart's history was
+ * established — one note per kind actually present, never a catalogue
+ * of kinds that are not.
+ *
+ * Counts travel with each note because "some periods" is the kind of
+ * phrase that makes a reader go looking. Three of twelve is a different
+ * chart from eleven of twelve.
+ */
+export function historyQuality(series: HistorySeries[]): QualityNote[] {
+  // Counted per *period*, not per series-point. A chart of two series
+  // over thirteen weeks has twenty-six points and thirteen periods, and
+  // "2 of 26 periods" is a sentence about something the reader cannot
+  // see — there are thirteen columns in front of them.
+  //
+  // Each period takes the least reassuring kind among its series, so
+  // every period lands in exactly one category and the counts sum to
+  // the number of periods on the axis.
+  const total = Math.max(0, ...series.map((s) => s.points.length))
+  if (total === 0) return []
+
+  const counts = new Map<QualityKind, number>()
+  for (let i = 0; i < total; i += 1) {
+    let worst: QualityKind = 'observed'
+    for (const s of series) {
+      const p = s.points[i]
+      if (!p) continue
+      const kind = pointQuality(p, s)
+      if (SEVERITY[kind] > SEVERITY[worst]) worst = kind
+    }
+    counts.set(worst, (counts.get(worst) ?? 0) + 1)
+  }
+
+  // A chart that is entirely one sound kind needs no note at all —
+  // saying "every period was recorded at the time" under every chart is
+  // how a page teaches people to stop reading it.
+  const kinds = [...counts.keys()]
+  if (kinds.length === 1 && (kinds[0] === 'observed' || kinds[0] === 'reconstructed')) {
+    return []
+  }
+
+  const order: QualityKind[] = [
+    'unavailable', 'limited', 'incomplete', 'reconstructed', 'observed',
+  ]
+  const out: QualityNote[] = []
+  for (const kind of order) {
+    const n = counts.get(kind)
+    if (!n) continue
+    // "Observed" is only worth stating once something else is in the
+    // chart beside it, which at this point it is.
+    if (kind === 'observed' && kinds.length === 1) continue
+    out.push({
+      kind,
+      caution: kind === 'limited' || kind === 'incomplete' || kind === 'unavailable',
+      text: `${periodCount(n, total)} ${QUALITY_PROSE[kind].charAt(0).toLowerCase()}${QUALITY_PROSE[kind].slice(1)}`,
+    })
+  }
+  return out
+}
+
+function periodCount(n: number, total: number): string {
+  if (n === total) return total === 1 ? 'The only period:' : 'Every period:'
+  return `${n} of ${total} periods:`
+}
+
+/**
+ * The classification filter emptying a chart is its own kind of
+ * caution — nothing is wrong with the data, but the chart in front of
+ * you is not the ledger and must say so.
+ */
+export function populationNotes(series: HistorySeries[]): string[] {
+  const out: string[] = []
   for (const s of series) {
-    const note = seriesProvenanceNote(s)
-    if (note) out.push(note)
     const empty = s.qualifiers?.population_empty_note
     if (typeof empty === 'string') out.push(empty)
-    if (s.points.some((p) => p.partial_data)) {
-      out.push(
-        'Some periods are built from fewer days than they cover, so they understate activity.',
-      )
-    }
   }
   return [...new Set(out)]
+}
+
+// ---------------------------------------------------------------------------
+// Text metrics
+// ---------------------------------------------------------------------------
+
+//: Per-character advance widths at 1px, for the system sans stack.
+//: Crude by design — a canvas measurement would be exact but is
+//: unavailable during server rendering, and the only decision resting
+//: on it is how much room to reserve. Erring wide costs a few pixels of
+//: plot; erring narrow truncates a label, which is the bug being fixed.
+const NARROW = new Set("ijlt!|.,';:()[]{}/\\ ".split(''))
+const WIDE = new Set('mwMWABCDEFGHKNOPQRSUVXYZ@%&'.split(''))
+
+/** Approximate rendered width of a string, in pixels, at `fontSize`. */
+export function estimateTextWidth(text: string, fontSize: number): number {
+  let em = 0
+  for (const ch of text) {
+    if (NARROW.has(ch)) em += 0.3
+    else if (WIDE.has(ch)) em += 0.68
+    else em += 0.52
+  }
+  return em * fontSize
+}
+
+/**
+ * How much room to reserve on the right for direct labels, and whether
+ * to draw them at all.
+ *
+ * The rule is **full label or no label**. Truncating to "Collective
+ * mem…" was the original complaint, and shrinking the font or clipping
+ * mid-word are both worse than falling back to the legend, which is
+ * always present and carries the same names in full.
+ *
+ * So: reserve exactly what the longest name needs, up to a share of the
+ * chart. Past that share the labels would cost more plot than they are
+ * worth, and they are dropped together — never some labelled and some
+ * not, which would read as a difference between the series.
+ */
+export function directLabelSpace(
+  names: string[],
+  chartWidth: number,
+  fontSize = 11,
+  maxShare = 0.28,
+): { show: boolean; padRight: number } {
+  const GUTTER = 10
+  const MIN_PLOT = 220
+  if (names.length < 2) return { show: false, padRight: 12 }
+  const needed =
+    Math.max(...names.map((n) => estimateTextWidth(n, fontSize))) + GUTTER
+  const affordable = Math.min(chartWidth * maxShare, chartWidth - MIN_PLOT - 56)
+  if (needed > affordable) return { show: false, padRight: 12 }
+  return { show: true, padRight: Math.ceil(needed) }
+}
+
+/** Room on the left for the widest y-axis label, rather than a guess. */
+export function axisLabelSpace(
+  tickLabels: string[],
+  fontSize = 11,
+): number {
+  const GUTTER = 12
+  const widest = tickLabels.length
+    ? Math.max(...tickLabels.map((t) => estimateTextWidth(t, fontSize)))
+    : 0
+  return Math.ceil(Math.max(28, widest + GUTTER))
+}
+
+/**
+ * Where to put a tooltip so it is beside the period and never outside
+ * the card.
+ *
+ * Clamped rather than flipped. Flipping at a fixed fraction of the
+ * width left the tooltip hanging off a narrow chart — the box is 260px
+ * and a phone is 390px, so "flip at 60%" simply chose which edge to
+ * overflow. Clamping to the container cannot overflow at any width.
+ */
+export function tooltipLeft(
+  pointX: number,
+  containerWidth: number,
+  tooltipWidth: number,
+  offset = 12,
+): number {
+  const w = Math.min(tooltipWidth, containerWidth)
+  const preferred =
+    pointX + offset + w <= containerWidth ? pointX + offset : pointX - offset - w
+  return Math.max(0, Math.min(preferred, containerWidth - w))
 }

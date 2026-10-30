@@ -7,9 +7,12 @@ import {
   type Grouping,
   type HistoryResult,
   type HistorySeries,
+  type QualityNote,
   AVAILABILITY_PROSE,
   DATE_BASIS_PROSE,
-  materialWarnings,
+  QUALITY_LABEL,
+  historyQuality,
+  populationNotes,
 } from '@/lib/insights-history'
 import { type ChartKind, TimeSeriesChart } from './charts/TimeSeriesChart'
 
@@ -89,7 +92,18 @@ export function HistoryPanel({
     .map((k) => series.find((s) => s.key === k))
     .filter((s): s is NonNullable<typeof s> => Boolean(s))
 
-  const warnings = materialWarnings(ordered)
+  // Two different things, deliberately not one list. A caution says
+  // "trust this less"; a note says "here is how this was established".
+  // Collapsing them taught the reader to distrust a reconstructed
+  // figure that is exact.
+  const quality = historyQuality(ordered)
+  const cautions = [
+    ...populationNotes(ordered).map(
+      (text): QualityNote => ({ kind: 'limited', text, caution: true }),
+    ),
+    ...quality.filter((q) => q.caution),
+  ]
+  const established = quality.filter((q) => !q.caution)
   const chartHeight = height ?? (prominent ? 320 : 220)
 
   return (
@@ -132,19 +146,13 @@ export function HistoryPanel({
             showTable={showTable}
           />
 
-          {warnings.length > 0 && (
+          {(cautions.length > 0 || established.length > 0) && (
             <ul className="mt-3 list-none space-y-1 p-0">
-              {warnings.map((w) => (
-                <li
-                  key={w}
-                  className="flex gap-2 text-[12px] leading-snug"
-                  style={{ color: INK_MUTED }}
-                >
-                  <span aria-hidden="true" style={{ color: '#d4b048' }}>
-                    ●
-                  </span>
-                  <span>{w}</span>
-                </li>
+              {cautions.map((q) => (
+                <QualityLine key={q.text} note={q} caution />
+              ))}
+              {established.map((q) => (
+                <QualityLine key={q.text} note={q} />
               ))}
             </ul>
           )}
@@ -182,7 +190,12 @@ export function HistoryPanel({
             </div>
             {showMeaning && (
               <div id={meaningId} className="mt-3.5">
-                <Meaning series={ordered} footnote={footnote} data={data} />
+                <Meaning
+                  series={ordered}
+                  footnote={footnote}
+                  data={data}
+                  quality={quality}
+                />
               </div>
             )}
           </div>
@@ -192,15 +205,54 @@ export function HistoryPanel({
   )
 }
 
+/**
+ * One line about how this chart's periods came to be known.
+ *
+ * A filled gold marker for a caution and a hollow grey one for a
+ * statement of fact, so the two are distinguishable before the
+ * sentence is read. Shape as well as colour, because a reader who
+ * cannot separate the hues must still separate the meanings — and the
+ * leading word ("Observed", "Historical limitation") carries it either
+ * way.
+ */
+function QualityLine({
+  note,
+  caution,
+}: {
+  note: QualityNote
+  caution?: boolean
+}) {
+  return (
+    <li
+      className="flex gap-2 text-[12px] leading-snug"
+      style={{ color: INK_MUTED }}
+    >
+      <span
+        aria-hidden="true"
+        className="mt-[1px] shrink-0"
+        style={{ color: caution ? '#d4b048' : 'rgba(12, 24, 38, 0.35)' }}
+      >
+        {caution ? '\u25cf' : '\u25cb'}
+      </span>
+      <span>
+        <span style={{ color: INK }}>{QUALITY_LABEL[note.kind]}. </span>
+        {note.text}
+      </span>
+    </li>
+  )
+}
+
 /** Everything the registry declares about the figures on this chart. */
 function Meaning({
   series,
   footnote,
   data,
+  quality,
 }: {
   series: HistorySeries[]
   footnote?: string
   data: HistoryResult
+  quality: QualityNote[]
 }) {
   const recomputed = [
     ...new Set(
@@ -239,6 +291,50 @@ function Meaning({
           </dl>
         </div>
       ))}
+
+      {quality.length > 0 && (
+        <div>
+          <p className="text-[12.5px] font-semibold" style={{ color: INK }}>
+            How this history was established
+          </p>
+          <dl className="mt-1.5 space-y-0.5">
+            {quality.some((q) => q.kind === 'observed') && (
+              <Fact label="Observed">
+                Recorded on the day it describes. The figure is what was
+                seen at the time.
+              </Fact>
+            )}
+            {quality.some((q) => q.kind === 'reconstructed') && (
+              <Fact label="Reconstructed">
+                Worked out afterwards from records that carry their own
+                dates — a membership&rsquo;s join date, a payment&rsquo;s
+                settlement date. Exact rather than estimated: the answer
+                is the same one the day itself would have given.
+              </Fact>
+            )}
+            {quality.some((q) => q.kind === 'limited') && (
+              <Fact label="Historical limitation">
+                Worked out afterwards, but the detail needed to be certain
+                was never recorded, so the figure may be incomplete or
+                approximate. Treated as a caution rather than a fact.
+              </Fact>
+            )}
+            {quality.some((q) => q.kind === 'incomplete') && (
+              <Fact label="Part period">
+                Fewer days were recorded than the period covers, so the
+                figure understates it.
+              </Fact>
+            )}
+            {quality.some((q) => q.kind === 'unavailable') && (
+              <Fact label="Unavailable">
+                Cannot be established at all. Drawn as a gap and never as
+                a zero, because &ldquo;we do not know&rdquo; and
+                &ldquo;there were none&rdquo; are different answers.
+              </Fact>
+            )}
+          </dl>
+        </div>
+      )}
 
       {footnote && (
         <p className="text-[12.5px] leading-snug" style={{ color: INK_MUTED }}>

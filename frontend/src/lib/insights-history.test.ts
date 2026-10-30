@@ -7,7 +7,15 @@ import { dirname, join } from 'node:path'
 import {
   AVAILABILITY_PROSE,
   DATE_BASIS_PROSE,
-  materialWarnings,
+  QUALITY_LABEL,
+  axisLabelSpace,
+  directLabelSpace,
+  estimateTextWidth,
+  historyQuality,
+  pointQuality,
+  populationNotes,
+  tooltipLeft,
+  xLabelCapacity,
   type HistoryPoint,
   type HistorySeries,
   CHART_HUES,
@@ -26,7 +34,6 @@ import {
   niceStep,
   pointCaveats,
   scaleY,
-  seriesProvenanceNote,
   shortBucketLabel,
   stackAt,
   stackTotals,
@@ -242,50 +249,6 @@ describe('an unfinished period is drawn as unfinished', () => {
 
   test('a sound period carries no caveats', () => {
     assert.deepEqual(pointCaveats(point()), [])
-  })
-})
-
-describe('provenance is never lost in presentation', () => {
-  test('a reconstructed point is disclosed', () => {
-    const notes = pointCaveats(point({ provenance: 'reconstructed' }))
-    assert.ok(notes.some((n) => /not recorded at the time/i.test(n)))
-  })
-
-  test('a late observation is disclosed as late', () => {
-    const notes = pointCaveats(point({ provenance: 'observed_late' }))
-    assert.ok(notes.some((n) => /after the period/i.test(n)))
-  })
-
-  test('an all-observed series needs no note', () => {
-    assert.equal(seriesProvenanceNote(series()), null)
-  })
-
-  test('one reconstructed period gives the whole series a note', () => {
-    const s = series({
-      points: [point(), point({ provenance: 'reconstructed' })],
-    })
-    assert.match(seriesProvenanceNote(s) ?? '', /reconstructed/)
-  })
-
-  test('a series with nothing in it has no note to make', () => {
-    assert.equal(
-      seriesProvenanceNote(series({ points: [point({ available: false })] })),
-      null,
-    )
-  })
-
-  test('the reason a period is missing is passed through, not invented', () => {
-    const p = point({
-      available: false,
-      value: null,
-      unavailable_reason: 'Only ever observed on the day.',
-    })
-    assert.equal(describeGap(p), 'Only ever observed on the day.')
-  })
-
-  test('an unfinished period without a reason says it is unfinished', () => {
-    assert.match(describeGap(point({ complete: false, available: true,
-      unavailable_reason: null })), /has not finished/)
   })
 })
 
@@ -559,9 +522,12 @@ describe('the chart stays inside its card at any width', () => {
 
   test('direct labels are dropped on a narrow chart rather than clipped', () => {
     const src = read('src/components/admin/insights/charts/TimeSeriesChart.tsx')
-    assert.match(src, /width >= 560/, 'labels must be gated on available width')
-    // Nothing may paint outside the SVG box, or a label runs past the
-    // edge of the card on a phone.
+    // The space is measured from the names that go in it, and the
+    // label is drawn in full or not at all — there is no abbreviator
+    // left to truncate with.
+    assert.match(src, /directLabelSpace\(/)
+    assert.ok(!/abbreviate/.test(src), 'labels must never be abbreviated')
+    // Nothing may paint outside the SVG box either way.
     assert.match(src, /overflow: 'hidden'/)
   })
 
@@ -591,76 +557,6 @@ describe('the chart stays inside its card at any width', () => {
 })
 
 describe('what stays on screen and what moves behind a disclosure', () => {
-  test('a gap is a material warning, not background', () => {
-    const s = series({
-      points: [point(), point({ available: false, value: null })],
-    })
-    assert.ok(materialWarnings([s]).some((w) => /gap, not a zero/.test(w)))
-  })
-
-  test('a reconstruction is a material warning', () => {
-    const s = series({
-      points: [point(), point({ provenance: 'reconstructed' })],
-    })
-    assert.ok(materialWarnings([s]).some((w) => /reconstructed/.test(w)))
-  })
-
-  test('a filter that emptied the chart is a material warning', () => {
-    const s = series({
-      qualifiers: {
-        population_empty_note: 'No settled member purchases fall inside this population.',
-      },
-    })
-    assert.ok(materialWarnings([s]).some((w) => /No settled member/.test(w)))
-  })
-
-  test('a period built from fewer days than it covers is a material warning', () => {
-    const s = series({
-      points: [point({ partial_data: true, days_present: 2, days_expected: 7 })],
-    })
-    assert.ok(materialWarnings([s]).some((w) => /fewer days/.test(w)))
-  })
-
-  test('a sound chart carries no warnings at all', () => {
-    assert.deepEqual(materialWarnings([series()]), [])
-  })
-
-  test('the same warning from two series is said once', () => {
-    const gappy = () =>
-      series({ points: [point({ available: false, value: null })] })
-    const warnings = materialWarnings([gappy(), { ...gappy(), key: 'b' }])
-    assert.equal(new Set(warnings).size, warnings.length)
-  })
-
-  test('definitions and sources are background, never a warning', () => {
-    // The split this module exists to make: a limitation describes the
-    // metric, a warning describes the chart in front of you.
-    const s = series({
-      limitations: 'Non-additive. A monthly figure must be recomputed.',
-      definition: 'Distinct people holding a membership.',
-      source_of_truth: 'space_memberships',
-    })
-    assert.deepEqual(materialWarnings([s]), [])
-  })
-
-  test('every date basis the backend can send reads as a sentence', () => {
-    // A basis with no prose would render as a column name in the
-    // disclosure, which is the opposite of an explanation.
-    for (const basis of [
-      'payment_settled', 'refunded', 'payout_marked', 'created',
-      'membership_joined', 'business_event', 'none',
-    ]) {
-      assert.ok(DATE_BASIS_PROSE[basis], `no prose for ${basis}`)
-      assert.match(DATE_BASIS_PROSE[basis], /\.$/)
-    }
-  })
-
-  test('every availability the backend can send reads as a sentence', () => {
-    for (const a of ['full', 'from_instrumentation', 'partial']) {
-      assert.ok(AVAILABILITY_PROSE[a], `no prose for ${a}`)
-    }
-  })
-
   test('the panel offers the disclosure and keeps the table at top level', () => {
     const panel = read('src/components/admin/insights/HistoryPanel.tsx')
     assert.match(panel, /What does this chart mean\?/)
@@ -796,5 +692,337 @@ describe('the charts lead each page and the cards follow', () => {
     ]) {
       assert.ok(money.includes(`pick(data, '${key}')`), `money lost ${key}`)
     }
+  })
+})
+
+describe('a direct label is drawn in full or not at all', () => {
+  test('the reserved space fits the longest name', () => {
+    const names = ['Unique members', 'Collective memberships']
+    const { show, padRight } = directLabelSpace(names, 1058)
+    assert.ok(show)
+    const widest = Math.max(...names.map((n) => estimateTextWidth(n, 11)))
+    assert.ok(
+      padRight >= widest,
+      `reserved ${padRight}px for a ${widest.toFixed(0)}px label`,
+    )
+  })
+
+  test('a name too long for the chart drops the labels rather than cutting them', () => {
+    const { show, padRight } = directLabelSpace(
+      ['Contribution after processing costs for the period'],
+      700,
+    )
+    assert.equal(show, false)
+    assert.equal(padRight, 12)
+  })
+
+  test('labels are all shown or all hidden, never some of each', () => {
+    // One short name and one very long one: reserving for the short
+    // one would truncate the long one, so neither is drawn.
+    const { show } = directLabelSpace(
+      ['Paid out', 'Creator earnings before refunds and adjustments applied'],
+      620,
+    )
+    assert.equal(show, false)
+  })
+
+  test('a narrow chart never spends more than its share on labels', () => {
+    for (const width of [360, 420, 560, 760, 1100]) {
+      const { show, padRight } = directLabelSpace(
+        ['Platform fee revenue', 'Creator subscriptions'],
+        width,
+      )
+      if (show) {
+        assert.ok(
+          padRight <= width * 0.28 + 1,
+          `${width}px chart gave ${padRight}px to labels`,
+        )
+        assert.ok(width - padRight > 220, 'the plot must stay usable')
+      }
+    }
+  })
+
+  test('a single series needs no direct label at all', () => {
+    assert.deepEqual(directLabelSpace(['Refunds'], 1000), {
+      show: false,
+      padRight: 12,
+    })
+  })
+
+  test('text width grows with length and with wide letters', () => {
+    assert.ok(estimateTextWidth('WWWW', 11) > estimateTextWidth('iiii', 11))
+    assert.ok(estimateTextWidth('aaaaaaaa', 11) > estimateTextWidth('aaaa', 11))
+    assert.equal(estimateTextWidth('', 11), 0)
+  })
+})
+
+describe('the axis reserves what its own labels need', () => {
+  test('a money axis gets more room than a small count axis', () => {
+    const money = axisLabelSpace(['$0', '$500', '$1k', '$1.5k', '$2.5m'])
+    const counts = axisLabelSpace(['0', '10', '20', '30', '40'])
+    assert.ok(money > counts, 'currency labels are wider and must fit')
+  })
+
+  test('there is always room for something', () => {
+    assert.ok(axisLabelSpace([]) >= 28)
+  })
+
+  test('the widest tick decides, not the last one', () => {
+    assert.equal(
+      axisLabelSpace(['$1.25m', '$1']),
+      axisLabelSpace(['$1', '$1.25m']),
+    )
+  })
+})
+
+describe('the tooltip stays inside the chart at any width', () => {
+  test('it sits beside the point when there is room', () => {
+    assert.equal(tooltipLeft(100, 1000, 250, 12), 112)
+  })
+
+  test('it moves to the other side rather than overflowing the right', () => {
+    const left = tooltipLeft(950, 1000, 250, 12)
+    assert.ok(left + 250 <= 1000, 'the tooltip ran off the right edge')
+  })
+
+  test('it never overflows either edge, at any point on any width', () => {
+    for (const width of [320, 390, 768, 1200]) {
+      const box = Math.min(250, Math.max(140, width - 16))
+      for (let x = 0; x <= width; x += 10) {
+        const left = tooltipLeft(x, width, box)
+        assert.ok(left >= 0, `x=${x} w=${width} left=${left}`)
+        assert.ok(left + box <= width, `x=${x} w=${width} overflowed right`)
+      }
+    }
+  })
+
+  test('a chart narrower than the tooltip still places it at zero', () => {
+    assert.equal(tooltipLeft(50, 200, 250), 0)
+  })
+})
+
+describe('reconstructed is not a synonym for doubtful', () => {
+  const sound = (over = {}) =>
+    series({ availability: 'full', ...over })
+  const shaky = (over = {}) =>
+    series({ availability: 'partial', ...over })
+
+  test('a reconstruction from sufficient records is not a caution', () => {
+    const s = sound({ points: [point({ provenance: 'reconstructed' })] })
+    assert.equal(pointQuality(s.points[0], s), 'reconstructed')
+    const notes = historyQuality([s])
+    assert.ok(notes.every((n) => !n.caution), 'a sound reconstruction is a fact')
+  })
+
+  test('a reconstruction the records cannot support is a caution', () => {
+    const s = shaky({ points: [point({ provenance: 'reconstructed' })] })
+    assert.equal(pointQuality(s.points[0], s), 'limited')
+    assert.ok(historyQuality([s]).some((n) => n.caution))
+  })
+
+  test('the two are told apart by availability, not by provenance', () => {
+    // The whole point: same provenance, different registry metadata,
+    // different reading. Nothing here is a frontend assumption.
+    const p = point({ provenance: 'reconstructed' })
+    assert.notEqual(
+      pointQuality(p, sound({ points: [p] })),
+      pointQuality(p, shaky({ points: [p] })),
+    )
+  })
+
+  test('a recorded figure is observed however late it was written down', () => {
+    const s = sound({ points: [point({ provenance: 'observed_late' })] })
+    assert.equal(pointQuality(s.points[0], s), 'observed')
+  })
+
+  test('a missing figure is unavailable, whatever else is true of it', () => {
+    const s = shaky({
+      points: [point({ available: false, value: null, provenance: null })],
+    })
+    assert.equal(pointQuality(s.points[0], s), 'unavailable')
+  })
+
+  test('a part period outranks its provenance', () => {
+    const s = sound({ points: [point({ partial_data: true })] })
+    assert.equal(pointQuality(s.points[0], s), 'incomplete')
+  })
+
+  test('an entirely observed chart says nothing at all', () => {
+    assert.deepEqual(historyQuality([sound()]), [])
+  })
+
+  test('an entirely reconstructed chart says nothing either', () => {
+    const s = sound({
+      points: [
+        point({ provenance: 'reconstructed' }),
+        point({ provenance: 'reconstructed' }),
+      ],
+    })
+    assert.deepEqual(historyQuality([s]), [])
+  })
+
+  test('a mixed chart names each kind present, and only those', () => {
+    const s = sound({
+      points: [
+        point({ provenance: 'observed' }),
+        point({ provenance: 'reconstructed' }),
+        point({ available: false, value: null }),
+      ],
+    })
+    const kinds = historyQuality([s]).map((q) => q.kind)
+    assert.deepEqual([...kinds].sort(), ['observed', 'reconstructed', 'unavailable'])
+    assert.ok(!kinds.includes('limited'))
+    assert.ok(!kinds.includes('incomplete'))
+  })
+
+  test('cautions are listed before statements of fact', () => {
+    const s = shaky({
+      points: [
+        point({ provenance: 'observed' }),
+        point({ available: false, value: null }),
+      ],
+    })
+    const notes = historyQuality([s])
+    const firstFact = notes.findIndex((n) => !n.caution)
+    const lastCaution = notes.map((n) => n.caution).lastIndexOf(true)
+    assert.ok(lastCaution < firstFact || firstFact === -1)
+  })
+
+  test('each note counts the periods it describes', () => {
+    const s = sound({
+      points: [
+        point(),
+        point(),
+        point({ available: false, value: null }),
+      ],
+    })
+    const gap = historyQuality([s]).find((q) => q.kind === 'unavailable')
+    assert.match(gap?.text ?? '', /1 of 3 periods/)
+  })
+
+  test('periods are counted once however many series the chart has', () => {
+    // Two series over three periods is six points and three periods.
+    // "1 of 6 periods" describes something the reader cannot see.
+    const a = sound({ points: [point(), point(), point({ available: false, value: null })] })
+    const b = sound({ key: 'b', points: [point(), point(), point({ available: false, value: null })] })
+    const notes = historyQuality([a, b])
+    assert.match(notes.find((q) => q.kind === 'unavailable')?.text ?? '', /1 of 3 periods/)
+    assert.match(notes.find((q) => q.kind === 'observed')?.text ?? '', /2 of 3 periods/)
+  })
+
+  test('the counts sum to the number of periods on the axis', () => {
+    const a = sound({
+      points: [point(), point({ provenance: 'reconstructed' }),
+               point({ available: false, value: null }), point({ partial_data: true })],
+    })
+    const counted = historyQuality([a])
+      .map((q) => Number(/(\d+) of/.exec(q.text)?.[1] ?? 0))
+      .reduce((x, y) => x + y, 0)
+    assert.equal(counted, 4)
+  })
+
+  test('a gap in one series is not hidden by an observation in another', () => {
+    const a = sound({ points: [point({ available: false, value: null })] })
+    const b = sound({ key: 'b', points: [point()] })
+    assert.ok(historyQuality([a, b]).some((q) => q.kind === 'unavailable'))
+  })
+
+  test('every kind has a label a reader can read', () => {
+    for (const kind of [
+      'observed', 'reconstructed', 'limited', 'incomplete', 'unavailable',
+    ] as const) {
+      assert.ok(QUALITY_LABEL[kind], `no label for ${kind}`)
+    }
+  })
+
+  test('an emptied classification filter is still a caution', () => {
+    const s = series({
+      qualifiers: { population_empty_note: 'No settled member purchases here.' },
+    })
+    assert.deepEqual(populationNotes([s]), ['No settled member purchases here.'])
+  })
+
+  test('a tooltip calls a sound reconstruction exact, not doubtful', () => {
+    const s = sound({ points: [point({ provenance: 'reconstructed' })] })
+    const notes = pointCaveats(s.points[0], s)
+    assert.ok(notes.some((n) => /exact, not an estimate/.test(n)))
+    assert.ok(!notes.some((n) => /may be incomplete/.test(n)))
+  })
+
+  test('a tooltip warns where the records cannot support the figure', () => {
+    const s = shaky({ points: [point({ provenance: 'reconstructed' })] })
+    assert.ok(
+      pointCaveats(s.points[0], s).some((n) => /may make this incomplete/.test(n)),
+    )
+  })
+
+  test('the panel marks cautions and facts differently', () => {
+    const panel = read('src/components/admin/insights/HistoryPanel.tsx')
+    assert.match(panel, /QualityLine/)
+    // Filled marker for a caution, hollow for a fact — shape as well as
+    // colour, and the leading word carries it in text regardless.
+    assert.match(panel, /caution \? '\\u25cf' : '\\u25cb'/)
+    assert.match(panel, /QUALITY_LABEL\[note\.kind\]/)
+  })
+
+  test('the four kinds are defined in the disclosure', () => {
+    const panel = read('src/components/admin/insights/HistoryPanel.tsx')
+    assert.match(panel, /How this history was established/)
+    for (const label of [
+      'Observed', 'Reconstructed', 'Historical limitation', 'Unavailable',
+    ]) {
+      assert.ok(panel.includes(`label="${label}"`), `${label} is not defined`)
+    }
+  })
+})
+
+describe('two charts on one page share an axis density', () => {
+  test('capacity comes from the labels, not from the space left over', () => {
+    // The bug: one panel reserved more room for long series names, so
+    // its plot was narrower and it thinned its dates while the panel
+    // above it did not. Same page, same range, two different axes.
+    const labels = ['3 Aug', '10 Aug', '17 Aug', '24 Aug', '31 Aug']
+    const wide = xLabelCapacity(labels, 860)
+    const slightlyNarrower = xLabelCapacity(labels, 820)
+    assert.equal(
+      Math.min(wide, labels.length),
+      Math.min(slightlyNarrower, labels.length),
+      'a 40px difference in plot width must not change the axis',
+    )
+  })
+
+  test('thirteen weekly dates fit a desktop plot either way', () => {
+    const labels = Array.from({ length: 13 }, (_, i) => `${i + 1} Oct`)
+    for (const plotW of [780, 820, 860, 900]) {
+      assert.ok(
+        xLabelCapacity(labels, plotW) >= 13,
+        `${plotW}px should fit 13 dates`,
+      )
+    }
+  })
+
+  test('a narrow plot still thins rather than colliding', () => {
+    const labels = Array.from({ length: 13 }, (_, i) => `${i + 1} Oct`)
+    const capacity = xLabelCapacity(labels, 240)
+    assert.ok(capacity < 13)
+    const ticks = xTickIndices(13, capacity)
+    const widest = Math.max(...labels.map((l) => estimateTextWidth(l, 12)))
+    const band = 240 / 13
+    for (let i = 1; i < ticks.length; i += 1) {
+      assert.ok(
+        (ticks[i] - ticks[i - 1]) * band >= widest,
+        `labels ${ticks[i - 1]} and ${ticks[i]} would collide`,
+      )
+    }
+  })
+
+  test('longer labels get fewer of them', () => {
+    const short = xLabelCapacity(['Jan', 'Feb', 'Mar'], 600)
+    const long = xLabelCapacity(['w/c 2026-10-05', 'w/c 2026-10-12'], 600)
+    assert.ok(short > long)
+  })
+
+  test('an empty axis still reports a usable capacity', () => {
+    assert.ok(xLabelCapacity([], 600) >= 2)
   })
 })

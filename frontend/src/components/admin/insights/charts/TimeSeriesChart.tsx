@@ -17,9 +17,13 @@ import {
   linePath,
   niceDomain,
   pointCaveats,
+  axisLabelSpace,
+  directLabelSpace,
   scaleY,
   shortBucketLabel,
   spreadLabels,
+  xLabelCapacity,
+  tooltipLeft,
   stackAt,
   stackTotals,
   valueSegments,
@@ -33,6 +37,13 @@ const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
 const GRID = 'rgba(12, 24, 38, 0.08)'
 const AXIS = 'rgba(12, 24, 38, 0.18)'
 const SURFACE = '#FFFFFF'
+
+//: Axis type. 11px was legible on a desktop and marginal on a phone at
+//: the same physical size, and these are numbers somebody reads rather
+//: than glances at.
+const AXIS_FONT = 12
+const LABEL_FONT = 11.5
+const TOOLTIP_W = 250
 
 /**
  * How tall a measured zero is drawn.
@@ -95,19 +106,6 @@ export function TimeSeriesChart({
 
   const unit = series[0]?.unit ?? 'count'
   const multi = series.length > 1
-  // Room on the right for a direct label, so identity is never carried
-  // by colour alone even with the legend scrolled out of view.
-  //
-  // Below this width there is no room for one that is not an
-  // abbreviation of an abbreviation, so the labels are dropped rather
-  // than shrunk or allowed to run past the card. The legend above and
-  // the table below both remain, so identity never rests on colour
-  // alone at any width.
-  const directLabels = multi && width >= 560
-  const padRight = directLabels ? Math.min(96, Math.max(64, width * 0.16)) : 12
-  const pad = { top: 10, right: padRight, bottom: 26, left: 52 }
-  const plotW = Math.max(40, width - pad.left - pad.right)
-  const plotH = Math.max(60, height - pad.top - pad.bottom)
 
   const seriesValues = useMemo(
     () => series.map((s) => s.points.map((p) => (p.available ? p.value : null))),
@@ -119,13 +117,40 @@ export function TimeSeriesChart({
     return niceDomain(seriesValues.flat())
   }, [kind, seriesValues])
 
+  // Both paddings are measured from the text that will actually go in
+  // them rather than guessed. A fixed 52px left margin is too much for
+  // "40" and too little for "$2.5m"; a fixed right margin either
+  // truncates a long series name or wastes plot on a short one.
+  const padLeft = axisLabelSpace(
+    domain.ticks.map((t) => formatAxisValue(unit, t)),
+    AXIS_FONT,
+  )
+  const labelSpace = directLabelSpace(
+    series.map((s) => s.display_name),
+    width,
+    LABEL_FONT,
+  )
+  const directLabels = labelSpace.show
+  const pad = {
+    top: 12,
+    right: labelSpace.padRight,
+    bottom: AXIS_FONT + 16,
+    left: padLeft,
+  }
+  const plotW = Math.max(40, width - pad.left - pad.right)
+  const plotH = Math.max(60, height - pad.top - pad.bottom)
+
   const n = buckets.length
   const bandW = n > 0 ? plotW / n : plotW
   const x = (i: number) => pad.left + bandW * (i + 0.5)
   const y = (v: number) => pad.top + scaleY(v, domain, plotH)
   const zeroY = y(0)
 
-  const maxLabels = Math.max(2, Math.floor(plotW / 58))
+  const xLabels = useMemo(
+    () => buckets.map((b) => shortBucketLabel(b.label, grouping)),
+    [buckets, grouping],
+  )
+  const maxLabels = xLabelCapacity(xLabels, plotW, AXIS_FONT)
   const ticks = useMemo(() => xTickIndices(n, maxLabels), [n, maxLabels])
   const blanks = useMemo(() => emptyBucketIndices(series), [series])
   const isPartial = (i: number) => {
@@ -156,7 +181,7 @@ export function TimeSeriesChart({
     const present = raw.filter((r): r is NonNullable<typeof r> => r !== null)
     const spread = spreadLabels(
       present.map((r) => r.y),
-      13,
+      LABEL_FONT + 3,
       [pad.top + 6, pad.top + plotH - 2],
     )
     let k = 0
@@ -299,9 +324,9 @@ export function TimeSeriesChart({
               />
               <text
                 x={pad.left - 8}
-                y={y(t) + 3.5}
+                y={y(t) + AXIS_FONT / 3}
                 textAnchor="end"
-                fontSize="11"
+                fontSize={AXIS_FONT}
                 fill={INK_MUTED}
               >
                 {formatAxisValue(unit, t)}
@@ -382,11 +407,11 @@ export function TimeSeriesChart({
                 <text
                   key={`dl-${label.key}`}
                   x={pad.left + plotW + 8}
-                  y={label.y + 3.5}
-                  fontSize="11"
+                  y={label.y + LABEL_FONT / 3}
+                  fontSize={LABEL_FONT}
                   fill={INK_MUTED}
                 >
-                  {abbreviate(label.name, padRight)}
+                  {label.name}
                 </text>
               ),
             )}
@@ -396,12 +421,12 @@ export function TimeSeriesChart({
             <text
               key={`xt-${i}`}
               x={x(i)}
-              y={pad.top + plotH + 16}
+              y={pad.top + plotH + AXIS_FONT + 5}
               textAnchor="middle"
-              fontSize="11"
+              fontSize={AXIS_FONT}
               fill={INK_MUTED}
             >
-              {shortBucketLabel(buckets[i].label, grouping)}
+              {xLabels[i]}
             </text>
           ))}
 
@@ -447,20 +472,6 @@ export function TimeSeriesChart({
       )}
     </figure>
   )
-}
-
-/**
- * Keep a direct label inside the space reserved for it.
- *
- * Derived from the available pixels rather than a fixed character
- * count: the SVG clips to its own box, so a label longer than the right
- * padding is cut mid-word with no ellipsis, which reads as a rendering
- * fault rather than as an abbreviation. ~5.6px per character at 11px is
- * close enough for a label whose job is recognition, not reading.
- */
-function abbreviate(name: string, availablePx: number): string {
-  const maxChars = Math.max(6, Math.floor((availablePx - 10) / 5.6))
-  return name.length <= maxChars ? name : `${name.slice(0, maxChars - 1)}…`
 }
 
 function LineMarks({
@@ -674,16 +685,17 @@ function Tooltip({
   left: number
   width: number
 }) {
-  // Flip to the left of the cursor near the right edge so the tooltip
-  // never leaves the card.
-  const flip = left > width * 0.6
+  // Clamped to the container rather than flipped at a fraction of it.
+  // The box is 250px and a phone is 390px, so a flip rule only chose
+  // which edge to overflow; clamping cannot overflow at any width.
+  const boxWidth = Math.min(TOOLTIP_W, Math.max(140, width - 16))
   return (
     <div
       role="presentation"
-      className="pointer-events-none absolute z-10 min-w-[160px] max-w-[260px] rounded-xl p-2.5 shadow-sm"
+      className="pointer-events-none absolute z-10 rounded-xl p-2.5 shadow-sm"
       style={{
-        left: flip ? undefined : left + 10,
-        right: flip ? width - left + 10 : undefined,
+        left: tooltipLeft(left, width, boxWidth),
+        width: boxWidth,
         top: 4,
         background: SURFACE,
         border: '1px solid #E7EEF0',
@@ -718,7 +730,7 @@ function Tooltip({
       {series.map((s) => {
         const p = s.points[index]
         if (!p) return null
-        const notes = p.available ? pointCaveats(p) : [describeGap(p)]
+        const notes = p.available ? pointCaveats(p, s) : [describeGap(p)]
         if (notes.length === 0) return null
         return (
           <p
