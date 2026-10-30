@@ -526,12 +526,19 @@ class TestScopeEnforcement:
             m.key for m in REGISTRY.all() if m.access is Access.platform_only
         }
         assert platform_only == {
+            # Fresh Collective's own money, and platform-wide counts.
             "platform_fee_revenue_cents",
             "subscription_revenue_cents",
             "processing_costs_cents",
             "contribution_after_processing_cents",
             "registered_users",
             "registered_creators",
+            # Engagement that is only meaningful across the whole platform,
+            # or that would tell one creator about others.
+            "active_creators",
+            "overlap_vs_engagement",
+            "engagement_by_theme",
+            "retention_cohorts",
         }
 
     def test_no_metric_reads_a_member_authored_column(self):

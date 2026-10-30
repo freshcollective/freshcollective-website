@@ -852,6 +852,14 @@ async def get_stats(
 # EXCEPT creator subscription payments (those are FC's own subscription
 # revenue and handled separately in ``_compute_revenue_summary``) and
 # non-money bookkeeping (refund / adjustment).
+# BI-3: the financial date these helpers attribute by comes from the
+# shared definition the metric registry uses, not from ``created_at``.
+# Until this change the same payment — created in September, settled in
+# October — counted as October revenue through /reporting/query and as
+# September revenue through /commerce/overview. One definition, imported,
+# is the only way that stays fixed.
+from app.reporting.dates import settlement_date as _financial_date
+
 _MEMBER_TXN_TYPES = {
     PaymentTransactionType.member_pathway_purchase,
     PaymentTransactionType.member_collective_purchase,
@@ -896,9 +904,9 @@ def _compute_payment_summary(
         if statuses:
             q = q.filter(PaymentTransaction.status.in_([s.value for s in statuses]))
         if starts_at is not None:
-            q = q.filter(PaymentTransaction.created_at >= starts_at)
+            q = q.filter(_financial_date() >= starts_at)
         if ends_at is not None:
-            q = q.filter(PaymentTransaction.created_at < ends_at)
+            q = q.filter(_financial_date() < ends_at)
         if creator_user_id:
             q = q.filter(PaymentTransaction.creator_user_id == creator_user_id)
         if space_id:
@@ -1140,10 +1148,14 @@ def get_payments_ledger(
     current_bounds, _ = resolve_period(period)  # type: ignore[arg-type]
 
     q = db.query(PaymentTransaction)
+    # Same financial date as the summaries, so a payment that settled in
+    # October appears in October's list beside October's revenue figure.
+    # Pending and failed rows have no settlement, so the COALESCE leaves
+    # them where they have always been — on their creation date.
     if current_bounds.starts_at is not None:
-        q = q.filter(PaymentTransaction.created_at >= current_bounds.starts_at)
+        q = q.filter(_financial_date() >= current_bounds.starts_at)
     if current_bounds.ends_at is not None:
-        q = q.filter(PaymentTransaction.created_at < current_bounds.ends_at)
+        q = q.filter(_financial_date() < current_bounds.ends_at)
     if effective_mode:
         q = q.filter(PaymentTransaction.stripe_mode == effective_mode)
     txns = q.order_by(PaymentTransaction.created_at.desc()).all()
@@ -3109,9 +3121,9 @@ def _compute_revenue_summary(
         if stripe_mode:
             q = q.filter(PaymentTransaction.stripe_mode == stripe_mode)
         if starts_at is not None:
-            q = q.filter(PaymentTransaction.created_at >= starts_at)
+            q = q.filter(_financial_date() >= starts_at)
         if ends_at is not None:
-            q = q.filter(PaymentTransaction.created_at < ends_at)
+            q = q.filter(_financial_date() < ends_at)
         return q
 
     # Common helper — retained amount SQL expression.

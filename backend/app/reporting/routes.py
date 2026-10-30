@@ -33,6 +33,7 @@ from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.core.periods import VALID_PERIODS, resolve_period
 from app.models.user import User
+from app.reporting import engagement as _engagement  # noqa: F401 — populates REGISTRY
 from app.reporting import metrics as _metrics  # noqa: F401 — populates REGISTRY
 from app.reporting.registry import (
     REGISTRY,

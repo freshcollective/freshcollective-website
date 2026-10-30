@@ -53,6 +53,7 @@ from app.reporting.registry import (
     MetricValue,
     Window,
 )
+from app.reporting.dates import settlement_date
 from app.reporting.scope import Access, ReportScope
 
 # ---------------------------------------------------------------------------
@@ -80,13 +81,10 @@ SETTLED_STATUSES = (
 )
 
 
-def _settlement_date_column():
-    """``settled_at`` where observed, ``created_at`` where not.
-
-    A deliberate COALESCE rather than a silent one: every metric using
-    it reports which basis actually applied.
-    """
-    return func.coalesce(PaymentTransaction.settled_at, PaymentTransaction.created_at)
+#: The canonical financial date, shared with the admin reporting helpers
+#: so there cannot be two answers for the same payment. See
+#: ``app.reporting.dates`` for why each basis is what it is.
+_settlement_date_column = settlement_date
 
 
 def _member_txn_query(db: Session, scope: ReportScope):
