@@ -268,6 +268,12 @@ export default async function DashboardPage({
   const unseenBySpace = new Map(
     unseenCounts.collectives.map((c) => [c.collective_id, c.total]),
   )
+  // The same response, read a second way. Kept apart from the activity
+  // total on purpose: "someone wrote to you" and "things happened
+  // here" are different sentences and get different indicators.
+  const unreadMessagesBySpace = new Map(
+    unseenCounts.collectives.map((c) => [c.collective_id, c.unread_messages ?? 0]),
+  )
 
   const publicBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
   const { soon, hasMore } = filterUpcoming(cards)
@@ -397,6 +403,7 @@ export default async function DashboardPage({
                       card={c}
                       publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
                       unseen={unseenBySpace.get(c.membership.space_id) ?? 0}
+                      unreadMessages={unreadMessagesBySpace.get(c.membership.space_id) ?? 0}
                     />
                   ))}
                 </div>
@@ -425,6 +432,7 @@ export default async function DashboardPage({
                       card={c}
                       publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
                       unseen={unseenBySpace.get(c.membership.space_id) ?? 0}
+                      unreadMessages={unreadMessagesBySpace.get(c.membership.space_id) ?? 0}
                     />
                   ))}
                 </div>
@@ -835,7 +843,7 @@ function WelcomeBanner({ firstName }: { firstName: string }) {
 // ---------------------------------------------------------------------------
 
 function CollectiveCard({
-  card, publicCard, unseen = 0,
+  card, publicCard, unseen = 0, unreadMessages = 0,
 }: {
   card: MembershipCard
   publicCard: PublicSpaceCard | null
@@ -843,6 +851,9 @@ function CollectiveCard({
    *  Pathways and Gatherings summed by the server, so this card and
    *  the Collective's own tabs cannot disagree. */
   unseen?: number
+  /** Unread direct messages for this member in this Collective.
+   *  Separate from ``unseen`` by design — see the indicator below. */
+  unreadMessages?: number
 }) {
   const name = card.membership.space_name
   const description =
@@ -869,21 +880,67 @@ function CollectiveCard({
   const cs = getCollectiveCoverStyle(card.membership.space_slug)
 
   return (
-    <Link
-      // The Collective's front door, not one room inside it. A member
+    // The message indicator is a link of its own, so it cannot live
+    // inside the card's link — nested anchors are invalid and would
+    // give the keyboard one target where there are two destinations.
+    // A wrapper lets both sit in the same box as siblings.
+    <div className="relative">
+      <Link
+        // The Collective's front door, not one room inside it. A member
         // arriving from Your World should land on the Home that
         // orients them, and choose Conversations from there.
         href={`/spaces/${card.membership.space_slug}`}
-      className="group relative block overflow-hidden rounded-2xl bg-white transition-all"
-      style={ATLAS_CARD_STYLE}
-    >
-      {unseen > 0 && (
-        <span className="absolute right-3 top-3 z-10">
-          <CountBadge variant="card" count={unseen} label={`in ${name}`} />
-        </span>
+        className="group relative block overflow-hidden rounded-2xl bg-white transition-all"
+        style={ATLAS_CARD_STYLE}
+      >
+        {unseen > 0 && (
+          <span className="absolute right-3 top-3 z-10">
+            <CountBadge variant="card" count={unseen} label={`in ${name}`} />
+          </span>
+        )}
+        <AtlasArtwork url={artUrl} fallbackBg={cs.background} alt={name} />
+        <AtlasCardBody name={name} description={description} meta={meta} cta="Continue →" />
+      </Link>
+      {unreadMessages > 0 && (
+        <UnreadMessagesPill
+          count={unreadMessages}
+          slug={card.membership.space_slug}
+          collectiveName={name}
+        />
       )}
-      <AtlasArtwork url={artUrl} fallbackBg={cs.background} alt={name} />
-      <AtlasCardBody name={name} description={description} meta={meta} cta="Continue →" />
+    </div>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// "✉ 1 unread message" — somebody wrote to this member personally.
+//
+// Top-left, mirroring the activity badge at top-right, so the two read
+// as a pair rather than competing for the same corner. Words rather
+// than a bare number: a count on its own makes a member guess what
+// happened, and the whole point is to say that someone is trying to
+// reach them.
+//
+// Its own link to that Collective's inbox, not the Collective front
+// door — a member who sees this wants the message, not the Home.
+// ---------------------------------------------------------------------------
+
+function UnreadMessagesPill({ count, slug, collectiveName }: {
+  count: number
+  slug: string
+  collectiveName: string
+}) {
+  const plural = count === 1 ? 'unread message' : 'unread messages'
+  return (
+    <Link
+      href={`/spaces/${slug}/messages`}
+      aria-label={`${count} ${plural} in ${collectiveName}`}
+      className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      style={{ background: '#246B6A' }}
+    >
+      <span aria-hidden="true">✉</span>
+      <span>{count} {plural}</span>
     </Link>
   )
 }

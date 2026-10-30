@@ -34,6 +34,7 @@ from app.models.activity import Activity, ActivityType
 from app.models.platform import Space
 from app.models.user import User
 from app.services.activity_counts import current_boundary, unseen_counts
+from app.services.message_counts import unread_message_counts
 from app.services.activity_visibility import resolve_member_scope
 from app.services.activity_cursors import CursorRefused, advance
 from app.services.activity_service import ActivityService
@@ -311,6 +312,11 @@ class CollectiveUnseen(BaseModel):
     #: mark each with a single dot while the tally above stays whole.
     #: Empty when nothing is unseen, which renders no dots.
     conversation_channels: list[str] = []
+    #: Unread direct messages in this Collective. Deliberately NOT in
+    #: ``total``: a member seeing "3" should not have to wonder whether
+    #: somebody wrote to them or a Pathway gained a step. Your World
+    #: renders it as its own indicator beside the activity badge.
+    unread_messages: int = 0
 
 
 class UnseenCountsResponse(BaseModel):
@@ -340,6 +346,11 @@ def get_unseen_counts(
     costs the same as a member in one.
     """
     counts = unseen_counts(db, current_user, collective_id=collective_id)
+    # One extra grouped query, not one request per card. See
+    # ``app/services/message_counts.py`` for why it rides along here.
+    unread = unread_message_counts(
+        db, current_user.id, [c.collective_id for c in counts],
+    )
     rows = [
         CollectiveUnseen(
             collective_id=c.collective_id,
@@ -348,6 +359,7 @@ def get_unseen_counts(
             gatherings=c.gatherings,
             total=c.total,
             conversation_channels=list(c.conversation_channels),
+            unread_messages=unread.get(c.collective_id, 0),
         )
         for c in counts
     ]

@@ -1918,6 +1918,16 @@ export interface CollectiveUnseen {
    *  and this makes the type say so rather than promise a field that
    *  can briefly be absent. */
   conversation_channels?: string[]
+  /** Unread direct messages in this Collective, for the caller.
+   *
+   *  Its own field, never folded into `total` — Your World shows an
+   *  activity badge and a message indicator as two separate things.
+   *
+   *  Optional for the same reason as the field above: fc-api and
+   *  fc-web deploy from one push but not in one instant, so a new
+   *  page can briefly read a response without it. Read it as
+   *  `?.unread_messages ?? 0`. */
+  unread_messages?: number
 }
 
 export interface UnseenCountsResponse {
