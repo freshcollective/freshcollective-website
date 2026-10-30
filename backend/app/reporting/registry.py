@@ -41,6 +41,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.reporting.population import ALL, DIMENSION as POPULATION_DIMENSION
+from app.reporting.population import Population
 from app.reporting.scope import Access, ReportScope
 
 
@@ -231,7 +233,9 @@ class Metric:
     #: True when the value is about identifiable people and should not
     #: be exported casually. No metric exposes member-authored content.
     personal_data: bool = False
-    compute: Callable[[Session, ReportScope, Window], MetricValue] | None = None
+    compute: (
+        Callable[[Session, ReportScope, Window, Population], MetricValue] | None
+    ) = None
 
     @property
     def resolved_unit(self) -> Unit:
@@ -240,8 +244,23 @@ class Metric:
             return self.unit
         return Unit.money_cents if self.key.endswith("_cents") else Unit.count
 
+    @property
+    def honours_population(self) -> bool:
+        """Whether this metric filters by reporting classification.
+
+        Declared, not detected. A metric that ignored a population
+        filter while the surface above it displayed "Production" would
+        be the worst failure available here — a figure labelled as a
+        subset that is actually the whole, which no reader could catch.
+        """
+        return POPULATION_DIMENSION in self.dimensions
+
     def evaluate(
-        self, db: Session, scope: ReportScope, window: Window,
+        self,
+        db: Session,
+        scope: ReportScope,
+        window: Window,
+        population: Population = ALL,
     ) -> MetricValue:
         """Check entitlement, then compute. The only way to get a value."""
         scope.require(self.access, self.key)
@@ -251,7 +270,22 @@ class Metric:
                 value=None,
                 unavailable_reason="This metric has no calculation yet.",
             )
-        return self.compute(db, scope, window)
+        if not population.is_all and not self.honours_population:
+            # Unavailable rather than an exception, and rather than an
+            # unfiltered number. A chart asking for eight metrics under
+            # one filter should show a gap for the one that cannot
+            # honour it, not fail the panel and not quietly mislabel.
+            return MetricValue(
+                key=self.key,
+                value=None,
+                unavailable_reason=(
+                    f"{self.display_name} cannot be narrowed by reporting "
+                    f"class, so there is no {population.label!r} figure for "
+                    "it. Switch to All activity to see this metric."
+                ),
+                qualifiers=population.qualifiers(),
+            )
+        return self.compute(db, scope, window, population)
 
 
 class MetricRegistry:

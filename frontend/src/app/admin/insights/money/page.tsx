@@ -2,9 +2,12 @@
 
 import { useState } from 'react'
 
+import { HistoryControls } from '@/components/admin/insights/HistoryControls'
+import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
+import { useHistory } from '@/components/admin/insights/useHistory'
 import { useMetrics } from '@/components/admin/insights/useMetrics'
 import {
   type MetricResult,
@@ -15,6 +18,11 @@ import {
   pick,
   pickPrevious,
 } from '@/lib/insights'
+import type {
+  Grouping,
+  HistoryRangeKey,
+  PopulationKey,
+} from '@/lib/insights-history'
 
 /**
  * Money — what comes in, and whose it is.
@@ -49,12 +57,40 @@ const KEYS = [
   'refunds_cents',
 ]
 
+/**
+ * The money series the charts draw, fetched together.
+ *
+ * One request so every panel shares one set of bucket boundaries — two
+ * money charts disagreeing about where a month ends is the original
+ * defect this whole reporting layer was built to end.
+ */
+const HISTORY_KEYS = [
+  'platform_fee_revenue_cents',
+  'subscription_revenue_cents',
+  'gross_collective_sales_cents',
+  'creator_earnings_cents',
+  'paid_out_cents',
+  'processing_costs_cents',
+  'contribution_after_processing_cents',
+  'refunds_cents',
+]
+
 const INK = '#0C1826'
 const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
 
 export default function MoneyPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
   const { data, error, loading } = useMetrics(KEYS, period)
+
+  // The complete ledger is the default here, and that is a rule rather
+  // than a preference: a money page whose default view silently omitted
+  // real Stripe movements would misstate the business. Production is
+  // one click away and announces itself as a subset. Growth defaults
+  // the other way, because there a test account is noise.
+  const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
+  const [grouping, setGrouping] = useState<Grouping>('weekly')
+  const [population, setPopulation] = useState<PopulationKey>('all')
+  const history = useHistory(HISTORY_KEYS, range, grouping, population)
 
   const prev = data?.comparison?.label ?? null
 
@@ -164,6 +200,90 @@ export default function MoneyPage() {
           </Band>
         </>
       )}
+
+      <section className="mt-10">
+        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
+          Over time
+        </h3>
+        <p
+          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
+          style={{ color: INK_MUTED }}
+        >
+          These charts carry their own period, independent of the figures
+          above. Activity begins on <strong>All activity</strong> here, which
+          is the complete ledger — every real Stripe movement, including
+          those from demonstration and test Collectives. Narrowing to
+          Production shows a subset of business performance; it never
+          removes money from the ledger, and the chart says which
+          population you are looking at.
+        </p>
+
+        <HistoryControls
+          range={range}
+          grouping={grouping}
+          population={population}
+          onRange={setRange}
+          onGrouping={setGrouping}
+          onPopulation={setPopulation}
+          options={history.data?.options}
+          disabled={history.loading}
+          populationNote={history.data?.population.note}
+        />
+
+        {history.error && <Problem message={history.error} />}
+
+        <HistoryPanel
+          title="Fresh Collective's own income"
+          explanation="The two streams that are genuinely ours, stacked so the combined height is total income while each source stays its own colour: the fee kept from member purchases, and what creators pay for their plans."
+          data={history.data}
+          keys={['platform_fee_revenue_cents', 'subscription_revenue_cents']}
+          kind="stacked"
+          hues={['teal', 'gold']}
+          height={240}
+          footnote="Attributed to the period the money arrived in, not the period a checkout happened to be created in. Payments that arrived before business-event recording began carry no observed settlement date and fall back to their creation date, which the chart reports as an approximation."
+        />
+
+        <HistoryPanel
+          title="Gross Collective sales"
+          explanation="Everything members paid creators, before any deduction. This is transaction volume processed on creators' behalf — it is not Fresh Collective's income, and most of it belongs to the creators who earned it. Read it beside the income chart above, never as a substitute for it."
+          data={history.data}
+          keys={['gross_collective_sales_cents']}
+          kind="column"
+          hues={['navy']}
+        />
+
+        <HistoryPanel
+          title="Creator earnings and payouts"
+          explanation="What creators earned in each period, beside what was actually transferred to them. The two are deliberately separate series rather than one: earning is a period's trade and a payout is a cash movement with its own date, so the columns are not expected to match and a gap between them is an obligation, not an error."
+          data={history.data}
+          keys={['creator_earnings_cents', 'paid_out_cents']}
+          kind="column"
+          hues={['teal', 'navy']}
+          height={240}
+          footnote="Earnings are net of refunds reversed against the creator's share. Payouts are counted on the date they were marked paid, which is why a period can show earnings with no payout beside them."
+        />
+
+        <HistoryPanel
+          title="Processing costs and contribution"
+          explanation="Stripe's fee against what Fresh Collective keeps after it. Contribution after processing costs is not profit — every operating expense sits outside it, so a positive column here is not a month in the black."
+          data={history.data}
+          keys={['processing_costs_cents', 'contribution_after_processing_cents']}
+          kind="column"
+          hues={['coral', 'teal']}
+          height={240}
+          footnote="Stripe does not report a fee until reconciliation reads it, and those payments are excluded rather than estimated — so a recent period's cost is a lower bound and its contribution correspondingly a little high."
+        />
+
+        <HistoryPanel
+          title="Refunds"
+          explanation="Money returned, counted in the period the refund happened rather than netted against the original sale. That is what keeps a closed month's revenue from moving afterwards."
+          data={history.data}
+          keys={['refunds_cents']}
+          kind="column"
+          hues={['coral']}
+          footnote="Only the most recent refund date is stored per transaction, so a payment refunded twice in different periods is attributed wholly to the later one. Refunds taken before that date was recorded cannot be placed in a period at all and appear as a gap rather than as a zero."
+        />
+      </section>
     </InsightsShell>
   )
 }

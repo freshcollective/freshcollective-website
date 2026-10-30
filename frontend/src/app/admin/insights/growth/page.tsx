@@ -2,9 +2,12 @@
 
 import { useState } from 'react'
 
+import { HistoryControls } from '@/components/admin/insights/HistoryControls'
+import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
+import { useHistory } from '@/components/admin/insights/useHistory'
 import { useMetrics } from '@/components/admin/insights/useMetrics'
 import {
   type MetricResult,
@@ -13,6 +16,11 @@ import {
   pick,
   pickPrevious,
 } from '@/lib/insights'
+import type {
+  Grouping,
+  HistoryRangeKey,
+  PopulationKey,
+} from '@/lib/insights-history'
 
 /**
  * Growth — who is arriving, and how fast.
@@ -44,11 +52,39 @@ const FLOW_KEYS = ['memberships_started']
 
 const KEYS = [...SNAPSHOT_KEYS, ...FLOW_KEYS]
 
+/**
+ * The metrics the charts need, fetched in one request.
+ *
+ * Batched so every panel on the page resolves the same range and the
+ * same bucket boundaries. Three panels fetching separately could each
+ * land on a different "last completed day" if a request crossed
+ * midnight in Sydney, and two charts disagreeing about where the week
+ * ends is exactly the drift the shared reporting API exists to prevent.
+ */
+const HISTORY_KEYS = [
+  'unique_members',
+  'total_memberships',
+  'memberships_started',
+  'members_in_one_collective',
+  'members_in_two_collectives',
+  'members_in_three_plus_collectives',
+]
+
 const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
 
 export default function GrowthPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
   const { data, error, loading } = useMetrics(KEYS, period)
+
+  // Growth reporting defaults to production: the question this page
+  // asks is whether genuine communities are growing, and a test account
+  // in a real Collective would answer it wrongly. The Money page
+  // defaults the other way, to the complete ledger, because there the
+  // default must never be a subset.
+  const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
+  const [grouping, setGrouping] = useState<Grouping>('weekly')
+  const [population, setPopulation] = useState<PopulationKey>('production')
+  const history = useHistory(HISTORY_KEYS, range, grouping, population)
 
   const previousLabel = data?.comparison?.label ?? null
 
@@ -133,6 +169,73 @@ export default function GrowthPage() {
           </Band>
         </>
       )}
+
+      <section className="mt-10">
+        <h3
+          className="font-serif text-[17px] leading-tight"
+          style={{ color: '#0C1826' }}
+        >
+          Over time
+        </h3>
+        <p
+          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
+          style={{ color: INK_MUTED }}
+        >
+          These charts have their own period, independent of the figures
+          above — the cards answer &ldquo;where are we now&rdquo; and the
+          charts answer &ldquo;what has been happening&rdquo;. Periods still
+          running are drawn with a hatched fill or a dashed line so a part
+          period is never mistaken for a quiet one.
+        </p>
+
+        <HistoryControls
+          range={range}
+          grouping={grouping}
+          population={population}
+          onRange={setRange}
+          onGrouping={setGrouping}
+          onPopulation={setPopulation}
+          options={history.data?.options}
+          disabled={history.loading}
+          populationNote={history.data?.population.note}
+        />
+
+        {history.error && <Problem message={history.error} />}
+
+        <HistoryPanel
+          title="Membership growth"
+          explanation="People and memberships side by side. The gap between the two lines is the story: memberships climbing faster than people means members are finding a second and third Collective, not that anyone is being counted twice. Both are end-of-period states, so a weekly figure is where things stood when the week closed — never a sum of its days."
+          data={history.data}
+          keys={['unique_members', 'total_memberships']}
+          kind="line"
+          hues={['navy', 'teal']}
+          height={240}
+        />
+
+        <HistoryPanel
+          title="New memberships"
+          explanation="Memberships that began in each period. This one does add up over time, which is why it is drawn as separate columns rather than joined into a line — each column is its own period's activity, not a running total."
+          data={history.data}
+          keys={['memberships_started']}
+          kind="column"
+          hues={['teal']}
+        />
+
+        <HistoryPanel
+          title="How many Collectives people belong to"
+          explanation="Every member sits in exactly one band, so the three stack to the total number of members at that date. Watching the upper bands grow is watching people explore beyond the first Collective they joined."
+          data={history.data}
+          keys={[
+            'members_in_one_collective',
+            'members_in_two_collectives',
+            'members_in_three_plus_collectives',
+          ]}
+          kind="stacked"
+          hues={['navy', 'teal', 'gold']}
+          height={240}
+          footnote="Worked out from membership join and removal dates rather than recorded at the time. A membership that ended before removal dates were stored is invisible here, which can place a member in a higher band than they belonged to on an early date."
+        />
+      </section>
     </InsightsShell>
   )
 }

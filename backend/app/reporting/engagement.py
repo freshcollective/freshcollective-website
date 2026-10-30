@@ -83,6 +83,7 @@ from app.reporting.registry import (
     MetricValue,
     Window,
 )
+from app.reporting.population import ALL, Population
 from app.reporting.scope import Access, ReportScope
 
 #: The acts that count as participation, as reported in qualifiers so a
@@ -212,7 +213,10 @@ def _active_people(
 # Active people
 # ---------------------------------------------------------------------------
 
-def _active_members(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _active_members(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     part = participation_events()
     total = _active_people(db, scope, window)
     by_kind = db.execute(
@@ -273,7 +277,10 @@ REGISTRY.add(Metric(
 ))
 
 
-def _active_creators(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _active_creators(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Creators who participated, plus those who published.
 
     Publishing is a creator's characteristic act and lives in
@@ -347,6 +354,7 @@ REGISTRY.add(Metric(
 
 def _returning_participants(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     """People active in this window *and* the one before it.
 
@@ -413,7 +421,10 @@ REGISTRY.add(Metric(
 # Participation volume
 # ---------------------------------------------------------------------------
 
-def _participation_acts(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _participation_acts(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     part = participation_events()
     rows = db.execute(
         _windowed(
@@ -454,6 +465,7 @@ REGISTRY.add(Metric(
 
 def _gathering_attendance(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     """Attended versus booked, which is the interesting comparison."""
     q = (
@@ -517,6 +529,7 @@ REGISTRY.add(Metric(
 
 def _pathway_steps_completed(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     q = (
         select(
@@ -571,7 +584,10 @@ REGISTRY.add(Metric(
 # Rates and relationships
 # ---------------------------------------------------------------------------
 
-def _participation_rate(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _participation_rate(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Active members as a share of the people who could have been.
 
     The denominator is unique members, not memberships — otherwise a
@@ -615,6 +631,7 @@ REGISTRY.add(Metric(
 
 def _overlap_vs_engagement(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     """Does belonging to several Collectives predict participating more?
 
@@ -677,6 +694,7 @@ REGISTRY.add(Metric(
 
 def _engagement_by_theme(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     """Active members per theme.
 
@@ -734,7 +752,10 @@ REGISTRY.add(Metric(
 ))
 
 
-def _retention_cohorts(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _retention_cohorts(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Of the members who first joined in month M, how many are still active?
 
     Built on ``space_memberships.joined_at`` for the cohort and the

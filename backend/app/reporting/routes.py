@@ -31,7 +31,13 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
-from app.core.periods import VALID_PERIODS, resolve_period
+from app.core.periods import (
+    HISTORY_RANGE_LABELS,
+    VALID_GROUPINGS,
+    VALID_HISTORY_RANGES,
+    VALID_PERIODS,
+    resolve_period,
+)
 from app.models.user import User
 from app.reporting import engagement as _engagement  # noqa: F401 — populates REGISTRY
 from app.reporting import metrics as _metrics  # noqa: F401 — populates REGISTRY
@@ -41,6 +47,12 @@ from app.reporting.registry import (
     MetricValue,
     UnknownMetric,
     Window,
+)
+from app.reporting import history as _history
+from app.reporting.population import (
+    Population,
+    UnknownPopulation,
+    view_options,
 )
 from app.reporting.scope import ReportScope, ScopeDenied, platform_scope
 
@@ -109,6 +121,85 @@ class MetricResultOut(BaseModel):
     #: all-time, where there is nothing to compare against — never a
     #: fabricated zero.
     comparison_metrics: list[MetricValueOut] | None = None
+
+
+class HistoryPointOut(BaseModel):
+    label: str
+    starts_on: str
+    ends_on: str
+    value: float | int | None = None
+    available: bool = True
+    unavailable_reason: str | None = None
+    provenance: str | None = None
+    #: False while the period is still running.
+    complete: bool = True
+    #: True when the range cut the period short of its natural span.
+    clipped: bool = False
+    #: Days behind the figure, and days the label implies. Unequal means
+    #: the number covers less ground than it appears to.
+    days_present: int = 0
+    days_expected: int = 0
+    partial_data: bool = False
+
+
+class HistorySeriesOut(BaseModel):
+    key: str
+    display_name: str
+    unit: str
+    aggregation: str
+    #: ``stored`` or ``recomputed`` — see ``app.reporting.history``.
+    source: str
+    definition: str = ""
+    limitations: str | None = None
+    observation_only: bool = False
+    qualifiers: dict = {}
+    points: list[HistoryPointOut] = []
+
+
+class HistoryBucketOut(BaseModel):
+    label: str
+    starts_on: str
+    ends_on: str
+    complete: bool = True
+    clipped: bool = False
+
+
+class HistoryRangeOut(BaseModel):
+    key: str
+    label: str
+    starts_on: str
+    ends_on: str
+    days: int
+
+
+class PopulationOut(BaseModel):
+    key: str
+    label: str
+    note: str
+
+
+class ControlOptionsOut(BaseModel):
+    """What the shared history control may offer.
+
+    Returned with the data rather than hardcoded in the frontend. The
+    ranges, groupings and populations all come from the backend's own
+    vocabularies, so a class added to ``classification`` appears in the
+    control without a second list to keep in step — which is the same
+    reason the period selector reads its options from here.
+    """
+
+    ranges: list[dict]
+    groupings: list[str]
+    populations: list[dict]
+
+
+class HistoryResultOut(BaseModel):
+    range: HistoryRangeOut
+    grouping: str
+    population: PopulationOut
+    buckets: list[HistoryBucketOut]
+    series: list[HistorySeriesOut]
+    options: ControlOptionsOut
 
 
 def _definition(m: Metric) -> MetricDefinitionOut:
@@ -299,6 +390,149 @@ class HealthOut(BaseModel):
     #: died mid-rebuild. The difference between stale and silently stale.
     incomplete_runs: list[JobRunOut] = []
     note: str | None = None
+
+
+@router.get("/history", response_model=HistoryResultOut)
+def metric_history(
+    keys: str = Query(..., description="Comma-separated metric keys."),
+    range: str = Query(
+        "last_3_months", description=f"One of {list(VALID_HISTORY_RANGES)}",
+    ),
+    grouping: str = Query(
+        "weekly", description=f"One of {list(VALID_GROUPINGS)}",
+    ),
+    population: str = Query(
+        "all", description="Reporting-class population. 'all' for the ledger.",
+    ),
+    db: Session = Depends(get_db),
+    scope: ReportScope = Depends(admin_scope),
+):
+    """Several metrics as time series over one range and grouping.
+
+    Batched for the same reason ``/query`` is: a chart panel wants two
+    or three lines on one axis, and resolving the range separately per
+    line is how two charts on one page start disagreeing about where
+    October begins.
+
+    Everything the caller needs to render honestly comes back with the
+    numbers — each bucket's completeness, each point's provenance, and
+    the population's own prose. A client cannot accidentally draw a
+    reconstruction as an observation, because it is told which it has.
+    """
+    if range not in VALID_HISTORY_RANGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid range {range!r}. Valid: {list(VALID_HISTORY_RANGES)}.",
+        )
+    if grouping not in VALID_GROUPINGS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid grouping {grouping!r}. Valid: {list(VALID_GROUPINGS)}."
+            ),
+        )
+    try:
+        pop = Population.parse(population)
+    except UnknownPopulation:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown population {population!r}.",
+        ) from None
+
+    requested = [k.strip() for k in keys.split(",") if k.strip()]
+    if not requested:
+        raise HTTPException(status_code=422, detail="No metric keys supplied.")
+
+    for key in requested:
+        if key not in REGISTRY:
+            raise HTTPException(
+                status_code=404, detail=f"Unknown metric {key!r}.",
+            )
+
+    span, buckets = _history.resolve(db, range, grouping)
+    if len(buckets) > _history.MAX_BUCKETS:
+        # Named alternative rather than a silent truncation: a chart
+        # quietly cut from twelve months to four would look like the
+        # business stopped in June.
+        coarser = "weekly" if grouping == "daily" else "monthly"
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{len(buckets)} periods exceeds the {_history.MAX_BUCKETS} "
+                f"this endpoint will assemble. Group by {coarser} instead, "
+                "or ask for a shorter range."
+            ),
+        )
+
+    try:
+        series = [
+            _history.build_series(db, key, scope, buckets, population=pop)
+            for key in requested
+        ]
+    except ScopeDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    return HistoryResultOut(
+        range=HistoryRangeOut(
+            key=range,
+            label=span.label,
+            starts_on=span.starts_on.isoformat(),
+            ends_on=span.ends_on.isoformat(),
+            days=span.days,
+        ),
+        grouping=grouping,
+        population=PopulationOut(
+            key=pop.view.value, label=pop.label, note=pop.note,
+        ),
+        buckets=[
+            HistoryBucketOut(
+                label=b.label,
+                starts_on=b.starts_on.isoformat(),
+                ends_on=b.ends_on.isoformat(),
+                complete=b.complete,
+                clipped=b.clipped,
+            )
+            for b in buckets
+        ],
+        series=[
+            HistorySeriesOut(
+                key=s.key,
+                display_name=s.display_name,
+                unit=s.unit,
+                aggregation=s.aggregation,
+                source=s.source,
+                definition=s.definition,
+                limitations=s.limitations,
+                observation_only=s.observation_only,
+                qualifiers=s.qualifiers,
+                points=[
+                    HistoryPointOut(
+                        label=p.label,
+                        starts_on=p.starts_on.isoformat(),
+                        ends_on=p.ends_on.isoformat(),
+                        value=p.value,
+                        available=p.available,
+                        unavailable_reason=p.unavailable_reason,
+                        provenance=p.provenance,
+                        complete=p.complete,
+                        clipped=p.clipped,
+                        days_present=p.days_present,
+                        days_expected=p.days_expected,
+                        partial_data=p.partial_data,
+                    )
+                    for p in s.points
+                ],
+            )
+            for s in series
+        ],
+        options=ControlOptionsOut(
+            ranges=[
+                {"key": k, "label": HISTORY_RANGE_LABELS[k]}
+                for k in VALID_HISTORY_RANGES
+            ],
+            groupings=list(VALID_GROUPINGS),
+            populations=view_options(),
+        ),
+    )
 
 
 @router.get("/health", response_model=HealthOut)

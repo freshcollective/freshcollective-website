@@ -59,7 +59,13 @@ from app.reporting.eligibility import (
     member_purchase_filters,
     payout_obligation_filters,
 )
-from app.reporting.scope import Access, ReportScope
+from app.reporting.population import (
+    ALL,
+    DIMENSION as POPULATION_DIMENSION,
+    Population,
+    unclassified_account_count,
+)
+from app.reporting.scope import Access, ReportScope, platform_scope
 
 # ---------------------------------------------------------------------------
 # Shared building blocks
@@ -89,15 +95,19 @@ def _platform_mode() -> str:
     return settings.stripe_mode
 
 
-def _member_txn_query(db: Session, scope: ReportScope):
+def _member_txn_query(
+    db: Session, scope: ReportScope, population: Population = ALL,
+):
     """Settled member purchases, the basis of every revenue metric."""
     q = db.query(PaymentTransaction).filter(
         *member_purchase_filters(_platform_mode())
     )
-    return _apply_scope(q, scope)
+    return _apply_population(_apply_scope(q, scope), population)
 
 
-def _payout_query(db: Session, scope: ReportScope):
+def _payout_query(
+    db: Session, scope: ReportScope, population: Population = ALL,
+):
     """Rows that can carry a creator payout, paid or still owed.
 
     Shared by the paid and outstanding figures so the two cannot disagree
@@ -111,7 +121,93 @@ def _payout_query(db: Session, scope: ReportScope):
     q = db.query(PaymentTransaction).filter(
         *payout_obligation_filters(_platform_mode())
     )
-    return _apply_scope(q, scope)
+    return _apply_population(_apply_scope(q, scope), population)
+
+
+def _apply_population(q, population: Population):
+    """Narrow a payment query to a reporting-class population.
+
+    Two separate conditions, because a Collective's class and an
+    account's class are independent questions — a test account buying
+    from a production Collective must leave a production figure, and the
+    row is still in the ledger.
+
+    Both are written to be safe against NULL. ``payer_user_id`` and
+    ``space_id`` are ``ON DELETE SET NULL``, so a purchase whose buyer or
+    Collective was later deleted carries a NULL there. A bare ``NOT IN``
+    evaluates to NULL for such a row and would drop it — silently
+    removing a real payment from a production total because an account
+    was closed. The payer condition therefore keeps NULLs explicitly.
+
+    A NULL ``space_id`` is treated the other way, and deliberately: a
+    population defined by Collective class cannot include a row that
+    belongs to no Collective. Those rows are counted and reported rather
+    than vanishing — see ``_population_qualifiers``.
+    """
+    spaces = population.space_id_select()
+    if spaces is not None:
+        q = q.filter(PaymentTransaction.space_id.in_(spaces))
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.filter(
+            or_(
+                PaymentTransaction.payer_user_id.is_(None),
+                PaymentTransaction.payer_user_id.notin_(excluded),
+            )
+        )
+    return q
+
+
+def _population_qualifiers(
+    db: Session, scope: ReportScope, window: Window, population: Population,
+) -> dict:
+    """The population's own disclosure, beside any value computed under it.
+
+    Carries three things a reader needs and cannot infer: which
+    population this is, how many settled member purchases it set aside,
+    and — for the production view — how many of the accounts it *did*
+    count have no reporting class yet. That last figure is the
+    provisional half of the production rule, kept visible at the point
+    the number is read rather than explained once in a document.
+    """
+    quals = population.qualifiers()
+    if population.is_all:
+        return quals
+
+    unfiltered = _window(
+        _member_txn_query(db, scope), _settlement_date_column(), window,
+    )
+    total = unfiltered.with_entities(func.count(PaymentTransaction.id)).scalar() or 0
+    kept = (
+        _apply_population(unfiltered, population)
+        .with_entities(func.count(PaymentTransaction.id))
+        .scalar()
+        or 0
+    )
+    quals["rows_in_population"] = int(kept)
+    quals["rows_outside_population"] = int(total) - int(kept)
+    if total and not kept:
+        quals["population_empty_note"] = (
+            "No settled member purchases fall inside this population for "
+            "this period. The money is still in the complete ledger — "
+            "switch to All activity to see it."
+        )
+
+    if population.narrows_accounts:
+        no_space = (
+            unfiltered.filter(PaymentTransaction.space_id.is_(None))
+            .with_entities(func.count(PaymentTransaction.id))
+            .scalar()
+            or 0
+        )
+        if no_space:
+            quals["rows_without_collective"] = int(no_space)
+            quals["rows_without_collective_note"] = (
+                "Excluded because a population defined by Collective class "
+                "cannot place a payment that belongs to no Collective. "
+                "Present in the complete ledger."
+            )
+    return quals
 
 
 def _apply_scope(q, scope: ReportScope):
@@ -133,9 +229,15 @@ def _window(q, column, window: Window):
     return q
 
 
-def _settlement_basis(db: Session, scope: ReportScope, window: Window) -> dict:
+def _settlement_basis(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> dict:
     """How much of this window's money has an observed settlement date."""
-    q = _window(_member_txn_query(db, scope), _settlement_date_column(), window)
+    q = _window(
+        _member_txn_query(db, scope, population), _settlement_date_column(),
+        window,
+    )
     observed, approximate = (
         q.with_entities(
             func.count(PaymentTransaction.settled_at),
@@ -170,10 +272,20 @@ def _settlement_basis(db: Session, scope: ReportScope, window: Window) -> dict:
 def _money(key: str, expr, *, basis_note: bool = True):
     """A summed money metric over the settlement date."""
 
-    def compute(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-        q = _window(_member_txn_query(db, scope), _settlement_date_column(), window)
+    def compute(
+        db: Session, scope: ReportScope, window: Window,
+        population: Population = ALL,
+    ) -> MetricValue:
+        q = _window(
+            _member_txn_query(db, scope, population),
+            _settlement_date_column(), window,
+        )
         total = q.with_entities(func.coalesce(func.sum(expr), 0)).scalar() or 0
-        quals = _settlement_basis(db, scope, window) if basis_note else {}
+        quals = (
+            _settlement_basis(db, scope, window, population)
+            if basis_note else {}
+        )
+        quals.update(_population_qualifiers(db, scope, window, population))
         return MetricValue(key=key, value=int(total), qualifiers=quals)
 
     return compute
@@ -203,7 +315,7 @@ REGISTRY.add(Metric(
         "predating business-event recording fall back to their creation "
         "date. The result reports which basis applied."
     ),
-    dimensions=("space_id", "creator_user_id", "stripe_mode"),
+    dimensions=("space_id", "creator_user_id", "stripe_mode", POPULATION_DIMENSION),
     compute=_money("gross_collective_sales_cents", PaymentTransaction.gross_amount_cents),
 ))
 
@@ -228,7 +340,7 @@ REGISTRY.add(Metric(
         "rather than the refund's. Use the refunds metric for refund-period "
         "reporting."
     ),
-    dimensions=("space_id", "creator_user_id", "stripe_mode"),
+    dimensions=("space_id", "creator_user_id", "stripe_mode", POPULATION_DIMENSION),
     compute=_money(
         "platform_fee_revenue_cents",
         PaymentTransaction.platform_fee_cents
@@ -254,7 +366,7 @@ REGISTRY.add(Metric(
     access=Access.creator_visible,
     availability=Availability.partial,
     limitations="Earned, not paid. See 'Paid out' for cash actually transferred.",
-    dimensions=("space_id", "creator_user_id", "stripe_mode"),
+    dimensions=("space_id", "creator_user_id", "stripe_mode", POPULATION_DIMENSION),
     compute=_money(
         "creator_earnings_cents",
         func.coalesce(PaymentTransaction.net_creator_amount_cents, 0)
@@ -263,20 +375,27 @@ REGISTRY.add(Metric(
 ))
 
 
-def _processing_costs(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _processing_costs(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Stripe's fee, which Fresh Collective absorbs.
 
     ``processing_fee_cents`` is NULL until the reconciliation cron reads
     the real figure from Stripe — it is never estimated. Those rows are
     excluded and counted, so a cost total is never quietly understated.
     """
-    q = _window(_member_txn_query(db, scope), _settlement_date_column(), window)
+    q = _window(
+        _member_txn_query(db, scope, population), _settlement_date_column(),
+        window,
+    )
     total, unknown = q.with_entities(
         func.coalesce(func.sum(PaymentTransaction.processing_fee_cents), 0),
         func.count(PaymentTransaction.id)
         - func.count(PaymentTransaction.processing_fee_cents),
     ).one()
-    quals = _settlement_basis(db, scope, window)
+    quals = _settlement_basis(db, scope, window, population)
+    quals.update(_population_qualifiers(db, scope, window, population))
     quals["rows_without_a_known_fee"] = int(unknown or 0)
     if unknown:
         quals["fee_note"] = (
@@ -305,12 +424,15 @@ REGISTRY.add(Metric(
         "Fees Stripe has not yet reported are NULL and excluded. The result "
         "reports how many rows that affected."
     ),
-    dimensions=("space_id", "creator_user_id", "stripe_mode"),
+    dimensions=("space_id", "creator_user_id", "stripe_mode", POPULATION_DIMENSION),
     compute=_processing_costs,
 ))
 
 
-def _subscription_revenue(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _subscription_revenue(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Creator plan fees paid to Fresh Collective.
 
     Platform-only and never scoped to a creator: a creator's own plan fee
@@ -320,11 +442,35 @@ def _subscription_revenue(db: Session, scope: ReportScope, window: Window) -> Me
     q = db.query(PaymentTransaction).filter(
         *creator_plan_filters(_platform_mode()),
     )
+    # The account dimension only, and this is the one money metric where
+    # that is the whole story. A creator's plan fee buys their *account*
+    # a plan, not a Collective — somebody running a production Collective
+    # and a demonstration one pays once, and there is no honest way to
+    # attribute that payment to one of them. Narrowing it by Collective
+    # class would therefore either double-count the fee or drop it
+    # entirely depending on which Collective was consulted.
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.filter(
+            or_(
+                PaymentTransaction.payer_user_id.is_(None),
+                PaymentTransaction.payer_user_id.notin_(excluded),
+            )
+        )
     q = _window(q, _settlement_date_column(), window)
     total = q.with_entities(
         func.coalesce(func.sum(PaymentTransaction.gross_amount_cents), 0)
     ).scalar() or 0
-    return MetricValue(key="subscription_revenue_cents", value=int(total))
+    quals = population.qualifiers()
+    if not population.is_all:
+        quals["population_basis"] = (
+            "Narrowed by the paying creator's account class only. A plan fee "
+            "belongs to an account rather than to one Collective, so a "
+            "Collective-class filter does not apply to it."
+        )
+    return MetricValue(
+        key="subscription_revenue_cents", value=int(total), qualifiers=quals,
+    )
 
 
 REGISTRY.add(Metric(
@@ -345,11 +491,15 @@ REGISTRY.add(Metric(
         "payments predating business-event recording fall back to their "
         "creation date."
     ),
+    dimensions=(POPULATION_DIMENSION,),
     compute=_subscription_revenue,
 ))
 
 
-def _refunds(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _refunds(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Money returned, attributed to the refund date.
 
     Deliberately not netted into the sale's period: a closed month's
@@ -365,7 +515,7 @@ def _refunds(db: Session, scope: ReportScope, window: Window) -> MetricValue:
         PaymentTransaction.refunded_amount_cents > 0,
         PaymentTransaction.last_refunded_at.isnot(None),
     )
-    q = _apply_scope(q, scope)
+    q = _apply_population(_apply_scope(q, scope), population)
     q = _window(q, PaymentTransaction.last_refunded_at, window)
     total, rows = q.with_entities(
         func.coalesce(func.sum(PaymentTransaction.refunded_amount_cents), 0),
@@ -375,6 +525,7 @@ def _refunds(db: Session, scope: ReportScope, window: Window) -> MetricValue:
         key="refunds_cents",
         value=int(total or 0),
         qualifiers={
+            **population.qualifiers(),
             "transactions_refunded": int(rows or 0),
             "note": (
                 "Only the most recent refund date is stored per transaction, "
@@ -403,12 +554,15 @@ REGISTRY.add(Metric(
         "Only the latest refund date per transaction is stored, so multiple "
         "refunds in different periods collapse into the later one."
     ),
-    dimensions=("space_id", "creator_user_id"),
+    dimensions=("space_id", "creator_user_id", POPULATION_DIMENSION),
     compute=_refunds,
 ))
 
 
-def _paid_out(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _paid_out(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Cash actually transferred, on the date it was marked paid.
 
     Only ever written by a recorded payout batch. A Stripe payout into
@@ -416,7 +570,7 @@ def _paid_out(db: Session, scope: ReportScope, window: Window) -> MetricValue:
     appear here — nor should it, since money reaching the platform is not
     the same act as money reaching a creator.
     """
-    q = _payout_query(db, scope).filter(
+    q = _payout_query(db, scope, population).filter(
         PaymentTransaction.payout_status == PayoutStatus.paid.value,
         PaymentTransaction.payout_marked_at.isnot(None),
     )
@@ -455,12 +609,15 @@ REGISTRY.add(Metric(
         "Collective's own bank account is a different event and is not "
         "counted here, and Connect transfers are tracked separately."
     ),
-    dimensions=("space_id", "creator_user_id"),
+    dimensions=("space_id", "creator_user_id", POPULATION_DIMENSION),
     compute=_paid_out,
 ))
 
 
-def _outstanding_payouts(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _outstanding_payouts(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """What is still owed, as at a moment.
 
     The complement of ``paid_out_cents`` over the same population, which
@@ -506,7 +663,7 @@ def _outstanding_payouts(db: Session, scope: ReportScope, window: Window) -> Met
         0,
     )
 
-    q = _payout_query(db, scope)
+    q = _payout_query(db, scope, population)
     if as_at is None:
         q = q.filter(
             PaymentTransaction.payout_status == PayoutStatus.pending.value,
@@ -665,26 +822,39 @@ REGISTRY.add(Metric(
         "reconstructed from settlement and payout dates, so rows later put "
         "on hold or cancelled are treated by their current status."
     ),
-    dimensions=("space_id", "creator_user_id"),
+    dimensions=("space_id", "creator_user_id", POPULATION_DIMENSION),
     compute=_outstanding_payouts,
 ))
 
 
-def _contribution(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _contribution(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """What Fresh Collective keeps after directly attributable costs.
 
     **Not net profit.** It excludes every operating expense — hosting,
     software, the founder's time — so calling it profit would overstate
     the health of the business. The name says what it is.
     """
-    fee = REGISTRY.get("platform_fee_revenue_cents").evaluate(db, scope, window)
-    subs = REGISTRY.get("subscription_revenue_cents").evaluate(db, scope, window)
-    costs = REGISTRY.get("processing_costs_cents").evaluate(db, scope, window)
+    # Composed through ``evaluate`` rather than by calling the compute
+    # functions, so each component re-checks entitlement and the
+    # population guard. Passing the population down is what keeps the
+    # arithmetic internally consistent: a production contribution must
+    # be production fees plus production subscriptions minus production
+    # costs, never a mix of filtered and unfiltered terms.
+    fee = REGISTRY.get("platform_fee_revenue_cents").evaluate(
+        db, scope, window, population)
+    subs = REGISTRY.get("subscription_revenue_cents").evaluate(
+        db, scope, window, population)
+    costs = REGISTRY.get("processing_costs_cents").evaluate(
+        db, scope, window, population)
     value = int(fee.value or 0) + int(subs.value or 0) - int(costs.value or 0)
     return MetricValue(
         key="contribution_after_processing_cents",
         value=value,
         qualifiers={
+            **population.qualifiers(),
             "components": {
                 "platform_fee_revenue_cents": fee.value,
                 "subscription_revenue_cents": subs.value,
@@ -717,6 +887,7 @@ REGISTRY.add(Metric(
         "Must never be labelled profit. Operating expenses are outside the "
         "platform entirely."
     ),
+    dimensions=(POPULATION_DIMENSION,),
     compute=_contribution,
 ))
 
@@ -778,7 +949,43 @@ def _snapshot_qualifiers(db: Session, window: Window) -> dict:
     }
 
 
-def _registered_users(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _membership_population_qualifiers(
+    db: Session, window: Window, population: Population, membership_q,
+) -> dict:
+    """Snapshot provenance, plus what the population filter did.
+
+    The second half is the part worth having. Under the production view
+    an account counts unless it is explicitly test or demonstration, so
+    the figure includes everybody nobody has classified yet. That is a
+    provisional inclusion, and it is reported as a number rather than
+    described in a note: ``unclassified_accounts`` says how many of the
+    people counted here have no reporting class, so the reader can see
+    how much of the figure is still awaiting review.
+    """
+    quals = _snapshot_qualifiers(db, window)
+    quals.update(population.qualifiers())
+    if population.narrows_accounts:
+        counted = membership_q.with_entities(
+            func.distinct(SpaceMembership.user_id)
+        ).subquery()
+        unclassified = unclassified_account_count(
+            db, select(counted.c[0])
+        )
+        quals["unclassified_accounts"] = unclassified
+        if unclassified:
+            quals["unclassified_accounts_note"] = (
+                f"{unclassified} of the accounts counted here have no "
+                "reporting class yet and are included provisionally. "
+                "Classifying them can only reduce this figure, never "
+                "raise it."
+            )
+    return quals
+
+
+def _registered_users(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Accounts in existence as at the measurement date.
 
     A snapshot, not a flow: asking for "this month" asks how many
@@ -789,11 +996,21 @@ def _registered_users(db: Session, scope: ReportScope, window: Window) -> Metric
     q = db.query(func.count(User.id))
     if as_at is not None:
         q = q.filter(User.created_at <= as_at)
+    # An account count has no Collective dimension, so only the account
+    # half of the population applies. Narrowing it by Collective class
+    # would silently become "accounts that belong to a production
+    # Collective", which is a membership question, not this one.
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.filter(User.id.notin_(excluded))
     n = q.scalar() or 0
-    return MetricValue(
-        key="registered_users", value=int(n),
-        qualifiers={"as_at": _as_at_label(db, window)},
-    )
+    quals = {"as_at": _as_at_label(db, window), **population.qualifiers()}
+    if not population.is_all:
+        quals["population_basis"] = (
+            "Narrowed by account class only — an account does not belong "
+            "to a Collective, so a Collective-class filter does not apply."
+        )
+    return MetricValue(key="registered_users", value=int(n), qualifiers=quals)
 
 
 REGISTRY.add(Metric(
@@ -810,21 +1027,35 @@ REGISTRY.add(Metric(
     access=Access.platform_only,
     availability=Availability.full,
     personal_data=True,
+    dimensions=(POPULATION_DIMENSION,),
     compute=_registered_users,
 ))
 
 
-def _registered_creators(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _registered_creators(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Creator accounts in existence as at the measurement date."""
     as_at = _as_at(window)
     q = db.query(func.count(User.id)).filter(User.role == "creator")
     if as_at is not None:
         q = q.filter(User.created_at <= as_at)
+    # An account count has no Collective dimension, so only the account
+    # half of the population applies. Narrowing it by Collective class
+    # would silently become "accounts that belong to a production
+    # Collective", which is a membership question, not this one.
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.filter(User.id.notin_(excluded))
     n = q.scalar() or 0
-    return MetricValue(
-        key="registered_creators", value=int(n),
-        qualifiers={"as_at": _as_at_label(db, window)},
-    )
+    quals = {"as_at": _as_at_label(db, window), **population.qualifiers()}
+    if not population.is_all:
+        quals["population_basis"] = (
+            "Narrowed by account class only — an account does not belong "
+            "to a Collective, so a Collective-class filter does not apply."
+        )
+    return MetricValue(key="registered_creators", value=int(n), qualifiers=quals)
 
 
 REGISTRY.add(Metric(
@@ -838,11 +1069,14 @@ REGISTRY.add(Metric(
     access=Access.platform_only,
     availability=Availability.full,
     personal_data=True,
+    dimensions=(POPULATION_DIMENSION,),
     compute=_registered_creators,
 ))
 
 
-def _membership_query(db: Session, scope: ReportScope, *, as_at=None):
+def _membership_query(
+    db: Session, scope: ReportScope, *, as_at=None, population: Population = ALL,
+):
     """Memberships active at a moment.
 
     With ``as_at`` this reconstructs state from ``joined_at`` and
@@ -875,10 +1109,26 @@ def _membership_query(db: Session, scope: ReportScope, *, as_at=None):
         if not scope.space_ids:
             return q.filter(False)
         q = q.filter(SpaceMembership.space_id.in_(scope.space_ids))
+    # The two independent dimensions. Both columns are NOT NULL here, so
+    # a plain IN / NOT IN is safe — unlike the payment equivalent, where
+    # a deleted account leaves a NULL that must not drop the row.
+    spaces = population.space_id_select()
+    if spaces is not None:
+        q = q.filter(SpaceMembership.space_id.in_(spaces))
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        # The case this exists for: a test account holding a membership
+        # in a genuine production Collective. The Collective is in the
+        # population and the person is not a member of anything real, so
+        # the space filter alone would count them.
+        q = q.filter(SpaceMembership.user_id.notin_(excluded))
     return q
 
 
-def _unique_members(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _unique_members(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Distinct people holding a membership, as at the measurement date.
 
     Two corrections in one metric. ``/platform/overview`` derived
@@ -890,14 +1140,14 @@ def _unique_members(db: Session, scope: ReportScope, window: Window) -> MetricVa
     many Collectives they belong to, which is what keeps a creator's
     multi-Collective overview from triple-counting a shared member.
     """
+    q = _membership_query(db, scope, as_at=_as_at(window), population=population)
     n = (
-        _membership_query(db, scope, as_at=_as_at(window))
-        .with_entities(func.count(func.distinct(SpaceMembership.user_id)))
+        q.with_entities(func.count(func.distinct(SpaceMembership.user_id)))
         .scalar() or 0
     )
     return MetricValue(
         key="unique_members", value=int(n),
-        qualifiers=_snapshot_qualifiers(db, window),
+        qualifiers=_membership_population_qualifiers(db, window, population, q),
     )
 
 
@@ -918,27 +1168,28 @@ REGISTRY.add(Metric(
         "Non-additive. A monthly figure must be recomputed over the month, "
         "never summed from daily figures."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     personal_data=True,
     compute=_unique_members,
 ))
 
 
-def _total_memberships(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+def _total_memberships(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
     """Memberships in force as at the measurement date. A snapshot."""
-    n = (
-        _membership_query(db, scope, as_at=_as_at(window))
-        .with_entities(func.count(SpaceMembership.id))
-        .scalar() or 0
-    )
+    q = _membership_query(db, scope, as_at=_as_at(window), population=population)
+    n = q.with_entities(func.count(SpaceMembership.id)).scalar() or 0
     return MetricValue(
         key="total_memberships", value=int(n),
-        qualifiers=_snapshot_qualifiers(db, window),
+        qualifiers=_membership_population_qualifiers(db, window, population, q),
     )
 
 
 def _memberships_started(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
     """Memberships that began in the window. The flow beside the snapshot.
 
@@ -952,12 +1203,21 @@ def _memberships_started(
             q = q.filter(False)
         else:
             q = q.filter(SpaceMembership.space_id.in_(scope.space_ids))
+    spaces = population.space_id_select()
+    if spaces is not None:
+        q = q.filter(SpaceMembership.space_id.in_(spaces))
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.filter(SpaceMembership.user_id.notin_(excluded))
     if window.starts_at is not None:
         q = q.filter(SpaceMembership.joined_at >= window.starts_at)
     if window.ends_at is not None:
         q = q.filter(SpaceMembership.joined_at < window.ends_at)
     n = q.with_entities(func.count(SpaceMembership.id)).scalar() or 0
-    return MetricValue(key="memberships_started", value=int(n))
+    return MetricValue(
+        key="memberships_started", value=int(n),
+        qualifiers=population.qualifiers(),
+    )
 
 
 REGISTRY.add(Metric(
@@ -978,7 +1238,7 @@ REGISTRY.add(Metric(
         "Reconstructed from membership rows, so a date before "
         "business-event recording may overstate membership."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_total_memberships,
 ))
 
@@ -996,47 +1256,164 @@ REGISTRY.add(Metric(
     date_basis=DateBasis.membership_joined,
     access=Access.creator_visible,
     availability=Availability.full,
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_memberships_started,
 ))
 
 
-def _multi_collective_members(
-    db: Session, scope: ReportScope, window: Window,
-) -> MetricValue:
-    """People belonging to more than one Collective.
+def _overlap_counts(
+    db: Session, scope: ReportScope, window: Window, population: Population,
+) -> dict[str, int]:
+    """How many Collectives each visible member belongs to, as at a date.
 
-    Always computed across the whole platform, even for a creator scope:
-    the question is whether *this* member also belongs elsewhere, and
-    restricting the count to the creator's own Collectives would answer a
-    different one. Only the count is returned — never which other
-    Collectives, which is not a creator's business.
+    Reconstructed from ``joined_at`` / ``removed_at``, the same basis
+    ``unique_members`` uses — so the buckets below and the member count
+    above them are derived from one set of rows and cannot disagree.
+    Previously this family read ``status == 'active'`` and ignored the
+    window entirely, which made every past date silently report today.
+
+    Two populations are in play and they are not the same one:
+
+    * the **cohort** — members the asking scope may be told about, which
+      for a creator is the members of their own Collectives;
+    * the **count** — how many Collectives each of those people belongs
+      to, measured across the whole population rather than across the
+      creator's own Collectives. "Does this member also belong
+      elsewhere" is the question worth answering, and restricting the
+      count to the creator's own would answer a different one.
+
+    Within the *population*, though, not platform-wide: under the
+    production view a person in one production Collective and one test
+    Collective belongs to one production Collective, and reporting them
+    as two would contradict the label on the chart.
+
+    Every member lands in exactly one bucket, so the three sum to
+    ``unique_members`` for the same date and population.
     """
-    inner = (
-        select(SpaceMembership.user_id)
-        .where(SpaceMembership.status == SpaceMembershipStatus.active)
+    as_at = _as_at(window)
+    counted = _membership_query(
+        db, platform_scope(), as_at=as_at, population=population,
+    )
+    per_user = (
+        counted.with_entities(
+            SpaceMembership.user_id.label("uid"),
+            func.count(func.distinct(SpaceMembership.space_id)).label("n"),
+        )
         .group_by(SpaceMembership.user_id)
-        .having(func.count(func.distinct(SpaceMembership.space_id)) > 1)
         .subquery()
     )
-    q = db.query(func.count()).select_from(inner)
+
+    q = db.query(per_user.c.n, func.count()).group_by(per_user.c.n)
     if not scope.is_platform:
         if not scope.space_ids:
-            return MetricValue(key="multi_collective_members", value=0)
-        mine = (
-            select(SpaceMembership.user_id)
-            .where(
-                SpaceMembership.status == SpaceMembershipStatus.active,
-                SpaceMembership.space_id.in_(scope.space_ids),
-            )
+            return {"one": 0, "two": 0, "three_plus": 0, "multi": 0}
+        cohort = (
+            _membership_query(db, scope, as_at=as_at, population=population)
+            .with_entities(func.distinct(SpaceMembership.user_id))
             .subquery()
         )
-        q = (
-            db.query(func.count(func.distinct(inner.c.user_id)))
-            .select_from(inner)
-            .join(mine, mine.c.user_id == inner.c.user_id)
+        q = q.filter(per_user.c.uid.in_(select(cohort.c[0])))
+
+    tally = {int(n): int(c) for n, c in q.all()}
+    return {
+        "one": tally.get(1, 0),
+        "two": tally.get(2, 0),
+        "three_plus": sum(c for n, c in tally.items() if n >= 3),
+        "multi": sum(c for n, c in tally.items() if n >= 2),
+    }
+
+
+def _multi_collective_members(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """People belonging to more than one Collective, as at a date."""
+    counts = _overlap_counts(db, scope, window, population)
+    return MetricValue(
+        key="multi_collective_members",
+        value=counts["multi"],
+        qualifiers={
+            **_snapshot_qualifiers(db, window),
+            **population.qualifiers(),
+            "buckets": {
+                "one": counts["one"],
+                "two": counts["two"],
+                "three_plus": counts["three_plus"],
+            },
+        },
+    )
+
+
+def _overlap_bucket(key: str, bucket: str):
+    """One mutually exclusive overlap bucket."""
+
+    def compute(
+        db: Session, scope: ReportScope, window: Window,
+        population: Population = ALL,
+    ) -> MetricValue:
+        counts = _overlap_counts(db, scope, window, population)
+        return MetricValue(
+            key=key,
+            value=counts[bucket],
+            qualifiers={
+                **_snapshot_qualifiers(db, window),
+                **population.qualifiers(),
+                "mutually_exclusive": (
+                    "Each member appears in exactly one of the three "
+                    "buckets, so they sum to unique members for the same "
+                    "date and population."
+                ),
+            },
         )
-    return MetricValue(key="multi_collective_members", value=int(q.scalar() or 0))
+
+    return compute
+
+
+_OVERLAP_BUCKETS = (
+    (
+        "members_in_one_collective", "one", "Members in one Collective",
+        "People holding an active membership in exactly one Collective.",
+    ),
+    (
+        "members_in_two_collectives", "two", "Members in two Collectives",
+        "People holding active memberships in exactly two Collectives.",
+    ),
+    (
+        "members_in_three_plus_collectives", "three_plus",
+        "Members in three or more Collectives",
+        "People holding active memberships in three or more Collectives.",
+    ),
+)
+
+for _key, _bucket, _name, _definition in _OVERLAP_BUCKETS:
+    REGISTRY.add(Metric(
+        key=_key,
+        display_name=_name,
+        definition=_definition,
+        source_of_truth=(
+            "space_memberships.joined_at / removed_at, reconstructed as-at"
+        ),
+        grain=Grain.snapshot,
+        # A snapshot, not a distinct count. The three buckets partition
+        # the members of a single date, so the value for a week is the
+        # latest day in it — never the sum, which would count a person
+        # once per day they were a member.
+        aggregation=Aggregation.snapshot,
+        date_basis=DateBasis.none,
+        access=Access.creator_visible,
+        availability=Availability.partial,
+        limitations=(
+            "Reconstructed from membership rows rather than recorded at the "
+            "time. A membership removed before removal dates were stored is "
+            "invisible to this, so a date well before business-event "
+            "recording began may place a member in too high a bucket. The "
+            "three buckets always partition the same members, so they sum "
+            "to unique members for that date."
+        ),
+        dimensions=("space_id", POPULATION_DIMENSION),
+        personal_data=True,
+        compute=_overlap_bucket(_key, _bucket),
+    ))
 
 
 REGISTRY.add(Metric(
@@ -1047,13 +1424,24 @@ REGISTRY.add(Metric(
         "creator, this counts their own members who also belong elsewhere — "
         "the count only, never which Collectives."
     ),
-    source_of_truth="space_memberships where status = active",
+    source_of_truth=(
+        "space_memberships.joined_at / removed_at, reconstructed as-at"
+    ),
     grain=Grain.snapshot,
-    aggregation=Aggregation.distinct_count,
+    # Was ``distinct_count``, which kept it out of the stored dailies
+    # and so out of any trend line. It is a snapshot of one date — take
+    # the latest in a week, never the sum — and on that footing it can
+    # be stored and charted like the member count beside it.
+    aggregation=Aggregation.snapshot,
     date_basis=DateBasis.none,
     access=Access.creator_visible,
-    availability=Availability.full,
-    limitations="Non-additive across periods or Collectives.",
+    availability=Availability.partial,
+    limitations=(
+        "A snapshot — take the latest, never sum across periods. "
+        "Reconstructed from membership rows, so a date before removal "
+        "dates were stored may overstate overlap."
+    ),
+    dimensions=("space_id", POPULATION_DIMENSION),
     personal_data=True,
     compute=_multi_collective_members,
 ))
@@ -1061,9 +1449,10 @@ REGISTRY.add(Metric(
 
 def _memberships_per_member(
     db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
 ) -> MetricValue:
-    members = _unique_members(db, scope, window).value or 0
-    memberships = _total_memberships(db, scope, window).value or 0
+    members = _unique_members(db, scope, window, population).value or 0
+    memberships = _total_memberships(db, scope, window, population).value or 0
     if not members:
         return MetricValue(
             key="memberships_per_member",
@@ -1073,7 +1462,11 @@ def _memberships_per_member(
     return MetricValue(
         key="memberships_per_member",
         value=round(memberships / members, 2),
-        qualifiers={"unique_members": members, "total_memberships": memberships},
+        qualifiers={
+            "unique_members": members,
+            "total_memberships": memberships,
+            **population.qualifiers(),
+        },
     )
 
 
@@ -1094,6 +1487,7 @@ REGISTRY.add(Metric(
     # of anything, and reading it as a percentage was a real misreport.
     unit=Unit.rate,
     limitations="A ratio — recompute it, never average two periods' values.",
+    dimensions=(POPULATION_DIMENSION,),
     compute=_memberships_per_member,
 ))
 
@@ -1160,7 +1554,10 @@ def _collectives(status: str | None, key: str):
     Asked about a day it cannot have seen, this returns unavailable, and
     the daily series carries a gap the chart can show as a gap.
     """
-    def compute(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+    def compute(
+        db: Session, scope: ReportScope, window: Window,
+        population: Population = ALL,
+    ) -> MetricValue:
         provenance, unavailable = _observation_quality(window)
         if unavailable is not None:
             return MetricValue(
@@ -1173,6 +1570,9 @@ def _collectives(status: str | None, key: str):
         q = db.query(func.count(Space.id))
         if status is not None:
             q = q.filter(Space.status == status)
+        spaces = population.space_id_select()
+        if spaces is not None:
+            q = q.filter(Space.id.in_(spaces))
         if not scope.is_platform:
             if not scope.space_ids:
                 return MetricValue(
@@ -1187,6 +1587,7 @@ def _collectives(status: str | None, key: str):
                 "provenance": provenance,
                 "observation_only": True,
                 "as_at": _as_at_label(db, window),
+                **population.qualifiers(),
             },
         )
 
@@ -1221,6 +1622,6 @@ for _status, _key, _name in (
             "nightly recording began, and earlier days are a gap rather "
             "than a zero."
         ),
-        dimensions=("space_id",),
+        dimensions=("space_id", POPULATION_DIMENSION),
         compute=_collectives(_status, _key),
     ))
