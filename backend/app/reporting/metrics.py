@@ -32,7 +32,7 @@ instead of blending two kinds of knowledge silently.
 
 from __future__ import annotations
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.payment import PaymentTransaction, PayoutStatus
@@ -49,6 +49,7 @@ from app.reporting.registry import (
     Unit,
     Window,
 )
+from app.reporting.classification import ALL_CLASSES, UNCLASSIFIED
 from app.reporting.dates import settlement_date
 from app.reporting.eligibility import (
     creator_plan_filters,
@@ -457,7 +458,7 @@ REGISTRY.add(Metric(
 
 
 def _outstanding_payouts(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-    """What is still owed. A liability, measured now, not over a period.
+    """What is still owed, as at a moment.
 
     The complement of ``paid_out_cents`` over the same population, which
     is why both run through ``_payout_query``. Before that was true this
@@ -470,20 +471,91 @@ def _outstanding_payouts(db: Session, scope: ReportScope, window: Window) -> Met
     that Fresh Collective's manual payout queue cannot claim money Stripe
     has already sent.
 
+    Two modes, because a liability has a date
+    ----------------------------------------
+    With no window — the live dashboard figure — the answer is read
+    straight off ``payout_status``, which is what the column is for.
+
+    With a window, the balance is reconstructed as at ``ends_at``, and
+    that is not the same query: a row marked paid last week was *owed*
+    the week before, so a historical snapshot has to consider rows that
+    are no longer pending and decide by date. Without this the nightly
+    job stored today's balance under every reporting date and the trend
+    line was flat at the current value — a liability dated before the
+    sale that created it.
+
     The ownership split is reporting only. It does not change the total
     and settles nothing — see ``_ownership_split``.
     """
-    q = _payout_query(db, scope).filter(
-        PaymentTransaction.payout_status == PayoutStatus.pending.value,
-    )
+    as_at = _as_at(window)
     retained = func.coalesce(
         PaymentTransaction.net_creator_amount_cents, 0
-    ) - func.coalesce(PaymentTransaction.refunded_creator_amount_cents, 0)
+    ) - func.coalesce(
+        case(
+            (
+                # A refund reverses the obligation from the day it
+                # happened, not retroactively to the sale.
+                _refund_known_by(as_at),
+                PaymentTransaction.refunded_creator_amount_cents,
+            ),
+            else_=0,
+        ),
+        0,
+    )
+
+    q = _payout_query(db, scope)
+    if as_at is None:
+        q = q.filter(
+            PaymentTransaction.payout_status == PayoutStatus.pending.value,
+        )
+        basis = "current payout status"
+        caveat = None
+    else:
+        q = q.filter(
+            # Settled by then, so the money existed to be owed.
+            _settlement_date_column() < as_at,
+            # Not yet paid by then. A row with no payout date has never
+            # been paid, whatever its status says today.
+            PaymentTransaction.payout_status.in_(
+                [PayoutStatus.pending.value, PayoutStatus.paid.value]
+            ),
+            or_(
+                PaymentTransaction.payout_marked_at.is_(None),
+                PaymentTransaction.payout_marked_at >= as_at,
+            ),
+        )
+        basis = "reconstructed as at the end of the period"
+        caveat = (
+            "Rows later put on hold or cancelled carry no transition date, "
+            "so a historical balance treats them by their current status."
+        )
+
     total = q.with_entities(func.coalesce(func.sum(retained), 0)).scalar() or 0
+    quals = _ownership_split(q, retained)
+    quals["as_at"] = _as_at_label(db, window)
+    quals["basis"] = basis
+    if caveat:
+        quals["caveat"] = caveat
     return MetricValue(
         key="outstanding_payouts_cents",
         value=int(total),
-        qualifiers=_ownership_split(q, retained),
+        qualifiers=quals,
+    )
+
+
+def _refund_known_by(as_at):
+    """Whether a refund had happened by ``as_at``.
+
+    ``None`` means now, where every recorded refund counts. Only the
+    latest refund date per transaction is stored, so a row refunded twice
+    across the boundary is treated by the later date — stated in the
+    metric's limitations rather than papered over.
+    """
+    if as_at is None:
+        return PaymentTransaction.refunded_creator_amount_cents.isnot(None)
+    return and_(
+        PaymentTransaction.last_refunded_at.isnot(None),
+        PaymentTransaction.last_refunded_at < as_at,
     )
 
 
@@ -527,9 +599,11 @@ def _ownership_split(q, retained) -> dict:
         )
 
     is_founder = PaymentTransaction.space_id.in_(founder_space_ids)
+    # The vocabulary comes from ``app.reporting.classification``; a
+    # literal tuple here is how the member-type set drifted.
     classified = {
         name: select(Space.id).where(Space.reporting_class == name)
-        for name in ("production", "internal_operations", "demonstration")
+        for name in ALL_CLASSES
     }
     unclassified = select(Space.id).where(Space.reporting_class.is_(None))
 
@@ -542,7 +616,7 @@ def _ownership_split(q, retained) -> dict:
         ),
     ).one()
 
-    names = (*classified.keys(), "unclassified")
+    names = (*classified.keys(), UNCLASSIFIED)
     return {
         "owed_to_external_creators_cents": int(external or 0),
         "owed_to_founder_operated_collectives_cents": int(founder or 0),
@@ -572,7 +646,8 @@ REGISTRY.add(Metric(
     ),
     source_of_truth=(
         "payment_transactions where payout_status = pending, over settled "
-        "member purchases with a creator, in the platform's Stripe mode"
+        "member purchases with a creator, in the platform's Stripe mode; "
+        "a past date is reconstructed from settlement and payout dates"
     ),
     grain=Grain.snapshot,
     aggregation=Aggregation.snapshot,
@@ -583,7 +658,9 @@ REGISTRY.add(Metric(
         "Stripe Connect earnings are not here — those reach the creator "
         "through Stripe and are tracked by their transfer status. Part of "
         "this total may be owed to Collectives the platform owner operates; "
-        "the breakdown beside it separates the two."
+        "the breakdown beside it separates the two. A past day's balance is "
+        "reconstructed from settlement and payout dates, so rows later put "
+        "on hold or cancelled are treated by their current status."
     ),
     dimensions=("space_id", "creator_user_id"),
     compute=_outstanding_payouts,

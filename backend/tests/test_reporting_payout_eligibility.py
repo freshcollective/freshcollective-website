@@ -413,6 +413,128 @@ class TestPaidAndOutstandingAreComplements:
         assert val(db, "paid_out_cents").value == 9000
 
 
+class TestAHistoricalLiabilityIsReconstructed:
+    """A liability has a date, and a daily series needs that date.
+
+    The nightly job stores one snapshot row per reporting day. Before
+    this, the snapshot ignored the day entirely, so every historical row
+    recorded *today's* balance — a trend line flat at the current value,
+    and a liability dated before the sale that created it. The first
+    nightly run would have written that into stored history.
+    """
+
+    def _sold_on(self, db, cast, day, **over):
+        return _txn(
+            db, **cast, created_at=day, settled_at=day, **over,
+        )
+
+    def test_nothing_is_owed_before_the_sale(self, db, cast):
+        self._sold_on(db, cast, datetime(2026, 10, 20))
+        before = Window(
+            starts_at=datetime(2026, 9, 30), ends_at=datetime(2026, 10, 1)
+        )
+        assert val(db, "outstanding_payouts_cents", before).value == 0
+
+    def test_it_is_owed_from_the_day_it_settled(self, db, cast):
+        self._sold_on(db, cast, datetime(2026, 10, 20))
+        after = Window(
+            starts_at=datetime(2026, 10, 20), ends_at=datetime(2026, 10, 21)
+        )
+        assert val(db, "outstanding_payouts_cents", after).value == 9000
+
+    def test_a_row_paid_later_was_still_owed_earlier(self, db, cast):
+        """The case a status-only query cannot answer.
+
+        Settled 1 October, paid 20 October. On 10 October it was owed,
+        and ``payout_status`` today says 'paid' — so a historical balance
+        has to consider rows that are no longer pending.
+        """
+        self._sold_on(
+            db, cast, datetime(2026, 10, 1),
+            payout_status=PayoutStatus.paid,
+            payout_marked_at=datetime(2026, 10, 20),
+        )
+        mid = Window(
+            starts_at=datetime(2026, 10, 10), ends_at=datetime(2026, 10, 11)
+        )
+        later = Window(
+            starts_at=datetime(2026, 10, 25), ends_at=datetime(2026, 10, 26)
+        )
+        assert val(db, "outstanding_payouts_cents", mid).value == 9000
+        assert val(db, "outstanding_payouts_cents", later).value == 0
+
+    def test_a_refund_reverses_the_obligation_from_its_own_day(self, db, cast):
+        """Not retroactively to the sale. Before the refund the full
+        amount was genuinely owed, and a closed day's figure must not
+        move because of something that happened afterwards."""
+        self._sold_on(
+            db, cast, datetime(2026, 10, 1),
+            status=PaymentTransactionStatus.partially_refunded,
+            refunded_amount_cents=5000,
+            refunded_creator_amount_cents=4500,
+            refunded_platform_fee_cents=500,
+            last_refunded_at=datetime(2026, 10, 20),
+        )
+        before = Window(
+            starts_at=datetime(2026, 10, 10), ends_at=datetime(2026, 10, 11)
+        )
+        after = Window(
+            starts_at=datetime(2026, 10, 25), ends_at=datetime(2026, 10, 26)
+        )
+        assert val(db, "outstanding_payouts_cents", before).value == 9000
+        assert val(db, "outstanding_payouts_cents", after).value == 4500
+
+    def test_two_days_can_differ(self, db, cast):
+        """The whole point. A flat series was the symptom."""
+        self._sold_on(db, cast, datetime(2026, 10, 5))
+        self._sold_on(db, cast, datetime(2026, 10, 15))
+        day = lambda d: Window(
+            starts_at=datetime(2026, 10, d), ends_at=datetime(2026, 10, d + 1)
+        )
+        assert val(db, "outstanding_payouts_cents", day(1)).value == 0
+        assert val(db, "outstanding_payouts_cents", day(10)).value == 9000
+        assert val(db, "outstanding_payouts_cents", day(20)).value == 18000
+
+    def test_the_live_figure_is_unchanged_by_any_of_this(self, db, cast):
+        """With no window the answer is read straight off payout_status,
+        exactly as before. This is the figure the dashboard shows and the
+        one the October reconciliation agreed with, so it must not move."""
+        _txn(db, **cast)
+        m = val(db, "outstanding_payouts_cents")
+        assert m.value == 9000
+        assert m.qualifiers["as_at"] == "now"
+        assert m.qualifiers["basis"] == "current payout status"
+
+    def test_a_historical_figure_declares_that_it_was_reconstructed(
+        self, db, cast
+    ):
+        self._sold_on(db, cast, datetime(2026, 10, 1))
+        w = Window(starts_at=datetime(2026, 10, 10), ends_at=datetime(2026, 10, 11))
+        m = val(db, "outstanding_payouts_cents", w)
+        assert m.qualifiers["basis"].startswith("reconstructed")
+        assert "hold" in m.qualifiers["caveat"]
+
+    def test_the_ownership_split_survives_reconstruction(self, db, make_user, make_space):
+        founder = make_user(role="admin")
+        _txn(
+            db,
+            space=make_space(creator=founder),
+            creator=founder,
+            payer=make_user(),
+            created_at=datetime(2026, 10, 1),
+            settled_at=datetime(2026, 10, 1),
+        )
+        w = Window(starts_at=datetime(2026, 10, 10), ends_at=datetime(2026, 10, 11))
+        m = val(db, "outstanding_payouts_cents", w)
+        assert m.value == 9000
+        assert m.qualifiers["owed_to_founder_operated_collectives_cents"] == 9000
+        assert (
+            m.qualifiers["owed_to_external_creators_cents"]
+            + m.qualifiers["owed_to_founder_operated_collectives_cents"]
+            == m.value
+        )
+
+
 # ---------------------------------------------------------------------------
 # Founder-operated Collectives
 # ---------------------------------------------------------------------------
