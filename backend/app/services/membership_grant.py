@@ -107,6 +107,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
+from app.services import business_events
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +213,7 @@ def ensure_membership_for_purchase(
     )
 
     if existing is None:
-        db.add(SpaceMembership(
+        membership = SpaceMembership(
             id=str(uuid4()),
             space_id=space_id,
             user_id=user_id,
@@ -220,7 +221,14 @@ def ensure_membership_for_purchase(
             status=SpaceMembershipStatus.active,
             source=source,
             joined_at=now,
-        ))
+        )
+        db.add(membership)
+        # BI-1: recorded in this transaction, so the membership and its
+        # history commit together or not at all.
+        business_events.membership_started(
+            db, membership, occurred_at=now,
+            creator_user_id=space.creator_id if space is not None else None,
+        )
         logger.info(
             "membership_grant: joined user=%s space=%s source=%s",
             user_id, space_id, source,
@@ -277,7 +285,7 @@ def ensure_membership_for_purchase(
             ),
         )
 
-    reactivate(existing, now=now)
+    reactivate(db, existing, now=now)
     logger.info(
         "membership_grant: reactivated user=%s space=%s original_source=%s",
         user_id, space_id, existing.source,
@@ -285,7 +293,7 @@ def ensure_membership_for_purchase(
     return MembershipOutcome(reactivated=True)
 
 
-def reactivate(membership: SpaceMembership, *, now: datetime) -> None:
+def reactivate(db: Session, membership: SpaceMembership, *, now: datetime) -> None:
     """Bring a ``removed`` membership back, in place.
 
     Reactivation rather than a fresh row, and not only because
@@ -339,3 +347,11 @@ def reactivate(membership: SpaceMembership, *, now: datetime) -> None:
     # unresolved instalment plan does not stop existing because the
     # person came back — the money question is still open, and only the
     # person resolving it should close it.
+
+    # BI-1. This is the transition the row cannot keep: the resets above
+    # have just erased the departure, so without this event a member who
+    # left and came back reads as never having left. Recorded as
+    # ``reactivated`` rather than ``started`` so a rejoin is never
+    # counted as a new member — a membership period begins with either
+    # event, and only one of them is a first join.
+    business_events.membership_reactivated(db, membership, occurred_at=now)

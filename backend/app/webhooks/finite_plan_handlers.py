@@ -75,6 +75,7 @@ from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
 )
+from app.services import business_events
 
 
 logger = logging.getLogger(__name__)
@@ -1149,6 +1150,9 @@ def _do_invoice_succeeded(
         updated_at=now,
     )
     db.add(txn)
+    business_events.mark_settled(
+        db, txn, occurred_at=now, settlement_path="instalment_first",
+    )
     db.flush()
 
     # This instalment's payment has positively succeeded, so a Connect row now

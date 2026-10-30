@@ -147,6 +147,7 @@ from app.services.purchase_fulfilment import (
 #: that owns the fact, rather than a string literal that could drift
 #: from it.
 from app.services import offering_commerce as _offering_commerce
+from app.services import business_events
 
 
 # ---------------------------------------------------------------------------
@@ -1624,6 +1625,12 @@ def manual_grant_payment_option(
         updated_at=now,
     )
     db.add(txn)
+    # BI-1 — an offline payment a creator recorded by hand. Settled when
+    # it was entered, which is the only date available; ``stripe_mode``
+    # already keeps it out of live financial reporting.
+    business_events.mark_settled(
+        db, txn, occurred_at=now, settlement_path="manual_payment_option",
+    )
     db.flush()
 
     try:

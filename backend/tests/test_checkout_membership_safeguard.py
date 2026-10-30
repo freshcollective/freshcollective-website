@@ -279,7 +279,7 @@ class TestBuyingMembership:
         with pytest.raises(HTTPException):
             _check(db, buyer, opt, paid_join_space)
 
-        membership_grant.reactivate(row, now=datetime.utcnow())
+        membership_grant.reactivate(db, row, now=datetime.utcnow())
         db.flush()
         assert _check(db, buyer, opt, paid_join_space) is None
 

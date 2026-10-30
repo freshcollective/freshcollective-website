@@ -98,6 +98,7 @@ from app.models.creator_billing import (
 )
 from app.models.platform import Space
 from app.services.creator_paid_content import creator_has_commercial_content
+from app.services import business_events
 
 logger = logging.getLogger(__name__)
 
@@ -413,6 +414,11 @@ def expire_grant(sub: CreatorSubscription, db: Session, now: datetime) -> None:
     sub.revoked_at = now
     # NULL actor is the signal that this was the system, not an admin.
     sub.revoked_by_user_id = None
+    # BI-1 — the system ended it, so no actor. Same reasoning as the
+    # NULL above.
+    business_events.subscription_cancelled(
+        db, sub, occurred_at=now, reason="grant_expired", initiated_by="system",
+    )
     sub.revoked_reason = (
         f"Complimentary grant reached its end date ({sub.ends_at:%Y-%m-%d}). "
         "Automatically returned to the Community plan."

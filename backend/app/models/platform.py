@@ -407,6 +407,18 @@ class Space(Base):
     frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     frozen_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     freeze_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ---- BI-1 (migration 171) --------------------------------------------
+    # Write-once: the first time this Collective became active.
+    # ``status`` is mutable with nothing else recording the transition,
+    # so without this there is no publication date to report.
+    first_published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    # Reporting classification — production, internal_operations or
+    # demonstration. NULL until an operator reviews the inventory and
+    # assigns one; nothing is ever inferred from a Collective's name.
+    reporting_class: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
     frozen_by_action_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("community_care_actions.id", ondelete="SET NULL"),
         nullable=True,
@@ -430,6 +442,11 @@ class Space(Base):
         CheckConstraint(
             "connection_style IN ('online', 'in_person', 'both')",
             name="spaces_connection_style_check",
+        ),
+        CheckConstraint(
+            "reporting_class IS NULL OR reporting_class IN "
+            "('production', 'internal_operations', 'demonstration')",
+            name="ck_spaces_reporting_class",
         ),
     )
 

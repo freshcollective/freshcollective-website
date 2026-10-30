@@ -51,6 +51,7 @@ from app.models.refund_operation import (
     RefundOperationTerminalStatus,
 )
 from app.models.user import User
+from app.services import business_events
 
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,26 @@ def create_payout_batch(
         },
     )
 
+    # BI-1 — cash actually leaving, as distinct from what a creator has
+    # earned. The update above is bulk SQL and never loads a row, so this
+    # is the one producer that cannot read its own subject and takes
+    # plain values instead; the amounts come from the batch snapshot that
+    # was just written. Keyed on the batch, so re-recording the same
+    # batch adds nothing.
+    for txn_id in included_ids:
+        retained, _refunded = per_txn_retained[txn_id]
+        business_events.payout_paid(
+            db,
+            transaction_id=txn_id,
+            occurred_at=paid_at,
+            amount_cents=retained,
+            currency=currency,
+            batch_id=batch_id,
+            reference=batch.reference,
+            creator_user_id=creator.id,
+            space_id=None,
+        )
+
     db.commit()
 
     logger.info(
@@ -314,6 +335,20 @@ def cancel_payout_batch(
                 ),
                 {"ids": reverted_ids},
             )
+            # BI-1 — the payout is un-recorded and the amount returns to
+            # outstanding. Without this the history would show cash
+            # leaving that never did.
+            for txn_id in reverted_ids:
+                business_events.payout_reversed(
+                    db,
+                    transaction_id=txn_id,
+                    occurred_at=now,
+                    amount_cents=None,
+                    currency=batch.currency,
+                    batch_id=batch.id,
+                    creator_user_id=batch.creator_user_id,
+                    space_id=None,
+                )
 
     db.commit()
     logger.info(

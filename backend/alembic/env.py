@@ -34,6 +34,7 @@ import app.models.creator_payout_batch  # noqa: F401 — registers CreatorPayout
 import app.models.connections       # noqa: F401 — registers MemberHello (Ways to Connect 5b, migration 147)
 import app.models.peer_messages     # noqa: F401 — registers PeerThread + PeerMessage (Ways to Connect 5c, migration 148)
 import app.models.member_blocks     # noqa: F401 — registers MemberBlock (Ways to Connect 5d, migration 149)
+import app.models.business_event    # noqa: F401 — registers BusinessEvent (BI-1, migration 171)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config

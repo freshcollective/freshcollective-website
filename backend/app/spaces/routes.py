@@ -1688,7 +1688,7 @@ def join_space(
             # the same requirements as joining, which is what was
             # promised.
             guard_member_allowance(space, db)
-            membership_grant.reactivate(existing, now=datetime.utcnow())
+            membership_grant.reactivate(db, existing, now=datetime.utcnow())
             db.commit()
             # No second welcome: the Collective's welcome is a
             # first-arrival moment, and ``_emit_collective_welcome``
@@ -1714,14 +1714,19 @@ def join_space(
     # member is never turned away from a Collective they are already in.
     guard_member_allowance(space, db)
 
-    db.add(SpaceMembership(
+    _bi_membership = SpaceMembership(
         id=str(uuid.uuid4()),
         user_id=current_user.id,
         space_id=space.id,
         role=SpaceRole.learner,
         status=SpaceMembershipStatus.active,
         source="joined",
-    ))
+    )
+    db.add(_bi_membership)
+    business_events.membership_started(
+        db, _bi_membership, occurred_at=datetime.utcnow(),
+        actor_user_id=current_user.id, creator_user_id=space.creator_id,
+    )
     # First-time membership → the Collective's welcome. Emitted inside
     # this transaction, routed after the commit below. The
     # already-a-member return above means a repeat press cannot reach
@@ -1915,7 +1920,7 @@ def accept_invite(
             )
             if role_value == SpaceRole.learner.value:
                 guard_member_allowance(space, db)
-            membership_grant.reactivate(existing, now=datetime.utcnow())
+            membership_grant.reactivate(db, existing, now=datetime.utcnow())
             existing.role = role_value
     if not existing:
         role_value = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
@@ -1925,14 +1930,19 @@ def accept_invite(
         # not members for allowance purposes, so only learners count.
         if role_value == SpaceRole.learner.value:
             guard_member_allowance(space, db)
-        db.add(SpaceMembership(
+        _bi_membership = SpaceMembership(
             id=str(uuid.uuid4()),
             user_id=current_user.id,
             space_id=space.id,
             role=role_value,
             status=SpaceMembershipStatus.active,
             source="invited",
-        ))
+        )
+        db.add(_bi_membership)
+        business_events.membership_started(
+            db, _bi_membership, occurred_at=datetime.utcnow(),
+            actor_user_id=current_user.id, creator_user_id=space.creator_id,
+        )
         # Accepting is the moment a person actually becomes a member —
         # issuing the invitation is not, and must not welcome anybody.
         # Inside the ``if not existing`` branch, so somebody who was
@@ -4470,3 +4480,4 @@ from app.spaces import _regular_sessions_routes as _regular_sessions_routes  # n
 # ---------------------------------------------------------------------------
 
 from app.spaces import _exercise_response_routes as _exercise_response_routes  # noqa: E402,F401
+from app.services import business_events

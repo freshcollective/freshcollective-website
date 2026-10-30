@@ -153,6 +153,10 @@ class User(Base):
     # value on an older row cannot be read as a choice: nobody was
     # asked. See migration 150 and
     # ``scripts/ways_to_connect_participation_audit.py``.
+    # BI-1 (migration 171). Reporting classification, as on ``spaces``.
+    # NULL until reviewed; never inferred.
+    reporting_class: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
     ways_to_connect_enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

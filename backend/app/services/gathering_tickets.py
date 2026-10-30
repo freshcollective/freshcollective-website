@@ -89,6 +89,7 @@ from app.services.ticket_pricing import (
     TicketPricingError,
     validate_paid_gathering_price,
 )
+from app.services import business_events
 
 logger = logging.getLogger(__name__)
 
@@ -719,6 +720,10 @@ def fulfil_ticket_purchase(
 
     # 8. Mark transaction succeeded + record Stripe refs
     txn_obj.status = PaymentTransactionStatus.succeeded
+    business_events.mark_settled(
+        db, txn_obj, occurred_at=datetime.utcnow(),
+        settlement_path="gathering_ticket",
+    )
     if stripe_payment_intent_id and not txn_obj.provider_payment_intent_id:
         txn_obj.provider_payment_intent_id = stripe_payment_intent_id
     if stripe_charge_id and not txn_obj.provider_charge_id:

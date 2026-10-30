@@ -51,6 +51,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.models.access_grant_record import AccessGrantRecord
+from app.services import business_events
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment import PaymentTransaction
 from app.models.platform import (
@@ -686,6 +687,11 @@ def revoke_purchase(
                 membership.removed_at = now
                 membership.removed_by_user_id = admin.id
                 membership_removed = True
+                # BI-1 — an admin revocation is a membership departure
+                # and must appear in the history as one.
+                business_events.membership_ended(
+                    db, membership, occurred_at=now, actor_user_id=admin.id,
+                )
 
     db.commit()
 

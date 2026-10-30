@@ -313,6 +313,15 @@ class Settings(BaseSettings):
     # respond with 503 so a half-built surface can't be discovered by
     # accident. Flip to True only when the review UI has been signed off
     # and the caretakers on rota are ready to work cases.
+    # Business event recording (BI-1). Defaults to ON, unlike the
+    # feature flags around it: an absent or mistyped configuration must
+    # record history rather than lose it, because a dropped event cannot
+    # be recovered later while an unwanted one can be ignored. Setting
+    # it false is an emergency measure — every suppressed event is
+    # logged at WARNING naming what was dropped, so a disabled recorder
+    # is visible rather than quietly becoming the normal state.
+    business_events_enabled: bool = True
+
     community_care_enabled: bool = False
 
     # Discovery, Connection & Belonging — the peer pillar (Your World,

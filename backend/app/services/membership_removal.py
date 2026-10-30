@@ -108,6 +108,7 @@ from sqlalchemy.orm import Session
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.offering import OfferingEntitlement, OfferingEntitlementStatus
 from app.spaces import retained_reservations as _retained
+from app.services import business_events
 from app.models.platform import (
     BookingStatus,
     EntitlementSource,
@@ -541,6 +542,14 @@ def end_membership(
     # a separate action by a person, not a side effect of a removal.
     if payment_action_required:
         membership.payment_action_required = True
+
+    # BI-1. The departure, recorded before anything can clear it. A later
+    # rejoin resets every removal column above, so this event is the only
+    # lasting evidence that the membership ever ended.
+    business_events.membership_ended(
+        db, membership, occurred_at=now,
+        actor_user_id=actor_user_id, creator_user_id=space.creator_id,
+    )
 
     if decision.rejoin_blocked:
         record_restriction_event(

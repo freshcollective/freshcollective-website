@@ -67,6 +67,7 @@ from app.models.platform import (
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.models.user import User
 from app.services import access_grant_records as _agr
+from app.services import business_events
 
 
 logger = logging.getLogger(__name__)
@@ -350,6 +351,10 @@ def record_later_successful_instalment(
         # installment_number, payout_status, timestamps, notes) change.
         txn = existing_txn
         txn.status = PaymentTransactionStatus.succeeded
+        business_events.mark_settled(
+            db, txn, occurred_at=datetime.utcnow(),
+            settlement_path="instalment_recovery",
+        )
         txn.fulfilment_status = PaymentFulfilmentStatus.applied
         txn.gross_amount_cents = gross
         txn.platform_fee_basis_points = plan.platform_fee_basis_points
@@ -406,6 +411,9 @@ def record_later_successful_instalment(
             updated_at=now,
         )
         db.add(txn)
+        business_events.mark_settled(
+            db, txn, occurred_at=now, settlement_path="instalment_later",
+        )
     db.flush()
 
     # This instalment's payment has positively succeeded, so a Connect row now

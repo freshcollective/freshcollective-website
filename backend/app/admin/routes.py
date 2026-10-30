@@ -98,6 +98,7 @@ from app.models.platform import (
     SpaceResource,
 )
 from app.models.user import User
+from app.services import business_events
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -548,6 +549,13 @@ def revoke_creator_plan_grant(
     sub.revoked_by_user_id = admin.id
     sub.revoked_reason = (body.reason or "").strip() or None
     sub.updated_at = now
+    # BI-1. ``revoked_reason`` is free text an admin typed and is
+    # deliberately not carried into the event — the short token is what a
+    # report can count.
+    business_events.subscription_cancelled(
+        db, sub, occurred_at=now, reason="admin_revoked",
+        initiated_by="admin", actor_user_id=admin.id,
+    )
     service.record_grant_event(
         db, subscription=sub, action="revoked",
         reason=body.reason, note=(body.note or "").strip() or None,
@@ -712,6 +720,13 @@ def change_creator_plan_atomic(
         existing_active.revoked_by_user_id = admin.id
         existing_active.revoked_reason = f"plan_change:{body.reason}"
         existing_active.updated_at = now
+        # BI-1 — superseded by a new plan rather than ended outright.
+        # ``plan_change`` as the reason so MRR movement can tell this
+        # apart from a creator genuinely leaving.
+        business_events.subscription_cancelled(
+            db, existing_active, occurred_at=now, reason="plan_change",
+            initiated_by="admin", actor_user_id=admin.id,
+        )
         service.record_grant_event(
             db,
             subscription=existing_active,

@@ -602,7 +602,7 @@ class TestABanClosesEveryDoor:
         cannot lift a ban by accident."""
         with pytest.raises(ValueError):
             membership_grant.reactivate(
-                _row(db, space, banned), now=datetime.utcnow(),
+                db, _row(db, space, banned), now=datetime.utcnow(),
             )
 
 
@@ -944,7 +944,7 @@ class TestRemovalWithALivePaymentPlan:
             note="Abuse.", acknowledge_active_payment_plan=True,
         )
         membership_grant.reactivate(
-            _row(db, space, member), now=datetime.utcnow(),
+            db, _row(db, space, member), now=datetime.utcnow(),
         )
         db.flush()
         assert _row(db, space, member).payment_action_required is True

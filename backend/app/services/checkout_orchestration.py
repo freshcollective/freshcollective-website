@@ -78,6 +78,7 @@ from app.services.purchase_fulfilment import (
     serialise_intent,
     validate_intent,
 )
+from app.services import business_events
 
 
 logger = logging.getLogger(__name__)
@@ -1464,6 +1465,12 @@ def orchestrate_free_checkout(
         updated_at=now,
     )
     db.add(txn)
+    # BI-1 — a free purchase settles the moment it is created. Zero
+    # amount, but still a settlement: it is how a member acquired
+    # something, and leaving it out would understate acquisitions.
+    business_events.mark_settled(
+        db, txn, occurred_at=now, settlement_path="free_purchase",
+    )
     db.flush()
 
     try:

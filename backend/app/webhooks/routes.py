@@ -59,6 +59,7 @@ from app.services.purchase_fulfilment import (
     resolve_intent_for_option,
     validate_intent,
 )
+from app.services import business_events
 
 logger = logging.getLogger(__name__)
 
@@ -886,6 +887,12 @@ def _handle_checkout_completed(
     # --- Update transaction to succeeded ------------------------------------
     now = datetime.utcnow()
     txn.status = PaymentTransactionStatus.succeeded
+    # BI-1 — the observed settlement moment, which until now was only
+    # inferable from ``created_at`` (checkout start) or ``updated_at``
+    # (any later touch, including a refund).
+    business_events.mark_settled(
+        db, txn, occurred_at=now, settlement_path="stripe_checkout",
+    )
     txn.provider_checkout_session_id = session_id   # ensure it's set (fallback path)
     txn.provider_payment_intent_id = payment_intent_id
     txn.processing_fee_cents = processing_fee_cents

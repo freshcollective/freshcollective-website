@@ -66,6 +66,7 @@ from app.models.creator_billing import (
 )
 from app.models.user import User
 from app.services import stripe_creator_billing as scb
+from app.services import business_events
 from app.webhooks.stripe_event_dedup import (
     claim_event,
     hash_payload,
@@ -381,6 +382,13 @@ def handle_invoice_payment_failed(
         sub_row.grace_expires_at = now + _GRACE_WINDOW
     sub_row.status = CreatorSubscriptionStatus.past_due
 
+    # BI-1 — keyed on Stripe's event id, so the several retries Stripe
+    # makes against one failing invoice do not become several failures.
+    business_events.subscription_payment_failed(
+        db, sub_row, occurred_at=now,
+        provider_invoice_id=invoice.get("id"), provider_event_id=event_id,
+    )
+
     # Comms — one email per grace window. Stripe retries a failing
     # invoice several times inside our 7-day window; only the failure
     # that OPENS the window is worth an email.
@@ -471,7 +479,22 @@ def handle_subscription_updated(
             .first()
         )
         if target_plan is not None:
+            # BI-1 — captured BEFORE the overwrite below, which is the
+            # only moment the previous plan still exists anywhere.
+            # Without this, no upgrade or downgrade is recordable, now
+            # or retrospectively.
+            _bi_from_plan_id = sub_row.creator_plan_id
+            _bi_from_slug = sub_row.plan.slug if sub_row.plan else None
             sub_row.creator_plan_id = target_plan.id
+            business_events.subscription_plan_changed(
+                db, sub_row,
+                occurred_at=datetime.utcnow(),
+                from_plan_id=_bi_from_plan_id,
+                to_plan_id=target_plan.id,
+                from_plan_slug=_bi_from_slug,
+                to_plan_slug=new_slug,
+                provider_event_id=event_id,
+            )
             logger.info(
                 "creator_billing_webhook: plan change confirmed — sub=%s "
                 "new_slug=%s",
@@ -551,6 +574,13 @@ def handle_subscription_deleted(
     sub_row.status = CreatorSubscriptionStatus.cancelled
     sub_row.grace_expires_at = None
     sub_row.ends_at = datetime.utcnow()
+    # BI-1. Unguarded by ``already_cancelled`` on purpose: the dedupe key
+    # carries Stripe's event id, so a replay is refused by the unique
+    # index rather than by a condition that could drift from it.
+    business_events.subscription_cancelled(
+        db, sub_row, occurred_at=sub_row.ends_at,
+        reason="provider", initiated_by="provider", provider_event_id=event_id,
+    )
 
     # Comms — the subscription has actually ended. Guarded on the prior
     # status so a replay against an already-cancelled row stays silent

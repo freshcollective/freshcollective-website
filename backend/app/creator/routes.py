@@ -1513,14 +1513,19 @@ def create_space(
     db.flush()  # assign space.id before creating membership
 
     # Auto-create creator membership so the owner appears as a member
-    db.add(SpaceMembership(
+    _bi_membership = SpaceMembership(
         id=str(uuid4()),
         user_id=current_user.id,
         space_id=space.id,
         role=SpaceRole.creator,
         status=SpaceMembershipStatus.active,
         source="creator_owner",
-    ))
+    )
+    db.add(_bi_membership)
+    business_events.membership_started(
+        db, _bi_membership, occurred_at=datetime.utcnow(),
+        actor_user_id=current_user.id, creator_user_id=space.creator_id,
+    )
 
     # Provision the two permanent system Channels so every new
     # collective is born with 🌱 Start Here and 🏡 Common Room.
@@ -1603,10 +1608,34 @@ def update_space(
     if body.is_public is not None:
         space.is_public = body.is_public
     if body.status is not None:
+        # BI-1 — ``status`` is mutable with nothing else recording the
+        # transition, so publication and archival dates exist only if
+        # they are captured here.
+        _bi_from_status = getattr(space.status, "value", space.status)
         space.status = body.status
+        _bi_to_status = getattr(body.status, "value", body.status)
+        if _bi_to_status != _bi_from_status:
+            _bi_now = datetime.utcnow()
+            business_events.collective_status_changed(
+                db, space, occurred_at=_bi_now,
+                from_status=_bi_from_status, to_status=_bi_to_status,
+                actor_user_id=current_user.id,
+            )
+            # Write-once: the FIRST publication, which is the one a
+            # funnel measures. A later unarchive must not overwrite it.
+            if _bi_to_status == "active" and space.first_published_at is None:
+                space.first_published_at = _bi_now
     if body.timezone is not None:
         space.timezone = body.timezone
     if body.themes is not None:
+        # BI-1 — recorded before the overwrite, so a Collective
+        # recategorised later does not retroactively change what it was
+        # categorised as at the time.
+        business_events.collective_themes_changed(
+            db, space, occurred_at=datetime.utcnow(),
+            from_themes=list(space.themes or []), to_themes=list(body.themes),
+            actor_user_id=current_user.id,
+        )
         space.themes = body.themes
     if body.pricing_type is not None:
         # Plan enforcement on the UPDATE path, not only on create. Without
@@ -3354,14 +3383,19 @@ def approve_access_request(
         # member allowance applies. The creator is the caller here, so the
         # refusal names their plan and limit.
         guard_member_allowance(space, db, for_creator=True)
-        db.add(SpaceMembership(
+        _bi_membership = SpaceMembership(
             id=str(uuid4()),
             user_id=req.user_id,
             space_id=space.id,
             role=SpaceRole.learner,
             status=SpaceMembershipStatus.active,
             source="joined",
-        ))
+        )
+        db.add(_bi_membership)
+        business_events.membership_started(
+            db, _bi_membership, occurred_at=datetime.utcnow(),
+            actor_user_id=current_user.id, creator_user_id=space.creator_id,
+        )
         # Approval is the moment the person becomes a member; the
         # pending request before it is not, and welcomes nobody. Inside
         # ``if not existing`` so re-approving someone already in the
@@ -6120,7 +6154,7 @@ def add_or_invite_member(
             # Restores membership only. No cancelled pass, revoked
             # entitlement or cancelled booking comes back; see
             # ``membership_grant.reactivate``.
-            membership_grant.reactivate(existing, now=datetime.utcnow())
+            membership_grant.reactivate(db, existing, now=datetime.utcnow())
             existing.role = role_enum
             membership = existing
         else:
@@ -6134,6 +6168,10 @@ def add_or_invite_member(
                 source="invited",
             )
             db.add(membership)
+            business_events.membership_started(
+                db, membership, occurred_at=datetime.utcnow(),
+                actor_user_id=current_user.id, creator_user_id=space.creator_id,
+            )
         # Added directly as an ACTIVE member, so they are a member now
         # and the welcome is due. The ``else`` branch below creates a
         # draft invitation instead — nobody has joined there, and it
@@ -10007,6 +10045,11 @@ def grant_pass_manually(
             updated_at=now,
         )
         db.add(txn)
+        # BI-1 — the other hand-recorded settlement path, alongside the
+        # Payment Option one.
+        business_events.mark_settled(
+            db, txn, occurred_at=now, settlement_path="manual_pass_grant",
+        )
         db.flush()
         txn_id = txn.id
         access_pass.payment_transaction_id = txn_id
@@ -10795,3 +10838,4 @@ from app.creator import _discount_code_routes as _discount_routes  # noqa: E402,
 # ---------------------------------------------------------------------------
 
 from app.creator import _event_about_routes as _event_about_routes  # noqa: E402,F401
+from app.services import business_events

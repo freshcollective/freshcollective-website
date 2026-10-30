@@ -16,6 +16,7 @@ from app.models.creator_billing import (
     CreatorSubscription,
     CreatorSubscriptionStatus,
 )
+from app.services import business_events
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,14 @@ def sweep_expired_creator_grace(db: Session) -> int:
     if not victims:
         return 0
     for sub in victims:
+        _bi_grace_expired_at = sub.grace_expires_at
         sub.status = CreatorSubscriptionStatus.unpaid
+        # BI-1 — a lapse, not a cancellation: the subscription still
+        # exists, it has simply stopped being paid for, and MRR has to
+        # tell those two apart.
+        business_events.subscription_lapsed(
+            db, sub, occurred_at=now, grace_expired_at=_bi_grace_expired_at,
+        )
         logger.info(
             "creator_subscription_grace: sub=%s user=%s grace_expired at=%s "
             "→ status=unpaid",

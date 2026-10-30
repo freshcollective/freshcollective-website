@@ -66,6 +66,7 @@ from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
 )
+from app.services import business_events
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,19 @@ def _do_charge_refunded(
         txn.last_refunded_at = stamp
 
     txn.updated_at = now
+
+    # BI-1. One event per refund, not per transaction. Stripe reports a
+    # *cumulative* refunded amount, so the delta is what the member
+    # actually saw returned this time — which is what makes a second
+    # partial refund its own event rather than an overwrite. Attributed
+    # to Stripe's own event time, so a closed month's revenue does not
+    # move because of a refund in the next one. Keyed on the provider
+    # event id, so a redelivery stays one row.
+    business_events.payment_refunded(
+        db, txn, occurred_at=stamp,
+        refund_delta_cents=max(0, incoming_amount - previous_refunded_cents),
+        provider_event_id=provider_event_id,
+    )
     db.flush()
 
     logger.info(

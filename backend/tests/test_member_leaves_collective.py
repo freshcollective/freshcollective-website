@@ -1634,12 +1634,12 @@ class TestRejoiningRestoresNothingElse:
 
         row = _membership(db, space, member)
         with pytest.raises(ValueError):
-            membership_grant.reactivate(row, now=datetime.utcnow())
+            membership_grant.reactivate(db, row, now=datetime.utcnow())
         membership_removal.lift_restriction(
             db, membership=row, actor_user_id=space.creator_id,
             note="Lifted on appeal.", now=datetime.utcnow(),
         )
-        membership_grant.reactivate(row, now=datetime.utcnow())
+        membership_grant.reactivate(db, row, now=datetime.utcnow())
         db.flush()
         assert ap.status == AccessPassStatus.cancelled
 
@@ -1676,7 +1676,7 @@ class TestRejoiningRestoresNothingElse:
             db, membership=row, actor_user_id=space.creator_id,
             note="Lifted on appeal.", now=datetime.utcnow(),
         )
-        membership_grant.reactivate(row, now=datetime.utcnow())
+        membership_grant.reactivate(db, row, now=datetime.utcnow())
         db.flush()
         assert booking.status == BookingStatus.cancelled
 
@@ -2120,7 +2120,7 @@ class TestHistoricalRemovalsAreNotAssumedVoluntary:
         from app.services import membership_grant
 
         row = self._historical(db, space, member)
-        membership_grant.reactivate(row, now=datetime.utcnow())
+        membership_grant.reactivate(db, row, now=datetime.utcnow())
         db.flush()
         assert row.status == SpaceMembershipStatus.active
 

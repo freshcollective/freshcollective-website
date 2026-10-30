@@ -24,6 +24,7 @@ no longer read or written by this router.
 from __future__ import annotations
 
 from uuid import uuid4
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -51,6 +52,7 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.services.creator_eligibility import AUTO_ROLE_SOURCE
+from app.services import business_events
 
 
 router = APIRouter(prefix="/api/creator/build-your-collective", tags=["build-your-collective"])
@@ -365,14 +367,19 @@ def open_collective(
     db.add(space)
     db.flush()
 
-    db.add(SpaceMembership(
+    _bi_membership = SpaceMembership(
         id=str(uuid4()),
         user_id=current_user.id,
         space_id=space.id,
         role=SpaceRole.creator,
         status=SpaceMembershipStatus.active,
         source="creator_owner",
-    ))
+    )
+    db.add(_bi_membership)
+    business_events.membership_started(
+        db, _bi_membership, occurred_at=datetime.utcnow(),
+        actor_user_id=current_user.id, creator_user_id=space.creator_id,
+    )
 
     draft = _get_draft(current_user.id, db)
     if draft:

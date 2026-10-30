@@ -50,6 +50,7 @@ from app.models.creator_billing import (
 )
 from app.models.user import User
 from app.services.notification_service import create_notification
+from app.services import business_events
 
 if TYPE_CHECKING:
     from app.comms.models import CommunicationEvent
@@ -210,6 +211,23 @@ def activate_creator_plan(
         db, user.id, plan.id, starts_at, ends_at, activation,
     )
     db.flush()
+
+    # ── BI-1 ──────────────────────────────────────────────────────
+    # A revived row that changed plan is a plan change; anything else
+    # reaching here is a subscription starting. Both are recorded,
+    # because ``creator_plan_id`` is overwritten in place and neither
+    # fact survives in the row afterwards.
+    _bi_from_plan_id = getattr(subscription, "_bi_from_plan_id", None)
+    if was_reactivated and _bi_from_plan_id and _bi_from_plan_id != plan.id:
+        business_events.subscription_plan_changed(
+            db, subscription, occurred_at=starts_at,
+            from_plan_id=_bi_from_plan_id, to_plan_id=plan.id,
+            to_plan_slug=plan.slug,
+        )
+    else:
+        business_events.subscription_started(
+            db, subscription, occurred_at=starts_at, plan_slug=plan.slug,
+        )
 
     # ── Promote role + reconcile eligibility (World Builders) ─────
     promote_to_creator(user, db)
@@ -421,6 +439,11 @@ def _create_or_reactivate(
     )
     if existing_inactive is not None:
         sub = existing_inactive
+        # BI-1 — stashed before the overwrite, for the same reason as the
+        # Stripe plan-change handler: this is the last moment the previous
+        # plan is knowable. Read back by the caller, where the plan slug
+        # is in scope.
+        sub._bi_from_plan_id = sub.creator_plan_id
         sub.creator_plan_id = plan_id
         sub.status = CreatorSubscriptionStatus.active
         sub.starts_at = starts_at

@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -573,6 +574,16 @@ class PaymentTransaction(Base):
         DateTime(timezone=False), nullable=True,
     )
 
+    # BI-1 (migration 171). When the payment was *observed* to settle —
+    # distinct from ``created_at`` (checkout started) and ``updated_at``
+    # (any later touch, including a refund). ``settled_at_source`` says
+    # which kind of knowledge it is: this release only ever writes
+    # ``'observed'`` and leaves history NULL rather than estimating.
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    settled_at_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -587,6 +598,14 @@ class PaymentTransaction(Base):
         Index("ix_payment_transactions_status", "status"),
         Index("ix_payment_transactions_transaction_type", "transaction_type"),
         Index("ix_payment_transactions_created_at", "created_at"),
+        # BI-1 (migration 171). Partial: the only interesting question is
+        # which payments have an observed settlement date, and most
+        # historical rows do not.
+        Index(
+            "ix_payment_transactions_settled_at",
+            "settled_at",
+            postgresql_where=text("settled_at IS NOT NULL"),
+        ),
         # The future sweeper's query: owed-and-unsent transfers, oldest
         # first.
         Index(
