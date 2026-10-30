@@ -3074,6 +3074,10 @@ async def preview_member_import(
     file: UploadFile = File(...),
     email_column: str | None = Form(None),
     name_column: str | None = Form(None),
+    # Not an empty ``name_column``: FastAPI reads an empty form field as
+    # absent, so "this file has no name column" needs to be said out
+    # loud or it is indistinguishable from "you choose".
+    ignore_name_column: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> MemberImportPreview:
@@ -3097,7 +3101,9 @@ async def preview_member_import(
     data = await file.read()
     try:
         parsed = parse_member_csv(
-            data, email_column=email_column, name_column=name_column,
+            data,
+            email_column=email_column,
+            name_column="" if ignore_name_column else name_column,
         )
     except MissingEmailColumn as exc:
         return MemberImportPreview(
@@ -3143,6 +3149,10 @@ async def import_members(
     file: UploadFile = File(...),
     email_column: str | None = Form(None),
     name_column: str | None = Form(None),
+    # Not an empty ``name_column``: FastAPI reads an empty form field as
+    # absent, so "this file has no name column" needs to be said out
+    # loud or it is indistinguishable from "you choose".
+    ignore_name_column: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> MemberImportResult:
@@ -3166,7 +3176,9 @@ async def import_members(
     data = await file.read()
     try:
         parsed = parse_member_csv(
-            data, email_column=email_column, name_column=name_column,
+            data,
+            email_column=email_column,
+            name_column="" if ignore_name_column else name_column,
         )
     except CsvFormatError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

@@ -163,6 +163,11 @@ def parse_member_csv(
     ``email_column`` and ``name_column`` override the guess, which is
     how a file with unrecognisable headings is imported without being
     edited first.
+
+    ``name_column=""`` is not the same as ``name_column=None``: the
+    empty string is a creator saying *this file has no name column*,
+    and falling back to a guess there would quietly overrule them.
+    ``None`` means they have not said, so the guess stands.
     """
     if len(data) > MAX_CSV_BYTES:
         raise CsvFormatError(
@@ -192,7 +197,8 @@ def parse_member_csv(
 
     guessed_email, guessed_name = sniff_columns(headings)
     email_col = email_column or guessed_email
-    name_col = name_column or guessed_name
+    names_declined = name_column == ""
+    name_col = None if names_declined else (name_column or guessed_name)
 
     if email_col is None:
         raise MissingEmailColumn(
@@ -205,7 +211,7 @@ def parse_member_csv(
     if name_col is not None and name_col not in headings:
         name_col = None
 
-    first_col, last_col = _find_split_name(headings)
+    first_col, last_col = (None, None) if names_declined else _find_split_name(headings)
 
     out = ParsedCsv(headings=headings, email_column=email_col, name_column=name_col)
     seen: set[str] = set()

@@ -56,7 +56,7 @@ describe('exporting the member list', () => {
 describe('importing a member list', () => {
   test('a file is previewed before anything is sent', () => {
     assert.match(MODAL, /members\/import\/preview/)
-    assert.match(MODAL, /if \(chosen\) void runPreview\(chosen, '', ''\)/)
+    assert.match(MODAL, /if \(chosen\) void runPreview\(chosen, '', null\)/)
   })
 
   test('the confirm button is the only thing that imports', () => {
@@ -156,5 +156,32 @@ describe('where the two sit on the page', () => {
     assert.match(MODAL, /items-end justify-center/)
     assert.match(MODAL, /sm:items-center/)
     assert.match(MODAL, /max-h-\[92vh\] w-full overflow-y-auto/)
+  })
+})
+
+
+describe('declining the name column', () => {
+  const MODAL_BODY = (() => {
+    const src = readFileSync('src/app/creator-studio/people/PeopleClient.tsx', 'utf8')
+    const start = src.indexOf('function body(chosen: File')
+    assert.ok(start > 0)
+    return src.slice(start, src.indexOf('\n  }', start))
+  })()
+
+  test('"no name column" is a flag, not an empty value', () => {
+    // An empty form field arrives at fc-api as absent, so sending
+    // name_column="" meant the server guessed again and overruled the
+    // creator on the very next request.
+    assert.match(MODAL_BODY, /if \(name === ''\) form\.append\('ignore_name_column', 'true'\)/)
+    assert.match(MODAL_BODY, /else if \(name !== null\) form\.append\('name_column', name\)/)
+  })
+
+  test('not having said is distinct from having said none', () => {
+    const src = codeOnly(
+      readFileSync('src/app/creator-studio/people/PeopleClient.tsx', 'utf8'),
+    )
+    assert.match(src, /useState<string \| null>\(null\)/)
+    assert.match(src, /void runPreview\(chosen, '', null\)/)
+    assert.match(src, /value=\{nameColumn \?\? ''\}/)
   })
 })

@@ -355,19 +355,29 @@ function ImportMembersModal({ spaceSlug, onClose, onImported }: {
   const [preview, setPreview] = useState<MemberImportPreview | null>(null)
   const [result, setResult] = useState<MemberImportResult | null>(null)
   const [emailColumn, setEmailColumn] = useState('')
-  const [nameColumn, setNameColumn] = useState('')
+  // null means the creator has not said, so the server may guess. '' is
+  // them saying this file has no name column — a different thing, and
+  // falling back to a guess there would overrule them.
+  const [nameColumn, setNameColumn] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function body(chosen: File, email: string, name: string) {
+  function body(chosen: File, email: string, name: string | null) {
     const form = new FormData()
     form.append('file', chosen)
     if (email) form.append('email_column', email)
-    if (name) form.append('name_column', name)
+    // An empty form field reads as absent on the way in, so "no name
+    // column" is a flag of its own rather than an empty value.
+    if (name === '') form.append('ignore_name_column', 'true')
+    else if (name !== null) form.append('name_column', name)
     return form
   }
 
-  async function runPreview(chosen: File, email = emailColumn, name = nameColumn) {
+  async function runPreview(
+    chosen: File,
+    email = emailColumn,
+    name: string | null = nameColumn,
+  ) {
     setBusy(true)
     setError(null)
     try {
@@ -384,6 +394,8 @@ function ImportMembersModal({ spaceSlug, onClose, onImported }: {
       const data: MemberImportPreview = await res.json()
       setPreview(data)
       setEmailColumn(data.email_column ?? email)
+      // Only adopt what the server found; a null answer leaves the
+      // creator's own choice (including "none") standing.
       setNameColumn(data.name_column ?? name)
     } catch {
       setError('That file could not be read.')
@@ -397,9 +409,9 @@ function ImportMembersModal({ spaceSlug, onClose, onImported }: {
     setResult(null)
     setPreview(null)
     setEmailColumn('')
-    setNameColumn('')
+    setNameColumn(null)
     setFile(chosen)
-    if (chosen) void runPreview(chosen, '', '')
+    if (chosen) void runPreview(chosen, '', null)
   }
 
   async function confirm() {
@@ -595,7 +607,7 @@ function ImportMembersModal({ spaceSlug, onClose, onImported }: {
                   <label className="block text-[12px] font-medium text-navy-900">
                     Name column
                     <select
-                      value={nameColumn}
+                      value={nameColumn ?? ''}
                       onChange={(e) => {
                         setNameColumn(e.target.value)
                         if (file) void runPreview(file, emailColumn, e.target.value)

@@ -656,3 +656,66 @@ class TestARacingImport:
         # would not.)
         assert db.query(SpaceInvitation).filter(
             SpaceInvitation.email == "new@example.com").count() == 0
+
+
+class TestDecliningTheNameColumn:
+    """"No name column" has to mean it.
+
+    An empty override and a missing one look alike over a form post,
+    and the parser reads them differently on purpose: a creator who
+    says their file has no usable name column must not have one
+    guessed back for them on the next request.
+    """
+
+    FILE = b"Full Name,First Name,Last Name,Email\nA. Lovelace,Ada,Lovelace,ada@example.com\n"
+
+    def test_unspecified_lets_the_guess_stand(self):
+        assert parse_member_csv(self.FILE).rows[0].name == "A. Lovelace"
+
+    def test_an_empty_override_means_none(self):
+        assert parse_member_csv(self.FILE, name_column="").rows[0].name is None
+
+    def test_an_empty_override_also_silences_first_and_last(self):
+        """The split-name fallback is a guess too, and it is declined with the rest."""
+        out = parse_member_csv(b"First Name,Last Name,Email\nAda,Lovelace,a@example.com\n",
+                               name_column="")
+        assert out.rows[0].name is None
+
+    def test_an_imported_invitation_can_have_no_name(self, client, db, collective):
+        space, creator, _m = collective
+        as_user(creator)
+        res = client.post(
+            IMPORT.format(slug=space.slug),
+            files={"file": ("m.csv", self.FILE, "text/csv")},
+            data={"ignore_name_column": "true"},
+        )
+        assert res.status_code == 201
+        inv = db.query(SpaceInvitation).filter(
+            SpaceInvitation.email == "ada@example.com").one()
+        assert inv.name is None
+
+    def test_an_empty_form_field_is_not_the_signal(self, client, collective):
+        """FastAPI reads an empty form field as absent.
+
+        Worth pinning: the modal used to send ``name_column=""`` to mean
+        "none", and the creator's choice was silently overruled by the
+        guess on the very next request.
+        """
+        space, creator, _m = collective
+        as_user(creator)
+        res = client.post(
+            PREVIEW.format(slug=space.slug),
+            files={"file": ("m.csv", self.FILE, "text/csv")},
+            data={"name_column": ""},
+        )
+        assert res.json()["name_column"] == "Full Name"
+
+    def test_the_flag_is_honoured_by_the_preview_too(self, client, collective):
+        space, creator, _m = collective
+        as_user(creator)
+        res = client.post(
+            PREVIEW.format(slug=space.slug),
+            files={"file": ("m.csv", self.FILE, "text/csv")},
+            data={"ignore_name_column": "true"},
+        )
+        assert res.json()["name_column"] is None
