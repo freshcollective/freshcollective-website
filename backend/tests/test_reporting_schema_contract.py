@@ -32,9 +32,11 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DataError, IntegrityError
 
+from app.models.business_event import BusinessEvent
 from app.models.reporting_aggregate import MetricDaily, ReportingJobRun
 from app.reporting import aggregates
 from app.reporting.registry import REGISTRY, Aggregation, Provenance
+from app.services.business_events import BusinessEventType, SubjectType
 
 JOB_STATUSES = ("running", "succeeded", "failed")
 
@@ -194,6 +196,87 @@ class TestJobRunStatuses:
     def test_the_job_name_fits_the_column(self):
         width = ReportingJobRun.__table__.c.job_name.type.length
         assert len(aggregates.JOB_NAME) <= width
+
+
+# ---------------------------------------------------------------------------
+# business_events — the reporting surface's one remaining CHECK
+# ---------------------------------------------------------------------------
+
+def _event(db, **over):
+    """A business event row, written the way the producer writes one.
+
+    A core insert rather than the ORM, and rather than
+    ``business_events.record`` — the latter would pin each subject type
+    to the event types that happen to use it today, and the former sends
+    an explicit NULL for ``sequence_number`` instead of leaving the
+    column to its sequence. The point here is the constrained column,
+    not the callers.
+    """
+    d = dict(
+        id=str(uuid.uuid4()),
+        event_type=BusinessEventType.membership_started.value,
+        occurred_at=datetime.utcnow(),
+        recorded_at=datetime.utcnow(),
+        subject_type=SubjectType.membership.value,
+        subject_id=str(uuid.uuid4()),
+        payload={},
+        dedupe_key=str(uuid.uuid4()),
+    )
+    d.update(over)
+    db.execute(BusinessEvent.__table__.insert().values(**d))
+    return db.execute(
+        text("SELECT subject_type FROM business_events WHERE id = :i"),
+        {"i": d["id"]},
+    ).scalar()
+
+
+class TestEverySubjectTypeCanBeStored:
+    """The same treatment as provenance, for the same reason.
+
+    ``business_events`` is written on the membership and payment paths,
+    so an enum that outgrows ``ck_business_events_subject_type`` would
+    fail somewhere far more exposed than a nightly job. It is the only
+    CHECK on this surface that had no insert behind it.
+    """
+
+    @pytest.mark.parametrize(
+        "subject_type", [s.value for s in SubjectType], ids=lambda v: v,
+    )
+    def test_the_database_accepts_it(self, db, subject_type):
+        assert _event(db, subject_type=subject_type) == subject_type
+
+    def test_an_invented_subject_type_is_refused(self, db):
+        with pytest.raises(IntegrityError):
+            _event(db, subject_type="galaxy")
+
+    def test_the_constraint_lists_exactly_the_enum(self, db):
+        sql = db.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'ck_business_events_subject_type'"
+            )
+        ).scalar()
+        assert sql, "the subject_type constraint is missing entirely"
+        quoted = set(re.findall(r"'([a-z_]+)'", sql))
+        assert quoted == {s.value for s in SubjectType}, (
+            f"constraint allows {sorted(quoted)}, enum declares "
+            f"{sorted(s.value for s in SubjectType)}"
+        )
+
+    def test_every_subject_type_fits_the_column(self):
+        width = BusinessEvent.__table__.c.subject_type.type.length
+        for s in SubjectType:
+            assert len(s.value) <= width, (
+                f"{s.value!r} is {len(s.value)} chars and the column is {width}"
+            )
+
+    def test_every_event_type_fits_the_column(self):
+        """Unconstrained by a CHECK, but a width is a constraint too."""
+        width = BusinessEvent.__table__.c.event_type.type.length
+        for e in BusinessEventType:
+            assert len(e.value) <= width, (
+                f"{e.value!r} is {len(e.value)} chars and the column is {width}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +453,7 @@ class TestNoOtherReportingColumnIsUnguarded:
             "ck_metric_daily_provenance",
             "ck_metric_daily_aggregation",
             "ck_reporting_job_runs_status",
+            "ck_business_events_subject_type",
         }
         found = {
             r.conname
@@ -378,7 +462,7 @@ class TestNoOtherReportingColumnIsUnguarded:
                     "SELECT conname FROM pg_constraint c "
                     "JOIN pg_class t ON t.oid = c.conrelid "
                     "WHERE c.contype = 'c' AND t.relname IN "
-                    "('metric_daily', 'reporting_job_runs')"
+                    "('metric_daily', 'reporting_job_runs', 'business_events')"
                 )
             )
         }
