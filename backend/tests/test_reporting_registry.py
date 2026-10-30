@@ -144,11 +144,27 @@ class TestAggregationRules:
         m = REGISTRY.get("gross_collective_sales_cents")
         assert aggregate_across(m, [100, 200, 300]) == 600
 
-    def test_daily_unique_members_cannot_be_summed_into_a_month(self):
-        """The single easiest way to publish a confidently wrong number."""
-        m = REGISTRY.get("unique_members")
+    def test_daily_active_members_cannot_be_summed_into_a_month(self):
+        """The single easiest way to publish a confidently wrong number.
+
+        ``active_members`` is a distinct count of people who did
+        something, so thirty daily values do not make a month: the same
+        person appears on many days.
+        """
+        m = REGISTRY.get("active_members")
         with pytest.raises(NonAdditiveMetric):
             aggregate_across(m, [5, 5, 5])
+
+    def test_a_membership_snapshot_takes_the_latest_not_the_sum(self):
+        """``unique_members`` is a snapshot — "how many, as at when" —
+        so combining periods means taking the most recent, never adding."""
+        m = REGISTRY.get("unique_members")
+        assert aggregate_across(m, [10, 12, 11]) == 11
+
+    def test_memberships_started_is_the_additive_flow(self):
+        """The flow beside the snapshot, and it does add up."""
+        m = REGISTRY.get("memberships_started")
+        assert aggregate_across(m, [2, 3, 4]) == 9
 
     def test_a_ratio_cannot_be_summed(self):
         with pytest.raises(NonAdditiveMetric):
@@ -719,3 +735,109 @@ class TestRecordingHealthEndpoint:
         names = {c["name"] for c in body["checks"]}
         assert "memberships_without_a_start_event" in names
         assert "succeeded_payments_without_a_settlement" in names
+
+
+class TestSnapshotsVersusFlows:
+    """The distinction the aggregates depend on.
+
+    BI-2 declared four metrics as snapshots while filtering them by a
+    join or creation date, which made them flows the moment a period was
+    supplied: ``/reporting/query?period=this_month&keys=unique_members``
+    returned members who *joined* this month under the label "Unique
+    members". These tests pin the corrected semantics, because the daily
+    aggregate loader stores snapshots and flows differently and a
+    mislabelled metric would be stored the wrong way.
+    """
+
+    def test_a_snapshot_counts_everyone_present_not_everyone_who_joined(
+        self, db, make_user, make_space,
+    ):
+        space = make_space(creator=make_user(role="creator"))
+        old_member, new_member = make_user(), make_user()
+        _join(db, old_member, space, joined_at=datetime(2026, 1, 5))
+        _join(db, new_member, space, joined_at=datetime(2026, 3, 5))
+        db.flush()
+
+        march = Window(datetime(2026, 3, 1), datetime(2026, 4, 1), "Mar")
+        # Both are members as at the end of March...
+        assert val(db, "unique_members", window=march).value == 2
+        # ...but only one joined during it.
+        assert val(db, "memberships_started", window=march).value == 1
+
+    def test_a_snapshot_before_somebody_joined_does_not_count_them(
+        self, db, make_user, make_space,
+    ):
+        space = make_space(creator=make_user(role="creator"))
+        _join(db, make_user(), space, joined_at=datetime(2026, 3, 5))
+        db.flush()
+        feb = Window(datetime(2026, 2, 1), datetime(2026, 3, 1), "Feb")
+        assert val(db, "unique_members", window=feb).value == 0
+
+    def test_a_departure_removes_them_from_later_snapshots_only(
+        self, db, make_user, make_space,
+    ):
+        space = make_space(creator=make_user(role="creator"))
+        m = _join(db, make_user(), space, joined_at=datetime(2026, 1, 10))
+        m.status = SpaceMembershipStatus.removed
+        m.removed_at = datetime(2026, 3, 10)
+        db.flush()
+        feb = Window(datetime(2026, 2, 1), datetime(2026, 3, 1), "Feb")
+        apr = Window(datetime(2026, 4, 1), datetime(2026, 5, 1), "Apr")
+        assert val(db, "unique_members", window=feb).value == 1
+        assert val(db, "unique_members", window=apr).value == 0
+
+    def test_a_removal_with_no_date_is_excluded_from_every_snapshot(
+        self, db, make_user, make_space,
+    ):
+        """We know it ended; we do not know when.
+
+        Legacy rows predating the removal-provenance migration look like
+        this, and counting them as present would be the wrong guess.
+        """
+        space = make_space(creator=make_user(role="creator"))
+        m = _join(db, make_user(), space, joined_at=datetime(2026, 1, 10))
+        m.status = SpaceMembershipStatus.removed
+        m.removed_at = None
+        db.flush()
+        assert val(db, "unique_members").value == 0
+        assert val(db, "unique_members", window=Window(
+            datetime(2026, 2, 1), datetime(2026, 3, 1), "Feb")).value == 0
+
+    def test_a_now_snapshot_counts_a_row_created_moments_ago(
+        self, db, make_user,
+    ):
+        """``users.created_at`` is ``timestamp(3)``, so the stored value
+        rounds and can read as marginally later than ``now()``. A "now"
+        snapshot therefore applies no date predicate at all — every row
+        that exists, exists now. This metric reported zero before that."""
+        make_user()
+        db.flush()
+        v = val(db, "registered_users")
+        assert v.value >= 1, (
+            "a 'now' snapshot must not exclude a row created moments ago — "
+            "users.created_at is timestamp(3) and rounds, so a date "
+            "predicate against now() can place it in the future"
+        )
+        assert v.qualifiers["as_at"] == "now"
+
+    def test_every_snapshot_metric_declares_snapshot_aggregation(self):
+        """So the aggregate loader cannot store one as a flow."""
+        from app.reporting.registry import Grain
+
+        for m in REGISTRY.all():
+            if m.grain is Grain.snapshot:
+                assert m.aggregation is not Aggregation.additive, (
+                    f"{m.key} is a snapshot declared additive — the daily "
+                    "loader would store it as a flow and somebody would sum it"
+                )
+
+    def test_no_snapshot_metric_attributes_by_a_row_date(self):
+        """A snapshot narrows the measurement date, not the rows."""
+        from app.reporting.registry import DateBasis, Grain
+
+        for m in REGISTRY.all():
+            if m.grain is Grain.snapshot:
+                assert m.date_basis is DateBasis.none, (
+                    f"{m.key} is a snapshot but attributes by "
+                    f"{m.date_basis.value}, which makes it a flow"
+                )

@@ -32,7 +32,7 @@ instead of blending two kinds of knowledge silently.
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.payment import (
@@ -516,13 +516,75 @@ REGISTRY.add(Metric(
 # People — three different questions, kept apart
 # ---------------------------------------------------------------------------
 
+def _as_at(window: Window):
+    """The moment a snapshot is measured at, or None for "now".
+
+    A snapshot answers "how many, as at when" — so a period narrows the
+    *measurement date*, not which rows are counted. ``ends_at`` is
+    exclusive, so the state as at the end of a window is the state just
+    before it closes.
+
+    None means **now**, and a "now" snapshot must not filter by date at
+    all. ``users.created_at`` is ``timestamp(3)`` — millisecond
+    precision — while ``now()`` carries microseconds, so the stored
+    value rounds and a row created in the same transaction can read as
+    up to half a millisecond in the *future*. Filtering
+    ``created_at <= now()`` then excludes it, and ``registered_users``
+    reported zero. Every row that exists, exists now; no predicate is
+    needed to say so.
+    """
+    return window.ends_at
+
+
+def _as_at_label(db: Session, window: Window) -> str:
+    """How the as-at moment is reported back. "now" says so."""
+    at = _as_at(window)
+    return at.isoformat() if at is not None else "now"
+
+
+#: Reconstructing membership state at a past date leans on ``removed_at``,
+#: which rejoining cleared before BI-1. A member who left in March and
+#: returned in June has no departure on record, so a March snapshot counts
+#: them as present. Snapshots on or after the business-event activation
+#: floor are exact; earlier ones overstate membership and understate
+#: churn, and say so in their qualifiers.
+_SNAPSHOT_CAVEAT = (
+    "Reconstructed from current membership rows. Departures were "
+    "overwritten by rejoining before business-event recording began, so a "
+    "snapshot dated before then may overstate membership."
+)
+
+
+def _snapshot_qualifiers(db: Session, window: Window) -> dict:
+    from app.services.business_event_reconciliation import activation_floor
+
+    as_at = _as_at(window)
+    floor = activation_floor(db)
+    # None as-at means now, which is always on or after the floor.
+    exact = floor is not None and (as_at is None or as_at >= floor)
+    return {
+        "as_at": _as_at_label(db, window),
+        "provenance": "observed" if exact else "reconstructed",
+        **({} if exact else {"caveat": _SNAPSHOT_CAVEAT}),
+    }
+
+
 def _registered_users(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+    """Accounts in existence as at the measurement date.
+
+    A snapshot, not a flow: asking for "this month" asks how many
+    accounts existed at the end of this month, not how many signed up
+    during it. ``accounts_registered`` is the flow.
+    """
+    as_at = _as_at(window)
     q = db.query(func.count(User.id))
-    if window.starts_at is not None:
-        q = q.filter(User.created_at >= window.starts_at)
-    if window.ends_at is not None:
-        q = q.filter(User.created_at < window.ends_at)
-    return MetricValue(key="registered_users", value=int(q.scalar() or 0))
+    if as_at is not None:
+        q = q.filter(User.created_at <= as_at)
+    n = q.scalar() or 0
+    return MetricValue(
+        key="registered_users", value=int(n),
+        qualifiers={"as_at": _as_at_label(db, window)},
+    )
 
 
 REGISTRY.add(Metric(
@@ -532,10 +594,10 @@ REGISTRY.add(Metric(
         "People with a Fresh Collective account, counted once each, "
         "regardless of role or how many Collectives they have joined."
     ),
-    source_of_truth="users",
+    source_of_truth="users.created_at, counted as-at",
     grain=Grain.snapshot,
-    aggregation=Aggregation.distinct_count,
-    date_basis=DateBasis.created,
+    aggregation=Aggregation.snapshot,
+    date_basis=DateBasis.none,
     access=Access.platform_only,
     availability=Availability.full,
     personal_data=True,
@@ -544,22 +606,26 @@ REGISTRY.add(Metric(
 
 
 def _registered_creators(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+    """Creator accounts in existence as at the measurement date."""
+    as_at = _as_at(window)
     q = db.query(func.count(User.id)).filter(User.role == "creator")
-    if window.starts_at is not None:
-        q = q.filter(User.created_at >= window.starts_at)
-    if window.ends_at is not None:
-        q = q.filter(User.created_at < window.ends_at)
-    return MetricValue(key="registered_creators", value=int(q.scalar() or 0))
+    if as_at is not None:
+        q = q.filter(User.created_at <= as_at)
+    n = q.scalar() or 0
+    return MetricValue(
+        key="registered_creators", value=int(n),
+        qualifiers={"as_at": _as_at_label(db, window)},
+    )
 
 
 REGISTRY.add(Metric(
     key="registered_creators",
     display_name="Registered creators",
     definition="Accounts whose platform role is creator.",
-    source_of_truth="users.role = 'creator'",
+    source_of_truth="users.role = 'creator', counted as-at",
     grain=Grain.snapshot,
-    aggregation=Aggregation.distinct_count,
-    date_basis=DateBasis.created,
+    aggregation=Aggregation.snapshot,
+    date_basis=DateBasis.none,
     access=Access.platform_only,
     availability=Availability.full,
     personal_data=True,
@@ -567,10 +633,35 @@ REGISTRY.add(Metric(
 ))
 
 
-def _membership_query(db: Session, scope: ReportScope):
-    q = db.query(SpaceMembership).filter(
-        SpaceMembership.status == SpaceMembershipStatus.active,
-    )
+def _membership_query(db: Session, scope: ReportScope, *, as_at=None):
+    """Memberships active at a moment.
+
+    With ``as_at`` this reconstructs state from ``joined_at`` and
+    ``removed_at`` rather than reading ``status``, which only ever
+    describes now. See ``_SNAPSHOT_CAVEAT`` for what that cannot see
+    before BI-1.
+    """
+    if as_at is None:
+        q = db.query(SpaceMembership).filter(
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+    else:
+        q = db.query(SpaceMembership).filter(
+            SpaceMembership.joined_at <= as_at,
+            # A row marked removed with no removal date is excluded from
+            # every snapshot. We know the membership ended; we do not know
+            # when, and counting it as present would be the wrong guess.
+            # Legacy rows predating the removal-provenance migration look
+            # like this.
+            or_(
+                SpaceMembership.status != SpaceMembershipStatus.removed,
+                SpaceMembership.removed_at.isnot(None),
+            ),
+            or_(
+                SpaceMembership.removed_at.is_(None),
+                SpaceMembership.removed_at > as_at,
+            ),
+        )
     if not scope.is_platform:
         if not scope.space_ids:
             return q.filter(False)
@@ -579,24 +670,26 @@ def _membership_query(db: Session, scope: ReportScope):
 
 
 def _unique_members(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-    """Distinct people holding at least one active membership.
+    """Distinct people holding a membership, as at the measurement date.
 
-    The correction. ``/platform/overview`` derives "members" from roles,
-    so a creator who joins another Collective is never counted and an
-    account that joined nothing is. This counts memberships, and counts
-    each person once however many Collectives they belong to — which is
-    also what makes a creator's multi-Collective overview correct rather
-    than triple-counting a shared member.
+    Two corrections in one metric. ``/platform/overview`` derived
+    "members" from roles, so a creator who joined another Collective was
+    never counted and an account that joined nothing was. And this is a
+    **snapshot**: asking for "this month" asks how many members there
+    were at the end of this month, not how many joined during it —
+    ``memberships_started`` is the flow. Each person counts once however
+    many Collectives they belong to, which is what keeps a creator's
+    multi-Collective overview from triple-counting a shared member.
     """
-    q = _membership_query(db, scope)
-    if window.starts_at is not None:
-        q = q.filter(SpaceMembership.joined_at >= window.starts_at)
-    if window.ends_at is not None:
-        q = q.filter(SpaceMembership.joined_at < window.ends_at)
-    n = q.with_entities(
-        func.count(func.distinct(SpaceMembership.user_id))
-    ).scalar() or 0
-    return MetricValue(key="unique_members", value=int(n))
+    n = (
+        _membership_query(db, scope, as_at=_as_at(window))
+        .with_entities(func.count(func.distinct(SpaceMembership.user_id)))
+        .scalar() or 0
+    )
+    return MetricValue(
+        key="unique_members", value=int(n),
+        qualifiers=_snapshot_qualifiers(db, window),
+    )
 
 
 REGISTRY.add(Metric(
@@ -606,10 +699,10 @@ REGISTRY.add(Metric(
         "Distinct people holding at least one active Collective membership. "
         "Somebody in three Collectives counts once."
     ),
-    source_of_truth="space_memberships where status = active",
+    source_of_truth="space_memberships.joined_at / removed_at, reconstructed as-at",
     grain=Grain.snapshot,
-    aggregation=Aggregation.distinct_count,
-    date_basis=DateBasis.membership_joined,
+    aggregation=Aggregation.snapshot,
+    date_basis=DateBasis.none,
     access=Access.creator_visible,
     availability=Availability.full,
     limitations=(
@@ -623,13 +716,39 @@ REGISTRY.add(Metric(
 
 
 def _total_memberships(db: Session, scope: ReportScope, window: Window) -> MetricValue:
-    q = _membership_query(db, scope)
+    """Memberships in force as at the measurement date. A snapshot."""
+    n = (
+        _membership_query(db, scope, as_at=_as_at(window))
+        .with_entities(func.count(SpaceMembership.id))
+        .scalar() or 0
+    )
+    return MetricValue(
+        key="total_memberships", value=int(n),
+        qualifiers=_snapshot_qualifiers(db, window),
+    )
+
+
+def _memberships_started(
+    db: Session, scope: ReportScope, window: Window,
+) -> MetricValue:
+    """Memberships that began in the window. The flow beside the snapshot.
+
+    Counts memberships rather than people, so it adds up across periods —
+    which is exactly why it is a separate metric from ``unique_members``
+    rather than the same one with a date filter.
+    """
+    q = db.query(SpaceMembership)
+    if not scope.is_platform:
+        if not scope.space_ids:
+            q = q.filter(False)
+        else:
+            q = q.filter(SpaceMembership.space_id.in_(scope.space_ids))
     if window.starts_at is not None:
         q = q.filter(SpaceMembership.joined_at >= window.starts_at)
     if window.ends_at is not None:
         q = q.filter(SpaceMembership.joined_at < window.ends_at)
     n = q.with_entities(func.count(SpaceMembership.id)).scalar() or 0
-    return MetricValue(key="total_memberships", value=int(n))
+    return MetricValue(key="memberships_started", value=int(n))
 
 
 REGISTRY.add(Metric(
@@ -639,14 +758,37 @@ REGISTRY.add(Metric(
         "Active memberships. Somebody in three Collectives contributes three. "
         "A different question from how many people are members."
     ),
-    source_of_truth="space_memberships where status = active",
+    source_of_truth="space_memberships.joined_at / removed_at, reconstructed as-at",
     grain=Grain.snapshot,
+    aggregation=Aggregation.snapshot,
+    date_basis=DateBasis.none,
+    access=Access.creator_visible,
+    availability=Availability.partial,
+    limitations=(
+        "A snapshot — take the latest, never sum across periods. "
+        "Reconstructed from membership rows, so a date before "
+        "business-event recording may overstate membership."
+    ),
+    dimensions=("space_id",),
+    compute=_total_memberships,
+))
+
+REGISTRY.add(Metric(
+    key="memberships_started",
+    display_name="Memberships started",
+    definition=(
+        "Memberships that began during the period. Counts memberships, not "
+        "people, so it adds up across periods — the flow beside the "
+        "'Collective memberships' snapshot."
+    ),
+    source_of_truth="space_memberships.joined_at",
+    grain=Grain.period,
     aggregation=Aggregation.additive,
     date_basis=DateBasis.membership_joined,
     access=Access.creator_visible,
     availability=Availability.full,
     dimensions=("space_id",),
-    compute=_total_memberships,
+    compute=_memberships_started,
 ))
 
 
