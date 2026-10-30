@@ -154,8 +154,9 @@ confirmation.
 2. **Confirm the expected change afterwards.** Re-check the same observable
    until it answers the way the release intends. Never infer success from
    elapsed time, from the other service, or from a commit SHA in a JavaScript
-   bundle — bundles no longer carry one, and a changed chunk set proves only
-   that *some* rebuild happened.
+   bundle — the build is configured to inline one but it is not reliably
+   observable in the served chunks, and a changed chunk set proves only that
+   *some* rebuild happened.
 3. **Confirm deployment status separately** in the Render Dashboard, which is
    the only authoritative statement of which commit is running.
 4. Where the change sits behind authentication there is no unauthenticated
