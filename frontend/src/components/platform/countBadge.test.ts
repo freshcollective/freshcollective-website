@@ -178,8 +178,10 @@ describe('Your World and Collective Home', () => {
   })
 
   test('a tile with no category resolves to nothing, with no allow-list', () => {
-    // Messages, Members and About are real tile keys. They must fall
-    // out by having no category behind them, not by being listed.
+    // Members and About are real tile keys with nothing behind them.
+    // They must fall out by resolving to no count, not by being
+    // listed — which is also how Messages joined without touching
+    // this lookup: it simply gained a key in the projection.
     assert.match(HOME, /unseenByCategory\?\.\[tile\.key\] \?\? 0/)
     assert.match(HOME, /\{unseen > 0 && \(/)
   })
@@ -231,7 +233,7 @@ describe('unseenForCollective', () => {
 
   test('it picks the named Collective, not the first row', () => {
     assert.deepEqual(unseenForCollective(counts, 'b'), {
-      conversations: 0, pathways: 1, gatherings: 0,
+      conversations: 0, pathways: 1, gatherings: 0, messages: 0,
     })
   })
 
@@ -242,8 +244,17 @@ describe('unseenForCollective', () => {
     assert.equal(unseenForCollective({ collectives: [], total: 0, as_of_sequence: 0 }, 'a'), undefined)
   })
 
-  test('it carries the three categories and no total', () => {
+  test('it carries the badge-able keys and no total', () => {
+    // Was three. ``messages`` joined them when the unread count
+    // started riding on this response — the Messages tile badges from
+    // the same request rather than needing one of its own. ``total``
+    // still never appears: the tiles badge per category, and the
+    // message count is not part of the activity sum.
     const projected = unseenForCollective(counts, 'a')
-    assert.deepEqual(Object.keys(projected ?? {}).sort(), ['conversations', 'gatherings', 'pathways'])
+    assert.deepEqual(
+      Object.keys(projected ?? {}).sort(),
+      ['conversations', 'gatherings', 'messages', 'pathways'],
+    )
+    assert.ok(!('total' in (projected ?? {})))
   })
 })

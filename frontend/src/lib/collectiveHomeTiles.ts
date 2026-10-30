@@ -168,9 +168,10 @@ function metaFor(key: TileKey, space: SpaceResponse): string | null {
   if (key === 'members') return membersMeta(space)
   // Conversations: a post count is vanity and an unread count would
   // need read-state that does not exist.
-  // Messages: an unread count IS available, but only from a second
-  // request this page does not otherwise make. Neither gets a number
-  // it cannot stand behind.
+  // Messages: the unread count now rides on the unseen-counts
+  // response the Home already reads, and it is shown as the same
+  // corner badge the Pathways and Gatherings tiles carry — so it
+  // does not need a meta line as well.
   return null
 }
 

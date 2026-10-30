@@ -30,5 +30,10 @@ export function unseenForCollective(
     conversations: mine.conversations,
     pathways: mine.pathways,
     gatherings: mine.gatherings,
+    // Keyed to the ``messages`` tile. Not activity, and not added to
+    // anything — it rides on the same response so the Home can badge
+    // the Messages tile without a second request, which is the only
+    // reason it was not badged before.
+    messages: mine.unread_messages ?? 0,
   }
 }
