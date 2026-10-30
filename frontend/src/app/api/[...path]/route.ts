@@ -96,6 +96,12 @@ const REQUEST_HEADERS_ALLOWLIST: ReadonlySet<string> = new Set([
 const RESPONSE_HEADERS_ALLOWLIST: ReadonlySet<string> = new Set([
   'content-type',
   'cache-control',
+  // CSV exports (member lists, attendance, transactions) name their own
+  // file. Dropped here, every one of them downloads as "export.csv" and
+  // a creator with three of them cannot tell which is which. fc-api is
+  // the only thing this proxy forwards for, and every route that sets
+  // the header builds the filename from a sanitised slug and a date.
+  'content-disposition',
   'location',
   'etag',
   'last-modified',

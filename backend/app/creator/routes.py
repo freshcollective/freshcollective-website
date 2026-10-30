@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import false as sa_false, func, text
@@ -71,6 +72,8 @@ from app.creator.plan_guards import (
     is_platform_owner as _is_platform_owner,
 )
 from app.creator.schemas import (
+    MemberImportPreview,
+    MemberImportResult,
     AboutBlockCreateRequest,
     AccessRequestOut,
     AddMemberRequest,
@@ -2868,6 +2871,389 @@ def send_invitation(
 
     db.refresh(invitation)
     return _invitation_response(invitation, db)
+
+
+# ---------------------------------------------------------------------------
+# Members: CSV out, invitations in
+#
+# Both halves lean on what already exists. The export borrows the CSV
+# conventions proved by the attendance export — UTF-8 BOM so Excel opens
+# it, OWASP formula-prefix escaping, no-store — and the import creates
+# ordinary ``SpaceInvitation`` rows through the same rules
+# ``create_invitation`` applies one at a time, so an imported invitation
+# is indistinguishable from a typed one: same pending list, same cancel
+# button, same accept flow, same email.
+#
+# Nothing here enrols anybody. An import produces invitations and
+# nothing else; a person becomes a member by accepting one.
+# ---------------------------------------------------------------------------
+
+_MEMBER_CSV_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _member_csv_safe(value) -> str:
+    """Neutralise a leading character a spreadsheet would run.
+
+    Same rule as the attendance export; repeated rather than imported
+    because that module is about one Gathering and this one is about a
+    Collective, and a shared helper between them would be a dependency
+    neither wants.
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    if s and s[0] in _MEMBER_CSV_FORMULA_PREFIX:
+        s = "'" + s
+    return s
+
+
+@router.get("/spaces/{slug}/members/export.csv")
+def export_members_csv(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+):
+    """This Collective's people, as a spreadsheet.
+
+    Members and pending invitations in one file, told apart by the
+    Status column rather than blended — an invitee who has not accepted
+    is not a member, and a list that said otherwise would be wrong in
+    the direction that matters.
+
+    Five columns and no more: the name, how to reach them, what they
+    are, and when. Nothing about payment, nothing about the account.
+    """
+    import csv as _csv
+    import io as _io
+    from datetime import datetime as _dt
+
+    space = _get_managed_space(slug, current_user, db)
+
+    members = (
+        db.query(SpaceMembership, User)
+        .join(User, User.id == SpaceMembership.user_id)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == "active",
+        )
+        .order_by(SpaceMembership.joined_at.asc())
+        .all()
+    )
+    invitations = (
+        db.query(SpaceInvitation)
+        .filter(SpaceInvitation.space_id == space.id)
+        .order_by(SpaceInvitation.created_at.asc())
+        .all()
+    )
+
+    buf = _io.StringIO()
+    # UTF-8 BOM so Excel opens it correctly.
+    buf.write("﻿")
+    w = _csv.writer(buf)
+    w.writerow([
+        _member_csv_safe("Name"),
+        _member_csv_safe("Email"),
+        _member_csv_safe("Role"),
+        _member_csv_safe("Status"),
+        _member_csv_safe("Joined or invited (UTC)"),
+    ])
+    for membership, user in members:
+        w.writerow([
+            _member_csv_safe(user.name or ""),
+            _member_csv_safe(user.email),
+            _member_csv_safe(getattr(membership.role, "value", membership.role)),
+            _member_csv_safe("Member"),
+            _member_csv_safe(
+                membership.joined_at.isoformat() if membership.joined_at else ""
+            ),
+        ])
+    for inv in invitations:
+        w.writerow([
+            _member_csv_safe(inv.name or ""),
+            _member_csv_safe(inv.email),
+            _member_csv_safe(getattr(inv.role, "value", inv.role)),
+            # Two states, kept apart: an invitation the creator has not
+            # sent yet is not waiting on the invitee.
+            _member_csv_safe("Invited" if inv.sent_at else "Invitation not sent"),
+            _member_csv_safe(
+                (inv.sent_at or inv.created_at).isoformat()
+                if (inv.sent_at or inv.created_at) else ""
+            ),
+        ])
+
+    slug_part = "".join(
+        c for c in space.slug.lower() if c.isalnum() or c in ("-", "_")
+    )[:60] or "collective"
+    filename = f"{slug_part}-members-{_dt.utcnow().date().isoformat()}.csv"
+
+    csv_bytes = buf.getvalue().encode("utf-8")
+
+    def _iter():
+        yield csv_bytes
+
+    return StreamingResponse(
+        _iter(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, max-age=0, no-store",
+        },
+    )
+
+
+@router.get("/spaces/{slug}/members/import-template.csv")
+def member_import_template(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+):
+    """A two-column file to start from."""
+    from app.services.member_csv import SAMPLE_CSV
+
+    _get_managed_space(slug, current_user, db)
+
+    def _iter():
+        yield ("﻿" + SAMPLE_CSV).encode("utf-8")
+
+    return StreamingResponse(
+        _iter(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="fresh-collective-invite-template.csv"',
+            "Cache-Control": "private, max-age=0, no-store",
+        },
+    )
+
+
+def _classify_import(
+    db: Session, space: Space, parsed,
+) -> tuple[list, dict[str, list[str]]]:
+    """Sort parsed rows into what can be invited and what cannot.
+
+    Returns the invitable rows and, beside them, the addresses in each
+    other category. The preview and the import both call this, so what
+    a creator is shown is what actually happens.
+    """
+    emails = [r.email for r in parsed.rows]
+    already_member: set[str] = set()
+    already_invited: set[str] = set()
+    if emails:
+        already_member = {
+            e.lower() for (e,) in db.query(User.email)
+            .join(SpaceMembership, SpaceMembership.user_id == User.id)
+            .filter(
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == "active",
+                func.lower(User.email).in_(emails),
+            ).all()
+        }
+        already_invited = {
+            e.lower() for (e,) in db.query(SpaceInvitation.email)
+            .filter(
+                SpaceInvitation.space_id == space.id,
+                func.lower(SpaceInvitation.email).in_(emails),
+            ).all()
+        }
+
+    invitable = [
+        r for r in parsed.rows
+        if r.email not in already_member and r.email not in already_invited
+    ]
+    return invitable, {
+        "already_member": sorted(already_member),
+        "already_invited": sorted(already_invited),
+    }
+
+
+@router.post(
+    "/spaces/{slug}/members/import/preview",
+    response_model=MemberImportPreview,
+)
+async def preview_member_import(
+    slug: str,
+    file: UploadFile = File(...),
+    email_column: str | None = Form(None),
+    name_column: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> MemberImportPreview:
+    """What would happen, without anything happening.
+
+    A file arriving is not consent to email anybody, so this endpoint
+    writes nothing at all. The creator sees the counts and decides.
+
+    An unrecognisable email column is answered with the file's headings
+    and an empty preview rather than an error: the request succeeded,
+    and the only thing missing is which column to read. The creator
+    picks one and previews again.
+    """
+    from app.services.member_csv import (
+        CsvFormatError,
+        MissingEmailColumn,
+        parse_member_csv,
+    )
+
+    space = _get_managed_space(slug, current_user, db)
+    data = await file.read()
+    try:
+        parsed = parse_member_csv(
+            data, email_column=email_column, name_column=name_column,
+        )
+    except MissingEmailColumn as exc:
+        return MemberImportPreview(
+            headings=exc.headings,
+            email_column=None,
+            name_column=None,
+            rows_read=0, valid=0, invalid=0, duplicates=0,
+            already_member=0, already_invited=0, invitable=0,
+            needs_email_column=True,
+            message=str(exc),
+            collective_name=space.name,
+        )
+    except CsvFormatError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    invitable, buckets = _classify_import(db, space, parsed)
+    return MemberImportPreview(
+        headings=parsed.headings,
+        email_column=parsed.email_column,
+        name_column=parsed.name_column,
+        rows_read=len(parsed.rows) + len(parsed.invalid_lines) + len(parsed.duplicate_lines),
+        valid=len(parsed.rows),
+        invalid=len(parsed.invalid_lines),
+        duplicates=len(parsed.duplicate_lines),
+        already_member=len(buckets["already_member"]),
+        already_invited=len(buckets["already_invited"]),
+        invitable=len(invitable),
+        invalid_lines=parsed.invalid_lines[:50],
+        duplicate_lines=parsed.duplicate_lines[:50],
+        truncated=parsed.truncated,
+        collective_name=space.name,
+    )
+
+
+@router.post(
+    "/spaces/{slug}/members/import",
+    response_model=MemberImportResult,
+    status_code=201,
+)
+async def import_members(
+    slug: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    email_column: str | None = Form(None),
+    name_column: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> MemberImportResult:
+    """Invite everybody in the file who can be invited.
+
+    One ``SpaceInvitation`` each, by the same rules the single-invite
+    endpoint applies — already a member, or already invited, and the row
+    is skipped rather than duplicated. Importing the same file twice
+    therefore invites nobody twice, which is the behaviour a creator who
+    is not sure whether the first attempt worked will rely on.
+
+    Emails go out through ``collective.invitation.sent``, the same event
+    a hand-typed invitation raises, so every delivery safeguard,
+    preference and suppression that applies to one applies to all of
+    these. The sends are background tasks, so a large file does not hold
+    the request open.
+    """
+    from app.services.member_csv import CsvFormatError, parse_member_csv
+
+    space = _get_managed_space(slug, current_user, db)
+    data = await file.read()
+    try:
+        parsed = parse_member_csv(
+            data, email_column=email_column, name_column=name_column,
+        )
+    except CsvFormatError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    invitable, buckets = _classify_import(db, space, parsed)
+
+    created: list[SpaceInvitation] = []
+    now = datetime.utcnow()
+    for row in invitable:
+        inv = SpaceInvitation(
+            id=str(uuid4()),
+            space_id=space.id,
+            email=row.email,
+            name=row.name,
+            role=SpaceRole.learner,
+            note=None,
+            invited_by_id=current_user.id,
+            token=str(uuid4()),
+            payment_status="unpaid",
+            sent_at=now,
+        )
+        db.add(inv)
+        created.append(inv)
+
+    # All of them or none.
+    #
+    # The only way a write fails here is the (space_id, email) unique
+    # constraint, reached by two imports of overlapping lists racing —
+    # or one creator pressing the button twice. Saving the rest and
+    # reporting a partial result would need a savepoint per row, and
+    # then the creator has to reason about which half of their file
+    # landed. Failing whole is kinder, because the retry is safe:
+    # ``_classify_import`` sees whatever the other request created and
+    # counts those addresses as already invited rather than inviting
+    # them twice.
+    space_id = space.id          # read before a rollback expires it
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # No address in the message and none in the log: an imported
+        # contact list must not end up in either.
+        logger.exception("member import failed for space %s", space_id)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Those invitations couldn't be saved, so nothing was changed. "
+                "This usually means someone else was inviting the same people "
+                "at the same time — try the import again."
+            ),
+        )
+
+    # Emails after the rows are safely committed, so a delivery problem
+    # can never cost an invitation the creator can see in the list.
+    from app.comms import Source, emit as comms_emit
+    from app.comms.rollout import schedule_routing_if_needed
+
+    inviter_name = current_user.name or current_user.email
+    for inv in created:
+        ev = comms_emit(
+            db,
+            event_type="collective.invitation.sent",
+            source_type=Source.CREATOR,
+            source_id=current_user.id,
+            actor_user_id=current_user.id,
+            subject_type="invitation",
+            subject_id=inv.id,
+            context={"space_id": space.id, "collective_name": space.name},
+            payload={
+                "recipient_email": inv.email,
+                "inviter_name": inviter_name,
+                "collective_name": space.name,
+                "accept_url": public_app_url(f"/invites/{inv.token}"),
+            },
+        )
+        db.commit()
+        schedule_routing_if_needed(background_tasks, ev, "collective.invitation.sent")
+
+    return MemberImportResult(
+        invited=len(created),
+        already_member=len(buckets["already_member"]),
+        already_invited=len(buckets["already_invited"]),
+        invalid=len(parsed.invalid_lines),
+        duplicates=len(parsed.duplicate_lines),
+        truncated=parsed.truncated,
+        collective_name=space.name,
+    )
 
 
 # ---------------------------------------------------------------------------

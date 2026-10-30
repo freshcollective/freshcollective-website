@@ -3209,3 +3209,59 @@ class DiscountCodeResponse(BaseModel):
     deletable: bool
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# CSV member import
+#
+# Counts rather than contact lists. The preview tells a creator how
+# many people fall into each bucket and on which lines the unreadable
+# rows are, never what was written on them: the file is somebody's
+# contact list, and an API response is a place it can be logged.
+# ---------------------------------------------------------------------------
+
+class MemberImportPreview(BaseModel):
+    """What an import would do, before it does anything."""
+
+    #: The file's own column headings, so the creator can pick a
+    #: different one when the guess is wrong.
+    headings: list[str] = []
+    email_column: str | None = None
+    name_column: str | None = None
+
+    rows_read: int
+    valid: int
+    invalid: int
+    duplicates: int
+    already_member: int
+    already_invited: int
+    invitable: int
+
+    #: Line numbers only — never the values on them.
+    invalid_lines: list[int] = []
+    duplicate_lines: list[int] = []
+    #: True when the file held more rows than one import may carry.
+    truncated: bool = False
+    #: The file was readable but no column looked like an email
+    #: address. Every count above is zero and ``headings`` is the list
+    #: to choose from; nothing can be imported until one is named.
+    needs_email_column: bool = False
+    #: Shown to the creator when something needs their attention.
+    message: str | None = None
+    collective_name: str
+
+
+class MemberImportResult(BaseModel):
+    """What an import did.
+
+    No per-row failure list: an import commits whole or not at all, so
+    a response that arrives at all describes rows that are all there.
+    """
+
+    invited: int
+    already_member: int
+    already_invited: int
+    invalid: int
+    duplicates: int
+    truncated: bool = False
+    collective_name: str

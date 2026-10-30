@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation , RemovedMember} from '@/types/platform'
+import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberImportPreview, MemberImportResult, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation , RemovedMember} from '@/types/platform'
 import { apiUrl } from '@/lib/api'
 import RemovedPeople from './RemovedPeople'
 import {
@@ -313,6 +313,330 @@ function BroadcastModal({ spaceSlug, spaceName, onClose }: {
                 className="rounded-xl bg-navy-900 px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {stage === 'sending' ? 'Sending…' : 'Review and send'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// Invite from a spreadsheet
+// ---------------------------------------------------------------------------
+
+/**
+ * A creator arriving from another platform has their people in a CSV,
+ * and the alternative to this is typing a hundred addresses into the
+ * single-invite form.
+ *
+ * Three steps, and the middle one is the point: choose a file, read
+ * back exactly what importing it would do, then confirm. Nothing is
+ * written and nobody is emailed until the confirm — a file landing here
+ * is not permission to email the people in it.
+ *
+ * The preview is counts, not a contact list. It says how many people
+ * are new, how many are already members, how many rows it could not
+ * read and which lines those were, and it never echoes an address back.
+ *
+ * What confirming creates is ordinary invitations: the same rows the
+ * single-invite form makes, in the same Pending invites list, with the
+ * same cancel button and the same email. Nobody is enrolled and no
+ * account is created — each person still has to accept.
+ */
+function ImportMembersModal({ spaceSlug, onClose, onImported }: {
+  spaceSlug: string
+  onClose: () => void
+  onImported: () => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<MemberImportPreview | null>(null)
+  const [result, setResult] = useState<MemberImportResult | null>(null)
+  const [emailColumn, setEmailColumn] = useState('')
+  const [nameColumn, setNameColumn] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function body(chosen: File, email: string, name: string) {
+    const form = new FormData()
+    form.append('file', chosen)
+    if (email) form.append('email_column', email)
+    if (name) form.append('name_column', name)
+    return form
+  }
+
+  async function runPreview(chosen: File, email = emailColumn, name = nameColumn) {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/import/preview`),
+        { method: 'POST', credentials: 'include', body: body(chosen, email, name) },
+      )
+      if (!res.ok) {
+        const d = await res.json().catch(() => null)
+        setError(d?.detail ?? 'That file could not be read.')
+        setPreview(null)
+        return
+      }
+      const data: MemberImportPreview = await res.json()
+      setPreview(data)
+      setEmailColumn(data.email_column ?? email)
+      setNameColumn(data.name_column ?? name)
+    } catch {
+      setError('That file could not be read.')
+      setPreview(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function chooseFile(chosen: File | null) {
+    setResult(null)
+    setPreview(null)
+    setEmailColumn('')
+    setNameColumn('')
+    setFile(chosen)
+    if (chosen) void runPreview(chosen, '', '')
+  }
+
+  async function confirm() {
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/import`),
+        { method: 'POST', credentials: 'include', body: body(file, emailColumn, nameColumn) },
+      )
+      if (!res.ok) {
+        const d = await res.json().catch(() => null)
+        setError(d?.detail ?? 'Those invitations could not be sent.')
+        return
+      }
+      setResult(await res.json())
+      onImported()
+    } catch {
+      setError('Those invitations could not be sent.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const lines = (ns: number[]) =>
+    ns.length > 8 ? `${ns.slice(0, 8).join(', ')} and more` : ns.join(', ')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 sm:max-w-[560px] sm:rounded-2xl sm:p-6">
+        {result ? (
+          <>
+            <h2 className="text-[16px] font-semibold text-navy-900">
+              {result.invited === 0 ? 'Nothing new to invite' : 'Invitations sent'}
+            </h2>
+            <p className="mt-2 text-[14px] text-black">
+              {result.invited === 0 ? (
+                <>Everyone in that file is already a member or already invited.</>
+              ) : (
+                <>
+                  {result.invited} {result.invited === 1 ? 'person has' : 'people have'} been
+                  invited to {result.collective_name}. They appear under Pending invites
+                  until they accept — you can cancel any of them from there.
+                </>
+              )}
+            </p>
+            <ul className="mt-3 flex flex-col gap-1 text-[13px] text-black">
+              {result.already_member > 0 && (
+                <li>{result.already_member} already {result.already_member === 1 ? 'is a member' : 'are members'} — skipped.</li>
+              )}
+              {result.already_invited > 0 && (
+                <li>{result.already_invited} had already been invited — not invited again.</li>
+              )}
+              {result.duplicates > 0 && (
+                <li>{result.duplicates} repeated {result.duplicates === 1 ? 'address' : 'addresses'} in the file — counted once.</li>
+              )}
+              {result.invalid > 0 && (
+                <li>{result.invalid} {result.invalid === 1 ? 'row' : 'rows'} had no readable email address — skipped.</li>
+              )}
+            </ul>
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={onClose}
+                className="rounded-xl bg-navy-900 px-4 py-2 text-[13px] font-semibold text-white">
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-[16px] font-semibold text-navy-900">Invite people from a CSV</h2>
+            <p className="mt-1 text-[13px] text-black">
+              Upload a list and we&rsquo;ll show you exactly what would happen before
+              anything is sent.
+            </p>
+
+            <div className="mt-4">
+              <label
+                htmlFor="member-import-file"
+                className="text-[13px] font-medium text-navy-900"
+              >
+                Your CSV file
+              </label>
+              <input
+                id="member-import-file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
+                className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 file:mr-3 file:rounded-md file:border-0 file:bg-[rgba(12,24,38,0.06)] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-navy-900"
+              />
+              <p className="mt-1.5 text-[12px]" style={{ color: 'rgba(12,24,38,0.60)' }}>
+                A column headed Email, and a Name column if you have one.{' '}
+                <a
+                  href={apiUrl(`/api/creator/spaces/${spaceSlug}/members/import-template.csv`)}
+                  className="font-semibold underline"
+                  style={{ color: '#246B6A' }}
+                >
+                  Download a sample file
+                </a>
+              </p>
+            </div>
+
+            {busy && !preview && (
+              <p className="mt-4 text-[13px] text-black">Reading your file…</p>
+            )}
+
+            {error && (
+              <p className="mt-4 rounded-lg px-3 py-2 text-[13px]"
+                 style={{ background: 'rgba(185, 28, 28, 0.06)', color: '#991B1B' }}>
+                {error}
+              </p>
+            )}
+
+            {preview && preview.needs_email_column && (
+              <div className="mt-4 rounded-lg px-3 py-3"
+                   style={{ background: 'rgba(12,24,38,0.04)' }}>
+                <p className="text-[13px] text-navy-900">{preview.message}</p>
+                <label htmlFor="member-import-email-col"
+                       className="mt-3 block text-[13px] font-medium text-navy-900">
+                  Which column holds the email addresses?
+                </label>
+                <select
+                  id="member-import-email-col"
+                  value={emailColumn}
+                  onChange={(e) => {
+                    setEmailColumn(e.target.value)
+                    if (file && e.target.value) void runPreview(file, e.target.value, nameColumn)
+                  }}
+                  className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900"
+                >
+                  <option value="">Choose a column…</option>
+                  {preview.headings.map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {preview && !preview.needs_email_column && (
+              <div className="mt-4 rounded-lg px-3 py-3"
+                   style={{ background: 'rgba(12,24,38,0.04)' }}>
+                <p className="text-[13px] font-semibold text-navy-900">
+                  {preview.invitable === 0
+                    ? 'Nobody new in this file'
+                    : `${preview.invitable} ${preview.invitable === 1 ? 'person' : 'people'} would be invited`}
+                </p>
+                <ul className="mt-2 flex flex-col gap-1 text-[13px] text-black">
+                  <li>{preview.rows_read} {preview.rows_read === 1 ? 'row' : 'rows'} read.</li>
+                  {preview.already_member > 0 && (
+                    <li>{preview.already_member} already {preview.already_member === 1 ? 'is a member' : 'are members'} — would be skipped.</li>
+                  )}
+                  {preview.already_invited > 0 && (
+                    <li>{preview.already_invited} already invited — would not be invited again.</li>
+                  )}
+                  {preview.duplicates > 0 && (
+                    <li>
+                      {preview.duplicates} repeated {preview.duplicates === 1 ? 'address' : 'addresses'}
+                      {' '}(line{preview.duplicate_lines.length === 1 ? '' : 's'} {lines(preview.duplicate_lines)}) — counted once.
+                    </li>
+                  )}
+                  {preview.invalid > 0 && (
+                    <li>
+                      {preview.invalid} {preview.invalid === 1 ? 'row' : 'rows'} with no readable
+                      email address (line{preview.invalid_lines.length === 1 ? '' : 's'}{' '}
+                      {lines(preview.invalid_lines)}) — would be skipped.
+                    </li>
+                  )}
+                </ul>
+                {preview.truncated && (
+                  <p className="mt-2 text-[13px]" style={{ color: '#92400E' }}>
+                    That file is longer than one import can carry. The first 2,000 rows
+                    would be invited — import the rest as a second file.
+                  </p>
+                )}
+
+                {/* Which columns were read, and the chance to say otherwise. */}
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="block text-[12px] font-medium text-navy-900">
+                    Email column
+                    <select
+                      value={emailColumn}
+                      onChange={(e) => {
+                        setEmailColumn(e.target.value)
+                        if (file) void runPreview(file, e.target.value, nameColumn)
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-normal text-navy-900"
+                    >
+                      {preview.headings.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-[12px] font-medium text-navy-900">
+                    Name column
+                    <select
+                      value={nameColumn}
+                      onChange={(e) => {
+                        setNameColumn(e.target.value)
+                        if (file) void runPreview(file, emailColumn, e.target.value)
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-normal text-navy-900"
+                    >
+                      <option value="">No name column</option>
+                      {preview.headings.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {preview && !preview.needs_email_column && preview.invitable > 0 && (
+              <p className="mt-3 text-[12px]" style={{ color: 'rgba(12,24,38,0.60)' }}>
+                Each person receives one invitation to join, and nothing else. Importing
+                a list does not add anyone to this Collective or sign them up for
+                anything — they choose whether to accept.
+              </p>
+            )}
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={onClose}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-navy-900">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !preview || preview.needs_email_column || preview.invitable === 0}
+                onClick={confirm}
+                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: '#38A09E' }}
+              >
+                {busy && preview
+                  ? 'Sending…'
+                  : preview && preview.invitable > 0
+                    ? `Invite ${preview.invitable} ${preview.invitable === 1 ? 'person' : 'people'}`
+                    : 'Send invitations'}
               </button>
             </div>
           </>
@@ -3027,6 +3351,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
   const [selectedMember, setSelectedMember]             = useState<CreatorMemberDetail | null>(null)
   const [selectedManualMember, setSelectedManualMember] = useState<ManualMember | null>(null)
   const [broadcastOpen, setBroadcastOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch]                             = useState('')
   const [accessRequests, setAccessRequests]             = useState<AccessRequest[]>(initialAccessRequests)
 
@@ -3120,6 +3445,14 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
         />
       )}
 
+      {importOpen && (
+        <ImportMembersModal
+          spaceSlug={spaceSlug}
+          onClose={() => setImportOpen(false)}
+          onImported={handleInviteCancelled}
+        />
+      )}
+
       {/* ── Collective link ── */}
       <InviteLinkCard spaceSlug={spaceSlug} isPublic={spaceIsPublic} />
 
@@ -3136,6 +3469,14 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
             >
               Message all members
             </button>
+            {/* A plain link, so the browser downloads it rather than
+                this page having to hold a whole file in memory. */}
+            <a
+              href={apiUrl(`/api/creator/spaces/${spaceSlug}/members/export.csv`)}
+              className="whitespace-nowrap rounded-lg border border-slate-200 px-3.5 py-2 text-[13px] font-semibold text-navy-900 transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+            >
+              Export CSV
+            </a>
           <input
             type="text"
             placeholder="Search by name or email…"
@@ -3232,7 +3573,16 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
 
       {/* ── Pending invites ── */}
       <section>
-        <SectionHeading title="Pending invites" count={invitations.length} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <SectionHeading title="Pending invites" count={invitations.length} />
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="whitespace-nowrap rounded-lg border border-slate-200 px-3.5 py-2 text-[13px] font-semibold text-navy-900 transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+          >
+            Invite from CSV
+          </button>
+        </div>
         <div className="rounded-2xl border border-border bg-white">
           {invitations.length === 0 ? (
             <div className="px-6 py-10 text-center">

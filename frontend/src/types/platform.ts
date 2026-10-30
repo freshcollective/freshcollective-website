@@ -2294,3 +2294,53 @@ export interface AcquireResult {
   offering_slug: string
   collective_slug: string
 }
+
+
+/**
+ * Inviting a Collective's members from a spreadsheet.
+ *
+ * Both shapes are counts and line numbers. The preview deliberately
+ * does not hand back the rows it read: a creator needs to know how many
+ * people fall into each bucket and which lines it could not read, and
+ * echoing somebody's contact list through a second response is a way
+ * for it to end up somewhere it should not be.
+ */
+export interface MemberImportPreview {
+  /** The file's own headings, so a wrong guess can be corrected. */
+  headings: string[]
+  email_column: string | null
+  name_column: string | null
+
+  rows_read: number
+  valid: number
+  invalid: number
+  duplicates: number
+  already_member: number
+  already_invited: number
+  /** How many invitations confirming would actually create. */
+  invitable: number
+
+  /** Line numbers only — never what was written on them. */
+  invalid_lines: number[]
+  duplicate_lines: number[]
+  /** The file held more rows than one import may carry. */
+  truncated: boolean
+  /**
+   * The file was readable but no column looked like an email address.
+   * Every count is zero; `headings` is what to choose from.
+   */
+  needs_email_column: boolean
+  /** Shown to the creator when something needs their attention. */
+  message: string | null
+  collective_name: string
+}
+
+export interface MemberImportResult {
+  invited: number
+  already_member: number
+  already_invited: number
+  invalid: number
+  duplicates: number
+  truncated: boolean
+  collective_name: string
+}
