@@ -609,7 +609,12 @@ def collective_themes_changed(
     later report say what it was *then*.
     """
     before, after = list(from_themes or []), list(to_themes or [])
-    if before == after:
+    # Compared as sets, deliberately. Theme order carries no meaning —
+    # it is the click order in the settings form — so re-saving the same
+    # selection reordered is not a recategorisation, and recording it
+    # would put an event with empty ``added`` and ``removed`` into any
+    # report counting category changes.
+    if set(before) == set(after):
         return False
     return record(
         db,
