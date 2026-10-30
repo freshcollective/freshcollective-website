@@ -244,6 +244,30 @@ class CheckOut(BaseModel):
     note: str | None = None
 
 
+class JobRunOut(BaseModel):
+    job_name: str
+    status: str
+    started_at: str
+    finished_at: str | None = None
+    reporting_date_from: str | None = None
+    reporting_date_to: str | None = None
+    days_processed: int = 0
+    rows_written: int = 0
+    #: Short and non-sensitive. Never member or payment data.
+    error: str | None = None
+
+
+class AggregateFreshnessOut(BaseModel):
+    #: Oldest "latest day" across stored metrics — the honest answer to
+    #: "how current is the reporting data", since a trend is only as
+    #: fresh as its least fresh series.
+    oldest_latest_reporting_date: str | None = None
+    newest_latest_reporting_date: str | None = None
+    metrics_stored: int = 0
+    rows_total: int = 0
+    per_metric: dict[str, dict] = {}
+
+
 class HealthOut(BaseModel):
     #: False means business history is not being written at all.
     recording_enabled: bool
@@ -251,11 +275,22 @@ class HealthOut(BaseModel):
     #: has not started" rather than "everything is broken".
     activation_floor: str | None = None
     events_total: int
+    #: The most recent event of any type. A long quiet stretch is normal
+    #: on a small platform and is NOT an instrumentation failure, so this
+    #: is reported as a fact rather than judged.
+    latest_event_at: str | None = None
     event_counts_by_type: dict[str, int]
     #: True when every reconciliation check passes.
     ok: bool
     total_missing: int
     checks: list[CheckOut] = []
+    #: Daily aggregate freshness and the jobs that produce it.
+    aggregates: AggregateFreshnessOut = AggregateFreshnessOut()
+    last_run: JobRunOut | None = None
+    last_successful_run: JobRunOut | None = None
+    #: Runs still marked running long after they started — a process that
+    #: died mid-rebuild. The difference between stale and silently stale.
+    incomplete_runs: list[JobRunOut] = []
     note: str | None = None
 
 
@@ -277,23 +312,94 @@ def recording_health(
     before BI-1 are reported as ``pre_activation`` rather than as tens of
     thousands of failures.
     """
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
     from app.core.config import settings
+    from app.models.business_event import BusinessEvent
+    from app.models.reporting_aggregate import MetricDaily
+    from app.reporting import aggregates
     from app.services import business_event_reconciliation as recon
 
     report = recon.reconcile(db)
     counts = recon.event_counts_by_type(db)
     total = sum(counts.values())
+    latest_event = db.execute(
+        _select(_func.max(BusinessEvent.occurred_at))
+    ).scalar()
 
+    def _run_out(run) -> JobRunOut | None:
+        if run is None:
+            return None
+        return JobRunOut(
+            job_name=run.job_name,
+            status=run.status,
+            started_at=run.started_at.isoformat(),
+            finished_at=run.finished_at.isoformat() if run.finished_at else None,
+            reporting_date_from=(
+                run.reporting_date_from.isoformat()
+                if run.reporting_date_from else None
+            ),
+            reporting_date_to=(
+                run.reporting_date_to.isoformat()
+                if run.reporting_date_to else None
+            ),
+            days_processed=run.days_processed,
+            rows_written=run.rows_written,
+            error=run.error,
+        )
+
+    per_metric = aggregates.freshness(db)
+    latest_dates = [
+        v["latest_reporting_date"] for v in per_metric.values()
+        if v["latest_reporting_date"]
+    ]
+    rows_total = db.execute(
+        _select(_func.count()).select_from(MetricDaily)
+    ).scalar() or 0
+    fresh = AggregateFreshnessOut(
+        oldest_latest_reporting_date=min(latest_dates) if latest_dates else None,
+        newest_latest_reporting_date=max(latest_dates) if latest_dates else None,
+        metrics_stored=len(per_metric),
+        rows_total=int(rows_total),
+        per_metric=per_metric,
+    )
+
+    incomplete = [_run_out(r) for r in aggregates.unfinished_runs(db)]
+    last = _run_out(aggregates.last_run(db))
+    last_ok = _run_out(aggregates.last_successful_run(db))
+
+    # Notes are ordered worst-first, and a quiet period is never one of
+    # them: no activity on a small platform is normal, and calling it a
+    # failure would train somebody to ignore this panel.
     note = None
     if not settings.business_events_enabled:
         note = (
             "Recording is DISABLED. Business history is not being written, "
             "and the gap cannot be reconstructed later."
         )
+    elif incomplete:
+        note = (
+            f"{len(incomplete)} reporting run(s) started and never finished. "
+            "The stored aggregates may be incomplete."
+        )
+    elif last is not None and last.status == "failed":
+        note = (
+            "The most recent reporting rebuild failed. Stored aggregates are "
+            "stale until it succeeds; re-running the job is safe."
+        )
     elif report.activation_floor is None:
+        # Ranked above "never rebuilt" on purpose: there is nothing to
+        # aggregate until something has been recorded, so this is the
+        # more fundamental fact and the one worth saying first.
         note = (
             "No events recorded yet. Recording is enabled, so this is "
             "expected until the first instrumented operation occurs."
+        )
+    elif last_ok is None and last is None:
+        note = (
+            "The reporting rebuild has never run, so no daily aggregates "
+            "exist yet. Live metrics are unaffected."
         )
 
     return HealthOut(
@@ -302,6 +408,7 @@ def recording_health(
             report.activation_floor.isoformat() if report.activation_floor else None
         ),
         events_total=total,
+        latest_event_at=latest_event.isoformat() if latest_event else None,
         event_counts_by_type=counts,
         ok=report.ok,
         total_missing=report.total_missing,
@@ -317,5 +424,9 @@ def recording_health(
             )
             for c in report.checks
         ],
+        aggregates=fresh,
+        last_run=last,
+        last_successful_run=last_ok,
+        incomplete_runs=incomplete,
         note=note,
     )

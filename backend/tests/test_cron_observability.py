@@ -115,6 +115,9 @@ EXPECTED_CRONS = {
     "fc-gathering-reminders",
     "fc-connect-transfer-sweeper",
     "fc-connect-recovery-sweeper",
+    # BI-3: the nightly reporting rebuild. Its own service so a reporting
+    # failure cannot delay money work.
+    "fc-reporting-nightly",
 }
 
 

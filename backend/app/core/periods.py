@@ -101,6 +101,41 @@ def _to_utc_naive(local_dt: datetime) -> datetime:
 # ---------------------------------------------------------------------------
 
 
+def reporting_date_bounds(local_date) -> tuple[datetime, datetime]:
+    """The naive-UTC half-open bounds of one Australian calendar day.
+
+    ``local_date`` is a ``date`` in the platform timezone, and the pair
+    returned is ``[starts_at, ends_at)`` in naive UTC, matching how every
+    timestamp in this database is stored.
+
+    Computed by localising midnight on each of the two calendar days
+    rather than by adding 24 hours, because a daylight-saving day is 23
+    or 25 hours long. On the Sydney spring-forward day a 24-hour
+    assumption would leave an hour of activity in neither day; on the
+    autumn day it would count an hour twice.
+    """
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    tz = platform_tz()
+    start_local = _dt.combine(local_date, _dt.min.time()).replace(tzinfo=tz)
+    end_local = _dt.combine(local_date + _td(days=1), _dt.min.time()).replace(tzinfo=tz)
+    return _to_utc_naive(start_local), _to_utc_naive(end_local)
+
+
+def completed_reporting_date(moment: datetime):
+    """The most recent Australian calendar day that has fully finished.
+
+    The nightly job rebuilds this day. Taking "yesterday in the platform
+    timezone" rather than "yesterday in UTC" is what makes a figure
+    labelled 30 October cover the Australian 30 October — which is the
+    day the person reading the dashboard means.
+    """
+    from datetime import timedelta as _td
+
+    return (_to_local(moment) - _td(days=1)).date()
+
+
 def local_day_start_utc(moment: datetime) -> datetime:
     """Midnight of ``moment``'s *local* day, returned as naive UTC.
 

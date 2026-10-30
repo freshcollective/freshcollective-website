@@ -74,7 +74,7 @@ os.environ.setdefault("FC_SERVICE_ROLE", "job")
 from app.core.observability import init_sentry
 
 #: Every process that reports to the fc-api Sentry project: the API and
-#: the seven crons, each tagged with its own Render service name.
+#: the eight crons, each tagged with its own Render service name.
 #: ``test_cron_observability`` asserts this agrees with render.yaml, so
 #: a new service cannot be verified under a name Sentry has never seen.
 COMPONENTS = (
@@ -86,6 +86,7 @@ COMPONENTS = (
     "fc-gathering-reminders",
     "fc-connect-transfer-sweeper",
     "fc-connect-recovery-sweeper",
+    "fc-reporting-nightly",
 )
 
 #: Fake, and recognisable as fake. ``.invalid`` is reserved by RFC 2606

@@ -1009,3 +1009,59 @@ services:
       # no-op. See the fc-api block for the full reasoning.
       - key: SENTRY_DSN
         sync: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Nightly reporting rebuild (BI-3).
+  #
+  # Its own service rather than riding along in one of the financial
+  # sweepers: a reporting failure must never delay money work, and the
+  # schedules want to differ. ~US$1/month, which is the right price for
+  # that separation.
+  #
+  # 16:00 UTC is 2am AEST / 3am AEDT — comfortably after the Australian
+  # day it rebuilds has ended, in both halves of the year, without the
+  # schedule needing to change at a daylight-saving transition. The job
+  # itself derives the day from the Australia/Sydney calendar via
+  # ``app.core.periods.completed_reporting_date``, so the figure labelled
+  # 30 October covers the Australian 30 October.
+  #
+  # Idempotent: every write is an upsert keyed on
+  # (metric, reporting_date, dimension). It rebuilds the last completed
+  # day plus a short lookback, so a late refund or a backfilled Stripe
+  # fee is picked up without anybody asking — and a missed night repairs
+  # itself the following one. Re-running by hand is always safe.
+  #
+  # Failures are recorded in ``reporting_job_runs`` and surfaced by
+  # GET /api/admin/reporting/health, so stale reporting data is never
+  # silently stale.
+  - type: cron
+    name: fc-reporting-nightly
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "0 16 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/reporting/rebuild_daily.py
+    envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      # Reads money, never moves it — no Stripe client is constructed.
+      - key: FC_JOB_REQUIRES_STRIPE
+        value: "false"
+      - key: APP_ENV
+        value: production
+      # Declared on every python service: each builds the shared
+      # ``Settings`` object and ``_check_public_app_url`` is a global
+      # production invariant on it. See the fc-api block.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+      # Error reporting — same project and DSN as fc-api; the
+      # ``component`` tag separates this job's issues. Dashboard-owned;
+      # absent is a clean no-op.
+      - key: SENTRY_DSN
+        sync: false

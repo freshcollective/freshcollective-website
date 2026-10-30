@@ -498,10 +498,19 @@ describe('render.yaml', () => {
     }
   })
 
-  test('nothing outside fc-web was touched for this phase', () => {
-    // fc-api and the seven crons keep their own server-side SENTRY_DSN
-    // from Phases 1 and 2. The frontend deploy must not need theirs.
+  test('every server-side component keeps its own SENTRY_DSN', () => {
+    // fc-api and each cron carry their own server-side SENTRY_DSN from
+    // Phases 1 and 2; the frontend deploy must not need theirs. Counted
+    // against the blueprint's own cron list rather than a literal, so
+    // adding a cron does not fail this test for the wrong reason —
+    // BI-3's `fc-reporting-nightly` was the eighth.
+    const crons = (blueprint.match(/- type: cron/g) ?? []).length
     const occurrences = (blueprint.match(/key: SENTRY_DSN/g) ?? []).length
-    assert.equal(occurrences, 8, 'fc-api plus seven crons, unchanged')
+    assert.equal(
+      occurrences,
+      crons + 1,
+      `fc-api plus ${crons} crons, each with its own DSN`,
+    )
+    assert.ok(crons >= 8, 'the cron list should not have shrunk')
   })
 })
