@@ -1503,6 +1503,23 @@ def get_platform_overview(
     creator_users = db.query(func.count(UserModel.id)).filter(UserModel.role == "creator").scalar() or 0
     member_users  = total_users - admin_users - creator_users
 
+    # BI-2 — the membership counts, resolved through the shared metric
+    # registry so this panel and every other reporting surface answer
+    # with the same definition rather than each writing its own query.
+    from app.reporting.registry import REGISTRY as _REG, Window as _W
+    from app.reporting.scope import platform_scope as _ps
+    _scope, _all_time = _ps(), _W()
+    _unique_members = int(
+        _REG.get("unique_members").evaluate(db, _scope, _all_time).value or 0
+    )
+    _total_memberships = int(
+        _REG.get("total_memberships").evaluate(db, _scope, _all_time).value or 0
+    )
+    _multi_members = int(
+        _REG.get("multi_collective_members").evaluate(db, _scope, _all_time).value or 0
+    )
+    _per_member = _REG.get("memberships_per_member").evaluate(db, _scope, _all_time).value
+
     pending_access_requests = (
         db.query(func.count(SpaceAccessRequest.id))
         .filter(SpaceAccessRequest.status == "pending")
@@ -1540,8 +1557,19 @@ def get_platform_overview(
     from app.core.config import settings as _s
 
     now_utc = datetime.utcnow()
-    start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    # BI-2: "today" is the platform's day, not UTC's. For an Australian
+    # business a UTC midnight boundary puts 10-11 hours of the previous
+    # local day into today's figures. ``app.core.periods`` owns the
+    # platform timezone and the conversion back to naive UTC.
+    from app.core.periods import local_day_start_utc
+    start_of_day = local_day_start_utc(now_utc)
     seven_days_ago = now_utc - timedelta(days=7)
+    # BI-2: attributed by observed settlement, falling back to creation
+    # for payments predating BI-1. These three fields previously filtered
+    # on ``updated_at``, so any later touch — a refund, a payout mark, a
+    # fee backfill — moved a historical payment into today's revenue and
+    # made this panel disagree with every other reporting endpoint.
+    _settled = func.coalesce(PaymentTransaction.settled_at, PaymentTransaction.created_at)
 
     upcoming_gatherings = (
         db.query(func.count(Event.id))
@@ -1557,7 +1585,7 @@ def get_platform_overview(
         .filter(
             PaymentTransaction.status == PaymentTransactionStatus.succeeded,
             PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
-            PaymentTransaction.updated_at >= start_of_day,
+            _settled >= start_of_day,
         )
         .scalar() or 0
     )
@@ -1566,7 +1594,7 @@ def get_platform_overview(
         .filter(
             PaymentTransaction.status == PaymentTransactionStatus.succeeded,
             PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
-            PaymentTransaction.updated_at >= seven_days_ago,
+            _settled >= seven_days_ago,
         )
         .scalar() or 0
     )
@@ -1574,7 +1602,7 @@ def get_platform_overview(
         db.query(func.count(PaymentTransaction.id))
         .filter(
             PaymentTransaction.status == PaymentTransactionStatus.failed,
-            PaymentTransaction.updated_at >= seven_days_ago,
+            _settled >= seven_days_ago,
         )
         .scalar() or 0
     )
@@ -1628,6 +1656,10 @@ def get_platform_overview(
         admin_users=admin_users,
         creator_users=creator_users,
         member_users=member_users,
+        unique_members=_unique_members,
+        total_memberships=_total_memberships,
+        multi_collective_members=_multi_members,
+        memberships_per_member=_per_member,
         pending_access_requests=pending_access_requests,
         pending_invitations=pending_invitations,
         total_gross_cents=total_gross_cents,

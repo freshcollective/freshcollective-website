@@ -545,7 +545,21 @@ export interface MotherWorldOverview {
   total_users: number
   admin_users: number
   creator_users: number
+  /**
+   * Accounts whose platform ROLE is `user`. Despite the name this is NOT
+   * the number of people who belong to a Collective — a creator who joins
+   * someone else's Collective is excluded, and an account that joined
+   * nothing is included. Use `unique_members` for membership questions.
+   */
   member_users: number
+  /** Distinct people with at least one active membership. Counted once. */
+  unique_members: number
+  /** Active memberships. Somebody in three Collectives contributes three. */
+  total_memberships: number
+  /** People with active memberships in two or more Collectives. */
+  multi_collective_members: number
+  /** total_memberships / unique_members, or null with no members. */
+  memberships_per_member: number | null
   pending_access_requests: number
   pending_invitations: number
   total_gross_cents: number

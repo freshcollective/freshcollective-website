@@ -311,8 +311,14 @@ function LifeAcrossSection({ data }: { data: MotherWorldOverview }) {
     {
       icon: '🌱',
       label: 'Members',
-      value: data.member_users,
-      caption: `${new Intl.NumberFormat('en-AU').format(data.total_users)} people across the world`,
+      // Unique people holding a membership, not accounts-by-role. The old
+      // `member_users` excluded a creator who had joined someone else's
+      // Collective and counted an account that had joined nothing, so this
+      // tile was mislabelled rather than merely imprecise.
+      value: data.unique_members,
+      caption: data.total_memberships === data.unique_members
+        ? `${new Intl.NumberFormat('en-AU').format(data.total_users)} registered`
+        : `${new Intl.NumberFormat('en-AU').format(data.total_memberships)} memberships across ${new Intl.NumberFormat('en-AU').format(data.unique_members)} people`,
       href: '/admin/users',
       hue: HUE.blue,
     },

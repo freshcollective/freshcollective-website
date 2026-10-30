@@ -291,11 +291,30 @@ class AdminPlatformOverview(BaseModel):
     active_collectives: int
     draft_collectives: int
     archived_collectives: int
-    # Users by role
+    # Users by role.
     total_users: int
     admin_users: int
     creator_users: int
+    #: Accounts whose platform ROLE is ``user`` — i.e. total minus admins
+    #: minus creators. Despite the name this is NOT the number of people
+    #: who are members of a Collective: a creator who joins someone
+    #: else's Collective is excluded, and an account that has joined
+    #: nothing is included. Kept, with its original value, so no existing
+    #: consumer changes under it; read ``unique_members`` below for the
+    #: question dashboards actually want to ask.
     member_users: int
+
+    # BI-2 — membership counted from memberships, not from roles. Three
+    # different questions, deliberately three different fields.
+    #: Distinct people holding at least one active membership. Somebody
+    #: in three Collectives counts once.
+    unique_members: int = 0
+    #: Active memberships. Somebody in three Collectives contributes three.
+    total_memberships: int = 0
+    #: People holding active memberships in two or more Collectives.
+    multi_collective_members: int = 0
+    #: ``total_memberships / unique_members``, or None with no members.
+    memberships_per_member: float | None = None
     # Access queue
     pending_access_requests: int
     pending_invitations: int

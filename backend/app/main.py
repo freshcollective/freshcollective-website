@@ -29,6 +29,7 @@ from app.notifications.routes import router as notifications_router
 from app.activities.routes import router as activities_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
+from app.reporting.routes import router as admin_reporting_router
 from app.admin.access_revocation import router as admin_access_revocation_router
 from app.admin.email_templates import router as admin_email_templates_router
 from app.admin.plan_cancellation import router as admin_plan_cancellation_router
@@ -362,6 +363,7 @@ async def add_transport_security_headers(request, call_next):
 app.include_router(auth_router)
 app.include_router(client_router)
 app.include_router(admin_router)
+app.include_router(admin_reporting_router)
 app.include_router(admin_access_revocation_router)
 app.include_router(admin_plan_cancellation_router)
 app.include_router(admin_payout_batch_router)

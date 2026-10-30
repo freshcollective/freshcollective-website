@@ -101,6 +101,23 @@ def _to_utc_naive(local_dt: datetime) -> datetime:
 # ---------------------------------------------------------------------------
 
 
+def local_day_start_utc(moment: datetime) -> datetime:
+    """Midnight of ``moment``'s *local* day, returned as naive UTC.
+
+    Added for BI-2. "Revenue today" on an Australian business's dashboard
+    means the Australian day; a UTC midnight boundary silently folds ten
+    or eleven hours of yesterday evening into today's figure, and the
+    error is largest exactly when somebody checks the dashboard in the
+    morning.
+
+    Takes and returns naive UTC, matching how every timestamp in this
+    database is stored.
+    """
+    local = _to_local(moment)
+    midnight_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return _to_utc_naive(midnight_local)
+
+
 def fiscal_year_start_year(dt: datetime) -> int:
     """Return the *start* calendar year of the AU FY containing ``dt``.
 
