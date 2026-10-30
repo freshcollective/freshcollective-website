@@ -50,17 +50,35 @@ Production is Render, not any local directory.
 
 > **Never run migrations or development commands from `fc-production`.**
 > `alembic upgrade head` there applies a stale branch's migration graph to your
-> local database. The launcher scripts and `scripts/health-check.sh` still
-> hardcode that path — a known defect, pending correction.
+> local database.
 
-The only Python virtual environment currently lives at
-`/home/lindsey/fc-production/backend/.venv`. Until a local environment exists in
-`fc-merge`, borrow that interpreter while running code from `fc-merge`:
+### Local setup
+
+`fc-merge` is self-contained. The backend has its own virtual environment at
+`backend/.venv` (Python 3.14, gitignored); recreate it with:
 
 ```bash
 cd /home/lindsey/fc-merge/backend
-/home/lindsey/fc-production/backend/.venv/bin/python -m pytest
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+Each app needs a local, gitignored env file — copy `backend/.env.example` and
+`frontend/.env.example`. The frontend's `API_INTERNAL_URL` is what lets its
+`/api/*` proxy reach the backend; without it every proxied call answers 500.
+
+Start either service with the launchers, which point at this checkout and use
+its venv:
+
+```bash
+~/.local/bin/fc-run-backend     # uvicorn on 127.0.0.1:8000
+~/.local/bin/fc-run-frontend    # next dev on localhost:3000
+bash scripts/health-check.sh    # both services, venv, migration state
+```
+
+The two launchers are local, untracked files under `~/.local/bin`.
+`scripts/health-check.sh` is tracked, and derives the checkout from its own
+location — so running a copy in another worktree reports on that worktree.
 
 `ECONNREFUSED 127.0.0.1:8000` in the frontend means the backend process is not
 running. This is never a code bug.
@@ -92,7 +110,7 @@ honestly. Requires a copied `backend/.env`.
 
 ```bash
 cd /home/lindsey/fc-merge/backend
-/home/lindsey/fc-production/backend/.venv/bin/python -m pytest
+.venv/bin/python -m pytest
 ```
 
 Frontend:
