@@ -133,6 +133,12 @@ class Series:
     source: str
     points: list[Point] = field(default_factory=list)
     definition: str = ""
+    #: Where the figure comes from and which timestamp dates it — the
+    #: registry's own declaration, carried through so the chart can
+    #: answer "what is this" without a second copy of the answer.
+    source_of_truth: str = ""
+    date_basis: str = ""
+    availability: str = ""
     limitations: str | None = None
     observation_only: bool = False
     qualifiers: dict = field(default_factory=dict)
@@ -335,6 +341,9 @@ def build_series(
         source=source,
         points=points,
         definition=metric.definition,
+        source_of_truth=metric.source_of_truth,
+        date_basis=metric.date_basis.value,
+        availability=metric.availability.value,
         limitations=metric.limitations,
         observation_only=metric.observation_only,
         qualifiers=quals,

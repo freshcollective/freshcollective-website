@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
+  AVAILABILITY_PROSE,
+  DATE_BASIS_PROSE,
+  materialWarnings,
   type HistoryPoint,
   type HistorySeries,
   CHART_HUES,
@@ -74,6 +77,9 @@ function series(over: Partial<HistorySeries> = {}): HistorySeries {
     aggregation: 'snapshot',
     source: 'stored',
     definition: 'Distinct people holding a membership.',
+    source_of_truth: 'space_memberships.joined_at / removed_at',
+    date_basis: 'none',
+    availability: 'full',
     limitations: null,
     observation_only: false,
     qualifiers: {},
@@ -581,5 +587,214 @@ describe('the chart stays inside its card at any width', () => {
   test('a single label needs no spreading', () => {
     assert.deepEqual(spreadLabels([42], 13, [0, 200]), [42])
     assert.deepEqual(spreadLabels([], 13, [0, 200]), [])
+  })
+})
+
+describe('what stays on screen and what moves behind a disclosure', () => {
+  test('a gap is a material warning, not background', () => {
+    const s = series({
+      points: [point(), point({ available: false, value: null })],
+    })
+    assert.ok(materialWarnings([s]).some((w) => /gap, not a zero/.test(w)))
+  })
+
+  test('a reconstruction is a material warning', () => {
+    const s = series({
+      points: [point(), point({ provenance: 'reconstructed' })],
+    })
+    assert.ok(materialWarnings([s]).some((w) => /reconstructed/.test(w)))
+  })
+
+  test('a filter that emptied the chart is a material warning', () => {
+    const s = series({
+      qualifiers: {
+        population_empty_note: 'No settled member purchases fall inside this population.',
+      },
+    })
+    assert.ok(materialWarnings([s]).some((w) => /No settled member/.test(w)))
+  })
+
+  test('a period built from fewer days than it covers is a material warning', () => {
+    const s = series({
+      points: [point({ partial_data: true, days_present: 2, days_expected: 7 })],
+    })
+    assert.ok(materialWarnings([s]).some((w) => /fewer days/.test(w)))
+  })
+
+  test('a sound chart carries no warnings at all', () => {
+    assert.deepEqual(materialWarnings([series()]), [])
+  })
+
+  test('the same warning from two series is said once', () => {
+    const gappy = () =>
+      series({ points: [point({ available: false, value: null })] })
+    const warnings = materialWarnings([gappy(), { ...gappy(), key: 'b' }])
+    assert.equal(new Set(warnings).size, warnings.length)
+  })
+
+  test('definitions and sources are background, never a warning', () => {
+    // The split this module exists to make: a limitation describes the
+    // metric, a warning describes the chart in front of you.
+    const s = series({
+      limitations: 'Non-additive. A monthly figure must be recomputed.',
+      definition: 'Distinct people holding a membership.',
+      source_of_truth: 'space_memberships',
+    })
+    assert.deepEqual(materialWarnings([s]), [])
+  })
+
+  test('every date basis the backend can send reads as a sentence', () => {
+    // A basis with no prose would render as a column name in the
+    // disclosure, which is the opposite of an explanation.
+    for (const basis of [
+      'payment_settled', 'refunded', 'payout_marked', 'created',
+      'membership_joined', 'business_event', 'none',
+    ]) {
+      assert.ok(DATE_BASIS_PROSE[basis], `no prose for ${basis}`)
+      assert.match(DATE_BASIS_PROSE[basis], /\.$/)
+    }
+  })
+
+  test('every availability the backend can send reads as a sentence', () => {
+    for (const a of ['full', 'from_instrumentation', 'partial']) {
+      assert.ok(AVAILABILITY_PROSE[a], `no prose for ${a}`)
+    }
+  })
+
+  test('the panel offers the disclosure and keeps the table at top level', () => {
+    const panel = read('src/components/admin/insights/HistoryPanel.tsx')
+    assert.match(panel, /What does this chart mean\?/)
+    // A controlled disclosure: a button carrying aria-expanded and
+    // aria-controls, which announces as one and can be laid out beside
+    // the table control. A details/summary could not be, without
+    // nesting a second interactive control inside the summary.
+    assert.match(panel, /aria-expanded=\{showMeaning\}/)
+    assert.match(panel, /aria-controls=\{meaningId\}/)
+    assert.ok(
+      !/<summary/.test(panel),
+      'a button must not be nested inside a summary element',
+    )
+  })
+
+  test('the table control is a peer of the disclosure, not inside it', () => {
+    // The table is the palette's required relief for a hue below 3:1
+    // against white; burying it one level deeper than the explanation
+    // would make the required thing harder to reach than the optional
+    // one.
+    const panel = read('src/components/admin/insights/HistoryPanel.tsx')
+    const meaningPanel = panel.indexOf('{showMeaning && (')
+    const tableControl = panel.indexOf('Show the figures')
+    assert.ok(tableControl < meaningPanel, 'the table control must come first')
+  })
+
+  test('the registry limitations still reach the page, just not inline', () => {
+    const panel = read('src/components/admin/insights/HistoryPanel.tsx')
+    assert.match(panel, /s\.limitations/, 'limitations must still be rendered')
+    assert.match(panel, /source_of_truth/, 'the source must be shown')
+  })
+})
+
+describe('the charts lead each page and the cards follow', () => {
+  const PAGES = [
+    'src/app/admin/insights/growth/page.tsx',
+    'src/app/admin/insights/money/page.tsx',
+  ]
+
+  test('the first chart appears before the first metric card', () => {
+    for (const path of PAGES) {
+      const src = read(path)
+      const firstChart = src.indexOf('<HistoryPanel')
+      const firstCard = src.indexOf('<InsightCard')
+      assert.ok(firstChart > 0 && firstCard > 0, path)
+      assert.ok(
+        firstChart < firstCard,
+        `${path}: the charts should lead the page`,
+      )
+    }
+  })
+
+  test('the history controls sit above the first chart', () => {
+    for (const path of PAGES) {
+      const src = read(path)
+      assert.ok(
+        src.indexOf('<HistoryControls') < src.indexOf('<HistoryPanel'),
+        `${path}: the filters must be reachable before the charts`,
+      )
+    }
+  })
+
+  test('the period control still governs the cards it sits with', () => {
+    for (const path of PAGES) {
+      const src = read(path)
+      // It moved down the page with the cards, but it must still be
+      // between the charts and the first card rather than orphaned.
+      const period = src.indexOf('<PeriodSelect')
+      assert.ok(period > src.indexOf('<HistoryPanel'), path)
+      assert.ok(period < src.indexOf('<InsightCard'), path)
+    }
+  })
+
+  test('exactly one chart per page is the prominent one', () => {
+    for (const path of PAGES) {
+      const matches = [...read(path).matchAll(/\bprominent\b/g)]
+      assert.equal(matches.length, 1, `${path} should have one lead chart`)
+    }
+  })
+
+  test('Growth leads with membership growth, Money with its own income', () => {
+    const growth = read(PAGES[0])
+    const money = read(PAGES[1])
+    assert.match(
+      growth.slice(growth.indexOf('<HistoryPanel'), growth.indexOf('<HistoryPanel') + 400),
+      /Membership growth/,
+    )
+    assert.match(
+      money.slice(money.indexOf('<HistoryPanel'), money.indexOf('<HistoryPanel') + 400),
+      /Fresh Collective's own income/,
+    )
+  })
+
+  test('the Money page still groups the cards by whose money it is', () => {
+    const money = read(PAGES[1])
+    for (const band of [
+      "Fresh Collective's own income",
+      'Money we moved for creators',
+      'Money that went back',
+    ]) {
+      assert.ok(money.includes(band), `${band} should still be a band`)
+    }
+    // Ownership order preserved: ours, then creators', then returned.
+    const ours = money.lastIndexOf("Fresh Collective's own income")
+    const theirs = money.indexOf('Money we moved for creators')
+    const back = money.indexOf('Money that went back')
+    assert.ok(ours < theirs && theirs < back)
+  })
+
+  test('the reconciliation detail is still on the Money page', () => {
+    const money = read(PAGES[1])
+    assert.ok(money.includes('<WhoIsOwedNote'))
+    assert.ok(money.includes('<WhoseMoneyNote'))
+    assert.ok(money.includes('<NotProfitNote'))
+  })
+
+  test('no metric card was dropped in the rearrangement', () => {
+    // The reorder must not have quietly lost a figure.
+    const growth = read(PAGES[0])
+    const money = read(PAGES[1])
+    for (const key of [
+      'unique_members', 'total_memberships', 'memberships_per_member',
+      'multi_collective_members', 'registered_users', 'registered_creators',
+      'total_collectives', 'active_collectives', 'memberships_started',
+    ]) {
+      assert.ok(growth.includes(`pick(data, '${key}')`), `growth lost ${key}`)
+    }
+    for (const key of [
+      'platform_fee_revenue_cents', 'subscription_revenue_cents',
+      'processing_costs_cents', 'contribution_after_processing_cents',
+      'gross_collective_sales_cents', 'creator_earnings_cents',
+      'paid_out_cents', 'outstanding_payouts_cents', 'refunds_cents',
+    ]) {
+      assert.ok(money.includes(`pick(data, '${key}')`), `money lost ${key}`)
+    }
   })
 })

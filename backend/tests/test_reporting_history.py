@@ -42,6 +42,7 @@ from app.models.payment import (
 from app.models.platform import SpaceMembership, SpaceMembershipStatus, SpaceRole
 from app.models.reporting_aggregate import MetricDaily
 from app.reporting import aggregates, history
+from app.reporting.aggregates import store_eligible
 from app.reporting.classification import (
     DEMONSTRATION,
     INTERNAL_OPERATIONS,
@@ -761,6 +762,32 @@ class TestTheHistoryEndpoint:
             "the registry's limitation must reach the chart, not stay in "
             "the backend"
         )
+
+    def test_the_source_and_date_basis_reach_the_chart_too(self, client):
+        """The chart's own 'what does this mean' answers from the
+        registry, so everything it needs has to be in the payload —
+        otherwise the explanation becomes a second copy of the truth
+        maintained by hand in the frontend."""
+        body = client.get(HISTORY, params={
+            "keys": "gross_collective_sales_cents,unique_members",
+        }).json()
+        for s in body["series"]:
+            assert s["source_of_truth"], f"{s['key']} has no source"
+            assert s["date_basis"], f"{s['key']} has no date basis"
+            assert s["availability"], f"{s['key']} has no availability"
+
+    def test_the_date_basis_is_one_the_frontend_has_prose_for(self, client):
+        """A basis with no prose renders as a column name, which is the
+        opposite of an explanation. The frontend's map is asserted
+        against this same list in insights-history.test.ts."""
+        known = {
+            "payment_settled", "refunded", "payout_marked", "created",
+            "membership_joined", "business_event", "none",
+        }
+        keys = ",".join(m.key for m in REGISTRY.all() if store_eligible(m))
+        body = client.get(HISTORY, params={"keys": keys}).json()
+        bases = {s["date_basis"] for s in body["series"]}
+        assert bases <= known, f"unknown date basis: {sorted(bases - known)}"
 
     def test_the_population_note_is_returned_for_display(self, client):
         body = client.get(HISTORY, params={

@@ -62,6 +62,9 @@ export interface HistorySeries {
   aggregation: string
   source: 'stored' | 'recomputed'
   definition: string
+  source_of_truth: string
+  date_basis: string
+  availability: string
   limitations: string | null
   observation_only: boolean
   qualifiers: Record<string, unknown>
@@ -605,4 +608,59 @@ export function spreadLabels(
   const out = new Array<number>(ys.length)
   for (const item of order) out[item.i] = item.y
   return out
+}
+
+/**
+ * How a metric's date basis reads in a sentence.
+ *
+ * The registry names the column; a reader needs the idea. Kept here
+ * rather than in the component so the mapping is tested and so a basis
+ * added to `DateBasis` fails visibly as an unknown rather than being
+ * silently dropped from the explanation.
+ */
+export const DATE_BASIS_PROSE: Record<string, string> = {
+  payment_settled:
+    'Dated by when the money arrived, falling back to when the payment was created for anything that settled before recording began.',
+  refunded: 'Dated by when the refund happened, not when the sale did.',
+  payout_marked: 'Dated by when the payout was marked paid.',
+  created: 'Dated by when the record was created.',
+  membership_joined: 'Dated by when the membership began.',
+  business_event: 'Dated by when the event occurred.',
+  none: 'Measured at a moment rather than across a period.',
+}
+
+export const AVAILABILITY_PROSE: Record<string, string> = {
+  full: 'Reliable for the whole history.',
+  from_instrumentation:
+    'Only reliable from the point recording began — earlier periods are a gap, never a zero.',
+  partial: 'Reliable with the caveat noted below.',
+}
+
+/**
+ * The warnings that change how a figure should be read, as opposed to
+ * the background a curious reader might want.
+ *
+ * The split the panel is built around. A gap, a reconstruction, a
+ * period emptied by the classification filter — each changes what the
+ * chart in front of you means, so each stays on screen. Definitions,
+ * sources and calculation rules do not change the reading and belong
+ * behind a disclosure.
+ */
+export function materialWarnings(series: HistorySeries[]): string[] {
+  const out: string[] = []
+  if (hasGaps(series)) {
+    out.push('Shaded periods have no figure — a gap, not a zero.')
+  }
+  for (const s of series) {
+    const note = seriesProvenanceNote(s)
+    if (note) out.push(note)
+    const empty = s.qualifiers?.population_empty_note
+    if (typeof empty === 'string') out.push(empty)
+    if (s.points.some((p) => p.partial_data)) {
+      out.push(
+        'Some periods are built from fewer days than they cover, so they understate activity.',
+      )
+    }
+  }
+  return [...new Set(out)]
 }

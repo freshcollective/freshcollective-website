@@ -150,6 +150,13 @@ class HistorySeriesOut(BaseModel):
     #: ``stored`` or ``recomputed`` — see ``app.reporting.history``.
     source: str
     definition: str = ""
+    #: The table(s) the number comes from, and which timestamp places it
+    #: in a period. Returned so the chart's own "what does this mean"
+    #: disclosure can answer it from the registry rather than from a
+    #: caption somebody wrote once and nobody updated.
+    source_of_truth: str = ""
+    date_basis: str = ""
+    availability: str = ""
     limitations: str | None = None
     observation_only: bool = False
     qualifiers: dict = {}
@@ -501,6 +508,9 @@ def metric_history(
                 aggregation=s.aggregation,
                 source=s.source,
                 definition=s.definition,
+                source_of_truth=s.source_of_truth,
+                date_basis=s.date_basis,
+                availability=s.availability,
                 limitations=s.limitations,
                 observation_only=s.observation_only,
                 qualifiers=s.qualifiers,

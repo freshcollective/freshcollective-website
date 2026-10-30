@@ -99,194 +99,227 @@ export default function MoneyPage() {
       title="Money"
       intro="What Fresh Collective earns, what creators earn, and what has actually been paid."
     >
-      <div className="mb-5">
-        <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
-      </div>
+      {/*
+        Charts first, figures underneath — and the ordering inside each
+        half is the same one the page has always used: whose money it
+        is. Our income, then the volume we moved for creators, then what
+        went back. Putting gross sales first would put the biggest
+        number at the top of a page about revenue, which is the
+        misreading this page exists to prevent.
+      */}
+      <HistoryControls
+        range={range}
+        grouping={grouping}
+        population={population}
+        onRange={setRange}
+        onGrouping={setGrouping}
+        onPopulation={setPopulation}
+        options={history.data?.options}
+        disabled={history.loading}
+        populationNote={history.data?.population.note}
+      />
 
-      {error && <Problem message={error} />}
-      {loading && !data && <Waiting />}
+      {history.error && <Problem message={history.error} />}
 
-      {data && (
-        <>
-          <Band
-            title="Fresh Collective's own income"
-            note="The two streams that are genuinely ours: the fee kept from member purchases, and what creators pay for their plans."
-          >
-            <InsightCard
-              metric={pick(data, 'platform_fee_revenue_cents')}
-              previous={pickPrevious(data, 'platform_fee_revenue_cents')}
-              previousLabel={prev}
-              hue="teal"
-              caption="our share of what members paid creators"
-            />
-            <InsightCard
-              metric={pick(data, 'subscription_revenue_cents')}
-              previous={pickPrevious(data, 'subscription_revenue_cents')}
-              previousLabel={prev}
-              hue="teal"
-              caption="creator plan fees paid to us"
-            />
-            <InsightCard
-              metric={pick(data, 'processing_costs_cents')}
-              previous={pickPrevious(data, 'processing_costs_cents')}
-              previousLabel={prev}
-              hue="gold"
-              caption="Stripe's fees, which we absorb"
-            />
-            <InsightCard
-              metric={pick(data, 'contribution_after_processing_cents')}
-              previous={pickPrevious(data, 'contribution_after_processing_cents')}
-              previousLabel={prev}
-              hue="teal"
-              caption="our income less processing — not profit"
-            />
-          </Band>
-
-          <NotProfitNote />
-
-          <Band
-            title="Money we moved for creators"
-            note="Volume, not income. Most of this belongs to the creators who earned it."
-          >
-            <InsightCard
-              metric={pick(data, 'gross_collective_sales_cents')}
-              previous={pickPrevious(data, 'gross_collective_sales_cents')}
-              previousLabel={prev}
-              hue="navy"
-              caption="everything members paid, before any deduction"
-            />
-            <InsightCard
-              metric={pick(data, 'creator_earnings_cents')}
-              previous={pickPrevious(data, 'creator_earnings_cents')}
-              previousLabel={prev}
-              hue="navy"
-              caption="what creators earned — owed, not yet sent"
-            />
-            <InsightCard
-              metric={pick(data, 'paid_out_cents')}
-              previous={pickPrevious(data, 'paid_out_cents')}
-              previousLabel={prev}
-              hue="teal"
-              caption="actually transferred to creators"
-            />
-            <InsightCard
-              metric={pick(data, 'outstanding_payouts_cents')}
-              hue={
-                (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
-                  ? 'coral'
-                  : 'navy'
-              }
-              emphasiseValue={
-                (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
-              }
-              caption="owed to creators right now"
-            />
-          </Band>
-
-          <WhoIsOwedNote data={data} />
-
-          <Band
-            title="Money that went back"
-            note="Counted on the day the refund happened, so a closed month's figures never change afterwards."
-          >
-            <InsightCard
-              metric={pick(data, 'refunds_cents')}
-              previous={pickPrevious(data, 'refunds_cents')}
-              previousLabel={prev}
-              hue={(pick(data, 'refunds_cents')?.value ?? 0) > 0 ? 'coral' : 'navy'}
-              caption="returned to members"
-            />
-            <WhoseMoneyNote data={data} />
-          </Band>
-        </>
-      )}
-
-      <section className="mt-10">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Over time
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
-          These charts carry their own period, independent of the figures
-          above. Activity begins on <strong>All activity</strong> here, which
-          is the complete ledger — every real Stripe movement, including
-          those from demonstration and test Collectives. Narrowing to
-          Production shows a subset of business performance; it never
-          removes money from the ledger, and the chart says which
-          population you are looking at.
-        </p>
-
-        <HistoryControls
-          range={range}
-          grouping={grouping}
-          population={population}
-          onRange={setRange}
-          onGrouping={setGrouping}
-          onPopulation={setPopulation}
-          options={history.data?.options}
-          disabled={history.loading}
-          populationNote={history.data?.population.note}
-        />
-
-        {history.error && <Problem message={history.error} />}
-
+      <div className="space-y-5">
         <HistoryPanel
+          prominent
           title="Fresh Collective's own income"
-          explanation="The two streams that are genuinely ours, stacked so the combined height is total income while each source stays its own colour: the fee kept from member purchases, and what creators pay for their plans."
+          explanation="The two streams that are genuinely ours: the fee kept from member purchases, and what creators pay for their plans. Stacked, so the combined height is total income."
           data={history.data}
           keys={['platform_fee_revenue_cents', 'subscription_revenue_cents']}
           kind="stacked"
           hues={['teal', 'gold']}
-          height={240}
           footnote="Attributed to the period the money arrived in, not the period a checkout happened to be created in. Payments that arrived before business-event recording began carry no observed settlement date and fall back to their creation date, which the chart reports as an approximation."
         />
 
         <HistoryPanel
           title="Gross Collective sales"
-          explanation="Everything members paid creators, before any deduction. This is transaction volume processed on creators' behalf — it is not Fresh Collective's income, and most of it belongs to the creators who earned it. Read it beside the income chart above, never as a substitute for it."
+          explanation="Everything members paid creators, before any deduction. This is transaction volume, not Fresh Collective's income — most of it belongs to the creators who earned it."
           data={history.data}
           keys={['gross_collective_sales_cents']}
           kind="column"
           hues={['navy']}
+          footnote="Read beside the income chart above, never as a substitute for it. The two answer different questions: how much moved through the platform, and how much of it was ours."
         />
 
         <HistoryPanel
           title="Creator earnings and payouts"
-          explanation="What creators earned in each period, beside what was actually transferred to them. The two are deliberately separate series rather than one: earning is a period's trade and a payout is a cash movement with its own date, so the columns are not expected to match and a gap between them is an obligation, not an error."
+          explanation="What creators earned in each period, beside what was actually transferred to them. A gap between the two is an obligation, not an error."
           data={history.data}
           keys={['creator_earnings_cents', 'paid_out_cents']}
           kind="column"
           hues={['teal', 'navy']}
-          height={240}
-          footnote="Earnings are net of refunds reversed against the creator's share. Payouts are counted on the date they were marked paid, which is why a period can show earnings with no payout beside them."
+          footnote="Deliberately two series rather than one: earning is a period's trade and a payout is a cash movement with its own date, so the columns are not expected to match. Earnings are net of refunds reversed against the creator's share; payouts are counted on the date they were marked paid, which is why a period can show earnings with no payout beside them."
         />
 
         <HistoryPanel
           title="Processing costs and contribution"
-          explanation="Stripe's fee against what Fresh Collective keeps after it. Contribution after processing costs is not profit — every operating expense sits outside it, so a positive column here is not a month in the black."
+          explanation="Stripe's fee against what Fresh Collective keeps after it. Contribution after processing costs is not profit — every operating expense sits outside it."
           data={history.data}
-          keys={['processing_costs_cents', 'contribution_after_processing_cents']}
+          keys={[
+            'processing_costs_cents',
+            'contribution_after_processing_cents',
+          ]}
           kind="column"
           hues={['coral', 'teal']}
-          height={240}
           footnote="Stripe does not report a fee until reconciliation reads it, and those payments are excluded rather than estimated — so a recent period's cost is a lower bound and its contribution correspondingly a little high."
         />
 
         <HistoryPanel
           title="Refunds"
-          explanation="Money returned, counted in the period the refund happened rather than netted against the original sale. That is what keeps a closed month's revenue from moving afterwards."
+          explanation="Money returned, counted in the period the refund happened rather than netted against the original sale."
           data={history.data}
           keys={['refunds_cents']}
           kind="column"
           hues={['coral']}
-          footnote="Only the most recent refund date is stored per transaction, so a payment refunded twice in different periods is attributed wholly to the later one. Refunds taken before that date was recorded cannot be placed in a period at all and appear as a gap rather than as a zero."
+          footnote="Counting a refund on its own date is what keeps a closed month's revenue from moving afterwards. Only the most recent refund date is stored per transaction, so a payment refunded twice in different periods is attributed wholly to the later one. Refunds taken before that date was recorded cannot be placed in a period at all and appear as a gap rather than as a zero."
         />
+      </div>
+
+      <section className="mt-12">
+        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
+          The figures behind them
+        </h3>
+        <p
+          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
+          style={{ color: INK_MUTED }}
+        >
+          Grouped by whose money it is, which is the distinction most
+          easily lost: most of what Fresh Collective processes is not Fresh
+          Collective&rsquo;s. These have their own period, chosen below.
+        </p>
+
+        <div className="mb-6">
+          <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
+        </div>
+
+        {error && <Problem message={error} />}
+        {loading && !data && <Waiting />}
+
+        {data && (
+          <>
+            <Band
+              title="Fresh Collective's own income"
+              note="The two streams that are genuinely ours: the fee kept from member purchases, and what creators pay for their plans."
+            >
+              <InsightCard
+                metric={pick(data, 'platform_fee_revenue_cents')}
+                previous={pickPrevious(data, 'platform_fee_revenue_cents')}
+                previousLabel={prev}
+                hue="teal"
+                caption="our share of what members paid creators"
+              />
+              <InsightCard
+                metric={pick(data, 'subscription_revenue_cents')}
+                previous={pickPrevious(data, 'subscription_revenue_cents')}
+                previousLabel={prev}
+                hue="teal"
+                caption="creator plan fees paid to us"
+              />
+              <InsightCard
+                metric={pick(data, 'processing_costs_cents')}
+                previous={pickPrevious(data, 'processing_costs_cents')}
+                previousLabel={prev}
+                hue="gold"
+                caption="Stripe's fees, which we absorb"
+              />
+              <InsightCard
+                metric={pick(data, 'contribution_after_processing_cents')}
+                previous={pickPrevious(
+                  data,
+                  'contribution_after_processing_cents',
+                )}
+                previousLabel={prev}
+                hue="teal"
+                caption="our income less processing — not profit"
+              />
+            </Band>
+
+            <NotProfitNote />
+
+            <Band
+              title="Money we moved for creators"
+              note="Volume, not income. Most of this belongs to the creators who earned it."
+            >
+              <InsightCard
+                metric={pick(data, 'gross_collective_sales_cents')}
+                previous={pickPrevious(data, 'gross_collective_sales_cents')}
+                previousLabel={prev}
+                hue="navy"
+                caption="everything members paid, before any deduction"
+              />
+              <InsightCard
+                metric={pick(data, 'creator_earnings_cents')}
+                previous={pickPrevious(data, 'creator_earnings_cents')}
+                previousLabel={prev}
+                hue="navy"
+                caption="what creators earned — owed, not yet sent"
+              />
+              <InsightCard
+                metric={pick(data, 'paid_out_cents')}
+                previous={pickPrevious(data, 'paid_out_cents')}
+                previousLabel={prev}
+                hue="teal"
+                caption="actually transferred to creators"
+              />
+              <InsightCard
+                metric={pick(data, 'outstanding_payouts_cents')}
+                hue={
+                  (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
+                    ? 'coral'
+                    : 'navy'
+                }
+                emphasiseValue={
+                  (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
+                }
+                caption="owed to creators right now"
+              />
+            </Band>
+
+            <Band
+              title="Money that went back"
+              note="Counted on the day the refund happened, so a closed month's figures never change afterwards."
+            >
+              <InsightCard
+                metric={pick(data, 'refunds_cents')}
+                previous={pickPrevious(data, 'refunds_cents')}
+                previousLabel={prev}
+                hue={
+                  (pick(data, 'refunds_cents')?.value ?? 0) > 0 ? 'coral' : 'navy'
+                }
+                caption="returned to members"
+              />
+            </Band>
+          </>
+        )}
       </section>
+
+      {data && (
+        <section className="mt-12">
+          <h3
+            className="font-serif text-[17px] leading-tight"
+            style={{ color: INK }}
+          >
+            Who is owed what
+          </h3>
+          <p
+            className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
+            style={{ color: INK_MUTED }}
+          >
+            The reconciliation behind the outstanding balance: who holds it,
+            and what kind of activity it came from.
+          </p>
+          <WhoIsOwedNote data={data} />
+          <div className="mt-4">
+            <WhoseMoneyNote data={data} />
+          </div>
+        </section>
+      )}
     </InsightsShell>
   )
 }
+
 
 /**
  * Stated once, prominently, rather than relying on a card caption.

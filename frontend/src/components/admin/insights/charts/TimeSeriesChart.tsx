@@ -386,7 +386,7 @@ export function TimeSeriesChart({
                   fontSize="11"
                   fill={INK_MUTED}
                 >
-                  {abbreviate(label.name)}
+                  {abbreviate(label.name, padRight)}
                 </text>
               ),
             )}
@@ -449,9 +449,18 @@ export function TimeSeriesChart({
   )
 }
 
-/** Keep a direct label short enough not to run off the plot. */
-function abbreviate(name: string): string {
-  return name.length <= 18 ? name : `${name.slice(0, 17)}…`
+/**
+ * Keep a direct label inside the space reserved for it.
+ *
+ * Derived from the available pixels rather than a fixed character
+ * count: the SVG clips to its own box, so a label longer than the right
+ * padding is cut mid-word with no ellipsis, which reads as a rendering
+ * fault rather than as an abbreviation. ~5.6px per character at 11px is
+ * close enough for a label whose job is recognition, not reading.
+ */
+function abbreviate(name: string, availablePx: number): string {
+  const maxChars = Math.max(6, Math.floor((availablePx - 10) / 5.6))
+  return name.length <= maxChars ? name : `${name.slice(0, maxChars - 1)}…`
 }
 
 function LineMarks({

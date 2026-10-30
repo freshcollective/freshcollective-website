@@ -93,137 +93,51 @@ export default function GrowthPage() {
       title="Growth"
       intro="Who has arrived, how many communities they belong to, and how that is changing."
     >
-      <div className="mb-5">
-        <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
-      </div>
+      {/*
+        Charts first, figures underneath. The page answers "what has
+        been happening" before "what exactly is it now" — the trend is
+        the thing somebody opens this page for, and the cards are what
+        they reach for once a line has raised a question.
+      */}
+      <HistoryControls
+        range={range}
+        grouping={grouping}
+        population={population}
+        onRange={setRange}
+        onGrouping={setGrouping}
+        onPopulation={setPopulation}
+        options={history.data?.options}
+        disabled={history.loading}
+        populationNote={history.data?.population.note}
+      />
 
-      {error && <Problem message={error} />}
-      {loading && !data && <Waiting />}
+      {history.error && <Problem message={history.error} />}
 
-      {data && (
-        <>
-          <Band
-            title="Right now"
-            note="A count at this moment, whichever period is selected above — these describe today, not a span of time."
-          >
-            <InsightCard
-              metric={pick(data, 'unique_members')}
-              hue="navy"
-              caption="people, counted once each"
-            />
-            <InsightCard
-              metric={pick(data, 'total_memberships')}
-              hue="navy"
-              caption="one per Collective someone has joined"
-            />
-            <InsightCard
-              metric={pick(data, 'memberships_per_member')}
-              hue="navy"
-              caption="communities per person, on average"
-            />
-            <InsightCard
-              metric={pick(data, 'multi_collective_members')}
-              hue="teal"
-              caption="people who have found more than one home here"
-            />
-          </Band>
-
-          <Band
-            title="The wider world"
-            note="Accounts and Collectives in existence, whether or not anyone has joined anything."
-          >
-            <InsightCard
-              metric={pick(data, 'registered_users')}
-              hue="navy"
-              caption="accounts, including creators"
-            />
-            <InsightCard
-              metric={pick(data, 'registered_creators')}
-              hue="teal"
-              caption="people building something"
-            />
-            <InsightCard
-              metric={pick(data, 'total_collectives')}
-              hue="navy"
-              caption="all Collectives, at any stage"
-            />
-            <InsightCard
-              metric={pick(data, 'active_collectives')}
-              hue="teal"
-              caption="published and open"
-            />
-          </Band>
-
-          <Band
-            title={`What happened in ${data.period.label.toLowerCase()}`}
-            note="A count across the selected period, so these do add up over time."
-          >
-            <InsightCard
-              metric={pick(data, 'memberships_started')}
-              previous={pickPrevious(data, 'memberships_started')}
-              previousLabel={previousLabel}
-              hue="teal"
-              caption="new memberships, counting each Collective joined"
-            />
-            <OverlapNote data={data} />
-          </Band>
-        </>
-      )}
-
-      <section className="mt-10">
-        <h3
-          className="font-serif text-[17px] leading-tight"
-          style={{ color: '#0C1826' }}
-        >
-          Over time
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
-          These charts have their own period, independent of the figures
-          above — the cards answer &ldquo;where are we now&rdquo; and the
-          charts answer &ldquo;what has been happening&rdquo;. Periods still
-          running are drawn with a hatched fill or a dashed line so a part
-          period is never mistaken for a quiet one.
-        </p>
-
-        <HistoryControls
-          range={range}
-          grouping={grouping}
-          population={population}
-          onRange={setRange}
-          onGrouping={setGrouping}
-          onPopulation={setPopulation}
-          options={history.data?.options}
-          disabled={history.loading}
-          populationNote={history.data?.population.note}
-        />
-
-        {history.error && <Problem message={history.error} />}
-
+      <div className="space-y-5">
         <HistoryPanel
+          prominent
           title="Membership growth"
-          explanation="People and memberships side by side. The gap between the two lines is the story: memberships climbing faster than people means members are finding a second and third Collective, not that anyone is being counted twice. Both are end-of-period states, so a weekly figure is where things stood when the week closed — never a sum of its days."
+          explanation="People and memberships side by side. Memberships climbing faster than people means members are finding a second and third Collective."
           data={history.data}
           keys={['unique_members', 'total_memberships']}
           kind="line"
           hues={['navy', 'teal']}
-          height={240}
+          footnote="Both are end-of-period states, so a weekly figure is where things stood when the week closed — never a sum of its days."
         />
 
         <HistoryPanel
           title="New memberships"
-          explanation="Memberships that began in each period. This one does add up over time, which is why it is drawn as separate columns rather than joined into a line — each column is its own period's activity, not a running total."
+          explanation="Memberships that began in each period."
           data={history.data}
           keys={['memberships_started']}
           kind="column"
           hues={['teal']}
+          footnote="This one does add up over time, which is why it is drawn as separate columns rather than joined into a line: each column is its own period's activity, not a running total."
         />
 
         <HistoryPanel
           title="How many Collectives people belong to"
-          explanation="Every member sits in exactly one band, so the three stack to the total number of members at that date. Watching the upper bands grow is watching people explore beyond the first Collective they joined."
+          explanation="Every member sits in exactly one band, so the three stack to the total number of members at that date."
           data={history.data}
           keys={[
             'members_in_one_collective',
@@ -232,13 +146,107 @@ export default function GrowthPage() {
           ]}
           kind="stacked"
           hues={['navy', 'teal', 'gold']}
-          height={240}
           footnote="Worked out from membership join and removal dates rather than recorded at the time. A membership that ended before removal dates were stored is invisible here, which can place a member in a higher band than they belonged to on an early date."
         />
+      </div>
+
+      <section className="mt-12">
+        <h3
+          className="font-serif text-[17px] leading-tight"
+          style={{ color: '#0C1826' }}
+        >
+          The figures behind them
+        </h3>
+        <p
+          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
+          style={{ color: INK_MUTED }}
+        >
+          These have their own period, chosen below and independent of the
+          charts above — the charts answer what has been happening, these
+          answer where things stand now.
+        </p>
+
+        <div className="mb-6">
+          <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
+        </div>
+
+        {error && <Problem message={error} />}
+        {loading && !data && <Waiting />}
+
+        {data && (
+          <>
+            <Band
+              title="Right now"
+              note="A count at this moment, whichever period is selected above — these describe today, not a span of time."
+            >
+              <InsightCard
+                metric={pick(data, 'unique_members')}
+                hue="navy"
+                caption="people, counted once each"
+              />
+              <InsightCard
+                metric={pick(data, 'total_memberships')}
+                hue="navy"
+                caption="one per Collective someone has joined"
+              />
+              <InsightCard
+                metric={pick(data, 'memberships_per_member')}
+                hue="navy"
+                caption="communities per person, on average"
+              />
+              <InsightCard
+                metric={pick(data, 'multi_collective_members')}
+                hue="teal"
+                caption="people who have found more than one home here"
+              />
+            </Band>
+
+            <Band
+              title="The wider world"
+              note="Accounts and Collectives in existence, whether or not anyone has joined anything."
+            >
+              <InsightCard
+                metric={pick(data, 'registered_users')}
+                hue="navy"
+                caption="accounts, including creators"
+              />
+              <InsightCard
+                metric={pick(data, 'registered_creators')}
+                hue="teal"
+                caption="people building something"
+              />
+              <InsightCard
+                metric={pick(data, 'total_collectives')}
+                hue="navy"
+                caption="all Collectives, at any stage"
+              />
+              <InsightCard
+                metric={pick(data, 'active_collectives')}
+                hue="teal"
+                caption="published and open"
+              />
+            </Band>
+
+            <Band
+              title={`What happened in ${data.period.label.toLowerCase()}`}
+              note="A count across the selected period, so these do add up over time."
+            >
+              <InsightCard
+                metric={pick(data, 'memberships_started')}
+                previous={pickPrevious(data, 'memberships_started')}
+                previousLabel={previousLabel}
+                hue="teal"
+                caption="new memberships, counting each Collective joined"
+              />
+              <OverlapNote data={data} />
+            </Band>
+          </>
+        )}
       </section>
     </InsightsShell>
   )
 }
+
 
 /**
  * The one piece of written interpretation on the page.

@@ -1,42 +1,56 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import {
   type ChartHue,
   type Grouping,
   type HistoryResult,
-  hasGaps,
-  seriesProvenanceNote,
+  type HistorySeries,
+  AVAILABILITY_PROSE,
+  DATE_BASIS_PROSE,
+  materialWarnings,
 } from '@/lib/insights-history'
-import {
-  type ChartKind,
-  TimeSeriesChart,
-} from './charts/TimeSeriesChart'
+import { type ChartKind, TimeSeriesChart } from './charts/TimeSeriesChart'
 
 const INK = '#0C1826'
 const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const RULE = '#E7EEF0'
 
 /**
- * A chart, and everything that has to be said next to it.
+ * A chart, and everything that has to be said next to it — in two
+ * groups, because they are not the same kind of thing.
  *
- * The panel exists because a chart on its own is the easiest place on
- * the platform to mislead somebody. Four things therefore travel with
- * every graph rather than being left to a caption somebody writes once:
+ * **Visible, always: what changes the reading.** A gap in the line, a
+ * period reconstructed rather than recorded, a classification filter
+ * that emptied the chart, a week built from four days. Each of these
+ * changes what the picture in front of you means, so none of them is
+ * something a reader should have to go looking for.
  *
- * * the metric's **own limitations**, from the registry — the same
- *   prose the card above it shows, so the constraint is beside the
- *   figure rather than in a document;
- * * the **provenance** of the periods drawn, whenever any of them was
- *   reconstructed or recorded late;
- * * whether the chart contains **gaps**, said in words, because a break
- *   in a line is easy to miss and easy to misread as a fall to zero;
- * * the **population** the figures describe, since "Production" is a
- *   subset and a subset must announce itself.
+ * **Behind "What does this chart mean?": the background.** Definitions,
+ * the tables a figure comes from, which timestamp dates it, how far
+ * back it can be trusted, the registry's own limitations. A curious or
+ * sceptical reader wants all of it; nobody needs it to read the chart,
+ * and printing it under every graph turned the page into a document
+ * with pictures in it.
  *
- * The figures are also always available as a table. That is the relief
- * the palette requires for a hue below 3:1 against white, and it is the
- * only way a screen-reader user can read exact values.
+ * Nothing is dropped in the move. Everything the registry declares is
+ * still on the page, one disclosure away, which is also what keeps this
+ * honest: the panel does not choose which limitations to mention, it
+ * shows all of them.
+ *
+ * A controlled disclosure rather than `details`/`summary`: the two
+ * controls belong on one line, with the panel they open spanning the
+ * full width beneath both, and a `details` element cannot be laid out
+ * that way without nesting a second interactive control inside its
+ * `summary` — which is the one thing a summary must not contain. The
+ * button carries `aria-expanded` and `aria-controls`, which is the
+ * standard disclosure pattern and announces identically.
+ *
+ * The figures stay available as a table at the top level rather than
+ * inside the disclosure. That is the relief the palette requires for a
+ * hue below 3:1 against white, and the only way to read exact values
+ * without sight — neither should be nested two interactions deep.
  */
 export function HistoryPanel({
   title,
@@ -47,8 +61,10 @@ export function HistoryPanel({
   hues,
   height,
   footnote,
+  prominent = false,
 }: {
   title: string
+  /** One short, human sentence. The detail goes in `footnote`. */
   explanation: string
   data: HistoryResult | null
   /** Which of the fetched series this panel draws, in order. */
@@ -56,9 +72,14 @@ export function HistoryPanel({
   kind: ChartKind
   hues: ChartHue[]
   height?: number
+  /** Calculation rules and historical limits, shown in the disclosure. */
   footnote?: string
+  /** The lead chart on a page: taller, and titled a size up. */
+  prominent?: boolean
 }) {
   const [showTable, setShowTable] = useState(false)
+  const [showMeaning, setShowMeaning] = useState(false)
+  const meaningId = useId()
 
   const series = (data?.series ?? []).filter((s) => keys.includes(s.key))
   // Ordered by the panel's own key list rather than by the response, so
@@ -68,40 +89,34 @@ export function HistoryPanel({
     .map((k) => series.find((s) => s.key === k))
     .filter((s): s is NonNullable<typeof s> => Boolean(s))
 
-  const limitations = ordered
-    .map((s) => s.limitations)
-    .filter((l): l is string => Boolean(l))
-  const provenance = ordered
-    .map((s) => seriesProvenanceNote(s))
-    .filter((p): p is string => Boolean(p))
-  const unique = (xs: string[]) => [...new Set(xs)]
-
-  const recomputed = unique(
-    ordered
-      .map((s) => s.qualifiers?.recompute_note)
-      .filter((n): n is string => typeof n === 'string'),
-  )
+  const warnings = materialWarnings(ordered)
+  const chartHeight = height ?? (prominent ? 320 : 220)
 
   return (
     <section
-      className="mb-5 rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+      className="rounded-2xl p-5 sm:p-6"
+      style={{ background: '#FFFFFF', border: `1px solid ${RULE}` }}
     >
-      <h4
-        className="font-serif text-[16px] leading-tight"
+      <h3
+        className={`font-serif leading-tight ${
+          prominent ? 'text-[19px]' : 'text-[16px]'
+        }`}
         style={{ color: INK }}
       >
         {title}
-      </h4>
+      </h3>
       <p
-        className="mb-3 mt-1 max-w-[78ch] text-[12.5px]"
+        className="mb-4 mt-1 max-w-[70ch] text-[13px]"
         style={{ color: INK_MUTED }}
       >
         {explanation}
       </p>
 
       {!data || ordered.length === 0 ? (
-        <p className="py-8 text-center text-[13px]" style={{ color: INK_MUTED }}>
+        <p
+          className="py-10 text-center text-[13px]"
+          style={{ color: INK_MUTED }}
+        >
           {data ? 'No figures for this selection.' : 'Drawing the chart…'}
         </p>
       ) : (
@@ -113,59 +128,155 @@ export function HistoryPanel({
             kind={kind}
             hues={hues}
             title={title}
-            height={height}
+            height={chartHeight}
             showTable={showTable}
           />
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            <button
-              type="button"
-              onClick={() => setShowTable((v) => !v)}
-              aria-expanded={showTable}
-              className="rounded-md text-[12px] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
-              style={{ color: INK_MUTED }}
-            >
-              {showTable ? 'Hide the figures' : 'Show the figures'}
-            </button>
-            {hasGaps(ordered) && (
-              <span className="text-[12px]" style={{ color: INK_MUTED }}>
-                Shaded periods have no figure — a gap, not a zero.
-              </span>
+          {warnings.length > 0 && (
+            <ul className="mt-3 list-none space-y-1 p-0">
+              {warnings.map((w) => (
+                <li
+                  key={w}
+                  className="flex gap-2 text-[12px] leading-snug"
+                  style={{ color: INK_MUTED }}
+                >
+                  <span aria-hidden="true" style={{ color: '#d4b048' }}>
+                    ●
+                  </span>
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-4 border-t pt-3" style={{ borderColor: RULE }}>
+            <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+              <button
+                type="button"
+                onClick={() => setShowMeaning((v) => !v)}
+                aria-expanded={showMeaning}
+                aria-controls={meaningId}
+                className="inline-flex items-center gap-1.5 rounded-md text-[12.5px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+                style={{ color: INK_MUTED }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block text-[9px] transition-transform"
+                  style={{
+                    transform: showMeaning ? 'rotate(90deg)' : 'none',
+                  }}
+                >
+                  ▶
+                </span>
+                What does this chart mean?
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTable((v) => !v)}
+                aria-expanded={showTable}
+                className="rounded-md text-[12.5px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+                style={{ color: INK_MUTED }}
+              >
+                {showTable ? 'Hide the figures' : 'Show the figures'}
+              </button>
+            </div>
+            {showMeaning && (
+              <div id={meaningId} className="mt-3.5">
+                <Meaning series={ordered} footnote={footnote} data={data} />
+              </div>
             )}
           </div>
-
-          {(footnote || limitations.length > 0 || provenance.length > 0 ||
-            recomputed.length > 0) && (
-            <div className="mt-3 space-y-1.5">
-              {footnote && <Note>{footnote}</Note>}
-              {unique(provenance).map((p) => (
-                <Note key={p}>{p}</Note>
-              ))}
-              {recomputed.map((p) => (
-                <Note key={p}>{p}</Note>
-              ))}
-              {unique(limitations).map((l) => (
-                <Note key={l}>{l}</Note>
-              ))}
-            </div>
-          )}
         </>
       )}
     </section>
   )
 }
 
-function Note({ children }: { children: React.ReactNode }) {
+/** Everything the registry declares about the figures on this chart. */
+function Meaning({
+  series,
+  footnote,
+  data,
+}: {
+  series: HistorySeries[]
+  footnote?: string
+  data: HistoryResult
+}) {
+  const recomputed = [
+    ...new Set(
+      series
+        .map((s) => s.qualifiers?.recompute_note)
+        .filter((n): n is string => typeof n === 'string'),
+    ),
+  ]
+
   return (
-    <p
-      className="max-w-[78ch] text-[12px] leading-snug"
-      style={{
-        color: INK_MUTED,
-        fontFamily: 'Georgia, serif',
-        fontStyle: 'italic',
-      }}
-    >
-      {children}
-    </p>
+    <div className="max-w-[78ch] space-y-3.5">
+      {series.map((s) => (
+        <div key={s.key}>
+          <p className="text-[12.5px] font-semibold" style={{ color: INK }}>
+            {s.display_name}
+          </p>
+          <p className="text-[12.5px] leading-snug" style={{ color: INK_MUTED }}>
+            {s.definition}
+          </p>
+          <dl className="mt-1.5 space-y-0.5">
+            <Fact label="Source">{s.source_of_truth}</Fact>
+            <Fact label="Dated by">
+              {DATE_BASIS_PROSE[s.date_basis] ?? s.date_basis}
+            </Fact>
+            <Fact label="How far back">
+              {AVAILABILITY_PROSE[s.availability] ?? s.availability}
+            </Fact>
+            <Fact label="Combined across periods">
+              {s.aggregation === 'additive'
+                ? 'Added up — each period is its own quantity.'
+                : s.aggregation === 'snapshot'
+                  ? 'Taken from the end of the period, never added up.'
+                  : 'Recomputed for each period, never added up.'}
+            </Fact>
+            {s.limitations && <Fact label="Limitations">{s.limitations}</Fact>}
+          </dl>
+        </div>
+      ))}
+
+      {footnote && (
+        <p className="text-[12.5px] leading-snug" style={{ color: INK_MUTED }}>
+          {footnote}
+        </p>
+      )}
+      {recomputed.map((note) => (
+        <p
+          key={note}
+          className="text-[12.5px] leading-snug"
+          style={{ color: INK_MUTED }}
+        >
+          {note}
+        </p>
+      ))}
+      <p className="text-[12.5px] leading-snug" style={{ color: INK_MUTED }}>
+        <span style={{ color: INK }}>Who is counted. </span>
+        {data.population.note}
+      </p>
+    </div>
+  )
+}
+
+function Fact({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex gap-1.5 text-[12px] leading-snug">
+      <dt className="shrink-0" style={{ color: INK }}>
+        {label}:
+      </dt>
+      <dd className="m-0" style={{ color: INK_MUTED }}>
+        {children}
+      </dd>
+    </div>
   )
 }
