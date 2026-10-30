@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import PostTypeTag from './PostTypeTag'
 import ModerationMenu from './ModerationMenu'
 import CommunityImage from './CommunityImage'
+import { postImages } from '@/lib/postImages'
 import MentionText from './MentionText'
 import PollView from './PollView'
 import Avatar from '@/components/ui/Avatar'
@@ -54,6 +55,7 @@ export default function PostCard({
 
   const href = `/spaces/${spaceSlug}/community/${post.id}`
   const preview = post.body.replace(/<[^>]+>/g, '').split('\n\n')[0]
+  const images = postImages(post)
 
   const mentionedNames = (post.mentioned_user_ids ?? [])
     .map((id) => memberNamesById?.[id])
@@ -182,22 +184,37 @@ export default function PostCard({
               </h3>
             )}
 
-            {(preview || post.image_url) && (
+            {(preview || images.length > 0) && (
               <div className="mb-4 flex gap-4">
                 <p className="flex-1 line-clamp-3 text-sm leading-relaxed text-black">
                   <MentionText body={preview} mentionedNames={mentionedNames} />
                 </p>
-                {post.image_url && (
+                {images.length > 0 && (
+                  // The feed keeps its single thumbnail — opening the
+                  // post is where the photographs are. A count sits on
+                  // it when there are more, so the feed says there is
+                  // more to see without becoming a gallery itself.
+                  //
                   // The shared component, like the detail page and the
                   // replies: a bare <img> here showed a broken-image
                   // icon in the feed whenever the file could not be
                   // read, which is every Conversations image posted
                   // before the storage key was fixed.
-                  <CommunityImage
-                    src={resolveMediaUrl(post.image_url) ?? ''}
-                    alt=""
-                    className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                  />
+                  <div className="relative h-16 w-16 shrink-0">
+                    <CommunityImage
+                      src={resolveMediaUrl(images[0]) ?? ''}
+                      alt=""
+                      className="h-16 w-16 rounded-lg object-cover"
+                    />
+                    {images.length > 1 && (
+                      <span
+                        className="absolute bottom-1 right-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                        aria-label={`${images.length} photos`}
+                      >
+                        {images.length}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )}

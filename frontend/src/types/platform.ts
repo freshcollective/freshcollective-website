@@ -578,7 +578,16 @@ export interface PostSummary {
   post_type: PostTypeValue
   title: string | null
   body: string
+  /** The first image, kept for compatibility with every surface that
+   *  read it before a post could carry several. */
   image_url: string | null
+  /** Every image on the post, in the order the author attached them.
+   *
+   *  Optional because fc-api and fc-web deploy from one push but not
+   *  in one instant: a new page can briefly read a response without
+   *  it. Read through `postImages()`, which falls back to
+   *  `image_url`. */
+  image_urls?: string[]
   is_pinned: boolean
   author: PostAuthor
   comment_count: number

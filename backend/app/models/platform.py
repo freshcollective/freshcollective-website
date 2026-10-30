@@ -1625,6 +1625,13 @@ class CommunityPost(Base):
     title: Mapped[str | None] = mapped_column(String(300), nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    #: Every image on the post, in the order the author attached them.
+    #: ``image_url`` above holds the first of them and is kept in step,
+    #: so a post written before this column — or any surface still
+    #: reading that one — is unaffected. Read through
+    #: ``post_images()``, never directly, so the fallback is applied
+    #: in one place. At most ``MAX_POST_IMAGES``.
+    image_urls: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Community Phase 1 — resolved user IDs parsed from `@Display Name`
     # tokens in the body. Populated by the API layer on write; drives
     # the mention notification without extra parsing at read time.

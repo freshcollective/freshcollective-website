@@ -132,6 +132,11 @@ class PostSummary(BaseModel):
     title: str | None
     body: str
     image_url: str | None
+    #: Every image on the post, in order. One-image posts — including
+    #: every post written before multi-image support — report a single
+    #: entry here and the same URL in ``image_url`` above, so a client
+    #: reading either field sees the same first image.
+    image_urls: list[str] = []
     is_pinned: bool
     author: PostAuthor
     comment_count: int
@@ -156,6 +161,11 @@ class PostDetail(BaseModel):
     title: str | None
     body: str
     image_url: str | None
+    #: Every image on the post, in order. One-image posts — including
+    #: every post written before multi-image support — report a single
+    #: entry here and the same URL in ``image_url`` above, so a client
+    #: reading either field sees the same first image.
+    image_urls: list[str] = []
     is_pinned: bool
     author: PostAuthor
     comments: list[CommentItem]
@@ -190,7 +200,12 @@ class CreatePostRequest(BaseModel):
     post_type: str = DEFAULT_POST_TYPE
     title: str | None = None
     body: str
+    #: Legacy single image. Still accepted, and still written, so an
+    #: older client posting one image behaves exactly as before.
     image_url: str | None = None
+    #: Up to ``MAX_POST_IMAGES``. When both are given this wins and
+    #: ``image_url`` is derived from its first entry.
+    image_urls: list[str] | None = None
     mentioned_user_ids: list[str] = Field(default_factory=list)
     poll: PollInput | None = None
     # Community Phase 2 — scheduling

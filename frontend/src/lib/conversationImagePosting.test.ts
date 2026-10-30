@@ -33,14 +33,35 @@ function submitDisabled(path: string): string {
   return src.slice(i, src.indexOf('}\n', i) + 1)
 }
 
+/**
+ * How each composer says "an image is attached".
+ *
+ * The post composer carries a list now — up to five photographs — so
+ * it asks whether any upload came back. The reply composer still
+ * carries one and is deliberately unchanged. Same invariant, two
+ * spellings, so these tests name both rather than assuming one.
+ */
+const ATTACHED: Record<string, { guard: RegExp; payload: RegExp }> = {
+  [POST]: {
+    guard: /!body\.trim\(\) && uploadedUrls\.length === 0/,
+    payload: /image_urls: uploadedUrls/,
+  },
+  [COMMENT]: {
+    guard: /!body\.trim\(\) && !imageUrl/,
+    payload: /image_url: imageUrl \|\| null/,
+  },
+}
+
 describe('an image is enough to publish', () => {
   for (const [label, path] of [['post', POST], ['reply', COMMENT]] as const) {
     describe(label, () => {
       test('submit is not blocked by empty text when an image is attached', () => {
         const d = submitDisabled(path)
-        assert.match(d, /!body\.trim\(\) && !imageUrl/)
+        assert.match(d, ATTACHED[path].guard)
         assert.ok(
-          !/!body\.trim\(\)\s*(\)|\|\|)/.test(d.replace(/!body\.trim\(\) && !imageUrl/g, '')),
+          !/!body\.trim\(\)\s*(\)|\|\|)/.test(
+            d.replace(new RegExp(ATTACHED[path].guard.source, 'g'), ''),
+          ),
           `${label}: text is still required on its own`,
         )
       })
@@ -48,7 +69,7 @@ describe('an image is enough to publish', () => {
       test('the guard matches the button', () => {
         // A guard stricter than the button turns a working click into a
         // silent no-op; looser, and the button lies about being ready.
-        assert.match(codeOnly(path), /!body\.trim\(\) && !imageUrl/)
+        assert.match(codeOnly(path), ATTACHED[path].guard)
       })
 
       test('it is the uploaded url that counts, not the local preview', () => {
@@ -56,8 +77,11 @@ describe('an image is enough to publish', () => {
         // is chosen — before, and regardless of whether, the upload
         // succeeds. Posting on that would attach nothing.
         const d = submitDisabled(path)
+        // The post composer reads ``uploadedUrls`` — urls only, never
+        // the previews beside them; the reply composer reads
+        // ``imageUrl``, not ``imagePreview``.
         assert.ok(
-          !d.includes('imagePreview'),
+          !d.includes('imagePreview') && !/\bimages\.length\b/.test(d),
           `${label}: submit must not be enabled by a local preview`,
         )
       })
@@ -67,7 +91,7 @@ describe('an image is enough to publish', () => {
       })
 
       test('the image url is sent with the post', () => {
-        assert.match(codeOnly(path), /image_url: imageUrl \|\| null/)
+        assert.match(codeOnly(path), ATTACHED[path].payload)
       })
     })
   }
@@ -76,8 +100,8 @@ describe('an image is enough to publish', () => {
     // Not a silent return: the reply composer used to just stop.
     for (const path of [POST, COMMENT]) {
       const src = codeOnly(path)
-      const i = src.indexOf('!body.trim() && !imageUrl')
-      const after = src.slice(i, i + 220)
+      const i = src.search(ATTACHED[path].guard)
+      const after = src.slice(i, i + 260)
       assert.match(after, /setError\(/, `${path}: refusal must explain itself`)
     }
     assert.match(read(POST), /write something or attach an image/)
@@ -96,7 +120,7 @@ describe('the attachment survives until it is sent or removed', () => {
       // composer's control flow.
       const src = codeOnly(path)
       const submit = src.slice(src.indexOf('async function handleSubmit'))
-      const clearAt = submit.search(/reset\(\)|setImageUrl\(null\)/)
+      const clearAt = submit.search(/reset\(\)|setImageUrl\(null\)|setImages\(/)
       assert.ok(clearAt > 0, `${label}: nothing clears the composer`)
 
       const okAt = submit.indexOf('res.ok')
@@ -115,7 +139,14 @@ describe('the attachment survives until it is sent or removed', () => {
         src.indexOf('handleSubmit'),
       )
       assert.match(handler, /setError\(/, 'the failure is reported')
-      assert.match(handler, /setImagePreview\(null\)/, 'the dead preview goes')
+      // The dead preview goes. One composer nulls its single preview;
+      // the other drops just the attachment that failed, leaving the
+      // ones that worked in place.
+      assert.ok(
+        /setImagePreview\(null\)/.test(handler)
+        || /prev\.filter\(\(a\) => a\.id !== entry\.id\)/.test(handler),
+        `${label}: a dead preview is left behind`,
+      )
       assert.ok(
         !/setBody\(''\)/.test(handler),
         'a failed upload must not discard what was typed',
@@ -125,9 +156,15 @@ describe('the attachment survives until it is sent or removed', () => {
     test(`${label}: removing the attachment clears both the url and the preview`, () => {
       // Clearing only the preview would leave an invisible attachment
       // that still posts.
-      assert.match(
-        codeOnly(path),
-        /setImageUrl\(null\);?\s*setImagePreview\(null\)/,
+      // Clearing only the preview would leave an invisible attachment
+      // that still posts. The post composer removes the whole entry —
+      // preview and url together, by construction — and revokes the
+      // object URL it created.
+      const src = codeOnly(path)
+      assert.ok(
+        /setImageUrl\(null\);?\s*setImagePreview\(null\)/.test(src)
+        || /function removeImage\(id: string\)[\s\S]*?prev\.filter\(\(a\) => a\.id !== id\)/.test(src),
+        `${label}: removing an attachment must clear both halves`,
       )
     })
   }
@@ -152,9 +189,13 @@ describe('upload validation is not widened', () => {
 })
 
 describe('posted images render through the shared component', () => {
+  // The post detail page renders its photographs through
+  // ``PostImages`` now — one image keeps the presentation it always
+  // had, several become a grid — so the component to inspect for that
+  // surface is the gallery, not the page.
   const SITES = [
     'components/community/PostCard.tsx',
-    'app/spaces/[slug]/community/[postId]/page.tsx',
+    'components/community/PostImages.tsx',
     'app/spaces/[slug]/community/[postId]/RepliesClient.tsx',
   ]
 

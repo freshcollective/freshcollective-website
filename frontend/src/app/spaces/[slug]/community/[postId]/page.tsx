@@ -5,11 +5,11 @@ import { requireArea } from '@/lib/areaAccess'
 import PostTypeTag from '@/components/community/PostTypeTag'
 import ReactionBar from '@/components/community/ReactionBar'
 import ModerationMenu from '@/components/community/ModerationMenu'
-import CommunityImage from '@/components/community/CommunityImage'
+import PostImages from '@/components/community/PostImages'
+import { postImages } from '@/lib/postImages'
 import MentionText from '@/components/community/MentionText'
 import PollView from '@/components/community/PollView'
 import Avatar from '@/components/ui/Avatar'
-import { resolveMediaUrl } from '@/lib/api'
 import type { PostDetail } from '@/types/platform'
 import RepliesClient from './RepliesClient'
 
@@ -204,14 +204,9 @@ export default async function PostDetailPage({ params }: Props) {
         </div>
       )}
 
-      {/* Post image */}
-      {post.image_url && (
-        <CommunityImage
-          src={resolveMediaUrl(post.image_url) ?? ''}
-          alt="Post image"
-          className="mb-6 w-full rounded-xl object-cover"
-        />
-      )}
+      {/* Post images — one keeps the presentation it always had; more
+          than one becomes a grid shaped to the count. */}
+      <PostImages images={postImages(post)} className="mb-6" />
 
       {/* Poll — first-class Community Phase 1 content */}
       {post.poll && (

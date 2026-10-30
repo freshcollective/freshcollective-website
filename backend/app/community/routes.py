@@ -85,6 +85,66 @@ from app.services.channel_types import GROUP_LABEL_BY_TYPE
 
 router = APIRouter(prefix="/api/spaces", tags=["community"])
 
+#: How many images one Conversation post may carry. Five is the
+#: product limit; it is enforced here as well as in the composer,
+#: because the composer is a convenience and this is the boundary.
+MAX_POST_IMAGES = 5
+
+
+def post_images(post) -> list[str]:
+    """Every image on a post, in order.
+
+    One place applies the fallback, so a post written before
+    ``image_urls`` existed — or by an older client that still sends
+    only ``image_url`` — reads back as a one-image post everywhere
+    rather than in whichever surfaces remembered to check.
+    """
+    urls = post.image_urls or []
+    if urls:
+        return [u for u in urls if u]
+    return [post.image_url] if post.image_url else []
+
+
+def _clean_post_images(
+    slug: str,
+    image_urls: list[str] | None,
+    image_url: str | None,
+) -> list[str]:
+    """Validate what the client says it attached.
+
+    ``image_url`` has always been taken from the request as-is, which
+    means a caller could name any path they liked. Attaching more of
+    them is not the moment to keep doing that: every URL must live in
+    this Collective's own community upload namespace — the one
+    ``upload-image`` writes to, behind its own membership gate — so a
+    post cannot reference a file from a Collective the author cannot
+    read.
+    """
+    raw = image_urls if image_urls is not None else ([image_url] if image_url else [])
+    urls = [u.strip() for u in raw if u and u.strip()]
+    # Deduplicate, keeping order: the same file twice is a mistake, not
+    # a gallery.
+    seen: set[str] = set()
+    unique = [u for u in urls if not (u in seen or seen.add(u))]
+    if len(unique) > MAX_POST_IMAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A post can carry at most {MAX_POST_IMAGES} images.",
+        )
+    prefix = f"/api/uploads/media/{slug}/community/"
+    for u in unique:
+        # ``..`` would satisfy the prefix and still name a file
+        # outside it. Serving is gated separately, but a stored path
+        # that points elsewhere is not worth keeping.
+        if ".." in u or not u.startswith(prefix):
+            raise HTTPException(
+                status_code=422,
+                detail="Images must be uploaded to this Collective before posting.",
+            )
+    return unique
+
+
+
 
 def _emit_comment_created(db, background_tasks, *, post, comment, commenter, space) -> None:
     """R2A helper — emit ``community.comment.created`` and schedule
@@ -344,6 +404,7 @@ def list_community_posts(
             title=p.title,
             body=p.body,
             image_url=p.image_url,
+            image_urls=post_images(p),
             is_pinned=p.is_pinned,
             author=_build_author(p.author),
             comment_count=comment_counts.get(p.id, 0),
@@ -597,6 +658,7 @@ def get_community_post(
         title=post.title,
         body=post.body,
         image_url=post.image_url,
+        image_urls=post_images(post),
         is_pinned=post.is_pinned,
         author=_build_author(post.author),
         comments=[
@@ -724,6 +786,7 @@ def create_community_post(
     is_pinned = bool(body.is_pinned and caretaker)
 
     mentioned = sanitize_mentions(db, space.id, current_user.id, body.mentioned_user_ids)
+    _images = _clean_post_images(slug, body.image_urls, body.image_url)
 
     now = datetime.utcnow()
     publication_status = "scheduled" if scheduled_for is not None else "published"
@@ -738,7 +801,11 @@ def create_community_post(
         # surface (including dangerouslySetInnerHTML sinks) can trust
         # what it reads back.
         body=sanitize_post_body(body.body.strip()),
-        image_url=body.image_url or None,
+        # Both columns, deliberately: the list is the truth and
+        # ``image_url`` carries its first entry so nothing that still
+        # reads the old column has to change.
+        image_url=(_images[0] if _images else None),
+        image_urls=(_images or None),
         mentioned_user_ids=mentioned,
         is_pinned=is_pinned,
         is_visible=True,
@@ -797,6 +864,7 @@ def create_community_post(
         title=post.title,
         body=post.body,
         image_url=post.image_url,
+        image_urls=post_images(post),
         is_pinned=post.is_pinned,
         author=_build_author(current_user),
         comment_count=0,

@@ -26,6 +26,18 @@ import { POST_TYPE_OPTIONS } from './PostTypeTag'
  * can programmatically open + focus the composer.
  */
 
+/** The product limit, enforced here and again on the server. */
+const MAX_POST_IMAGES = 5
+
+/** One chosen photograph: its local preview, and its uploaded URL once
+ *  the upload returns. ``url`` is what the post carries — a preview
+ *  alone is not something it can hold. */
+interface Attachment {
+  id: string
+  preview: string
+  url: string | null
+}
+
 export interface CreatePostFormHandle {
   /** Expand the composer and focus the body input. Scrolls into view. */
   openComposer: () => void
@@ -59,9 +71,14 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [mentionedIds, setMentionedIds] = useState<string[]>([])
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  // One entry per attachment. ``url`` is null until its upload comes
+  // back, which is what the submit button waits on — a preview alone
+  // is not something the post can carry.
+  const [images, setImages] = useState<Attachment[]>([])
   const [uploading, setUploading] = useState(false)
+  // Only attachments whose upload came back. The submit button and the
+  // "words or a photo" check both read this, never the previews.
+  const uploadedUrls = images.map((a) => a.url).filter((u): u is string => !!u)
   const [poll, setPoll] = useState<PollComposerValue>(EMPTY_POLL)
   const [pinOnCreate, setPinOnCreate] = useState(false)
   // Community Phase 2 — scheduling state
@@ -98,8 +115,11 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
     setScheduleDate('')
     setScheduleTime('')
     setError('')
-    setImageUrl(null)
-    setImagePreview(null)
+    setImages((prev) => {
+      // Release the object URLs this composer created.
+      prev.forEach((a) => URL.revokeObjectURL(a.preview))
+      return []
+    })
     mentionRef.current?.clear()
   }
 
@@ -127,31 +147,78 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImagePreview(URL.createObjectURL(file))
+    const picked = Array.from(e.target.files ?? [])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (picked.length === 0) return
+
+    const room = MAX_POST_IMAGES - images.length
+    if (room <= 0) {
+      setError(`You can attach up to ${MAX_POST_IMAGES} photos.`)
+      return
+    }
+    // Take what fits and say so, rather than refusing the lot.
+    const files = picked.slice(0, room)
+    if (picked.length > room) {
+      setError(
+        `Only ${room} more ${room === 1 ? 'photo' : 'photos'} could be added — `
+        + `a post can carry ${MAX_POST_IMAGES}.`,
+      )
+    } else {
+      setError('')
+    }
+
+    const started: Attachment[] = files.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      preview: URL.createObjectURL(file),
+      url: null,
+    }))
+    setImages((prev) => [...prev, ...started])
     setUploading(true)
-    setError('')
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/community/upload-image`), {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.detail || 'Image upload failed.')
-        setImagePreview(null)
-        return
+      // Sequential, so the order the author picked is the order the
+      // post keeps.
+      for (let i = 0; i < files.length; i += 1) {
+        const entry = started[i]
+        try {
+          const form = new FormData()
+          form.append('file', files[i])
+          const res = await fetch(
+            apiUrl(`/api/spaces/${spaceSlug}/community/upload-image`),
+            { method: 'POST', credentials: 'include', body: form },
+          )
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            setError(data.detail || 'Image upload failed.')
+            // Drop only the one that failed. A post half-attached is
+            // confusing; a post missing the photo that would not
+            // upload is honest.
+            setImages((prev) => prev.filter((a) => a.id !== entry.id))
+            continue
+          }
+          const { url } = await res.json()
+          setImages((prev) => prev.map(
+            (a) => (a.id === entry.id ? { ...a, url } : a),
+          ))
+        } catch {
+          setError('Image upload failed.')
+          setImages((prev) => prev.filter((a) => a.id !== entry.id))
+        }
       }
-      const { url } = await res.json()
-      setImageUrl(url)
     } finally {
       setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  function removeImage(id: string) {
+    // Only the attachment is dropped. The uploaded file stays where it
+    // is — it may already belong to another post, and this composer
+    // has no business deleting it.
+    setImages((prev) => {
+      const gone = prev.find((a) => a.id === id)
+      if (gone) URL.revokeObjectURL(gone.preview)
+      return prev.filter((a) => a.id !== id)
+    })
+    setError('')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -160,7 +227,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
     // An image is something to share. Requiring words alongside it was
     // the whole of the reported bug: the upload succeeded, the preview
     // appeared, and Share stayed inert with nothing to explain why.
-    if (postType !== 'poll' && !body.trim() && !imageUrl) {
+    if (postType !== 'poll' && !body.trim() && uploadedUrls.length === 0) {
       setError('Please write something or attach an image before sharing.')
       return
     }
@@ -195,7 +262,9 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
       post_type: postType,
       title: title.trim() || null,
       body: body.trim(),
-      image_url: imageUrl || null,
+      // The list is what the post carries; the server keeps its
+      // first entry in the old single column.
+      image_urls: uploadedUrls,
       mentioned_user_ids: mentionedIds,
       is_pinned: canPin ? pinOnCreate : false,
     }
@@ -294,25 +363,39 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
         <PollComposer value={poll} onChange={setPoll} />
       )}
 
-      {/* Image preview */}
-      {imagePreview && (
-        <div className="relative mt-2 inline-block">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imagePreview} alt="Upload preview" className="max-h-48 rounded-lg object-cover" />
-          {uploading && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-white/60">
-              <span className="text-xs text-black">Uploading…</span>
-            </div>
-          )}
-          {!uploading && (
-            <button
-              type="button"
-              onClick={() => { setImageUrl(null); setImagePreview(null) }}
-              className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[10px] text-white hover:bg-red-500"
-            >
-              ✕
-            </button>
-          )}
+      {/* Chosen photographs */}
+      {images.length > 0 && (
+        <div className="mt-2">
+          <ul className="flex list-none flex-wrap gap-2 p-0">
+            {images.map((a) => (
+              <li key={a.id} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.preview}
+                  alt=""
+                  className="h-20 w-20 rounded-lg object-cover sm:h-24 sm:w-24"
+                />
+                {!a.url && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-white/60">
+                    <span className="text-[10px] text-black">Uploading…</span>
+                  </div>
+                )}
+                {a.url && (
+                  <button
+                    type="button"
+                    onClick={() => removeImage(a.id)}
+                    aria-label="Remove this photo"
+                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[10px] text-white hover:bg-red-500"
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-slate-500">
+            {images.length} of {MAX_POST_IMAGES} photos
+          </p>
         </div>
       )}
 
@@ -413,18 +496,23 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
             ref={fileInputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp"
+            multiple
             className="hidden"
             onChange={handleImageChange}
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || !!imagePreview}
+            disabled={uploading || images.length >= MAX_POST_IMAGES}
             className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] hover:text-[color:var(--fc-accent,#0d9488)] disabled:opacity-40"
-            title="Attach image"
+            title={
+              images.length >= MAX_POST_IMAGES
+                ? `You can attach up to ${MAX_POST_IMAGES} photos`
+                : 'Attach photos'
+            }
           >
             <span>🖼</span>
-            <span>Photo</span>
+            <span>{images.length > 0 ? 'Add photos' : 'Photos'}</span>
           </button>
 
           {/* Emoji picker */}
@@ -433,13 +521,13 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
 
         <button
           type="submit"
-          // ``imageUrl``, not ``imagePreview``: the preview appears the
+          // ``uploadedUrls``, not the previews: a preview appears the
           // moment a file is chosen, but only an upload that came back
           // with a URL is something the post can actually carry.
           disabled={
             isPending
             || uploading
-            || (postType !== 'poll' && !body.trim() && !imageUrl)
+            || (postType !== 'poll' && !body.trim() && uploadedUrls.length === 0)
           }
           className="rounded-full px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: 'var(--fc-accent, #14b8a6)' }}
