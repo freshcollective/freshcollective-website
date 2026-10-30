@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_verified_current_user
@@ -134,6 +135,33 @@ def _get_message_member_space(slug: str, user: User, db: Session) -> Space:
     if not membership:
         raise HTTPException(status_code=403, detail="Not a member of this space.")
     return space
+
+
+def _i_am_a_participant(user_id: str):
+    """Either side of a thread — the member or the creator.
+
+    The Collective's Messages tab used to match ``member_id`` alone, so
+    a creator opening their own Collective's Messages saw "No messages
+    yet" while the unread badge beside it said two. Their conversations
+    are real; they sit on the other column.
+
+    This is not the owner bypass ``_get_message_member_space`` refuses.
+    That gate stops somebody reading a conversation they are not in —
+    no platform-role shortcut, no owner shortcut, active membership
+    required — and it still does. This predicate only ever returns
+    threads the caller is a *participant* of. A creator sees the
+    conversations they are part of, which is the same rule a member
+    gets, applied to the other column.
+    """
+    return or_(
+        MessageThread.member_id == user_id,
+        MessageThread.creator_id == user_id,
+    )
+
+
+def _other_participant(thread: MessageThread, me: str) -> str:
+    """Whoever is not me. The reply notification's recipient."""
+    return thread.creator_id if me == thread.member_id else thread.member_id
 
 
 def _display_names(db: Session, user_ids: Iterable[str | None]) -> dict[str, str]:
@@ -664,7 +692,7 @@ def member_list_threads(
         db.query(MessageThread)
         .filter(
             MessageThread.space_id == space.id,
-            MessageThread.member_id == current_user.id,
+            _i_am_a_participant(current_user.id),
         )
         .order_by(MessageThread.updated_at.desc())
         .all()
@@ -683,7 +711,7 @@ def member_get_thread(
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,
-        MessageThread.member_id == current_user.id,
+        _i_am_a_participant(current_user.id),
     ).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found.")
@@ -703,7 +731,7 @@ def member_reply(
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,
-        MessageThread.member_id == current_user.id,
+        _i_am_a_participant(current_user.id),
     ).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found.")
@@ -724,14 +752,26 @@ def member_reply(
     db.commit()
     db.refresh(thread)
 
-    # Notify the creator
+    # Notify whoever is not the sender. ``thread.creator_id`` was
+    # hardcoded here, which was right while only members could reply
+    # through this route and wrong the moment creators could: a creator
+    # replying would have notified themselves.
+    recipient_id = _other_participant(thread, current_user.id)
     sender_name = _one_display_name(db, current_user)
+    # The same link the creator-to-member email carries. It used to be
+    # ``None`` — "Creator views via Creator Studio" — so a creator's
+    # email about a reply had no way back to the conversation. The
+    # route resolves for them now that the member-side endpoints
+    # recognise both participants, which is what makes this URL safe
+    # to send rather than merely plausible.
+    thread_url = f"/spaces/{slug}/messages/{thread.id}"
     background_tasks.add_task(
         _notify_direct_message,
-        recipient_id=thread.creator_id,
+        recipient_id=recipient_id,
         sender_name=sender_name,
         space_id=space.id,
-        thread_url=None,  # Creator views via Creator Studio
+        space_name=space.name,
+        thread_url=thread_url,
         preview=text[:80],
     )
     # Communications Layer (M5c) — emit alongside the legacy notify.
@@ -746,7 +786,7 @@ def member_reply(
         subject_type="thread", subject_id=thread.id,
         context={"space_id": space.id},
         payload={
-            "recipient_id": thread.creator_id,
+            "recipient_id": recipient_id,
             "sender_name": sender_name,
             "thread_id": thread.id,
             "excerpt": text[:80],
@@ -769,7 +809,7 @@ def member_mark_read(
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,
-        MessageThread.member_id == current_user.id,
+        _i_am_a_participant(current_user.id),
     ).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found.")

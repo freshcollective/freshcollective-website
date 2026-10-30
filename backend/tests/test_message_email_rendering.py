@@ -203,13 +203,36 @@ class TestTheDirectMessageNotification:
         assert deliver.count("_notify_direct_message,") == 1
         assert "space_name=space.name," in deliver
 
-    def test_the_member_reply_notification_is_left_alone(self):
-        """A member replying to the creator is a different direction and
-        out of scope — it still notifies, without a Collective name."""
+    def test_the_reply_notification_now_matches_the_other_direction(self):
+        """This assertion used to be its inverse.
+
+        A member replying to a creator was deliberately left out of the
+        first pass: it notified, but with no Collective name and
+        ``thread_url=None`` — "Creator views via Creator Studio" — so
+        the creator's email had no way back to the conversation. Both
+        directions carry the same information now.
+        """
         from pathlib import Path
 
         src = Path("app/messages/routes.py").read_text()
         reply = src[src.index("def member_reply("):]
-        reply = reply[:reply.index("def ", 10)]
+        reply = reply[:reply.index("\ndef ", 10)]
         assert "_notify_direct_message," in reply
-        assert "space_name" not in reply
+        assert "space_name=space.name," in reply
+        assert "thread_url=thread_url," in reply
+        assert "thread_url=None" not in reply
+
+    def test_the_reply_notifies_the_other_participant_not_the_creator(self):
+        """``thread.creator_id`` was hardcoded as the recipient.
+
+        Correct while only members could reply through that route, and
+        wrong the moment creators could — a creator replying would have
+        emailed themselves.
+        """
+        from pathlib import Path
+
+        src = Path("app/messages/routes.py").read_text()
+        reply = src[src.index("def member_reply("):]
+        reply = reply[:reply.index("\ndef ", 10)]
+        assert "recipient_id = _other_participant(thread, current_user.id)" in reply
+        assert "recipient_id=thread.creator_id" not in reply
