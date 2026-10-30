@@ -24,6 +24,10 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: '🌍 OUR WORLD',
     items: [
       { href: '/admin/overview',            label: 'Mother World', exact: true },
+      // World Insights is the analytics area; Mother World stays the
+      // welcoming overview and World History the audit trail. Three
+      // separate questions, three separate places.
+      { href: '/admin/insights',            label: 'World Insights' },
       { href: '/admin/atlas',               label: 'Atlas' },
       { href: '/admin/physical-locations',  label: 'Physical Locations' },
       { href: '/admin/collectives',         label: 'Collectives' },
