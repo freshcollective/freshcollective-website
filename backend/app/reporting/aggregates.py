@@ -17,11 +17,22 @@ Only metrics the registry declares ``additive`` or ``snapshot``.
 
 Idempotency
 -----------
-Every write is ``ON CONFLICT (metric_key, reporting_date, dimension) DO
-UPDATE`` — the house pattern. Re-running a day recomputes and overwrites
-it, which is what makes a correction a recalculation: a refund recorded
-late, a backfilled Stripe fee, or a fixed metric definition is handled by
-rebuilding the affected dates rather than by editing a stored number.
+Every write is ``ON CONFLICT (metric_key, reporting_date, dimension)``.
+For almost everything the conflict action is ``DO UPDATE`` — the house
+pattern. Re-running a day recomputes and overwrites it, which is what
+makes a correction a recalculation: a refund recorded late, a backfilled
+Stripe fee, or a fixed metric definition is handled by rebuilding the
+affected dates rather than by editing a stored number.
+
+Observations are the exception
+------------------------------
+A metric the registry marks ``observation_only`` cannot be recomputed for
+a past day, only *looked at* on the day. Its conflict action is therefore
+``DO NOTHING``: the stored row was written by the run that genuinely saw
+that day, and a rebuild a month later has nothing better to offer — it
+would only replace a true observation with the current count wearing an
+old date. Recomputation and observation want opposite behaviour from the
+same upsert, so the registry's declaration decides which one applies.
 
 Failure is recorded, not swallowed
 ----------------------------------
@@ -97,6 +108,10 @@ class DayResult:
     reporting_date: date
     rows_written: int = 0
     skipped: list[str] = field(default_factory=list)
+    #: Observations already on record for this day, left untouched.
+    #: Not a failure and not a write — a third outcome that would
+    #: otherwise be invisible.
+    preserved: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +124,11 @@ class RebuildResult:
     @property
     def rows_written(self) -> int:
         return sum(d.rows_written for d in self.days)
+
+    @property
+    def rows_preserved(self) -> int:
+        """Observations already on record, left as they were."""
+        return sum(len(d.preserved) for d in self.days)
 
 
 def _window_for(metric: Metric, day: date) -> Window:
@@ -155,7 +175,7 @@ def rebuild_day(
             result.skipped.append(f"{metric.key}: unavailable")
             continue
 
-        _upsert(
+        written = _upsert(
             db,
             metric_key=metric.key,
             reporting_date=day,
@@ -163,8 +183,14 @@ def rebuild_day(
             aggregation=metric.aggregation.value,
             value=int(value.value),
             provenance=value.qualifiers.get("provenance"),
+            write_once=metric.observation_only,
         )
-        result.rows_written += 1
+        if written:
+            result.rows_written += 1
+        else:
+            # An observation already on record for this day. Left alone,
+            # which is the point of write-once.
+            result.preserved.append(f"{metric.key}")
 
     # Per-Collective rows, for the comparisons World Insights needs and
     # for creator-scoped reporting later. Only metrics that declare a
@@ -184,7 +210,7 @@ def rebuild_day(
                 continue
             if value.value is None:
                 continue
-            _upsert(
+            written = _upsert(
                 db,
                 metric_key=metric.key,
                 reporting_date=day,
@@ -192,8 +218,12 @@ def rebuild_day(
                 aggregation=metric.aggregation.value,
                 value=int(value.value),
                 provenance=value.qualifiers.get("provenance"),
+                write_once=metric.observation_only,
             )
-            result.rows_written += 1
+            if written:
+                result.rows_written += 1
+            else:
+                result.preserved.append(f"{metric.key}@{space_id}")
 
     return result
 
@@ -221,21 +251,31 @@ def _upsert(
     aggregation: str,
     value: int,
     provenance: str | None,
-) -> None:
-    stmt = (
-        pg_insert(MetricDaily.__table__)
-        .values(
-            id=str(uuid.uuid4()),
-            metric_key=metric_key,
-            reporting_date=reporting_date,
-            dimension=dimension,
-            aggregation=aggregation,
-            value=value,
-            provenance=provenance,
-            computed_at=datetime.utcnow(),
-        )
-        .on_conflict_do_update(
-            index_elements=["metric_key", "reporting_date", "dimension"],
+    write_once: bool = False,
+) -> bool:
+    """Store one daily figure. Returns whether a row was written.
+
+    ``write_once`` protects an observation from a later rebuild. The
+    return value matters because of it: a skipped conflict is not a row
+    written, and a run that reported it as one would overstate what it
+    did.
+    """
+    stmt = pg_insert(MetricDaily.__table__).values(
+        id=str(uuid.uuid4()),
+        metric_key=metric_key,
+        reporting_date=reporting_date,
+        dimension=dimension,
+        aggregation=aggregation,
+        value=value,
+        provenance=provenance,
+        computed_at=datetime.utcnow(),
+    )
+    index = ["metric_key", "reporting_date", "dimension"]
+    if write_once:
+        stmt = stmt.on_conflict_do_nothing(index_elements=index)
+    else:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=index,
             set_={
                 "value": value,
                 "aggregation": aggregation,
@@ -243,8 +283,7 @@ def _upsert(
                 "computed_at": datetime.utcnow(),
             },
         )
-    )
-    db.execute(stmt)
+    return bool(db.execute(stmt).rowcount)
 
 
 def rebuild_range(

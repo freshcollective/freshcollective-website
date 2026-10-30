@@ -57,6 +57,7 @@ function definition(over: Partial<MetricDefinition> = {}): MetricDefinition {
     grain: 'period',
     aggregation: 'additive',
     unit: 'count',
+    observation_only: false,
     date_basis: 'membership_joined',
     access: 'platform_only',
     availability: 'full',

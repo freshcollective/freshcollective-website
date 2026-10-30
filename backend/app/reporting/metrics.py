@@ -32,9 +32,12 @@ instead of blending two kinds of knowledge silently.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.periods import completed_reporting_date
 from app.models.payment import PaymentTransaction, PayoutStatus
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
 from app.models.user import User, UserRole
@@ -1099,16 +1102,93 @@ REGISTRY.add(Metric(
 # Collectives
 # ---------------------------------------------------------------------------
 
+#: How many days after a reporting day an observation of it still counts.
+#:
+#: A Collective count can only be taken by looking, and looking tonight
+#: tells you about tonight. Running the night after day D is the
+#: conventional end-of-day observation and is treated as genuine. A
+#: missed night means tomorrow's run is the first and only chance to
+#: record D, so a short grace follows the nightly lookback — but a
+#: rebuild of last March is refused outright, because there is nothing
+#: there to observe any more.
+OBSERVATION_GRACE_DAYS = 3
+
+
+def _observation_quality(window: Window) -> tuple[str | None, str | None]:
+    """``(provenance, unavailable_reason)`` for observing a day's state.
+
+    ``provenance`` is ``observed`` when the window closes on the last
+    completed reporting day — the night the nightly job is built around —
+    and ``observed_late`` within the grace that lets a missed night be
+    repaired. Beyond that there is no honest answer, so the reason is
+    returned instead and no row is written.
+    """
+    as_at = _as_at(window)
+    if as_at is None:
+        # Live question, live answer.
+        return "observed", None
+
+    today = completed_reporting_date(datetime.utcnow())
+    # ``ends_at`` is exclusive, so the day being described ends the
+    # instant before it.
+    day = (as_at - timedelta(microseconds=1)).date()
+    behind = (today - day).days
+
+    if behind < 0:
+        # A day that has not finished. Nothing to observe yet.
+        return None, (
+            "This day has not finished yet, so there is no end-of-day count "
+            "for it."
+        )
+    if behind == 0:
+        return "observed", None
+    if behind <= OBSERVATION_GRACE_DAYS:
+        return "observed_late", None
+    return None, (
+        "Collective status is not kept as history, so a past day's count "
+        "cannot be reconstructed — only observed at the time. This day "
+        "predates the first observation."
+    )
+
+
 def _collectives(status: str | None, key: str):
+    """A count of Collectives, as observed rather than reconstructed.
+
+    ``spaces.status`` holds one value and no history. There is no
+    ``archived_at``, and a creation date is not a publication date — so
+    the only honest past figure is one that was written down at the time.
+    Asked about a day it cannot have seen, this returns unavailable, and
+    the daily series carries a gap the chart can show as a gap.
+    """
     def compute(db: Session, scope: ReportScope, window: Window) -> MetricValue:
+        provenance, unavailable = _observation_quality(window)
+        if unavailable is not None:
+            return MetricValue(
+                key=key,
+                value=None,
+                unavailable_reason=unavailable,
+                qualifiers={"observation_only": True},
+            )
+
         q = db.query(func.count(Space.id))
         if status is not None:
             q = q.filter(Space.status == status)
         if not scope.is_platform:
             if not scope.space_ids:
-                return MetricValue(key=key, value=0)
+                return MetricValue(
+                    key=key, value=0,
+                    qualifiers={"provenance": provenance, "observation_only": True},
+                )
             q = q.filter(Space.id.in_(scope.space_ids))
-        return MetricValue(key=key, value=int(q.scalar() or 0))
+        return MetricValue(
+            key=key,
+            value=int(q.scalar() or 0),
+            qualifiers={
+                "provenance": provenance,
+                "observation_only": True,
+                "as_at": _as_at_label(db, window),
+            },
+        )
 
     return compute
 
@@ -1127,12 +1207,20 @@ for _status, _key, _name in (
             if _status
             else "All Collectives, whatever their status."
         ),
-        source_of_truth="spaces.status",
+        source_of_truth="spaces.status, observed at the time",
         grain=Grain.snapshot,
         aggregation=Aggregation.snapshot,
         date_basis=DateBasis.none,
         access=Access.creator_visible,
-        availability=Availability.full,
+        availability=Availability.from_instrumentation,
+        observation_only=True,
+        limitations=(
+            "Observed, not reconstructed. A Collective's status is stored as "
+            "one value with no history behind it, so this count is only "
+            "known for days on which it was recorded. A trend begins when "
+            "nightly recording began, and earlier days are a gap rather "
+            "than a zero."
+        ),
         dimensions=("space_id",),
         compute=_collectives(_status, _key),
     ))

@@ -74,6 +74,9 @@ class MetricDefinitionOut(BaseModel):
     aggregation: str
     #: How the number reads: count, money_cents, proportion or rate.
     unit: str
+    #: True when a past day cannot be reconstructed, only observed.
+    #: A trend line for one of these begins when recording began.
+    observation_only: bool
     date_basis: str
     access: str
     availability: str
@@ -117,6 +120,7 @@ def _definition(m: Metric) -> MetricDefinitionOut:
         grain=m.grain.value,
         aggregation=m.aggregation.value,
         unit=m.resolved_unit.value,
+        observation_only=m.observation_only,
         date_basis=m.date_basis.value,
         access=m.access.value,
         availability=m.availability.value,

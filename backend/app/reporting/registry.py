@@ -187,6 +187,18 @@ class Metric:
     #: must declare itself, because neither can be guessed from a value
     #: without being wrong half the time.
     unit: Unit | None = None
+    #: True for a snapshot that can only ever be *observed*, never
+    #: reconstructed from a past date.
+    #:
+    #: ``unique_members`` is reconstructable: membership rows carry
+    #: ``joined_at`` and ``removed_at``, so last March's figure can be
+    #: worked out today. A Collective's status is not — ``spaces.status``
+    #: holds one value with no history behind it, and a creation date is
+    #: not a publication date. Asked for a past day, such a metric
+    #: returns unavailable rather than today's count wearing yesterday's
+    #: date, and the daily row is written once by the run that genuinely
+    #: observed the day rather than overwritten by every later rebuild.
+    observation_only: bool = False
     #: Filters the calculation honours, beyond the period.
     dimensions: tuple[str, ...] = ()
     #: True when the value is about identifiable people and should not

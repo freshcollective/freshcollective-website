@@ -118,9 +118,18 @@ def main() -> int:
             logger.error("rebuild FAILED: %s", result.error)
             return 1
         logger.info(
-            "rebuild ok: run=%s days=%d rows=%d",
+            "rebuild ok: run=%s days=%d rows=%d preserved=%d",
             result.job_run_id, len(result.days), result.rows_written,
+            result.rows_preserved,
         )
+        if result.rows_preserved:
+            # Not a failure. A Collective count already observed for a
+            # day is left alone rather than replaced with today's.
+            logger.info(
+                "preserved %d existing observation(s) — see "
+                "Metric.observation_only",
+                result.rows_preserved,
+            )
         skipped = [s for d in result.days for s in d.skipped]
         if skipped:
             # Not a failure. A metric that is unavailable for a day is a

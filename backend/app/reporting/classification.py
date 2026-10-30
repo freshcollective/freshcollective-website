@@ -38,19 +38,25 @@ DEMONSTRATION = "demonstration"
 #: every total; it is simply not somebody else's business.
 TEST = "test"
 
-#: The values migration 171's CHECK constraint accepts today, on both
-#: ``spaces.reporting_class`` and ``users.reporting_class``.
+#: The values the CHECK constraint on ``spaces.reporting_class`` and
+#: ``users.reporting_class`` accepts. ``TEST`` was added by migration
+#: 173 after classifying the real inventory showed three were not enough:
+#: mapping a fixture onto ``internal_operations`` would have made the
+#: World Builders governance Collective unreadable, and onto
+#: ``demonstration`` would have done the same to Moonlit Circle.
 SUPPORTED_CLASSES: tuple[str, ...] = (
     PRODUCTION,
     INTERNAL_OPERATIONS,
     DEMONSTRATION,
+    TEST,
 )
 
-#: The full vocabulary the reporting needs. ``TEST`` is declared here and
-#: absent from :data:`SUPPORTED_CLASSES` on purpose: it cannot be stored
-#: until a migration widens the constraint, and a reporting breakdown
-#: that silently dropped it would be worse than one that reports zero.
-ALL_CLASSES: tuple[str, ...] = (*SUPPORTED_CLASSES, TEST)
+#: Every class the reporting knows about. Identical to
+#: :data:`SUPPORTED_CLASSES` while the schema and the vocabulary agree —
+#: kept as a separate name so a future class can be declared and
+#: reported on before the migration that stores it, rather than a
+#: breakdown silently dropping the category.
+ALL_CLASSES: tuple[str, ...] = SUPPORTED_CLASSES
 
 #: How an unset column is reported. Not a class — the absence of one.
 UNCLASSIFIED = "unclassified"

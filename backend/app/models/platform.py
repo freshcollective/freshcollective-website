@@ -414,9 +414,10 @@ class Space(Base):
     first_published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
-    # Reporting classification — production, internal_operations or
-    # demonstration. NULL until an operator reviews the inventory and
-    # assigns one; nothing is ever inferred from a Collective's name.
+    # Reporting classification — production, internal_operations,
+    # demonstration or test (migration 173). NULL until an operator
+    # reviews the inventory and assigns one; nothing is ever inferred
+    # from a Collective's name. See app.reporting.classification.
     reporting_class: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
     frozen_by_action_id: Mapped[str | None] = mapped_column(
@@ -445,7 +446,7 @@ class Space(Base):
         ),
         CheckConstraint(
             "reporting_class IS NULL OR reporting_class IN "
-            "('production', 'internal_operations', 'demonstration')",
+            "('production', 'internal_operations', 'demonstration', 'test')",
             name="ck_spaces_reporting_class",
         ),
     )

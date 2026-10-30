@@ -57,6 +57,15 @@ export interface MetricDefinition {
    * key convention for exactly that window.
    */
   unit?: Unit
+  /**
+   * True when a past day cannot be reconstructed, only observed.
+   *
+   * A Collective's status is stored as one value with no history behind
+   * it, so its trend begins when nightly recording began. Charts must
+   * draw the earlier span as a gap, never as zero. Optional for the same
+   * deploy-ordering reason as `unit`.
+   */
+  observation_only?: boolean
   date_basis: DateBasis
   access: 'platform_only' | 'creator_visible'
   availability: Availability
