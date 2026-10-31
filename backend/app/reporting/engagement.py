@@ -182,6 +182,26 @@ def participation_events():
     ).subquery("participation")
 
 
+def _narrow(q, population: Population, space_col, user_col):
+    """Apply a population to a query that does not use ``_scoped``.
+
+    Three metrics build their own queries — attendance over
+    ``event_bookings``, Pathway steps over ``step_progress``, overlap
+    over ``space_memberships`` — so they never passed through
+    ``_scoped`` and silently ignored the classification they declared.
+    A metric that returns the unfiltered figure under a "Production"
+    heading is the one failure a reader cannot catch, so the narrowing
+    lives here and every such query takes it.
+    """
+    spaces = population.space_id_select()
+    if spaces is not None:
+        q = q.where(space_col.in_(spaces))
+    excluded = population.excluded_account_select()
+    if excluded is not None and user_col is not None:
+        q = q.where(user_col.notin_(excluded))
+    return q
+
+
 def _scoped(q, part, scope: ReportScope, population: Population = ALL):
     """Restrict a participation query to a scope and a population.
 
@@ -520,6 +540,7 @@ def _gathering_attendance(
         q = q.where(
             literal(False) if not allowed else Event.space_id.in_(allowed)
         )
+    q = _narrow(q, population, Event.space_id, EventBooking.user_id)
     booked, attended = db.execute(q).one()
     booked, attended = int(booked or 0), int(attended or 0)
     return MetricValue(
@@ -582,6 +603,7 @@ def _pathway_steps_completed(
         q = q.where(
             literal(False) if not allowed else Pathway.space_id.in_(allowed)
         )
+    q = _narrow(q, population, Pathway.space_id, StepProgress.user_id)
     steps, people = db.execute(q).one()
     return MetricValue(
         key="pathway_steps_completed",
@@ -672,17 +694,20 @@ def _overlap_vs_engagement(
     platform to answer honestly, so it is platform-only.
     """
     part = participation_events()
-    counts = (
-        select(
-            SpaceMembership.user_id.label("user_id"),
-            func.count(func.distinct(SpaceMembership.space_id)).label("n"),
-        )
-        .where(SpaceMembership.status == SpaceMembershipStatus.active)
-        .group_by(SpaceMembership.user_id)
-        .subquery()
+    membership_q = select(
+        SpaceMembership.user_id.label("user_id"),
+        func.count(func.distinct(SpaceMembership.space_id)).label("n"),
+    ).where(SpaceMembership.status == SpaceMembershipStatus.active)
+    membership_q = _narrow(
+        membership_q, population,
+        SpaceMembership.space_id, SpaceMembership.user_id,
     )
+    counts = membership_q.group_by(SpaceMembership.user_id).subquery()
+
     active_q = select(func.distinct(part.c.user_id)).select_from(part)
-    active_q = _windowed(active_q, part, window)
+    active_q = _windowed(
+        _scoped(active_q, part, scope, population), part, window,
+    )
     active = {r[0] for r in db.execute(active_q)}
 
     rows = db.execute(select(counts.c.user_id, counts.c.n)).fetchall()
@@ -798,14 +823,20 @@ def _retention_cohorts(
     membership *departures* were destroyed by rejoining before BI-1, so
     cohorts spanning that period understate churn.
     """
-    rows = db.execute(
+    # The cohort itself is narrowed, not just the activity measured
+    # against it. Filtering one and not the other reported cohorts made
+    # of test memberships under a Production heading, with a retention
+    # rate computed from a denominator the filter was supposed to have
+    # removed.
+    cohort_q = _narrow(
         select(
             func.date_trunc("month", SpaceMembership.joined_at).label("cohort"),
             func.count(func.distinct(SpaceMembership.user_id)),
-        )
-        .where(SpaceMembership.joined_at.isnot(None))
-        .group_by("cohort")
-        .order_by("cohort")
+        ).where(SpaceMembership.joined_at.isnot(None)),
+        population, SpaceMembership.space_id, SpaceMembership.user_id,
+    )
+    rows = db.execute(
+        cohort_q.group_by("cohort").order_by("cohort")
     ).fetchall()
     if not rows:
         return MetricValue(
@@ -824,8 +855,14 @@ def _retention_cohorts(
         members = {
             r[0]
             for r in db.execute(
-                select(func.distinct(SpaceMembership.user_id)).where(
-                    func.date_trunc("month", SpaceMembership.joined_at) == cohort
+                _narrow(
+                    select(func.distinct(SpaceMembership.user_id)).where(
+                        func.date_trunc("month", SpaceMembership.joined_at)
+                        == cohort
+                    ),
+                    population,
+                    SpaceMembership.space_id,
+                    SpaceMembership.user_id,
                 )
             )
         }
@@ -870,4 +907,220 @@ REGISTRY.add(Metric(
     personal_data=True,
     dimensions=(POPULATION_DIMENSION,),
     compute=_retention_cohorts,
+))
+
+
+# ---------------------------------------------------------------------------
+# Participation: people, not just acts
+# ---------------------------------------------------------------------------
+#
+# The distinction the Participation page is built on. ``participation_acts``
+# counts what happened; these count who. One member attending three
+# Gatherings is three acts and one person, and a page that showed only the
+# first would report a community three times more active than it is.
+#
+# All three read the same participation union the act count reads, narrowed
+# by kind — so "a conversation contributor" and "a conversation post" can
+# never drift apart in definition, only in what they count.
+
+CONVERSATION_KINDS = (
+    "conversation_post",
+    "conversation_comment",
+    "conversation_reaction",
+)
+
+
+def _distinct_people(key: str, kinds: tuple[str, ...]):
+    """Distinct people who did one of these kinds of thing."""
+
+    def compute(
+        db: Session, scope: ReportScope, window: Window,
+        population: Population = ALL,
+    ) -> MetricValue:
+        part = participation_events()
+        q = (
+            select(func.count(func.distinct(part.c.user_id)))
+            .select_from(part)
+            .where(part.c.kind.in_(kinds))
+        )
+        n = db.execute(
+            _windowed(_scoped(q, part, scope, population), part, window)
+        ).scalar()
+        return MetricValue(
+            key=key, value=int(n or 0), qualifiers=population.qualifiers(),
+        )
+
+    return compute
+
+
+for _key, _name, _kinds, _definition in (
+    (
+        "gathering_attendees", "People attending Gatherings",
+        ("gathering_attendance",),
+        "Distinct people recorded as attending at least one Gathering in "
+        "the period. Somebody at three Gatherings counts once.",
+    ),
+    (
+        "pathway_participants", "People progressing a Pathway",
+        ("pathway_step",),
+        "Distinct people who completed at least one Pathway step in the "
+        "period. Counts people, not steps.",
+    ),
+    (
+        "conversation_contributors", "People contributing to Conversations",
+        CONVERSATION_KINDS,
+        "Distinct people who posted, commented or reacted in the period. "
+        "Counts people, not contributions, and never reads what they wrote.",
+    ),
+):
+    REGISTRY.add(Metric(
+        key=_key,
+        display_name=_name,
+        definition=_definition,
+        source_of_truth="the participation union — see app.reporting.engagement",
+        grain=Grain.period,
+        # Distinct people. Thirty daily counts do not make a monthly one,
+        # so this is recomputed over whatever window is asked for and is
+        # never stored as a daily row.
+        aggregation=Aggregation.distinct_count,
+        date_basis=DateBasis.business_event,
+        access=Access.creator_visible,
+        availability=Availability.from_instrumentation,
+        limitations=(
+            "Counts people, never acts — read it beside 'Acts of "
+            "participation', which counts the opposite. Non-additive: a "
+            "monthly figure must be recomputed, never summed from weeks. "
+            "Only covers activity the platform records; a member who read "
+            "everything and posted nothing is not here."
+        ),
+        dimensions=("space_id", POPULATION_DIMENSION),
+        personal_data=True,
+        compute=_distinct_people(_key, _kinds),
+    ))
+
+
+def _gathering_bookings(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """Places booked on Gatherings, dated by the Gathering.
+
+    The denominator for attendance, and a metric in its own right
+    rather than a qualifier, so booking and attending can be two lines
+    on one chart. Dated by when the Gathering happened rather than when
+    the booking was made — the same basis attendance uses, because a
+    booking made in August for a September Gathering belongs to
+    September in both figures or the pair cannot be compared.
+    """
+    q = (
+        select(func.count(EventBooking.id))
+        .select_from(EventBooking)
+        .join(Event, Event.id == EventBooking.event_id)
+    )
+    if window.starts_at is not None:
+        q = q.where(Event.starts_at >= window.starts_at)
+    if window.ends_at is not None:
+        q = q.where(Event.starts_at < window.ends_at)
+    allowed = scope.space_filter
+    if allowed is not None:
+        q = q.where(
+            literal(False) if not allowed else Event.space_id.in_(allowed)
+        )
+    q = _narrow(q, population, Event.space_id, EventBooking.user_id)
+    return MetricValue(
+        key="gathering_bookings",
+        value=int(db.execute(q).scalar() or 0),
+        qualifiers=population.qualifiers(),
+    )
+
+
+REGISTRY.add(Metric(
+    key="gathering_bookings",
+    display_name="Gathering bookings",
+    definition=(
+        "Places booked on Gatherings held in the period. Counts bookings, "
+        "not people, and a booking is not an attendance."
+    ),
+    source_of_truth="event_bookings, dated by events.starts_at",
+    grain=Grain.period,
+    aggregation=Aggregation.additive,
+    date_basis=DateBasis.business_event,
+    access=Access.creator_visible,
+    availability=Availability.full,
+    limitations=(
+        "A booking says somebody intended to come. Attendance is recorded "
+        "separately and only for Gatherings whose register was marked, so "
+        "the gap between the two is partly no-shows and partly unmarked "
+        "registers — never assume a booking was attended."
+    ),
+    dimensions=("space_id", POPULATION_DIMENSION),
+    compute=_gathering_bookings,
+))
+
+
+def _repeat_attendees(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """People who attended more than one Gathering in the period.
+
+    Over ``event_bookings`` rather than the participation union,
+    because this needs to count *distinct Gatherings* per person and
+    the union carries no event id. Recorded attendance only — a second
+    booking is not a second attendance.
+    """
+    q = (
+        select(EventBooking.user_id, func.count(func.distinct(Event.id)))
+        .select_from(EventBooking)
+        .join(Event, Event.id == EventBooking.event_id)
+        .where(EventBooking.attendance_status == "attended")
+    )
+    if window.starts_at is not None:
+        q = q.where(Event.starts_at >= window.starts_at)
+    if window.ends_at is not None:
+        q = q.where(Event.starts_at < window.ends_at)
+    allowed = scope.space_filter
+    if allowed is not None:
+        q = q.where(
+            literal(False) if not allowed else Event.space_id.in_(allowed)
+        )
+    q = _narrow(q, population, Event.space_id, EventBooking.user_id)
+    rows = db.execute(q.group_by(EventBooking.user_id)).fetchall()
+    repeat = sum(1 for _, n in rows if n > 1)
+    return MetricValue(
+        key="repeat_gathering_attendees",
+        value=repeat,
+        qualifiers={
+            **population.qualifiers(),
+            "attended_at_all": len(rows),
+            "note": (
+                "Based on recorded attendance, so a Gathering whose "
+                "register was never marked cannot contribute to it."
+            ),
+        },
+    )
+
+
+REGISTRY.add(Metric(
+    key="repeat_gathering_attendees",
+    display_name="People attending more than once",
+    definition=(
+        "Distinct people recorded as attending two or more Gatherings in "
+        "the period."
+    ),
+    source_of_truth="event_bookings where attendance was recorded",
+    grain=Grain.period,
+    aggregation=Aggregation.distinct_count,
+    date_basis=DateBasis.business_event,
+    access=Access.creator_visible,
+    availability=Availability.partial,
+    limitations=(
+        "Recorded attendance only. A Gathering whose register was never "
+        "marked cannot contribute, so this is a lower bound rather than a "
+        "count — it understates repeat attendance wherever registers were "
+        "left unmarked, and never overstates it."
+    ),
+    dimensions=("space_id", POPULATION_DIMENSION),
+    personal_data=True,
+    compute=_repeat_attendees,
 ))

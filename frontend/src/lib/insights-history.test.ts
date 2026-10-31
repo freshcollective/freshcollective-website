@@ -1654,3 +1654,90 @@ describe('milestones reached and arrivals are not the same chart', () => {
     )
   })
 })
+
+describe('the Participation page keeps people and acts apart', () => {
+  const PAGE = 'src/app/admin/insights/participation/page.tsx'
+
+  test('it exists and leads with charts', () => {
+    const src = read(PAGE)
+    assert.ok(src.indexOf('<HistoryControls') < src.indexOf('<HistoryPanel'))
+    assert.ok(src.indexOf('<HistoryPanel') < src.indexOf('<InsightCard'))
+  })
+
+  test('the distinct-people metrics are charted, not just the act counts', () => {
+    const src = read(PAGE)
+    for (const key of [
+      'active_members', 'gathering_attendees',
+      'pathway_participants', 'conversation_contributors',
+    ]) {
+      assert.ok(src.includes(key), `${key} should be on the page`)
+    }
+  })
+
+  test('bookings and attendance are both charted', () => {
+    const src = read(PAGE)
+    assert.ok(src.includes('gathering_bookings'))
+    assert.ok(src.includes('gathering_attendance'))
+    assert.match(src, /never assumed from a booking/)
+  })
+
+  test('it says plainly that membership is not participation', () => {
+    const src = read(PAGE)
+    assert.match(src, /took part in the period/)
+    assert.match(src, /whether they took part or not/)
+  })
+
+  test('it introduces no blended engagement score', () => {
+    const src = read(PAGE)
+    assert.ok(!/engagementScore|blendedScore|overallScore/i.test(src))
+    assert.ok(
+      !/participation_acts'\)[^)]*\)?\s*[-+*/]\s*pick\(/.test(src),
+      'activity types must not be combined',
+    )
+  })
+
+  test('it explains why Pathway completion is absent rather than guessing', () => {
+    const src = read(PAGE)
+    assert.match(src, /completion/i)
+    assert.match(src, /nothing in the application records a completion/)
+    assert.match(src, /estimate presented as a measurement/)
+  })
+
+  test('the privacy boundary is stated on the Conversations section', () => {
+    const src = read(PAGE)
+    assert.match(src, /never reads what anybody wrote/)
+  })
+
+  test('the activity mix is read from the metric, not recomputed', () => {
+    const src = read(PAGE)
+    assert.match(src, /by_kind/)
+    assert.match(src, /acts<\/strong>, not people/)
+  })
+
+  test('it defaults to Production and passes it to the cards', () => {
+    const src = read(PAGE)
+    assert.match(src, /useState<PopulationKey>\('production'\)/)
+    const calls = [...src.matchAll(/useMetrics\(([\s\S]*?)\)/g)]
+    assert.ok(calls.length > 0)
+    for (const call of calls) {
+      assert.ok(call[1].includes('population'), call[0].replace(/\s+/g, ' '))
+    }
+  })
+
+  test('it reuses the shared components rather than drawing its own charts', () => {
+    const src = read(PAGE)
+    for (const c of [
+      '<HistoryPanel', '<HistoryControls', '<PeriodSelect',
+      '<CollectiveSelect', '<InsightCard',
+    ]) {
+      assert.ok(src.includes(c), `${c} should be reused`)
+    }
+    assert.ok(!/<svg/.test(withoutDocComments(src)), 'no hand-rolled chart')
+  })
+
+  test('the returning definition is spelled out, including what changes it', () => {
+    const src = read(PAGE)
+    assert.match(src, /immediately preceding period of the same length/)
+    assert.match(src, /undefined over all time/)
+  })
+})
