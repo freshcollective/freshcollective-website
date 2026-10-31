@@ -224,20 +224,33 @@ export default function ParticipationPage() {
           className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
           style={{ color: INK_MUTED }}
         >
-          Steps completed and the people completing them, kept apart. There
-          is no completion figure here — see the note beneath the charts for
-          why inventing one would be worse than leaving it out.
+          Steps completed and the people completing them, on their own
+          axes. Two charts rather than one: steps outnumber people several
+          times over, so a shared axis flattened the people series into
+          the baseline — and a second y-axis would have been worse, because
+          two scales on one frame can be drawn to show any relationship you
+          like. Read them together; the pairing is the point.
         </p>
-        <HistoryPanel
-          title="Steps completed, and who completed them"
-          explanation="Pathway steps finished in each period, beside the number of distinct people who finished at least one."
-          data={history.data}
-          keys={['pathway_steps_completed', 'pathway_participants']}
-          kind="column"
-          hues={['navy', 'teal']}
-          height={240}
-          footnote="A steep steps line with a flat people line is a few members working through a Pathway quickly, which is a different thing from many members starting one. Pathway completion is deliberately absent: nothing in the application records a completion, and a Pathway's step count is derived from its current steps with no history, so whether somebody finished a Pathway as it stood last March cannot be established. Reporting a completion rate from today's step count would be an estimate presented as a measurement."
-        />
+        <div className="space-y-5">
+          <HistoryPanel
+            title="People progressing through Pathways"
+            explanation="Distinct people who completed at least one Pathway step in each period. Somebody who finished nine steps is one person here."
+            data={history.data}
+            keys={['pathway_participants']}
+            kind="column"
+            hues={['teal']}
+            footnote="A distinct count, so it is recomputed for whatever period and grouping you ask for and never summed from shorter ones — the same person appears in many days, and adding the days would count them many times."
+          />
+          <HistoryPanel
+            title="Pathway steps completed"
+            explanation="Total steps finished in each period, whoever finished them."
+            data={history.data}
+            keys={['pathway_steps_completed']}
+            kind="column"
+            hues={['navy']}
+            footnote="An additive flow, so these columns do add up over time. Read against the chart above: steps rising while people stay flat is a few members working through a Pathway quickly, which is a different thing from many members starting one. Pathway completion is deliberately absent from both — nothing in the application records a completion, and a Pathway's step count is derived from its current steps with no history, so whether somebody finished a Pathway as it stood last March cannot be established. A completion rate from today's step count would be an estimate presented as a measurement."
+          />
+        </div>
       </section>
 
       <section className="mt-12">

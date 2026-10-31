@@ -81,6 +81,7 @@ from app.reporting.registry import (
     Grain,
     Metric,
     MetricValue,
+    Unit,
     Window,
 )
 from app.reporting.population import (
@@ -647,19 +648,50 @@ def _participation_rate(
     The denominator is unique members, not memberships — otherwise a
     person in three Collectives would make the platform look three times
     less engaged than it is.
+
+    It takes **the same population and the same window** as the
+    numerator, and both halves of that were wrong.
+
+    The population was not passed, so a Production view counted
+    production participants against every member on the platform,
+    including the test accounts and test Collectives the filter exists
+    to remove. The rate came out lower the more fixtures existed.
+
+    The window was ``Window()`` — all time, which for a snapshot means
+    *now*. On a historical chart that divided each past period's
+    participants by today's membership, so every earlier period was
+    depressed by every member who joined after it and the line sloped
+    down however engaged the platform had been. The denominator is the
+    membership as at the end of the period being measured.
     """
     active = _active_people(db, scope, window, population)
-    members = REGISTRY.get("unique_members").evaluate(db, scope, Window()).value or 0
+    members = (
+        REGISTRY.get("unique_members")
+        .evaluate(db, scope, window, population)
+        .value
+        or 0
+    )
     if not members:
         return MetricValue(
             key="participation_rate",
             value=None,
-            unavailable_reason="No members yet, so there is no rate to report.",
+            unavailable_reason=(
+                "No members in this population at the end of the period, so "
+                "there is no rate to report."
+            ),
         )
     return MetricValue(
         key="participation_rate",
         value=round(active / members, 3),
-        qualifiers={"active_members": active, "unique_members": members},
+        qualifiers={
+            **population.qualifiers(),
+            "active_members": active,
+            "unique_members": members,
+            "basis": (
+                "Participants during the period, over members as at the end "
+                "of it — both narrowed to the same population."
+            ),
+        },
     )
 
 
@@ -674,10 +706,25 @@ REGISTRY.add(Metric(
     source_of_truth="derived from active_members and unique_members",
     grain=Grain.period,
     aggregation=Aggregation.ratio,
+    # **A proportion, not a bare number.** Active members as a share of
+    # all members is a part of a whole, so it reads as a percentage.
+    # Left undeclared it fell back to the key-suffix inference, which
+    # answers "count" for anything not ending ``_cents`` — and 0.75 of
+    # the membership appeared on the dashboard as "0.75". The same
+    # mistake in the other direction once showed 1.83 memberships per
+    # person as 183%, which is why ``Unit`` exists separately from
+    # ``Aggregation`` at all.
+    unit=Unit.proportion,
     date_basis=DateBasis.business_event,
     access=Access.creator_visible,
     availability=Availability.full,
-    limitations="A ratio — recompute it, never average two periods.",
+    limitations=(
+        "A proportion of members, so it cannot be averaged across periods "
+        "or summed — recompute it over whatever window is asked for. "
+        "Counts only participation the platform records: a member who "
+        "read everything and posted nothing is in the denominator and not "
+        "the numerator."
+    ),
     dimensions=("space_id", POPULATION_DIMENSION),
     compute=_participation_rate,
 ))
@@ -737,6 +784,12 @@ REGISTRY.add(Metric(
     source_of_truth="participation union + space_memberships",
     grain=Grain.period,
     aggregation=Aggregation.ratio,
+    # Declared rather than inferred even though the inference would be
+    # right: the value here is a count of people and the rates live in
+    # the qualifiers, which is unusual enough for a metric whose
+    # aggregation says "ratio" that leaving a reader — or the next
+    # person to add a ratio metric — to work it out is a trap.
+    unit=Unit.count,
     date_basis=DateBasis.business_event,
     access=Access.platform_only,
     availability=Availability.full,

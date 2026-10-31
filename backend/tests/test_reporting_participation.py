@@ -466,3 +466,213 @@ class TestWhatCannotBeReportedIsNotInvented:
             "conversation_contributors",
         ):
             assert REGISTRY.get(key).availability.value == "from_instrumentation"
+
+
+class TestARatioDeclaresHowItReads:
+    """A fraction formatted as a count is a wrong number on screen.
+
+    ``Unit`` exists separately from ``Aggregation`` because the two
+    answer different questions, and the registry already carries the
+    scar: 1.83 memberships per person once appeared as 183% because the
+    dashboard inferred "ratio means percentage".
+
+    The same hole in the other direction put ``participation_rate`` on
+    the Participation dashboard as "0.75". It declared no unit, so the
+    resolver fell back to the key-suffix rule — money if the key ends
+    ``_cents``, a count otherwise — and three quarters of the
+    membership was rendered as a bare number.
+
+    Inference is right for almost every metric and wrong for exactly
+    the ones whose value is not a whole thing, so a ratio must say.
+    """
+
+    def test_participation_rate_is_a_proportion(self):
+        assert REGISTRY.get("participation_rate").resolved_unit.value == (
+            "proportion"
+        )
+
+    def test_every_ratio_metric_declares_its_unit_explicitly(self):
+        """Never left to the key-suffix inference."""
+        undeclared = [
+            m.key for m in REGISTRY.all()
+            if m.aggregation.value == "ratio" and m.unit is None
+        ]
+        assert not undeclared, (
+            f"these would be formatted by guesswork: {undeclared}"
+        )
+
+    def test_a_proportion_is_between_zero_and_one(
+        self, db, make_space, make_user,
+    ):
+        """So the frontend multiplying by 100 is correct."""
+        space = make_space(reporting_class=PRODUCTION)
+        for _ in range(4):
+            _join(db, make_user(), space)
+        active = make_user()
+        _join(db, active, space)
+        _post(db, space=space, author=active)
+
+        v = val(db, "participation_rate")
+        assert 0 <= v.value <= 1
+        assert v.value == 0.2, "one of five members took part"
+
+    def test_the_denominator_follows_the_population(
+        self, db, make_space, make_user,
+    ):
+        """A production rate must not be divided by every member."""
+        production = make_space(reporting_class=PRODUCTION)
+        fixture = make_space(reporting_class=TEST)
+        real = make_user()
+        _join(db, real, production)
+        _post(db, space=production, author=real)
+        for _ in range(9):
+            _join(db, make_user(), fixture)
+
+        everything = val(db, "participation_rate")
+        narrowed = val(db, "participation_rate", population=PRODUCTION_POP)
+        assert everything.qualifiers["unique_members"] == 10
+        assert narrowed.qualifiers["unique_members"] == 1, (
+            "the denominator must be narrowed with the numerator, or a "
+            "production rate is divided by the whole platform"
+        )
+        assert narrowed.value == 1.0
+
+    def test_the_denominator_is_members_not_memberships(
+        self, db, make_space, make_user,
+    ):
+        a = make_space(reporting_class=PRODUCTION)
+        b = make_space(reporting_class=PRODUCTION)
+        member = make_user()
+        _join(db, member, a)
+        _join(db, member, b)
+        assert val(db, "participation_rate").qualifiers["unique_members"] == 1
+
+
+class TestReturningParticipationIsEstablishedNotAssumed:
+    """Checked rather than changed.
+
+    The hazard named in review is a real one in general — reporting
+    "nobody returned" when the earlier period simply has no records —
+    but it does not arise here, and the reason is worth writing down.
+    The participation union reads the application's own tables (posts,
+    comments, reactions, bookings, step progress, payments), not
+    ``business_events``. Those rows go back as far as the feature does,
+    so a past period is as complete as it ever was and BI-1 is not a
+    floor for this family.
+
+    What *is* a floor is having a preceding period at all, and that is
+    reported as unavailable rather than as zero.
+    """
+
+    def test_all_time_is_unavailable_rather_than_zero(self, db):
+        v = val(db, "returning_participants", Window())
+        assert v.value is None, "no preceding period exists for all time"
+        assert "two adjacent periods" in v.unavailable_reason
+
+    def test_the_first_period_of_a_range_still_looks_behind_it(
+        self, db, make_space, make_user,
+    ):
+        """A chart's earliest bucket is not blind.
+
+        The preceding window is computed from the window itself, not
+        from the range on screen, so somebody active in September
+        counts as returning in the first October bucket even though
+        September is not drawn.
+        """
+        space = make_space(reporting_class=PRODUCTION)
+        member = make_user()
+        _join(db, member, space)
+        channel = _channel(db, space)
+        _post(db, space, member, when=datetime(2026, 9, 20), channel=channel)
+        _post(db, space, member, when=WHEN, channel=channel)
+
+        v = val(db, "returning_participants", WINDOW)
+        assert v.value == 1
+        assert v.qualifiers["active_previous_period"] == 1
+
+    def test_nobody_active_before_means_nobody_could_return(
+        self, db, make_space, make_user,
+    ):
+        """Zero here is established, not assumed — and the qualifiers
+        say which, so "0 of 0" cannot be read as "0 of 40"."""
+        space = make_space(reporting_class=PRODUCTION)
+        member = make_user()
+        _join(db, member, space)
+        _post(db, space=space, author=member, when=WHEN)
+
+        v = val(db, "returning_participants", WINDOW)
+        assert v.value == 0
+        assert v.qualifiers["active_previous_period"] == 0
+        assert v.qualifiers["return_rate"] is None, (
+            "a rate out of nobody is undefined, not zero"
+        )
+
+    def test_returning_is_narrowed_by_population_on_both_periods(
+        self, db, make_space, make_user,
+    ):
+        """Filtering only the current period would count a test account
+        as having returned."""
+        space = make_space(reporting_class=PRODUCTION)
+        fixture = make_user(reporting_class=TEST)
+        _join(db, fixture, space)
+        channel = _channel(db, space)
+        _post(db, space, fixture, when=datetime(2026, 9, 20), channel=channel)
+        _post(db, space, fixture, when=WHEN, channel=channel)
+
+        assert val(db, "returning_participants").value == 1
+        v = val(db, "returning_participants", population=PRODUCTION_POP)
+        assert v.value == 0
+        assert v.qualifiers["active_previous_period"] == 0
+
+    def test_the_participation_union_does_not_depend_on_business_events(self):
+        """Why BI-1 is not a floor for this family."""
+        import inspect
+
+        from app.reporting.engagement import participation_events
+
+        source = inspect.getsource(participation_events)
+        assert "BusinessEvent" not in source
+        assert "business_events" not in source
+
+    def test_the_denominator_is_the_membership_of_the_period_not_of_today(
+        self, db, make_space, make_user,
+    ):
+        """The defect that made every past period look disengaged.
+
+        The denominator was evaluated over all time, which for a
+        snapshot means *now*. On a historical chart that divided each
+        past period's participants by today's membership, so every
+        earlier period was depressed by every member who joined after
+        it — the line sloped downwards however engaged the platform
+        had been.
+        """
+        space = make_space(reporting_class=PRODUCTION)
+        early = make_user()
+        _join(db, early, space)
+        db.query(SpaceMembership).filter(
+            SpaceMembership.user_id == early.id
+        ).update({"joined_at": datetime(2026, 1, 1)})
+        _post(db, space=space, author=early, when=WHEN)
+
+        # Nine more join *after* the period being measured.
+        for _ in range(9):
+            later = make_user()
+            _join(db, later, space)
+            db.query(SpaceMembership).filter(
+                SpaceMembership.user_id == later.id
+            ).update({"joined_at": datetime(2026, 12, 1)})
+        db.flush()
+
+        v = val(db, "participation_rate", WINDOW)
+        assert v.qualifiers["unique_members"] == 1, (
+            "members who joined in December are not October's denominator"
+        )
+        assert v.value == 1.0
+
+    def test_the_basis_travels_with_the_figure(self, db, make_space, make_user):
+        space = make_space(reporting_class=PRODUCTION)
+        member = make_user()
+        _join(db, member, space)
+        _post(db, space=space, author=member)
+        v = val(db, "participation_rate")
+        assert "members as at the end of it" in v.qualifiers["basis"]

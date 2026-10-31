@@ -1696,6 +1696,34 @@ describe('the Participation page keeps people and acts apart', () => {
     )
   })
 
+  test('Pathways are two charts, not one shared axis', () => {
+    // Steps outnumber people several times over, so a shared axis
+    // flattened the people series into the baseline — and a second
+    // y-axis would be worse, because two scales on one frame can be
+    // drawn to show any relationship you like.
+    const src = read(PAGE)
+    assert.match(src, /People progressing through Pathways/)
+    assert.match(src, /Pathway steps completed/)
+    const combined = /keys=\{\['pathway_steps_completed', 'pathway_participants'\]\}/
+    assert.ok(!combined.test(src), 'the two must not share one chart')
+    // And they stay under the same heading, so the pairing is visible.
+    const heading = src.indexOf('>\n          Pathways\n        </h3>')
+    const people = src.indexOf('People progressing through Pathways')
+    const steps = src.indexOf('Pathway steps completed')
+    assert.ok(heading > 0 && heading < people && people < steps)
+  })
+
+  test('the participation rate is formatted from the registry unit', () => {
+    // 0.75 of the membership was rendering as "0.75". The fix is a
+    // declared unit, not a special case in the page.
+    const src = read(PAGE)
+    assert.ok(
+      !/participation_rate[\s\S]{0,200}\*\s*100/.test(src),
+      'the page must not convert a proportion itself',
+    )
+    assert.match(src, /share of members taking part/)
+  })
+
   test('it explains why Pathway completion is absent rather than guessing', () => {
     const src = read(PAGE)
     assert.match(src, /completion/i)
