@@ -16,10 +16,14 @@ import {
   seriesKey,
 } from '@/lib/insights-history'
 import { type ChartKind, TimeSeriesChart } from './charts/TimeSeriesChart'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const RULE = '#E7EEF0'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const RULE = SURFACE.cardEdge
+// The lead chart's edge: darker than a supporting card's hairline by
+// about the same step the heading sizes differ by.
+const PRIMARY_EDGE = 'rgba(15, 30, 55, 0.16)'
 
 /**
  * A chart, and everything that has to be said next to it — in two
@@ -132,16 +136,27 @@ export function HistoryPanel({
   return (
     <section
       className="rounded-2xl p-5 sm:p-6"
-      style={{ background: '#FFFFFF', border: `1px solid ${RULE}` }}
+      style={{
+        background: SURFACE.card,
+        // The primary chart on a page carries a slightly more present
+        // edge than the ones supporting it. A difference in weight
+        // rather than in decoration: no shadow, no tint, no second
+        // container — just enough that the eye finds the lead chart
+        // first on a long page.
+        border: `1px solid ${prominent ? PRIMARY_EDGE : RULE}`,
+      }}
     >
-      <h3
+      <h4
+        // One step below the section heading above it, which is 19px.
+        // The two were the same size, so a section and the first chart
+        // inside it read as the same rank and the page flattened.
         className={`font-serif leading-tight ${
-          prominent ? 'text-[19px]' : 'text-[16px]'
+          prominent ? 'text-[17px]' : 'text-[15.5px]'
         }`}
         style={{ color: INK }}
       >
         {title}
-      </h3>
+      </h4>
       <p
         className="mb-4 mt-1 max-w-[70ch] text-[13px]"
         style={{ color: INK_MUTED }}

@@ -6,6 +6,10 @@ import { CollectiveSelect } from '@/components/admin/insights/CollectiveSelect'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import {
+  InsightsSection,
+  PanelGroup,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
@@ -24,6 +28,7 @@ import {
   CHART_HUES,
   fetchCollectives,
 } from '@/lib/insights-history'
+import { HUE_MARK, INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Participation — whether people are doing anything, and what.
@@ -83,8 +88,8 @@ const CARD_KEYS = [
 ]
 
 const MAX_COMPARED = CHART_HUES.length
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 export default function ParticipationPage() {
   const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
@@ -148,7 +153,8 @@ export default function ParticipationPage() {
 
       {history.error && <Problem message={history.error} />}
 
-      <div className="space-y-5">
+      <InsightsSection lead title="Taking part over time" intro="The trend first: how many people are doing something, how much is happening, and whether they come back.">
+        <PanelGroup>
         <HistoryPanel
           prominent
           title="People taking part"
@@ -179,21 +185,20 @@ export default function ParticipationPage() {
           hues={['gold']}
           footnote="Returning is defined against the immediately preceding period of the same length, so the definition changes with the grouping: weekly means 'active this week and last', monthly means 'this month and last'. It is undefined over all time, which has no preceding period, and the first period of any range has nothing before it to compare with."
         />
-      </div>
+        </PanelGroup>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Gatherings
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Gatherings"
+        intro={
+          <>
           Booking and attending are different facts, and the gap between
           them is partly people who did not come and partly registers
           nobody marked. Attendance below is recorded attendance only —
           never assumed from a booking.
-        </p>
+          </>
+        }
+      >
         <HistoryPanel
           title="Booked and attended"
           explanation="Places booked on Gatherings held in each period, beside attendances actually recorded against them."
@@ -214,23 +219,21 @@ export default function ParticipationPage() {
             hues={['teal']}
           />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Pathways
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Pathways"
+        intro={
+          <>
           Steps completed and the people completing them, on their own
           axes. Two charts rather than one: steps outnumber people several
           times over, so a shared axis flattened the people series into
           the baseline — and a second y-axis would have been worse, because
           two scales on one frame can be drawn to show any relationship you
           like. Read them together; the pairing is the point.
-        </p>
+          </>
+        }
+      >
         <div className="space-y-5">
           <HistoryPanel
             title="People progressing through Pathways"
@@ -251,21 +254,19 @@ export default function ParticipationPage() {
             footnote="An additive flow, so these columns do add up over time. Read against the chart above: steps rising while people stay flat is a few members working through a Pathway quickly, which is a different thing from many members starting one. Pathway completion is deliberately absent from both — nothing in the application records a completion, and a Pathway's step count is derived from its current steps with no history, so whether somebody finished a Pathway as it stood last March cannot be established. A completion rate from today's step count would be an estimate presented as a measurement."
           />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Conversations
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Conversations"
+        intro={
+          <>
           Whether people are talking to each other. Counts only —
           Fresh Collective&rsquo;s reporting never reads what anybody wrote,
           and no metric here touches a post body, a comment, a reflection or
           a direct message.
-        </p>
+          </>
+        }
+      >
         <HistoryPanel
           title="People contributing"
           explanation="Distinct people who posted, commented or reacted in each period."
@@ -278,21 +279,19 @@ export default function ParticipationPage() {
         <div className="mt-5">
           <ActivityMix data={cards} />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Collective by Collective
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Collective by Collective"
+        intro={
+          <>
           Each activity type separately, never combined into a score. A
           Collective built around Gatherings and one built around Pathways
           are both working; a single number would rank one above the other
           for being a different kind of place.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-5">
           <CollectiveSelect
@@ -340,18 +339,16 @@ export default function ParticipationPage() {
             />
           </div>
         )}
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           With their own period, chosen below.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -415,7 +412,7 @@ export default function ParticipationPage() {
             </Band>
           </>
         )}
-      </section>
+      </InsightsSection>
     </InsightsShell>
   )
 }
@@ -445,9 +442,9 @@ function ActivityMix({ data }: { data: MetricResult | null }) {
   return (
     <div
       className="rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
     >
-      <h4 className="font-serif text-[16px]" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
         How people are taking part
       </h4>
       <p className="mb-3 mt-1 max-w-[76ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -466,7 +463,7 @@ function ActivityMix({ data }: { data: MetricResult | null }) {
               style={{
                 width: `${Math.max(2, (count / rows[0][1]) * 100)}%`,
                 maxWidth: '55%',
-                background: '#22a598',
+                background: HUE_MARK.teal,
               }}
               aria-hidden="true"
             />
@@ -503,7 +500,7 @@ function Band({
 }) {
   return (
     <section className="mb-8">
-      <h4 className="font-serif text-[16px] leading-tight" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h4>
       <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -527,11 +524,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

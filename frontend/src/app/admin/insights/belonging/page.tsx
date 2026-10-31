@@ -6,6 +6,10 @@ import { CohortTable } from '@/components/admin/insights/CohortTable'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import {
+  InsightsSection,
+  PanelGroup,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
@@ -22,6 +26,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
+import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Belonging — staying, coming back, and finding more than one home.
@@ -64,8 +69,8 @@ const DETAIL_KEYS = [
   'returning_participants',
 ]
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 export default function BelongingPage() {
   const [range, setRange] = useState<HistoryRangeKey>('last_12_months')
@@ -104,7 +109,8 @@ export default function BelongingPage() {
 
       {history.error && <Problem message={history.error} />}
 
-      <div className="space-y-5">
+      <InsightsSection lead title="Staying over time" intro="The trend first: how membership is sustained, and the joining and leaving behind it.">
+        <PanelGroup>
         <HistoryPanel
           prominent
           title="Membership over time"
@@ -122,47 +128,44 @@ export default function BelongingPage() {
           data={history.data}
           keys={['memberships_started', 'memberships_ended']}
           kind="column"
-          hues={['teal', 'coral']}
+          hues={['teal', 'watermelon']}
           height={240}
           footnote="Endings rest on a recorded removal date. A membership marked as ended with no date cannot be placed in any period and is absent from all of them, so the endings line is a lower bound — the figure beneath the chart says how many such rows exist. Never read a short bar as proof that few people left."
         />
-      </div>
+        </PanelGroup>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Retention by joining month
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[76ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Retention by joining month"
+        intro={
+          <>
           Of the people who joined in a given month, how many were still here
           later. Switch between the Collective they joined and Fresh
           Collective as a whole — the gap between the two is people who moved
           rather than left, which on a platform of many communities is the
           number that decides whether a departure matters.
-        </p>
+          </>
+        }
+      >
         <div
           className="rounded-2xl p-5 sm:p-6"
-          style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+          style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
         >
           <Cohorts data={cohortData} />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Returning to participate
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[76ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Returning to participate"
+        intro={
+          <>
           Separate from membership retention, and deliberately so. Somebody
           who stays a member without attending a Gathering for a few weeks
           has not left anything — participation ebbs and flows, and nothing
           here treats a quiet stretch as a departure.
-        </p>
+          </>
+        }
+      >
         <div className="space-y-5">
           <HistoryPanel
             title="People taking part, and people coming back"
@@ -175,21 +178,19 @@ export default function BelongingPage() {
             footnote="Returning is measured against the immediately preceding period of the same length, so the definition changes with the grouping — weekly means 'this week and last'. It is undefined over all time, which has no preceding period. A period where nobody was active before shows nobody returning, which is a true zero rather than a missing figure."
           />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Growing connections
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[76ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Growing connections"
+        intro={
+          <>
           Whether people are finding the wider world here. Belonging to
           several Collectives and participating in several are different
           things, and both are below — somebody in three Collectives who only
           ever posts in one belongs to three and participates in one.
-        </p>
+          </>
+        }
+      >
         <div className="space-y-5">
           <HistoryPanel
             title="How many Collectives people belong to"
@@ -218,20 +219,18 @@ export default function BelongingPage() {
         <div className="mt-5">
           <OverlapAndParticipation data={detail} />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Leaving and returning
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[76ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Leaving and returning"
+        intro={
+          <>
           Who left Fresh Collective altogether rather than one of its
           Collectives, and who came back. Both rest on records with known
           limits, stated on each chart.
-        </p>
+          </>
+        }
+      >
         <div className="space-y-5">
           <HistoryPanel
             title="People leaving Fresh Collective"
@@ -239,7 +238,7 @@ export default function BelongingPage() {
             data={history.data}
             keys={['members_leaving_entirely']}
             kind="column"
-            hues={['coral']}
+            hues={['watermelon']}
             footnote="Rests on recorded removal dates, so a departure nobody dated is invisible and this is a lower bound. Compare it with the memberships-ended chart above: endings far exceeding departures is people moving between communities, which is the ecosystem working rather than failing."
           />
           <HistoryPanel
@@ -252,18 +251,16 @@ export default function BelongingPage() {
             footnote="This one cannot be reconstructed. Rejoining used to overwrite the earlier membership, so the only evidence a rejoin happened is the event recorded at the time — and for periods before business-event recording began the chart shows a gap rather than a zero, because nobody wrote it down and that is not the same as nobody having rejoined."
           />
         </div>
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           With their own period, chosen below.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -307,7 +304,7 @@ export default function BelongingPage() {
             </Band>
           </>
         )}
-      </section>
+      </InsightsSection>
     </InsightsShell>
   )
 }
@@ -388,9 +385,9 @@ function OverlapAndParticipation({ data }: { data: MetricResult | null }) {
   return (
     <div
       className="rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
     >
-      <h4 className="font-serif text-[16px]" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
         Participation beside membership overlap
       </h4>
       <p className="mb-3 mt-1 max-w-[80ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -414,7 +411,7 @@ function OverlapAndParticipation({ data }: { data: MetricResult | null }) {
                 className={`border-b py-1.5 pr-3 font-semibold ${
                   i > 0 ? 'text-right' : ''
                 }`}
-                style={{ borderColor: '#E7EEF0', color: INK }}
+                style={{ borderColor: SURFACE.cardEdge, color: INK }}
               >
                 {h}
               </th>
@@ -427,25 +424,25 @@ function OverlapAndParticipation({ data }: { data: MetricResult | null }) {
               <th
                 scope="row"
                 className="border-b py-1.5 pr-3 font-normal"
-                style={{ borderColor: '#E7EEF0', color: INK }}
+                style={{ borderColor: SURFACE.cardEdge, color: INK }}
               >
                 {label}
               </th>
               <td
                 className="border-b py-1.5 pr-3 text-right tabular-nums"
-                style={{ borderColor: '#E7EEF0', color: INK_MUTED }}
+                style={{ borderColor: SURFACE.cardEdge, color: INK_MUTED }}
               >
                 {formatCount(b.members)}
               </td>
               <td
                 className="border-b py-1.5 pr-3 text-right tabular-nums"
-                style={{ borderColor: '#E7EEF0', color: INK_MUTED }}
+                style={{ borderColor: SURFACE.cardEdge, color: INK_MUTED }}
               >
                 {formatCount(b.active)}
               </td>
               <td
                 className="border-b py-1.5 pr-3 text-right tabular-nums"
-                style={{ borderColor: '#E7EEF0', color: INK }}
+                style={{ borderColor: SURFACE.cardEdge, color: INK }}
               >
                 {b.rate === null ? '—' : `${Math.round(b.rate * 100)}%`}
               </td>
@@ -468,7 +465,7 @@ function Band({
 }) {
   return (
     <section className="mb-8">
-      <h4 className="font-serif text-[16px] leading-tight" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h4>
       <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -492,11 +489,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

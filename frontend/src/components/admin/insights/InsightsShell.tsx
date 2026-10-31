@@ -5,12 +5,20 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { type ReportingHealth, describeHealth, fetchHealth } from '@/lib/insights'
-import { WM_HUE } from '@/lib/wm-palette'
+import {
+  HUE_UI,
+  INK as FC_INK,
+  SURFACE,
+  toneStyle,
+} from '@/lib/insights-palette'
 
-const PAGE_BG = '#FBFDFC'
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const INK_SOFTER = 'rgba(12, 24, 38, 0.42)'
+// Clean white behind the reporting content. Sections separate by
+// spacing and a hairline rather than by sitting on a grey wash — the
+// design language permits exactly one grey and it is for disabled ink.
+const PAGE_BG = SURFACE.page
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const INK_SOFTER = FC_INK.faint
 const HAIRLINE = '1px solid rgba(12, 24, 38, 0.08)'
 
 /**
@@ -89,14 +97,14 @@ export function InsightsShell({
                   style={
                     active
                       ? {
-                          background: WM_HUE.teal.bg,
-                          border: `1px solid ${WM_HUE.teal.border}`,
-                          color: WM_HUE.teal.text,
+                          background: HUE_UI.teal.bg,
+                          border: `1px solid ${HUE_UI.teal.border}`,
+                          color: HUE_UI.teal.text,
                           fontWeight: 600,
                         }
                       : {
                           background: '#FFFFFF',
-                          border: '1px solid #E7EEF0',
+                          border: `1px solid ${SURFACE.cardEdge}`,
                           color: INK_MUTED,
                         }
                   }
@@ -156,15 +164,15 @@ export function DataHealthIndicator() {
       href="/admin/insights/data-health"
       className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[12.5px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
       style={{
-        background: WM_HUE[state.hue].bg,
-        border: `1px solid ${WM_HUE[state.hue].border}`,
-        color: WM_HUE[state.hue].text,
+        background: toneStyle(state.hue).bg,
+        border: `1px solid ${toneStyle(state.hue).border}`,
+        color: toneStyle(state.hue).text,
       }}
     >
       <span
         aria-hidden
         className="h-2 w-2 shrink-0 rounded-full"
-        style={{ background: WM_HUE[state.hue].dot }}
+        style={{ background: toneStyle(state.hue).dot }}
       />
       <span>{state.label}</span>
     </Link>

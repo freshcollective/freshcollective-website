@@ -390,17 +390,17 @@ export function qualifierNote(m: MetricValue): string | null {
 export function describeHealth(
   health: ReportingHealth | null,
   failed: boolean,
-): { hue: 'teal' | 'navy' | 'gold' | 'coral'; label: string } {
+): { hue: 'teal' | 'navy' | 'gold' | 'alert'; label: string } {
   if (failed) return { hue: 'gold', label: 'Data health unavailable' }
   if (!health) return { hue: 'navy', label: 'Checking data health…' }
   if (!health.recording_enabled) {
-    return { hue: 'coral', label: 'History recording is off' }
+    return { hue: 'alert', label: 'History recording is off' }
   }
   if (health.incomplete_runs.length > 0) {
-    return { hue: 'coral', label: 'A reporting run did not finish' }
+    return { hue: 'alert', label: 'A reporting run did not finish' }
   }
   if (health.last_run?.status === 'failed') {
-    return { hue: 'coral', label: 'Last reporting run failed' }
+    return { hue: 'alert', label: 'Last reporting run failed' }
   }
   if (health.total_missing > 0) {
     return { hue: 'gold', label: `${health.total_missing} to look at` }

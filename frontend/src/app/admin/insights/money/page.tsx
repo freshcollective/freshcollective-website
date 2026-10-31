@@ -5,6 +5,10 @@ import { useState } from 'react'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import {
+  InsightsSection,
+  PanelGroup,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
@@ -23,6 +27,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
+import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Money — what comes in, and whose it is.
@@ -75,8 +80,8 @@ const HISTORY_KEYS = [
   'refunds_cents',
 ]
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 export default function MoneyPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
@@ -121,7 +126,8 @@ export default function MoneyPage() {
 
       {history.error && <Problem message={history.error} />}
 
-      <div className="space-y-5">
+      <InsightsSection lead title="Money over time" intro="The trend first, ordered by whose money it is: what Fresh Collective earns, then the volume moved on creators' behalf, then what went back.">
+        <PanelGroup>
         <HistoryPanel
           prominent
           title="Fresh Collective's own income"
@@ -162,7 +168,7 @@ export default function MoneyPage() {
             'contribution_after_processing_cents',
           ]}
           kind="column"
-          hues={['coral', 'teal']}
+          hues={['watermelon', 'teal']}
           footnote="Stripe does not report a fee until reconciliation reads it, and those payments are excluded rather than estimated — so a recent period's cost is a lower bound and its contribution correspondingly a little high."
         />
 
@@ -172,23 +178,22 @@ export default function MoneyPage() {
           data={history.data}
           keys={['refunds_cents']}
           kind="column"
-          hues={['coral']}
+          hues={['watermelon']}
           footnote="Counting a refund on its own date is what keeps a closed month's revenue from moving afterwards. Only the most recent refund date is stored per transaction, so a payment refunded twice in different periods is attributed wholly to the later one. Refunds taken before that date was recorded cannot be placed in a period at all and appear as a gap rather than as a zero."
         />
-      </div>
+        </PanelGroup>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           Grouped by whose money it is, which is the distinction most
           easily lost: most of what Fresh Collective processes is not Fresh
           Collective&rsquo;s. These have their own period, chosen below.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -265,11 +270,7 @@ export default function MoneyPage() {
               />
               <InsightCard
                 metric={pick(data, 'outstanding_payouts_cents')}
-                hue={
-                  (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
-                    ? 'coral'
-                    : 'navy'
-                }
+                hue="navy"
                 emphasiseValue={
                   (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
                 }
@@ -285,36 +286,29 @@ export default function MoneyPage() {
                 metric={pick(data, 'refunds_cents')}
                 previous={pickPrevious(data, 'refunds_cents')}
                 previousLabel={prev}
-                hue={
-                  (pick(data, 'refunds_cents')?.value ?? 0) > 0 ? 'coral' : 'navy'
-                }
+                hue="watermelon"
                 caption="returned to members"
               />
             </Band>
           </>
         )}
-      </section>
+      </InsightsSection>
 
       {data && (
-        <section className="mt-12">
-          <h3
-            className="font-serif text-[17px] leading-tight"
-            style={{ color: INK }}
-          >
-            Who is owed what
-          </h3>
-          <p
-            className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-            style={{ color: INK_MUTED }}
-          >
+        <InsightsSection
+        title="Who is owed what"
+        intro={
+          <>
             The reconciliation behind the outstanding balance: who holds it,
             and what kind of activity it came from.
-          </p>
+          </>
+        }
+      >
           <WhoIsOwedNote data={data} />
           <div className="mt-4">
             <WhoseMoneyNote data={data} />
           </div>
-        </section>
+        </InsightsSection>
       )}
     </InsightsShell>
   )
@@ -378,7 +372,7 @@ function WhoIsOwedNote({ data }: { data: MetricResult }) {
       }}
     >
       <h4
-        className="font-serif text-[15px] leading-tight"
+        className="font-serif text-[15.5px] leading-tight"
         style={{ color: INK }}
       >
         Who that is owed to
@@ -461,7 +455,7 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
     return (
       <div
         className="rounded-2xl p-5"
-        style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+        style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
       >
         <p className="text-[13px]" style={{ color: INK_MUTED }}>
           No member purchases in this period, so there is nothing to divide up
@@ -510,7 +504,7 @@ function Band({
 }) {
   return (
     <section className="mb-8">
-      <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
+      <h3 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h3>
       <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -534,11 +528,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

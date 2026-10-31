@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
+import { STATUS } from './insights-palette.ts'
+
 import {
   QUALITY_LABEL,
   axisLabelSpace,
@@ -418,24 +420,47 @@ describe('the chart describes itself for a reader who cannot see it', () => {
 })
 
 describe('the chart palette', () => {
-  test('is the four World Management accents, in a fixed order', () => {
-    assert.deepEqual([...CHART_HUES], ['teal', 'navy', 'gold', 'coral'])
+  test('is the four Fresh Collective hues, in a fixed order', () => {
+    assert.deepEqual([...CHART_HUES], ['teal', 'navy', 'gold', 'watermelon'])
   })
 
   test('carries the exact hexes that passed the palette validator', () => {
     // Re-stepping any of these invalidates the colour-vision
-    // separation that was measured, so the values are pinned.
+    // separation that was measured, so the values are pinned:
+    //   node scripts/validate_palette.js \
+    //     "#0E9A95,#1D5390,#D4B048,#DC6F5C" --mode light --surface "#FFFFFF"
     assert.deepEqual(HUE_STROKE, {
-      teal: '#22a598',
-      navy: '#4c78d4',
-      gold: '#d4b048',
-      coral: '#d66057',
+      teal: '#0E9A95',
+      navy: '#1D5390',
+      gold: '#D4B048',
+      watermelon: '#DC6F5C',
     })
+  })
+
+  test('every hue traces to a Fresh Collective token or named colour', () => {
+    // The point of the pass: World Insights should look like part of
+    // the platform. Gold and watermelon are the token values exactly;
+    // teal and navy are chart-strength steps of the same hues, because
+    // the token values fall below the chroma floor a data mark needs.
+    assert.equal(HUE_STROKE.gold, '#D4B048', 'the Fresh Collective gold')
+    assert.equal(HUE_STROKE.watermelon, '#DC6F5C', '--fc-type-video coral')
+  })
+
+  test('no chart hue is also a status colour', () => {
+    // Watermelon is an ordinary series colour now, so a genuine
+    // warning must not be drawn in anything a series uses.
+    const marks = new Set(Object.values(HUE_STROKE).map((h) => h.toUpperCase()))
+    for (const role of Object.values(STATUS)) {
+      assert.ok(
+        !marks.has(role.fg.toUpperCase()),
+        `${role.fg} is both a status and a series colour`,
+      )
+    }
   })
 
   test('every hue has a stroke, so a series can never fall back to none', () => {
     for (const hue of CHART_HUES) {
-      assert.match(HUE_STROKE[hue], /^#[0-9a-f]{6}$/)
+      assert.match(HUE_STROKE[hue], /^#[0-9a-f]{6}$/i)
     }
   })
 })
@@ -1714,11 +1739,12 @@ describe('the Participation page keeps people and acts apart', () => {
     assert.match(src, /Pathway steps completed/)
     const combined = /keys=\{\['pathway_steps_completed', 'pathway_participants'\]\}/
     assert.ok(!combined.test(src), 'the two must not share one chart')
-    // And they stay under the same heading, so the pairing is visible.
-    const heading = src.indexOf('>\n          Pathways\n        </h3>')
+    // And they stay under the same section, so the pairing is visible.
+    const heading = src.indexOf('title="Pathways"')
     const people = src.indexOf('People progressing through Pathways')
     const steps = src.indexOf('Pathway steps completed')
-    assert.ok(heading > 0 && heading < people && people < steps)
+    assert.ok(heading > 0, 'the Pathways section should still exist')
+    assert.ok(heading < people && people < steps, 'in that order')
   })
 
   test('the participation rate is formatted from the registry unit', () => {
@@ -1943,5 +1969,86 @@ describe('the Belonging page', () => {
   test('nothing judges somebody for participating less', () => {
     const src = withoutDocComments(read(PAGE))
     assert.ok(!/\b(disengaged|lapsed|at risk|inactive user|churned)\b/i.test(src))
+  })
+})
+
+/**
+ * The heading ladder.
+ *
+ * Six ranks share one page — the suite name, the page title, a section,
+ * the chart leading that section, the charts supporting it, and a card
+ * heading. Two of them drifted to the same size during the visual pass
+ * and the page flattened: a section and the first chart inside it read
+ * as peers, so nothing told the eye where a section began.
+ *
+ * Sizes are pinned rather than merely ordered because the failure is a
+ * *tie*, not an inversion. Any future edit that gives two ranks the
+ * same size is the bug this test exists to catch.
+ */
+describe('World Insights heading ladder', () => {
+  const sizes = (src: string) =>
+    [...withoutDocComments(src).matchAll(/text-\[([\d.]+)px\]/g)].map((m) =>
+      Number(m[1]),
+    )
+
+  test('each rank is a step below the one above it', () => {
+    const panel = withoutDocComments(
+      read('src/components/admin/insights/HistoryPanel.tsx'),
+    )
+    const ladder = {
+      page: Math.max(
+        ...sizes(read('src/components/admin/insights/InsightsShell.tsx')),
+      ),
+      section: Math.max(
+        ...sizes(read('src/components/admin/insights/InsightsSection.tsx')),
+      ),
+      leadPanel: Number(
+        /prominent \? 'text-\[([\d.]+)px\]'/.exec(panel)?.[1] ?? NaN,
+      ),
+      panel: Number(
+        /prominent \? 'text-\[[\d.]+px\]' : 'text-\[([\d.]+)px\]'/.exec(
+          panel,
+        )?.[1] ?? NaN,
+      ),
+    }
+    const order = ['page', 'section', 'leadPanel', 'panel'] as const
+    for (const rank of order) {
+      assert.ok(Number.isFinite(ladder[rank]), `${rank} size not found`)
+    }
+    for (let i = 1; i < order.length; i += 1) {
+      const above = order[i - 1]
+      const here = order[i]
+      assert.ok(
+        ladder[here] < ladder[above],
+        `${here} (${ladder[here]}px) must be smaller than ${above} ` +
+          `(${ladder[above]}px) — equal sizes collapse the hierarchy`,
+      )
+    }
+  })
+
+  test('a titled panel inside a section sits at one size, not five', () => {
+    // These drifted to 15px, 16px and 19px across six pages, which read
+    // as five ranks where the design has one.
+    const found = new Set<number>()
+    for (const p of [
+      'src/app/admin/insights/growth/page.tsx',
+      'src/app/admin/insights/money/page.tsx',
+      'src/app/admin/insights/collectives/page.tsx',
+      'src/app/admin/insights/creators/page.tsx',
+      'src/app/admin/insights/participation/page.tsx',
+      'src/app/admin/insights/belonging/page.tsx',
+      'src/components/admin/insights/StandingsTable.tsx',
+    ]) {
+      for (const m of withoutDocComments(read(p)).matchAll(
+        /font-serif text-\[([\d.]+)px\]/g,
+      )) {
+        found.add(Number(m[1]))
+      }
+    }
+    assert.deepEqual(
+      [...found],
+      [15.5],
+      `panel headings should all be 15.5px, found ${[...found].join(', ')}`,
+    )
   })
 })

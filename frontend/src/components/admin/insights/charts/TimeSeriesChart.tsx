@@ -32,12 +32,17 @@ import {
 } from '@/lib/insights-history'
 import { useChartWidth } from './useChartWidth'
 import { ChartTable } from './ChartTable'
+import {
+  CHART,
+  INK as FC_INK,
+  SURFACE as FC_SURFACE,
+} from '@/lib/insights-palette'
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const GRID = 'rgba(12, 24, 38, 0.08)'
-const AXIS = 'rgba(12, 24, 38, 0.18)'
-const SURFACE = '#FFFFFF'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const GRID = CHART.grid
+const AXIS = CHART.axis
+const PAPER = FC_SURFACE.card
 
 //: Axis type. 11px was legible on a desktop and marginal on a phone at
 //: the same physical size, and these are numbers somebody reads rather
@@ -288,7 +293,7 @@ export function TimeSeriesChart({
                 patternTransform="rotate(45)"
                 patternUnits="userSpaceOnUse"
               >
-                <rect width="5" height="5" fill={SURFACE} />
+                <rect width="5" height="5" fill={PAPER} />
                 <line
                   x1="0"
                   y1="0"
@@ -306,13 +311,13 @@ export function TimeSeriesChart({
               patternTransform="rotate(45)"
               patternUnits="userSpaceOnUse"
             >
-              <rect width="6" height="6" fill={SURFACE} />
+              <rect width="6" height="6" fill={PAPER} />
               <line
                 x1="0"
                 y1="0"
                 x2="0"
                 y2="6"
-                stroke="rgba(12, 24, 38, 0.14)"
+                stroke={CHART.blank}
                 strokeWidth="1.5"
               />
             </pattern>
@@ -362,7 +367,7 @@ export function TimeSeriesChart({
               y={pad.top}
               width={bandW}
               height={plotH}
-              fill="rgba(12, 24, 38, 0.04)"
+              fill="rgba(15, 30, 55, 0.045)"
             />
           )}
 
@@ -519,7 +524,7 @@ function LineMarks({
                     cy={y(values[i] as number)}
                     r={3.5}
                     fill={stroke}
-                    stroke={SURFACE}
+                    stroke={PAPER}
                     strokeWidth={2}
                   />
                 )
@@ -550,7 +555,7 @@ function LineMarks({
                   cx={x(i)}
                   cy={y(v)}
                   r={i === active ? 4.5 : 3}
-                  fill={i === active ? stroke : SURFACE}
+                  fill={i === active ? stroke : PAPER}
                   stroke={stroke}
                   strokeWidth={2}
                 />
@@ -704,8 +709,8 @@ function Tooltip({
         left: tooltipLeft(left, width, boxWidth),
         width: boxWidth,
         top: 4,
-        background: SURFACE,
-        border: '1px solid #E7EEF0',
+        background: PAPER,
+        border: `1px solid ${FC_SURFACE.cardEdge}`,
       }}
     >
       <p className="mb-1 text-[12px] font-semibold" style={{ color: INK }}>

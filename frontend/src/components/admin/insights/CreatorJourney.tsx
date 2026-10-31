@@ -8,11 +8,12 @@ import {
   stageCounts,
 } from '@/lib/insights-history'
 import { formatCount } from '@/lib/insights'
+import { HUE_MARK, INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const RULE = '#E7EEF0'
-const TEAL = '#22a598'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const RULE = SURFACE.cardEdge
+const TEAL = HUE_MARK.teal
 
 /**
  * Where each creator has got to, and where the drop-offs are.
@@ -39,7 +40,7 @@ export function CreatorJourney({ creators }: { creators: Creator[] }) {
       className="rounded-2xl p-5 sm:p-6"
       style={{ background: '#FFFFFF', border: `1px solid ${RULE}` }}
     >
-      <h3 className="font-serif text-[19px] leading-tight" style={{ color: INK }}>
+      <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
         The creator journey
       </h3>
       <p className="mb-5 mt-1 max-w-[70ch] text-[13px]" style={{ color: INK_MUTED }}>
@@ -164,7 +165,7 @@ function Group({
       className="rounded-2xl p-5"
       style={{ background: '#FFFFFF', border: `1px solid ${RULE}` }}
     >
-      <h4 className="font-serif text-[16px] leading-tight" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h4>
       <p className="mb-3 mt-1 max-w-[76ch] text-[12.5px]" style={{ color: INK_MUTED }}>

@@ -3,9 +3,10 @@
 import type { Collective } from '@/lib/insights-history'
 import { WM_HUE } from '@/lib/wm-palette'
 import { humaniseClass } from '@/lib/insights'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 /**
  * Which Collectives to compare.
@@ -85,7 +86,7 @@ export function CollectiveSelect({
                     }
                   : {
                       background: '#FFFFFF',
-                      border: '1px solid #E7EEF0',
+                      border: `1px solid ${SURFACE.cardEdge}`,
                       color: INK_MUTED,
                     }
               }

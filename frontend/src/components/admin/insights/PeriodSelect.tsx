@@ -2,8 +2,9 @@
 
 import { PERIOD_OPTIONS, type PeriodKey } from '@/lib/insights'
 import { WM_HUE } from '@/lib/wm-palette'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK_MUTED = FC_INK.muted
 
 /**
  * The reporting period, shared by every World Insights page.
@@ -44,7 +45,7 @@ export function PeriodSelect({
                   }
                 : {
                     background: '#FFFFFF',
-                    border: '1px solid #E7EEF0',
+                    border: `1px solid ${SURFACE.cardEdge}`,
                     color: INK_MUTED,
                   }
             }

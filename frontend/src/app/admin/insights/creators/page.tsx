@@ -9,6 +9,10 @@ import {
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import {
+  InsightsSection,
+  PanelGroup,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
@@ -26,6 +30,7 @@ import {
   type PopulationKey,
   fetchCreators,
 } from '@/lib/insights-history'
+import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Creators — who is building here, and how far they get.
@@ -66,8 +71,8 @@ const CARD_KEYS = [
   'subscription_revenue_cents',
 ]
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 export default function CreatorsPage() {
   const [range, setRange] = useState<HistoryRangeKey>('last_12_months')
@@ -129,7 +134,8 @@ export default function CreatorsPage() {
       {listError && <Problem message={listError} />}
       {history.error && <Problem message={history.error} />}
 
-      <div className="space-y-5">
+      <InsightsSection lead title="The creator journey" intro="How far creators get, and where they stop. The detail of who is at each stage follows further down.">
+        <PanelGroup>
         <CreatorJourney creators={creators} />
 
         <HistoryPanel
@@ -144,26 +150,25 @@ export default function CreatorsPage() {
             'creators_earning',
           ]}
           kind="line"
-          hues={['navy', 'teal', 'gold', 'coral']}
+          hues={['navy', 'teal', 'gold', 'watermelon']}
           footnote="Each line counts people and each stage implies the ones before it, so the lines narrow rather than add up and a creator with three Collectives is one creator throughout. All four are snapshots — a milestone already reached stays reached, which is why these lines only climb. The 'Creators registered' chart below counts something different: arrivals within each period, which rise and fall. The first stage counts anybody operating a Collective whatever their account role, so founder-operated Collectives are included; the table further down separates them. Publishing is not a stage here: a Collective's status is stored as one value with no history, so a past date has no honest answer."
         />
-      </div>
+        </PanelGroup>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          New arrivals in each period
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="New arrivals in each period"
+        intro={
+          <>
           <strong style={{ color: INK }}>Not the same thing as the chart
           above.</strong>{' '}
           That one counts milestones already reached and therefore only
           climbs; this counts creators who arrived <em>during</em> each
           period, so it rises and falls. A quiet month here is a quiet month
           for recruitment, not a loss of creators.
-        </p>
+          </>
+        }
+      >
         <HistoryPanel
           title="Creators registered"
           explanation="Creator accounts that came into being in each period. A flow — each column is its own period's arrivals, and the columns add up over time."
@@ -173,19 +178,17 @@ export default function CreatorsPage() {
           hues={['navy']}
           footnote="Somebody who signs up and builds nothing still counts here, which is the point: the gap between this and 'Creators with a Collective' above is the first step of the journey."
         />
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          What creators earn
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="What creators earn"
+        intro={
+          <>
           Earned and paid, platform-wide. The Money page holds the full
           reconciliation; this is the creator&rsquo;s side of it.
-        </p>
+          </>
+        }
+      >
         <HistoryPanel
           title="Creator earnings and payouts"
           explanation="What creators earned in each period, beside what was actually transferred to them."
@@ -195,33 +198,29 @@ export default function CreatorsPage() {
           hues={['teal', 'navy']}
           footnote="Earnings are net of refunds reversed against the creator's share and are dated by settlement; payouts are dated by when they were marked paid. The two are not expected to match, and a gap between them is an obligation rather than an error."
         />
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Who they are
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="Who they are"
+        intro={
+          <>
           Every creator in this classification, with the furthest stage they
           have reached. Independent creators and founder-operated Collectives
           are listed separately rather than ranked together.
-        </p>
+          </>
+        }
+      >
         <CreatorTable creators={creators} />
-      </section>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           With their own period, chosen below.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -295,10 +294,9 @@ export default function CreatorsPage() {
             >
               <InsightCard
                 metric={pick(cards, 'outstanding_payouts_cents')}
-                hue={
+                hue="navy"
+                emphasiseValue={
                   (pick(cards, 'outstanding_payouts_cents')?.value ?? 0) > 0
-                    ? 'coral'
-                    : 'navy'
                 }
                 caption="earned by creators and not yet transferred"
               />
@@ -306,7 +304,7 @@ export default function CreatorsPage() {
             </Band>
           </>
         )}
-      </section>
+      </InsightsSection>
     </InsightsShell>
   )
 }
@@ -333,9 +331,9 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
   return (
     <div
       className="mb-8 rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
     >
-      <h4 className="font-serif text-[15px]" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
         Whose earnings those are
       </h4>
       <dl className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
@@ -429,7 +427,7 @@ function Band({
 }) {
   return (
     <section className="mb-8">
-      <h4 className="font-serif text-[16px] leading-tight" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h4>
       <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -453,11 +451,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

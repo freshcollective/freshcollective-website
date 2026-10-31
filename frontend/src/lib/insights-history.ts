@@ -18,6 +18,11 @@
  */
 
 import { formatCount, formatMoney } from './insights.ts'
+import {
+  type InsightHue,
+  HUE_MARK,
+  INSIGHT_HUES,
+} from './insights-palette.ts'
 
 // ---------------------------------------------------------------------------
 // Shapes, mirroring app/reporting/routes.py
@@ -128,27 +133,27 @@ export const GROUPING_LABELS: Record<Grouping, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * The chart hues, in fixed order, drawn from the four World Management
- * accents and no others.
+ * The chart hues, in fixed order, from the World Insights palette.
  *
  * **Fixed order, never cycled.** A series takes the slot its position
- * gives it and keeps it; the palette does not wrap round to teal for a
- * fifth line, because two series sharing a colour is indistinguishable
- * from one series. No chart on these pages needs more than three, and a
- * fourth would need a product conversation rather than a generated hue.
+ * gives it and keeps it; the palette does not wrap round for a fifth
+ * line, because two series sharing a colour is indistinguishable from
+ * one series.
  *
  * **Colour follows the entity, not its rank.** Each panel names its
  * series' hues explicitly, so hiding one does not repaint the others.
  *
- * Validated as a categorical palette against a white chart surface:
- * lightness band, chroma floor, colour-vision separation and
- * normal-vision separation all pass. Gold alone falls below 3:1 contrast
- * against white, which is why every chart here ships a legend, direct
- * labels and a table view — that relief is required, not optional, and
- * darkening gold was tested and rejected because it collapses against
- * coral for a deuteranope.
+ * These are identity colours and carry no meaning beyond identity —
+ * watermelon is the fourth line, not a warning. Warnings and errors
+ * come from `STATUS` in `insights-palette`, which no series uses. See
+ * that module for the validator command and the reasoning behind each
+ * step.
  */
-export const CHART_HUES = ['teal', 'navy', 'gold', 'coral'] as const
+export const CHART_HUES = INSIGHT_HUES
+
+export type ChartHue = InsightHue
+
+export const HUE_STROKE: Record<ChartHue, string> = HUE_MARK
 
 /**
  * A React key that is unique across a comparison.
@@ -165,14 +170,6 @@ export function seriesKey(s: {
   return s.collective_id ? `${s.key}:${s.collective_id}` : s.key
 }
 
-export type ChartHue = (typeof CHART_HUES)[number]
-
-export const HUE_STROKE: Record<ChartHue, string> = {
-  teal: '#22a598',
-  navy: '#4c78d4',
-  gold: '#d4b048',
-  coral: '#d66057',
-}
 
 // ---------------------------------------------------------------------------
 // Fetching

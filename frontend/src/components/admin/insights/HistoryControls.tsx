@@ -8,8 +8,9 @@ import {
   GROUPING_LABELS,
 } from '@/lib/insights-history'
 import { WM_HUE } from '@/lib/wm-palette'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK_MUTED = FC_INK.muted
 
 const RANGE_FALLBACK: { key: HistoryRangeKey; label: string }[] = [
   { key: 'last_30_days', label: 'Last 30 days' },
@@ -161,7 +162,7 @@ function Chip({
             }
           : {
               background: '#FFFFFF',
-              border: '1px solid #E7EEF0',
+              border: `1px solid ${SURFACE.cardEdge}`,
               color: INK_MUTED,
             }
       }

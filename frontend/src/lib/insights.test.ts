@@ -132,7 +132,7 @@ describe('the data-health indicator reports the awkward state first', () => {
     // With no events arriving, the other checks are reading a stopped
     // clock — so this must win even when they all look fine.
     const state = describeHealth(health({ recording_enabled: false }), false)
-    assert.equal(state.hue, 'coral')
+    assert.equal(state.hue, 'alert')
     assert.equal(state.label, 'History recording is off')
   })
 
@@ -141,7 +141,7 @@ describe('the data-health indicator reports the awkward state first', () => {
       health({ incomplete_runs: [run({ status: 'running', finished_at: null })] }),
       false,
     )
-    assert.equal(state.hue, 'coral')
+    assert.equal(state.hue, 'alert')
   })
 
   test('a failed rebuild is reported even when nothing is missing', () => {
@@ -149,7 +149,7 @@ describe('the data-health indicator reports the awkward state first', () => {
       health({ last_run: run({ status: 'failed', error: 'boom' }) }),
       false,
     )
-    assert.equal(state.hue, 'coral')
+    assert.equal(state.hue, 'alert')
     assert.equal(state.label, 'Last reporting run failed')
   })
 

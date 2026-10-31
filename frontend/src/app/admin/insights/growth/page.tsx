@@ -5,6 +5,10 @@ import { useState } from 'react'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import {
+  InsightsSection,
+  PanelGroup,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
@@ -21,6 +25,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
+import { INK as FC_INK, STATUS } from '@/lib/insights-palette'
 
 /**
  * Growth — who is arriving, and how fast.
@@ -70,7 +75,7 @@ const HISTORY_KEYS = [
   'members_in_three_plus_collectives',
 ]
 
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK_MUTED = FC_INK.muted
 
 export default function GrowthPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
@@ -113,7 +118,8 @@ export default function GrowthPage() {
 
       {history.error && <Problem message={history.error} />}
 
-      <div className="space-y-5">
+      <InsightsSection lead title="Membership over time" intro="The trend first: how many people are here, how many memberships they hold between them, and how both are changing.">
+        <PanelGroup>
         <HistoryPanel
           prominent
           title="Membership growth"
@@ -148,23 +154,19 @@ export default function GrowthPage() {
           hues={['navy', 'teal', 'gold']}
           footnote="Worked out from membership join and removal dates rather than recorded at the time. A membership that ended before removal dates were stored is invisible here, which can place a member in a higher band than they belonged to on an early date."
         />
-      </div>
+        </PanelGroup>
+      </InsightsSection>
 
-      <section className="mt-12">
-        <h3
-          className="font-serif text-[17px] leading-tight"
-          style={{ color: '#0C1826' }}
-        >
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           These have their own period, chosen below and independent of the
           charts above — the charts answer what has been happening, these
           answer where things stand now.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -242,7 +244,7 @@ export default function GrowthPage() {
             </Band>
           </>
         )}
-      </section>
+      </InsightsSection>
     </InsightsShell>
   )
 }
@@ -309,7 +311,7 @@ function Band({
   return (
     <section className="mb-8">
       <h3
-        className="font-serif text-[17px] leading-tight"
+        className="font-serif text-[15.5px] leading-tight"
         style={{ color: '#0C1826' }}
       >
         {title}
@@ -335,11 +337,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

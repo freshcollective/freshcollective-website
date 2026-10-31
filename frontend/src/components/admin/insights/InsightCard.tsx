@@ -8,15 +8,19 @@ import {
   formatValue,
   qualifierNote,
 } from '@/lib/insights'
-import { WM_HUE, type WMHue } from '@/lib/wm-palette'
+import {
+  HUE_UI,
+  INK as FC_INK,
+  STATUS,
+  SURFACE,
+  type InsightHue,
+} from '@/lib/insights-palette'
 
-const CARD_BG = '#FFFFFF'
-const CARD_BORDER = '1px solid #E7EEF0'
-const CARD_SHADOW =
-  '0 2px 10px rgba(16, 24, 40, 0.04), 0 1px 2px rgba(16, 24, 40, 0.03)'
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const INK_SOFTER = 'rgba(12, 24, 38, 0.42)'
+const CARD_BG = SURFACE.card
+const CARD_BORDER = `1px solid ${SURFACE.cardEdge}`
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const INK_SOFTER = FC_INK.faint
 
 const SERIF_ITALIC: React.CSSProperties = {
   color: INK_MUTED,
@@ -55,11 +59,19 @@ export function InsightCard({
   metric: MetricValue | null
   previous?: MetricValue | null
   previousLabel?: string | null
-  hue?: WMHue
+  hue?: InsightHue
   /** A short line under the figure, in the warm register. */
   caption?: string
-  /** Let the figure take the hue's colour, so it reads as an action
-   *  item. Reserve for real signal — coral should earn its presence. */
+  /**
+   * Render the figure in the **status** colour rather than the card's
+   * hue, for a genuine obligation or alarm.
+   *
+   * Deliberately not one of the four chart hues. Now that watermelon
+   * is an ordinary series colour, an obligation drawn in it would be
+   * indistinguishable from the fourth line on a chart — so it takes
+   * the amber from ``--fc-status-warning``, which no series uses.
+   * Reserve it for something a caretaker should actually act on.
+   */
   emphasiseValue?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -69,7 +81,7 @@ export function InsightCard({
     return (
       <div
         className="rounded-2xl p-5"
-        style={{ background: CARD_BG, border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+        style={{ background: CARD_BG, border: CARD_BORDER }}
       >
         <p className="text-[12.5px]" style={{ color: INK_SOFTER }}>
           Not available
@@ -86,15 +98,19 @@ export function InsightCard({
 
   return (
     <div
-      className="rounded-2xl p-5"
-      style={{ background: CARD_BG, border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+      // ``min-w-0`` matters: a grid item defaults to ``min-width:auto``,
+      // which refuses to shrink below its content and pushes the card
+      // past the column it sits in. ``break-words`` is the backstop for
+      // a single long token with nowhere to wrap.
+      className="flex min-w-0 flex-col rounded-2xl p-5 break-words"
+      style={{ background: CARD_BG, border: CARD_BORDER }}
     >
-      <HueLabel hue={hue}>{def.display_name}</HueLabel>
+      <CardHeading hue={hue}>{def.display_name}</CardHeading>
 
       {metric.available ? (
         <p
-          className="mt-3 font-serif text-[26px] leading-tight md:text-[28px]"
-          style={{ color: emphasiseValue ? WM_HUE[hue].text : INK }}
+          className="mt-2.5 font-serif text-[26px] leading-tight md:text-[28px]"
+          style={{ color: emphasiseValue ? STATUS.warning.fg : INK }}
         >
           {formatValue(metric)}
         </p>
@@ -125,7 +141,7 @@ export function InsightCard({
       )}
 
       {note && (
-        <p className="mt-2 text-[12px]" style={{ color: WM_HUE.gold.text }}>
+        <p className="mt-2 text-[12px]" style={{ color: HUE_UI.gold.text }}>
           {note}
         </p>
       )}
@@ -217,20 +233,39 @@ function describeAggregation(aggregation: string): string {
  * The tinted label pill, matching Commerce and Mother World so the World
  * Management colour hierarchy reads the same on every page.
  */
-export function HueLabel({
+/**
+ * A metric's name, as a heading rather than an eyebrow.
+ *
+ * It used to be a 8.5px uppercase letter-spaced pill with
+ * ``whitespace-nowrap``, which is the design language's own worked
+ * example of what *not* to do — "a section titled in bold uppercase
+ * teal 12px" — and was also the cause of the overflow: a name like
+ * "Contribution after processing costs" cannot fit one line in a
+ * quarter-width card, so it ran out of the card instead of wrapping.
+ *
+ * Now it is what the language prescribes: a small coloured dot beside
+ * a readable heading in heading ink, wrapping onto as many lines as it
+ * needs. The dot keeps the colour association with the chart series
+ * the card sits beneath, which is the only job the pill was really
+ * doing.
+ */
+export function CardHeading({
   hue,
   children,
 }: {
-  hue: WMHue
+  hue: InsightHue
   children: React.ReactNode
 }) {
-  const h = WM_HUE[hue]
   return (
-    <span
-      className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2 py-[1px] text-[8.5px] font-semibold uppercase tracking-[0.06em]"
-      style={{ background: h.bg, border: `1px solid ${h.border}`, color: h.text }}
-    >
-      {children}
-    </span>
+    <h4 className="flex items-start gap-1.5 text-[13.5px] font-semibold leading-snug">
+      <span
+        aria-hidden="true"
+        className="mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full"
+        style={{ background: HUE_UI[hue].dot }}
+      />
+      <span className="min-w-0" style={{ color: INK }}>
+        {children}
+      </span>
+    </h4>
   )
 }

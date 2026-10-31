@@ -10,7 +10,8 @@ import {
   fetchHealth,
   formatCount,
 } from '@/lib/insights'
-import { WM_HUE } from '@/lib/wm-palette'
+import { type Tone, toneStyle } from '@/lib/insights-palette'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Can these figures be trusted?
@@ -30,10 +31,10 @@ import { WM_HUE } from '@/lib/wm-palette'
  * that means something is missing a producer.
  */
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const INK_SOFTER = 'rgba(12, 24, 38, 0.42)'
-const CARD = { background: '#FFFFFF', border: '1px solid #E7EEF0' }
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const INK_SOFTER = FC_INK.faint
+const CARD = { background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }
 
 export default function DataHealthPage() {
   const [health, setHealth] = useState<ReportingHealth | null>(null)
@@ -83,13 +84,13 @@ export default function DataHealthPage() {
           <div
             className="mb-6 rounded-2xl p-5"
             style={{
-              background: WM_HUE[state.hue].bg,
-              border: `1px solid ${WM_HUE[state.hue].border}`,
+              background: toneStyle(state.hue).bg,
+              border: `1px solid ${toneStyle(state.hue).border}`,
             }}
           >
             <p
               className="font-serif text-[20px] leading-tight"
-              style={{ color: WM_HUE[state.hue].text }}
+              style={{ color: toneStyle(state.hue).text }}
             >
               {state.label}
             </p>
@@ -104,7 +105,7 @@ export default function DataHealthPage() {
             <Row
               label="Recording business events"
               value={health.recording_enabled ? 'On' : 'Off'}
-              tone={health.recording_enabled ? 'teal' : 'coral'}
+              tone={health.recording_enabled ? 'teal' : 'alert'}
             />
             <Row
               label="Events recorded"
@@ -165,7 +166,7 @@ export default function DataHealthPage() {
               <Row
                 label="Runs that never finished"
                 value={formatCount(health.incomplete_runs.length)}
-                tone="coral"
+                tone="alert"
                 hint="A rebuild started and stopped without reporting an outcome. Re-running it is safe."
               />
             )}
@@ -212,7 +213,7 @@ export default function DataHealthPage() {
                       <td
                         className="py-2 pr-3 text-right tabular-nums"
                         style={{
-                          color: c.missing > 0 ? WM_HUE.coral.text : INK_MUTED,
+                          color: c.missing > 0 ? toneStyle('alert').text : INK_MUTED,
                           fontWeight: c.missing > 0 ? 600 : 400,
                         }}
                       >
@@ -252,7 +253,7 @@ function Section({
   return (
     <section className="mb-7">
       <h3
-        className="mb-3 font-serif text-[17px] leading-tight"
+        className="mb-3 font-serif text-[15.5px] leading-tight"
         style={{ color: INK }}
       >
         {title}
@@ -272,7 +273,7 @@ function Row({
 }: {
   label: string
   value: string
-  tone: 'teal' | 'navy' | 'gold' | 'coral'
+  tone: Tone
   hint?: string
 }) {
   return (
@@ -292,7 +293,7 @@ function Row({
       </div>
       <p
         className="text-[13px] tabular-nums"
-        style={{ color: WM_HUE[tone].text, fontWeight: 600 }}
+        style={{ color: toneStyle(tone).text, fontWeight: 600 }}
       >
         {value}
       </p>
@@ -318,7 +319,7 @@ function JobRow({
     )
   }
   const tone =
-    run.status === 'succeeded' ? 'teal' : run.status === 'failed' ? 'coral' : 'gold'
+    run.status === 'succeeded' ? 'teal' : run.status === 'failed' ? 'alert' : 'gold'
   return (
     <Row
       label={label}

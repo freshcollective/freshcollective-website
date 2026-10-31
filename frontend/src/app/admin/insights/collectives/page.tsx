@@ -6,6 +6,7 @@ import { CollectiveSelect } from '@/components/admin/insights/CollectiveSelect'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
+import { InsightsSection } from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { StandingsTable } from '@/components/admin/insights/StandingsTable'
@@ -25,6 +26,7 @@ import {
   CHART_HUES,
   fetchCollectives,
 } from '@/lib/insights-history'
+import { HUE_MARK, INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Collectives — how each community is faring, side by side.
@@ -85,8 +87,8 @@ const CARD_KEYS = [
 ]
 
 const MAX_COMPARED = CHART_HUES.length
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
 
 export default function CollectivesPage() {
   const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
@@ -198,23 +200,18 @@ export default function CollectivesPage() {
             />
           </div>
 
-          <section className="mt-12">
-            <h3
-              className="font-serif text-[17px] leading-tight"
-              style={{ color: INK }}
-            >
-              Where the ranking stands
-            </h3>
-            <p
-              className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-              style={{ color: INK_MUTED }}
-            >
+          <InsightsSection
+        title="Where the ranking stands"
+        intro={
+          <>
               Over the range selected above. Size and change are kept apart
               on purpose: a Collective can be the largest and the quietest
               at once, and one number covering both would say neither.
               Change is ranked by the <strong>absolute</strong> number of
               members gained or lost, with the percentage beside it.
-            </p>
+          </>
+        }
+      >
             <div className="grid gap-4 lg:grid-cols-3">
               {(['size', 'growing', 'quietening'] as const).map((mode) => (
                 <StandingsTable
@@ -225,24 +222,19 @@ export default function CollectivesPage() {
                 />
               ))}
             </div>
-          </section>
+          </InsightsSection>
 
-          <section className="mt-12">
-            <h3
-              className="font-serif text-[17px] leading-tight"
-              style={{ color: INK }}
-            >
-              Participation
-            </h3>
-            <p
-              className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-              style={{ color: INK_MUTED }}
-            >
+          <InsightsSection
+        title="Participation"
+        intro={
+          <>
               Three separate measures, deliberately not combined. A Collective
               built around Gatherings and one built around Pathways are both
               working; a single blended score would rank one above the other
               for being a different kind of community.
-            </p>
+          </>
+        }
+      >
             <div className="space-y-5">
               <HistoryPanel
                 title="Acts of participation"
@@ -273,23 +265,18 @@ export default function CollectivesPage() {
                 hues={[...CHART_HUES]}
               />
             </div>
-          </section>
+          </InsightsSection>
 
-          <section className="mt-12">
-            <h3
-              className="font-serif text-[17px] leading-tight"
-              style={{ color: INK }}
-            >
-              Sales
-            </h3>
-            <p
-              className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-              style={{ color: INK_MUTED }}
-            >
+          <InsightsSection
+        title="Sales"
+        intro={
+          <>
               Volume moved through each Collective. Not Fresh
               Collective&rsquo;s income — most of it belongs to the creator who
               earned it, and the Money page keeps that distinction.
-            </p>
+          </>
+        }
+      >
             <HistoryPanel
               title="Gross sales, Collective by Collective"
               explanation="Everything members paid, before any deduction, in each period."
@@ -300,21 +287,19 @@ export default function CollectivesPage() {
               hues={[...CHART_HUES]}
               footnote="Attributed to the period the money arrived in. A Collective with no paid offerings shows nothing here, which is a fact about how it is run rather than a gap in the data."
             />
-          </section>
+          </InsightsSection>
         </>
       )}
 
-      <section className="mt-12">
-        <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          The figures behind them
-        </h3>
-        <p
-          className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
-          style={{ color: INK_MUTED }}
-        >
+      <InsightsSection
+        title="The figures behind them"
+        intro={
+          <>
           Platform-level counts no single Collective can answer, with their own
           period below.
-        </p>
+          </>
+        }
+      >
 
         <div className="mb-6">
           <PeriodSelect value={period} onChange={setPeriod} disabled={loading} />
@@ -372,7 +357,7 @@ export default function CollectivesPage() {
             <ThemeBreakdown data={cards} />
           </>
         )}
-      </section>
+      </InsightsSection>
     </InsightsShell>
   )
 }
@@ -396,9 +381,9 @@ function ThemeBreakdown({ data }: { data: MetricResult }) {
     return (
       <div
         className="rounded-2xl p-5"
-        style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+        style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
       >
-        <h4 className="font-serif text-[16px]" style={{ color: INK }}>
+        <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
           Themes
         </h4>
         <p className="mt-1 text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -416,9 +401,9 @@ function ThemeBreakdown({ data }: { data: MetricResult }) {
   return (
     <div
       className="rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
     >
-      <h4 className="font-serif text-[16px]" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
         Themes finding people
       </h4>
       <p className="mb-3 mt-1 max-w-[78ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -445,7 +430,7 @@ function ThemeBreakdown({ data }: { data: MetricResult }) {
               style={{
                 width: `${Math.max(2, (count / top) * 100)}%`,
                 maxWidth: '60%',
-                background: '#22a598',
+                background: HUE_MARK.teal,
               }}
               aria-hidden="true"
             />
@@ -470,7 +455,7 @@ function Band({
 }) {
   return (
     <section className="mb-8">
-      <h4 className="font-serif text-[16px] leading-tight" style={{ color: INK }}>
+      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
         {title}
       </h4>
       <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
@@ -494,11 +479,11 @@ function Problem({ message }: { message: string }) {
     <div
       className="mb-5 rounded-2xl p-5"
       style={{
-        background: 'rgba(214, 96, 87, 0.06)',
-        border: '1px solid rgba(214, 96, 87, 0.28)',
+        background: STATUS.error.bg,
+        border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

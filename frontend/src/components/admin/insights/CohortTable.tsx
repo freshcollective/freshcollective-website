@@ -11,10 +11,11 @@ import {
   reachedOffsets,
   retentionRate,
 } from '@/lib/insights-history'
+import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
-const INK = '#0C1826'
-const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
-const RULE = '#E7EEF0'
+const INK = FC_INK.heading
+const INK_MUTED = FC_INK.muted
+const RULE = SURFACE.cardEdge
 
 /**
  * Retention by joining month, as a table rather than a chart.
