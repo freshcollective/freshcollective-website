@@ -1264,3 +1264,78 @@ export function byOperator(creators: Creator[]): {
     independent: creators.filter((c) => !c.founder_operated),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Membership retention cohorts
+// ---------------------------------------------------------------------------
+
+export interface CohortOffset {
+  months_after: number
+  retained_in_collective: number | null
+  retained_anywhere: number | null
+  /** False when the milestone has not arrived. Blank, never zero. */
+  reached: boolean
+}
+
+export interface CohortRow {
+  cohort: string
+  memberships_started: number
+  people_joined: number
+  offsets: CohortOffset[]
+}
+
+export type RetentionBasis = 'in_collective' | 'anywhere'
+
+/**
+ * A retained count as a share of its cohort, or null.
+ *
+ * Null for an unreached milestone, and that distinction is the whole
+ * point: a cohort that joined last month has no three-month figure,
+ * and rendering it as 0% would read as total churn rather than as a
+ * date that has not arrived.
+ *
+ * The denominators differ by basis and must: a membership retained is
+ * a share of memberships started, a person retained is a share of
+ * people who joined. Using one denominator for both would put the
+ * figure above 100% as soon as somebody joined two Collectives in the
+ * same month.
+ */
+export function retentionRate(
+  row: CohortRow,
+  offset: CohortOffset,
+  basis: RetentionBasis,
+): number | null {
+  if (!offset.reached) return null
+  const retained =
+    basis === 'anywhere'
+      ? offset.retained_anywhere
+      : offset.retained_in_collective
+  if (retained === null) return null
+  const denominator =
+    basis === 'anywhere' ? row.people_joined : row.memberships_started
+  if (!denominator) return null
+  return retained / denominator
+}
+
+/** `75%`, or an em dash where the milestone has not been reached. */
+export function formatRetention(rate: number | null): string {
+  return rate === null ? '—' : `${Math.round(rate * 100)}%`
+}
+
+/** The offsets any cohort in the set has reached, for table columns. */
+export function reachedOffsets(rows: CohortRow[]): number[] {
+  const reached = new Set<number>()
+  for (const row of rows) {
+    for (const offset of row.offsets) {
+      if (offset.reached) reached.add(offset.months_after)
+    }
+  }
+  return [...reached].sort((a, b) => a - b)
+}
+
+/** `2026-09` → `Sep 2026`. */
+export function cohortLabel(cohort: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(cohort)
+  if (!m) return cohort
+  return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`
+}

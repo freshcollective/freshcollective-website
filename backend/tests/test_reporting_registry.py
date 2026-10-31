@@ -565,6 +565,13 @@ class TestScopeEnforcement:
             "creators_with_a_collective",
             "creators_with_a_member",
             "creators_earning",
+            # Belonging. Platform-only because both are statements
+            # about people across every Collective at once: who left
+            # Fresh Collective rather than one of its communities, and
+            # who is active in more than one. Either would tell a
+            # creator about Collectives that are not theirs.
+            "members_leaving_entirely",
+            "multi_collective_participants",
         }
 
     def test_no_metric_reads_a_member_authored_column(self):

@@ -20,7 +20,13 @@ import {
   seriesKey,
   tooltipLeft,
   xLabelCapacity,
+  type CohortOffset,
+  type CohortRow,
   type Creator,
+  cohortLabel,
+  formatRetention,
+  reachedOffsets,
+  retentionRate,
   CREATOR_STAGES,
   byOperator,
   stageCounts,
@@ -64,6 +70,8 @@ import { formatMoney } from './insights.ts'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const withoutDocComments = (src: string) => src.replace(/\/\*\*[\s\S]*?\*\//g, '')
+/** Collapse wrapped JSX prose so a sentence can be read as a sentence. */
+const flatten = (src: string) => src.replace(/\s+/g, ' ')
 
 function point(over: Partial<HistoryPoint> = {}): HistoryPoint {
   return {
@@ -1767,5 +1775,173 @@ describe('the Participation page keeps people and acts apart', () => {
     const src = read(PAGE)
     assert.match(src, /immediately preceding period of the same length/)
     assert.match(src, /undefined over all time/)
+  })
+})
+
+describe('retention cohorts leave unreached milestones blank', () => {
+  const offset = (n: number, over: Partial<CohortOffset> = {}): CohortOffset => ({
+    months_after: n, retained_in_collective: 5, retained_anywhere: 6,
+    reached: true, ...over,
+  })
+  const row = (over: Partial<CohortRow> = {}): CohortRow => ({
+    cohort: '2026-07', memberships_started: 10, people_joined: 8,
+    offsets: [offset(1), offset(2)], ...over,
+  })
+
+  test('a reached milestone is a share of its own denominator', () => {
+    const r = row()
+    assert.equal(retentionRate(r, r.offsets[0], 'in_collective'), 0.5)
+    assert.equal(retentionRate(r, r.offsets[0], 'anywhere'), 0.75)
+  })
+
+  test('the two bases use different denominators', () => {
+    // A person who joined two Collectives in one month is two
+    // memberships and one person; sharing a denominator would put a
+    // figure above 100%.
+    const r = row({ memberships_started: 10, people_joined: 5 })
+    const o = offset(1, { retained_in_collective: 8, retained_anywhere: 5 })
+    assert.equal(retentionRate(r, o, 'in_collective'), 0.8)
+    assert.equal(retentionRate(r, o, 'anywhere'), 1)
+  })
+
+  test('an unreached milestone has no rate at all', () => {
+    const o = offset(3, {
+      reached: false, retained_in_collective: null, retained_anywhere: null,
+    })
+    assert.equal(retentionRate(row(), o, 'in_collective'), null)
+    assert.equal(retentionRate(row(), o, 'anywhere'), null)
+  })
+
+  test('an unreached milestone renders blank, never zero per cent', () => {
+    assert.equal(formatRetention(null), '—')
+    assert.notEqual(formatRetention(null), '0%')
+    assert.equal(formatRetention(0), '0%', 'a measured zero still shows')
+  })
+
+  test('a measured zero is distinguishable from an unreached one', () => {
+    const measured = offset(1, { retained_in_collective: 0 })
+    assert.equal(retentionRate(row(), measured, 'in_collective'), 0)
+    assert.equal(formatRetention(0), '0%')
+  })
+
+  test('an empty cohort cannot produce a rate', () => {
+    const r = row({ memberships_started: 0, people_joined: 0 })
+    assert.equal(retentionRate(r, r.offsets[0], 'in_collective'), null)
+  })
+
+  test('columns cover every offset any cohort has reached', () => {
+    const rows = [
+      row({ cohort: '2026-07', offsets: [offset(1), offset(2), offset(3)] }),
+      row({ cohort: '2026-09', offsets: [offset(1), offset(2, { reached: false })] }),
+    ]
+    assert.deepEqual(reachedOffsets(rows), [1, 2, 3])
+  })
+
+  test('an offset no cohort has reached gets no column', () => {
+    const rows = [row({ offsets: [offset(1), offset(2, { reached: false })] })]
+    assert.deepEqual(reachedOffsets(rows), [1])
+  })
+
+  test('cohort labels read as months', () => {
+    assert.equal(cohortLabel('2026-09'), 'Sep 2026')
+    assert.equal(cohortLabel('nonsense'), 'nonsense')
+  })
+})
+
+describe('the Belonging page', () => {
+  const PAGE = 'src/app/admin/insights/belonging/page.tsx'
+  const TABLE = 'src/components/admin/insights/CohortTable.tsx'
+
+  test('it says up front that it does not measure belonging', () => {
+    const src = read(PAGE)
+    assert.match(src, /Belonging is a feeling, and none of these figures measures it/)
+    assert.ok(src.indexOf('<Caveat') < src.indexOf('<HistoryPanel'))
+  })
+
+  test('membership retention and participation retention are separate sections', () => {
+    const src = read(PAGE)
+    const membership = src.indexOf('Retention by joining month')
+    const participation = src.indexOf('Returning to participate')
+    assert.ok(membership > 0 && participation > membership)
+  })
+
+  test('leaving a Collective is distinguished from leaving entirely', () => {
+    const src = read(PAGE)
+    assert.match(src, /memberships_ended/)
+    assert.match(src, /members_leaving_entirely/)
+    assert.match(src, /Leaving one Collective while remaining in another is not counted/)
+  })
+
+  test('membership overlap is distinguished from cross-Collective participation', () => {
+    const src = read(PAGE)
+    assert.match(src, /multi_collective_participants/)
+    assert.match(src, /members_in_three_plus_collectives/)
+    assert.match(src, /an act, not a membership/)
+  })
+
+  test('the overlap comparison is descriptive, never causal', () => {
+    // Flattened first: the sentence wraps across JSX lines, and a
+    // scan of the raw file reads the wrap as an absence.
+    const src = flatten(read(PAGE))
+    assert.match(src, /A description, not an explanation/)
+    assert.match(src, /cannot tell which way the arrow points/)
+    assert.match(src, /as likely to be the cause of joining again as its result/)
+  })
+
+  test('rejoining discloses that it cannot be reconstructed', () => {
+    const src = read(PAGE)
+    assert.match(src, /cannot be reconstructed/)
+    assert.match(src, /not the same as nobody having rejoined/)
+  })
+
+  test('undated departures are disclosed as a lower bound', () => {
+    const src = read(PAGE)
+    assert.match(src, /lower bound/)
+    assert.ok(!/assume.{0,30}nobody left/i.test(src))
+  })
+
+  test('the cohort table is a real table, not a chart', () => {
+    const src = read(TABLE)
+    assert.match(src, /<table/)
+    assert.match(src, /<caption/)
+    assert.match(src, /scope="col"/)
+    assert.match(src, /scope="row"/)
+  })
+
+  test('the cohort table offers both retention bases', () => {
+    const src = read(TABLE)
+    assert.match(src, /of the Collective they joined/)
+    assert.match(src, /of Fresh Collective, anywhere/)
+    assert.match(src, /aria-pressed=\{basis === key\}/)
+  })
+
+  test('a blank cohort cell is explained rather than left ambiguous', () => {
+    const src = read(TABLE)
+    assert.match(src, /not a\s*\n?\s*retention of zero/)
+    assert.match(src, /has not been reached yet/)
+  })
+
+  test('it defaults to Production and passes it everywhere', () => {
+    const src = read(PAGE)
+    assert.match(src, /useState<PopulationKey>\('production'\)/)
+    for (const call of src.matchAll(/useMetrics\(([\s\S]*?)\)/g)) {
+      assert.ok(call[1].includes('population'), call[0].replace(/\s+/g, ' '))
+    }
+  })
+
+  test('it reuses the shared components', () => {
+    const src = read(PAGE)
+    for (const c of [
+      '<HistoryPanel', '<HistoryControls', '<PeriodSelect', '<InsightCard',
+      '<CohortTable',
+    ]) {
+      assert.ok(src.includes(c), `${c} should be reused`)
+    }
+    assert.ok(!/<svg/.test(withoutDocComments(src)), 'no hand-rolled chart')
+  })
+
+  test('nothing judges somebody for participating less', () => {
+    const src = withoutDocComments(read(PAGE))
+    assert.ok(!/\b(disengaged|lapsed|at risk|inactive user|churned)\b/i.test(src))
   })
 })

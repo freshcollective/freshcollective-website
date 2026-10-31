@@ -40,6 +40,7 @@ from app.core.periods import (
 )
 from app.models.user import User
 from app.reporting import engagement as _engagement  # noqa: F401 — populates REGISTRY
+from app.reporting import belonging as _belonging  # noqa: F401 — populates REGISTRY
 from app.reporting import creators as _creators  # noqa: F401 — populates REGISTRY
 from app.reporting import metrics as _metrics  # noqa: F401 — populates REGISTRY
 from app.reporting.registry import (
