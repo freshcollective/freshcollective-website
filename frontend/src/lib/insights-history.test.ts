@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
-  AVAILABILITY_PROSE,
-  DATE_BASIS_PROSE,
   QUALITY_LABEL,
   axisLabelSpace,
   directLabelSpace,
@@ -33,7 +31,6 @@ import {
   compactCount,
   compactMoney,
   dashRuns,
-  describeGap,
   describeSeries,
   emptyBucketIndices,
   formatAxisValue,
@@ -1360,7 +1357,7 @@ describe('the Collectives page says what it is measuring', () => {
     // honest answer — asking for one put "Not yet" on a card whose
     // heading says "right now".
     const src = read(PAGE)
-    assert.match(src, /useMetrics\(STATUS_KEYS, 'all_time'\)/)
+    assert.match(src, /useMetrics\(STATUS_KEYS, 'all_time', population\)/)
     assert.match(src, /Collectives right now/)
     for (const key of [
       'total_collectives', 'active_collectives',
@@ -1375,7 +1372,7 @@ describe('the Collectives page says what it is measuring', () => {
 
   test('the period selector still governs what genuinely varies by period', () => {
     const src = read(PAGE)
-    assert.match(src, /useMetrics\(CARD_KEYS, period\)/)
+    assert.match(src, /useMetrics\(\s*CARD_KEYS, period, population,?\s*\)/)
     const cardKeys = /const CARD_KEYS = \[([\s\S]*?)\]/.exec(src)?.[1] ?? ''
     assert.ok(!cardKeys.includes('collectives'), 'status must not be period-bound')
     assert.ok(cardKeys.includes('engagement_by_theme'))
@@ -1505,7 +1502,10 @@ describe('the Creators page', () => {
   })
 
   test('status cards ask the live question', () => {
-    assert.match(read(PAGE), /useMetrics\(STATUS_KEYS, 'all_time'\)/)
+    assert.match(
+      read(PAGE),
+      /useMetrics\(STATUS_KEYS, 'all_time', population\)/,
+    )
   })
 
   test('it reuses the shared charts and controls', () => {
@@ -1556,5 +1556,101 @@ describe('a count axis steps in whole things', () => {
   test('the chart asks for integer steps only for counts', () => {
     const src = read('src/components/admin/insights/charts/TimeSeriesChart.tsx')
     assert.match(src, /integer: unit === 'count'/)
+  })
+})
+
+describe('the cards describe the same population as the charts', () => {
+  const PAGES = [
+    'src/app/admin/insights/growth/page.tsx',
+    'src/app/admin/insights/money/page.tsx',
+    'src/app/admin/insights/collectives/page.tsx',
+    'src/app/admin/insights/creators/page.tsx',
+  ]
+
+  test('every page passes its population to its metric cards', () => {
+    // A page headed "Production" was showing production trends above
+    // whole-platform figures, with nothing marking the difference.
+    for (const path of PAGES) {
+      const src = read(path)
+      assert.ok(
+        /useMetrics\([\s\S]{0,60}population/.test(src),
+        `${path}: cards must honour the page filter`,
+      )
+    }
+  })
+
+  test('no page calls useMetrics without a population', () => {
+    for (const path of PAGES) {
+      const calls = [...read(path).matchAll(/useMetrics\(([\s\S]*?)\)/g)]
+      assert.ok(calls.length > 0, path)
+      for (const call of calls) {
+        assert.ok(
+          call[1].includes('population'),
+          `${path}: ${call[0].replace(/\s+/g, ' ')} omits the population`,
+        )
+      }
+    }
+  })
+})
+
+describe('creator earnings say whose they are', () => {
+  const PAGE = 'src/app/admin/insights/creators/page.tsx'
+
+  test('the founder/independent split is shown, not just fetched', () => {
+    const src = read(PAGE)
+    assert.match(src, /by_operator_cents/)
+    assert.match(src, /Independent creators/)
+    assert.match(src, /Founder-operated Collectives/)
+  })
+
+  test('the split is read from the metric rather than computed here', () => {
+    const src = read(PAGE)
+    assert.ok(
+      !/_cents'\)[^)]*\)?\s*[-+*/]\s*pick\(/.test(src),
+      'the page must not do arithmetic between money metrics',
+    )
+  })
+
+  test('period earnings and the current balance are separate bands', () => {
+    const src = read(PAGE)
+    const earned = src.indexOf('Earned and paid in')
+    const owed = src.indexOf('Owed right now')
+    assert.ok(earned > 0 && owed > earned, 'the two must not share a band')
+    assert.match(src, /A balance at this moment, not a period figure/)
+  })
+
+  test('the outstanding balance names who is owed', () => {
+    const src = read(PAGE)
+    assert.match(src, /owed_to_external_creators_cents/)
+    assert.match(src, /owed_to_founder_operated_collectives_cents/)
+  })
+})
+
+describe('milestones reached and arrivals are not the same chart', () => {
+  const PAGE = 'src/app/admin/insights/creators/page.tsx'
+
+  test('the funnel is labelled cumulative', () => {
+    const src = read(PAGE)
+    assert.match(src, /Milestones reached, over time/)
+    assert.match(src, /cumulative, not new activity/)
+  })
+
+  test('the arrivals chart says it is not the same thing', () => {
+    const src = read(PAGE)
+    assert.match(src, /New arrivals in each period/)
+    assert.match(src, /Not the same thing as the chart/)
+    assert.match(src, /rises and falls/)
+  })
+
+  test('the funnel base includes operators, not just the creator role', () => {
+    // The founder holds an admin role and operates two Collectives;
+    // a role-only base let the funnel widen instead of narrowing.
+    const src = read(PAGE)
+    const keys = /const HISTORY_KEYS = \[([\s\S]*?)\]/.exec(src)?.[1] ?? ''
+    assert.ok(keys.includes('creator_accounts'), 'the base must be operators')
+    assert.ok(
+      !keys.includes('registered_creators'),
+      'registered_creators counts the creator role alone',
+    )
   })
 })

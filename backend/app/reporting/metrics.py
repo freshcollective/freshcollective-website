@@ -270,8 +270,17 @@ def _settlement_basis(
     }
 
 
-def _money(key: str, expr, *, basis_note: bool = True):
-    """A summed money metric over the settlement date."""
+def _money(key: str, expr, *, basis_note: bool = True, by_operator: bool = False):
+    """A summed money metric over the settlement date.
+
+    ``by_operator`` adds the founder-operated / independent split to the
+    qualifiers. Only creator earnings ask for it: "what have creators
+    earned" and "what have *external* creators earned" are different
+    questions on a platform whose founder runs two of its Collectives,
+    and a single figure answers the first while being read as the
+    second. The split is reported beside the total rather than
+    replacing it — the total is still what creators earned.
+    """
 
     def compute(
         db: Session, scope: ReportScope, window: Window,
@@ -287,6 +296,26 @@ def _money(key: str, expr, *, basis_note: bool = True):
             if basis_note else {}
         )
         quals.update(_population_qualifiers(db, scope, window, population))
+        if by_operator:
+            from app.reporting.creators import founder_operated_space_ids
+
+            is_founder = PaymentTransaction.space_id.in_(
+                founder_operated_space_ids()
+            )
+            founder, independent = q.with_entities(
+                func.coalesce(func.sum(case((is_founder, expr), else_=0)), 0),
+                func.coalesce(func.sum(case((~is_founder, expr), else_=0)), 0),
+            ).one()
+            quals["by_operator_cents"] = {
+                "founder_operated": int(founder or 0),
+                "independent": int(independent or 0),
+            }
+            quals["operator_note"] = (
+                "Founder-operated means the Collective's creator is a "
+                "platform administrator. Both are real earnings; they are "
+                "split because only the second says what external creators "
+                "are making."
+            )
         return MetricValue(key=key, value=int(total), qualifiers=quals)
 
     return compute
@@ -372,6 +401,7 @@ REGISTRY.add(Metric(
         "creator_earnings_cents",
         func.coalesce(PaymentTransaction.net_creator_amount_cents, 0)
         - func.coalesce(PaymentTransaction.refunded_creator_amount_cents, 0),
+        by_operator=True,
     ),
 ))
 

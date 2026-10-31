@@ -80,7 +80,8 @@ const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
 
 export default function MoneyPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
-  const { data, error, loading } = useMetrics(KEYS, period)
+  const [population, setPopulation] = useState<PopulationKey>('all')
+  const { data, error, loading } = useMetrics(KEYS, period, population)
 
   // The complete ledger is the default here, and that is a rule rather
   // than a preference: a money page whose default view silently omitted
@@ -89,7 +90,6 @@ export default function MoneyPage() {
   // the other way, because there a test account is noise.
   const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
   const [grouping, setGrouping] = useState<Grouping>('weekly')
-  const [population, setPopulation] = useState<PopulationKey>('all')
   const history = useHistory(HISTORY_KEYS, range, grouping, population)
 
   const prev = data?.comparison?.label ?? null

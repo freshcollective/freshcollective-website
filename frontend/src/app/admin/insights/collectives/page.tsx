@@ -97,8 +97,10 @@ export default function CollectivesPage() {
   const [listError, setListError] = useState<string | null>(null)
 
   const [period, setPeriod] = useState<PeriodKey>('this_month')
-  const { data: cards, error: cardError, loading } = useMetrics(CARD_KEYS, period)
-  const { data: status } = useMetrics(STATUS_KEYS, 'all_time')
+  const { data: cards, error: cardError, loading } = useMetrics(
+    CARD_KEYS, period, population,
+  )
+  const { data: status } = useMetrics(STATUS_KEYS, 'all_time', population)
 
   // The selector follows the classification filter, so it can never
   // offer a Collective the charts would then exclude. Changing the

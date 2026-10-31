@@ -560,6 +560,7 @@ class TestScopeEnforcement:
             # telling one creator how many others reached the stage
             # they are stuck at is exactly the cross-creator comparison
             # this access level exists to prevent.
+            "creator_accounts",
             "creators_registered",
             "creators_with_a_collective",
             "creators_with_a_member",

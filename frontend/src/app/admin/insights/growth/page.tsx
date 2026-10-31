@@ -74,7 +74,8 @@ const INK_MUTED = 'rgba(12, 24, 38, 0.60)'
 
 export default function GrowthPage() {
   const [period, setPeriod] = useState<PeriodKey>('this_month')
-  const { data, error, loading } = useMetrics(KEYS, period)
+  const [population, setPopulation] = useState<PopulationKey>('production')
+  const { data, error, loading } = useMetrics(KEYS, period, population)
 
   // Growth reporting defaults to production: the question this page
   // asks is whether genuine communities are growing, and a test account
@@ -83,7 +84,6 @@ export default function GrowthPage() {
   // default must never be a subset.
   const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
   const [grouping, setGrouping] = useState<Grouping>('weekly')
-  const [population, setPopulation] = useState<PopulationKey>('production')
   const history = useHistory(HISTORY_KEYS, range, grouping, population)
 
   const previousLabel = data?.comparison?.label ?? null

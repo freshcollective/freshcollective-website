@@ -19,38 +19,46 @@ import { type MetricResult, type PeriodKey, fetchMetrics } from '@/lib/insights'
  * than it sounds: blanking the page to a spinner on every click makes
  * comparing two periods feel like two separate visits.
  */
-export function useMetrics(keys: string[], period: PeriodKey) {
+export function useMetrics(
+  keys: string[],
+  period: PeriodKey,
+  population = 'all',
+) {
   const [result, setResult] = useState<{
     data: MetricResult | null
-    forPeriod: PeriodKey | null
+    // What was asked for, not just the period: a population change
+    // must show as loading too, or the old figures look like the new
+    // filter's answer.
+    asked: string | null
     error: string | null
-  }>({ data: null, forPeriod: null, error: null })
+  }>({ data: null, asked: null, error: null })
 
   // Stable across renders so the effect does not re-run on every paint
   // because an inline array literal is a new object each time.
   const keyList = keys.join(',')
+  const asked = `${keyList}|${period}|${population}`
 
   useEffect(() => {
     const controller = new AbortController()
     let cancelled = false
-    fetchMetrics(keyList.split(','), period, controller.signal)
+    fetchMetrics(keyList.split(','), period, controller.signal, population)
       .then((data) => {
-        if (!cancelled) setResult({ data, forPeriod: period, error: null })
+        if (!cancelled) setResult({ data, asked, error: null })
       })
       .catch((e: Error) => {
         if (cancelled || e.name === 'AbortError') return
-        setResult((prev) => ({ ...prev, forPeriod: period, error: e.message }))
+        setResult((prev) => ({ ...prev, asked, error: e.message }))
       })
     return () => {
       cancelled = true
       controller.abort()
     }
-  }, [keyList, period])
+  }, [keyList, period, population, asked])
 
   return {
     data: result.error ? null : result.data,
     error: result.error,
-    /** True until the figures for the requested period have arrived. */
-    loading: result.forPeriod !== period,
+    /** True until the figures for what was asked have arrived. */
+    loading: result.asked !== asked,
   }
 }

@@ -77,8 +77,28 @@ def _as_at(window: Window):
 
 
 def _creator_accounts(population: Population):
-    """Creator accounts this population counts."""
-    q = select(User.id).where(User.role == UserRole.creator.value)
+    """Everyone who operates a Collective, or could.
+
+    **Not ``role == 'creator'`` alone**, which was the defect. The
+    founder's account holds the ``admin`` role and operates EMBODY and
+    Life in Full Colour, so a role test made two production
+    Collectives — and their operator — invisible to the whole Creators
+    section: the funnel undercounted, and the founder-operated table
+    read "none in this classification".
+
+    Role is about what an account may *do*; operating a Collective is
+    about what it has done. The second is the question here, so
+    somebody who owns a Collective counts however their role column
+    reads, and somebody with the creator role counts before they have
+    built anything — which is the first stage of the journey.
+    """
+    owners = select(Space.creator_id).where(Space.creator_id.isnot(None))
+    spaces = population.space_id_select()
+    if spaces is not None:
+        owners = owners.where(Space.id.in_(spaces))
+    q = select(User.id).where(
+        (User.role == UserRole.creator.value) | (User.id.in_(owners))
+    )
     excluded = population.excluded_account_select()
     if excluded is not None:
         q = q.where(User.id.notin_(excluded))
@@ -115,25 +135,48 @@ def _count_distinct(db: Session, q) -> int:
 # The stages
 # ---------------------------------------------------------------------------
 
+def _creator_accounts_snapshot(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """Everyone operating a Collective or holding a creator account.
+
+    The funnel's first stage, and deliberately **not**
+    ``registered_creators``, which counts the creator role alone. The
+    two differ by exactly the founder: an administrator who operates
+    two Collectives belongs in a journey whose later stages count their
+    Collectives, and a base that excluded them let the funnel widen
+    instead of narrowing.
+    """
+    as_at = _as_at(window)
+    q = select(User.id).where(User.id.in_(_creator_accounts(population)))
+    if as_at is not None:
+        q = q.where(User.created_at <= as_at)
+    return MetricValue(
+        key="creator_accounts",
+        value=_count_distinct(db, q),
+        qualifiers={**population.qualifiers(), "as_at": _label(window)},
+    )
+
+
 def _creators_registered(
     db: Session, scope: ReportScope, window: Window,
     population: Population = ALL,
 ) -> MetricValue:
     """Creator accounts that came into being during the period.
 
-    The flow beside ``registered_creators``, which is the snapshot.
-    Counts accounts rather than Collectives: somebody who signs up and
-    builds nothing is still a creator who arrived, and losing them from
-    the figure would make the funnel look healthier than it is.
+    The flow beside the snapshot. Counts accounts rather than
+    Collectives: somebody who signs up and builds nothing is still a
+    creator who arrived, and losing them from the figure would make the
+    funnel look healthier than it is.
     """
-    q = db.query(func.count(User.id)).filter(User.role == UserRole.creator.value)
+    q = db.query(func.count(User.id)).filter(
+        User.id.in_(_creator_accounts(population))
+    )
     if window.starts_at is not None:
         q = q.filter(User.created_at >= window.starts_at)
     if window.ends_at is not None:
         q = q.filter(User.created_at < window.ends_at)
-    excluded = population.excluded_account_select()
-    if excluded is not None:
-        q = q.filter(User.id.notin_(excluded))
     return MetricValue(
         key="creators_registered",
         value=int(q.scalar() or 0),
@@ -304,13 +347,40 @@ for _key, _name, _definition, _source, _compute in _STAGES:
     ))
 
 REGISTRY.add(Metric(
+    key="creator_accounts",
+    display_name="Creator accounts",
+    definition=(
+        "People operating a Collective, or holding a creator account "
+        "before they have built one. Counts anyone who runs a Collective "
+        "whatever their role, so founder-operated Collectives are "
+        "included — the table beneath separates them from independent "
+        "creators."
+    ),
+    source_of_truth="users, and spaces.creator_id",
+    grain=Grain.snapshot,
+    aggregation=Aggregation.snapshot,
+    date_basis=DateBasis.none,
+    access=Access.platform_only,
+    availability=Availability.full,
+    limitations=(
+        "Wider than 'Registered creators', which counts the creator role "
+        "alone. The two differ by anybody operating a Collective from an "
+        "account with another role — the founder, today. A snapshot: take "
+        "the latest, never sum across periods."
+    ),
+    dimensions=(POPULATION_DIMENSION,),
+    personal_data=True,
+    compute=_creator_accounts_snapshot,
+))
+
+REGISTRY.add(Metric(
     key="creators_registered",
     display_name="Creators registered",
     definition=(
         "Creator accounts created during the period. The flow beside the "
         "'Registered creators' snapshot."
     ),
-    source_of_truth="users.created_at where role = creator",
+    source_of_truth="users.created_at, for anyone operating a Collective",
     grain=Grain.period,
     aggregation=Aggregation.additive,
     date_basis=DateBasis.created,

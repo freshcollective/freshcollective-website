@@ -13,7 +13,12 @@ import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
 import { useMetrics } from '@/components/admin/insights/useMetrics'
-import { type PeriodKey, pick } from '@/lib/insights'
+import {
+  type MetricResult,
+  type PeriodKey,
+  formatMoney,
+  pick,
+} from '@/lib/insights'
 import {
   type Creator,
   type Grouping,
@@ -40,7 +45,7 @@ import {
  */
 
 const HISTORY_KEYS = [
-  'registered_creators',
+  'creator_accounts',
   'creators_with_a_collective',
   'creators_with_a_member',
   'creators_earning',
@@ -72,8 +77,10 @@ export default function CreatorsPage() {
   const [listError, setListError] = useState<string | null>(null)
 
   const [period, setPeriod] = useState<PeriodKey>('this_month')
-  const { data: cards, error: cardError, loading } = useMetrics(CARD_KEYS, period)
-  const { data: status } = useMetrics(STATUS_KEYS, 'all_time')
+  const { data: cards, error: cardError, loading } = useMetrics(
+    CARD_KEYS, period, population,
+  )
+  const { data: status } = useMetrics(STATUS_KEYS, 'all_time', population)
 
   const history = useHistory(
     [...HISTORY_KEYS, ...EARNINGS_KEYS],
@@ -127,41 +134,44 @@ export default function CreatorsPage() {
 
         <HistoryPanel
           prominent
-          title="How far creators get, over time"
-          explanation="The same four stages across the range. The gaps between the lines are where creators stop: between building and attracting is a Collective nobody joined, between attracting and earning is a community with nothing to buy."
+          title="Milestones reached, over time"
+          explanation="How many creators had reached each stage by the end of each period — cumulative, not new activity. A creator who started earning in March is still counted in October. The gaps between the lines are where creators stop."
           data={history.data}
           keys={[
-            'registered_creators',
+            'creator_accounts',
             'creators_with_a_collective',
             'creators_with_a_member',
             'creators_earning',
           ]}
           kind="line"
           hues={['navy', 'teal', 'gold', 'coral']}
-          footnote="Each line counts people and each stage implies the ones before it, so the lines narrow rather than add up and a creator with three Collectives is one creator throughout. All four are snapshots — the state at the end of each period, never a sum of its days. Publishing is not a stage here: a Collective's status is stored as one value with no history, so a past date has no honest answer."
+          footnote="Each line counts people and each stage implies the ones before it, so the lines narrow rather than add up and a creator with three Collectives is one creator throughout. All four are snapshots — a milestone already reached stays reached, which is why these lines only climb. The 'Creators registered' chart below counts something different: arrivals within each period, which rise and fall. The first stage counts anybody operating a Collective whatever their account role, so founder-operated Collectives are included; the table further down separates them. Publishing is not a stage here: a Collective's status is stored as one value with no history, so a past date has no honest answer."
         />
       </div>
 
       <section className="mt-12">
         <h3 className="font-serif text-[17px] leading-tight" style={{ color: INK }}>
-          Arrivals
+          New arrivals in each period
         </h3>
         <p
           className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
           style={{ color: INK_MUTED }}
         >
-          New creator accounts in each period — a flow, beside the snapshot
-          above. Somebody who signs up and builds nothing still counts here,
-          which is the point: the gap between arriving and building is the
-          first step of the journey.
+          <strong style={{ color: INK }}>Not the same thing as the chart
+          above.</strong>{' '}
+          That one counts milestones already reached and therefore only
+          climbs; this counts creators who arrived <em>during</em> each
+          period, so it rises and falls. A quiet month here is a quiet month
+          for recruitment, not a loss of creators.
         </p>
         <HistoryPanel
           title="Creators registered"
-          explanation="Creator accounts that came into being in each period."
+          explanation="Creator accounts that came into being in each period. A flow — each column is its own period's arrivals, and the columns add up over time."
           data={history.data}
           keys={['creators_registered']}
           kind="column"
           hues={['navy']}
+          footnote="Somebody who signs up and builds nothing still counts here, which is the point: the gap between this and 'Creators with a Collective' above is the first step of the journey."
         />
       </section>
 
@@ -257,27 +267,18 @@ export default function CreatorsPage() {
             </Band>
 
             <Band
-              title="Money, from the creator's side"
-              note="What they earned, what reached them, and what is still owed. The Money page holds the platform's own income."
+              title={`Earned and paid in ${cards.period.label.toLowerCase()}`}
+              note="Figures for the selected period. Both are flows — money that moved during it."
             >
               <InsightCard
                 metric={pick(cards, 'creator_earnings_cents')}
                 hue="navy"
-                caption="earned — owed, not necessarily sent"
+                caption="earned by creators in this period"
               />
               <InsightCard
                 metric={pick(cards, 'paid_out_cents')}
                 hue="teal"
-                caption="actually transferred"
-              />
-              <InsightCard
-                metric={pick(cards, 'outstanding_payouts_cents')}
-                hue={
-                  (pick(cards, 'outstanding_payouts_cents')?.value ?? 0) > 0
-                    ? 'coral'
-                    : 'navy'
-                }
-                caption="owed to creators right now"
+                caption="actually transferred in this period"
               />
               <InsightCard
                 metric={pick(cards, 'subscription_revenue_cents')}
@@ -285,10 +286,135 @@ export default function CreatorsPage() {
                 caption="what creators paid us for their plans"
               />
             </Band>
+
+            <WhoseEarnings data={cards} />
+
+            <Band
+              title="Owed right now"
+              note="A balance at this moment, not a period figure — it does not belong beside the figures above and is not comparable with them. A reporting period does not narrow it."
+            >
+              <InsightCard
+                metric={pick(cards, 'outstanding_payouts_cents')}
+                hue={
+                  (pick(cards, 'outstanding_payouts_cents')?.value ?? 0) > 0
+                    ? 'coral'
+                    : 'navy'
+                }
+                caption="earned by creators and not yet transferred"
+              />
+              <WhoIsOwed data={cards} />
+            </Band>
           </>
         )}
       </section>
     </InsightsShell>
+  )
+}
+
+/**
+ * Whose earnings those are.
+ *
+ * "Creators earned $933" and "external creators earned $933" are
+ * different claims on a platform whose founder operates two of its
+ * Collectives, and the single figure above answers the first while
+ * being read as the second. The split comes from the metric's own
+ * qualifiers, so the page does no arithmetic — it reports a division
+ * the registry made.
+ */
+function WhoseEarnings({ data }: { data: MetricResult }) {
+  const metric = pick(data, 'creator_earnings_cents')
+  const split = metric?.qualifiers?.by_operator_cents as
+    | { founder_operated: number; independent: number }
+    | undefined
+  if (!metric?.available || !split) return null
+  const total = split.founder_operated + split.independent
+  if (total === 0) return null
+
+  return (
+    <div
+      className="mb-8 rounded-2xl p-5"
+      style={{ background: '#FFFFFF', border: '1px solid #E7EEF0' }}
+    >
+      <h4 className="font-serif text-[15px]" style={{ color: INK }}>
+        Whose earnings those are
+      </h4>
+      <dl className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+        <Split
+          label="Independent creators"
+          cents={split.independent}
+          note="People who came to Fresh Collective and built something. This is the figure that says what external creators are making."
+        />
+        <Split
+          label="Founder-operated Collectives"
+          cents={split.founder_operated}
+          note="Real earnings, and Fresh Collective's own. Counted separately because including them in the first figure would overstate what the platform earns for other people."
+        />
+      </dl>
+      <p
+        className="mt-2.5 text-[12px] leading-snug"
+        style={{ color: INK_MUTED, fontFamily: 'Georgia, serif', fontStyle: 'italic' }}
+      >
+        {String(metric.qualifiers?.operator_note ?? '')}
+      </p>
+    </div>
+  )
+}
+
+/** The same division, for the balance rather than the period. */
+function WhoIsOwed({ data }: { data: MetricResult }) {
+  const metric = pick(data, 'outstanding_payouts_cents')
+  const q = metric?.qualifiers ?? {}
+  const external = q.owed_to_external_creators_cents
+  const founder = q.owed_to_founder_operated_collectives_cents
+  if (typeof external !== 'number' || typeof founder !== 'number') return null
+  return (
+    <div
+      className="rounded-2xl p-5 sm:col-span-2 lg:col-span-3"
+      style={{
+        background: 'rgba(56, 160, 158, 0.06)',
+        border: '1px solid rgba(56, 160, 158, 0.22)',
+      }}
+    >
+      <dl className="grid gap-2.5 sm:grid-cols-2">
+        <Split
+          label="Owed to independent creators"
+          cents={external}
+          note="A genuine obligation to somebody else."
+        />
+        <Split
+          label="Owed to founder-operated Collectives"
+          cents={founder}
+          note="Fresh Collective owing itself. Earned and unpaid as recorded, not treated as settled."
+        />
+      </dl>
+    </div>
+  )
+}
+
+function Split({
+  label,
+  cents,
+  note,
+}: {
+  label: string
+  cents: number
+  note: string
+}) {
+  return (
+    <div>
+      <dt className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        {label}
+      </dt>
+      <dd
+        className="m-0 text-[18px] tabular-nums"
+        style={{ color: INK, fontFamily: 'Georgia, serif' }}
+      >
+        {formatMoney(cents)}
+      </dd>
+      <p className="mt-0.5 text-[11.5px] leading-snug" style={{ color: INK_MUTED }}>
+        {note}
+      </p>
+    </div>
   )
 }
 

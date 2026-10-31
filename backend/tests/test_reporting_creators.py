@@ -265,10 +265,16 @@ class TestTheCreatorsListing:
 
         rows = {r["name"]: r for r in client.get(CREATORS).json()}
         assert rows["Kelly Hamilton"]["founder_operated"] is False
-        # A founder holds the admin role, so they are not in the creator
-        # list — their Collectives are still marked founder-operated
-        # wherever they appear.
-        assert "Founder" not in rows
+        # The founder operates Collectives from an account holding the
+        # admin role. They belong in this list, marked as what they are
+        # — an earlier version filtered on ``role == 'creator'`` and
+        # dropped them, so the founder-operated table read "none in
+        # this classification" with two sitting in front of the reader.
+        assert "Founder" in rows, (
+            "an operator is a creator here however their role column reads"
+        )
+        assert rows["Founder"]["founder_operated"] is True
+        assert rows["Founder"]["collectives"] == ["EMBODY"]
 
     def test_founder_operated_has_one_definition(self):
         """It was declared inside the outstanding-payouts breakdown."""
@@ -305,3 +311,198 @@ class TestTheCreatorsListing:
         make_user(role="creator", name="Someone")
         row = client.get(CREATORS).json()[0]
         assert "score" not in " ".join(row.keys()).lower()
+
+
+class TestFounderOperatedIsVisible:
+    """The defect the review found.
+
+    The founder's account holds the ``admin`` role and operates EMBODY
+    and Life in Full Colour. Both the listing and the journey metrics
+    filtered on ``role == 'creator'``, so two production Collectives
+    and their operator were invisible to the whole Creators section —
+    the funnel undercounted and the founder-operated table read "none
+    in this classification" with two sitting in front of the reader.
+
+    An earlier test asserted the absence as correct behaviour, which is
+    how it survived. Role is what an account may *do*; operating a
+    Collective is what it has done, and this section asks the second.
+    """
+
+    def _world(self, db, make_user, make_space):
+        founder = make_user(role="admin", name="Lindsey",
+                            reporting_class=PRODUCTION)
+        make_space(creator=founder, name="EMBODY", reporting_class=PRODUCTION)
+        make_space(creator=founder, name="Life in Full Colour",
+                   reporting_class=PRODUCTION)
+        kelly = make_user(role="creator", name="Kelly Hamilton",
+                          reporting_class=PRODUCTION)
+        make_space(creator=kelly, name="Nourish Connect Thrive",
+                   reporting_class=PRODUCTION)
+        return founder, kelly
+
+    def test_an_administrator_who_operates_collectives_is_listed(
+        self, db, client, make_user, make_space,
+    ):
+        self._world(db, make_user, make_space)
+        rows = {r["name"]: r for r in client.get(
+            CREATORS, params={"population": "production"}).json()}
+        assert "Lindsey" in rows, "the founder operates two Collectives"
+        assert rows["Lindsey"]["founder_operated"] is True
+        assert rows["Lindsey"]["collectives"] == [
+            "EMBODY", "Life in Full Colour",
+        ]
+
+    def test_the_founder_operated_group_is_not_empty(
+        self, db, client, make_user, make_space,
+    ):
+        self._world(db, make_user, make_space)
+        rows = client.get(CREATORS, params={"population": "production"}).json()
+        founders = [r for r in rows if r["founder_operated"]]
+        assert len(founders) == 1
+        assert founders[0]["name"] == "Lindsey"
+
+    def test_independent_creators_are_still_independent(
+        self, db, client, make_user, make_space,
+    ):
+        self._world(db, make_user, make_space)
+        rows = {r["name"]: r for r in client.get(
+            CREATORS, params={"population": "production"}).json()}
+        assert rows["Kelly Hamilton"]["founder_operated"] is False
+
+    def test_the_journey_counts_the_founders_collectives(
+        self, db, make_user, make_space,
+    ):
+        self._world(db, make_user, make_space)
+        production = Population(PopulationView.production)
+        assert val(db, "creators_with_a_collective", None, production) == 2, (
+            "two operators have built Collectives, not one"
+        )
+
+    def test_the_funnel_still_narrows(self, db, make_user, make_space):
+        """A base that excluded the founder let it widen instead."""
+        self._world(db, make_user, make_space)
+        production = Population(PopulationView.production)
+        order = [
+            "creator_accounts",
+            "creators_with_a_collective",
+            "creators_with_a_member",
+            "creators_earning",
+        ]
+        values = [val(db, k, None, production) for k in order]
+        for earlier, later in zip(values, values[1:]):
+            assert earlier >= later, f"funnel widened: {dict(zip(order, values))}"
+
+    def test_the_funnel_base_is_wider_than_the_creator_role_alone(
+        self, db, make_user, make_space,
+    ):
+        self._world(db, make_user, make_space)
+        production = Population(PopulationView.production)
+        assert val(db, "registered_creators", None, production) == 1
+        assert val(db, "creator_accounts", None, production) == 2, (
+            "the founder holds an admin role and still operates Collectives"
+        )
+
+    def test_a_creator_who_has_built_nothing_is_still_in_the_base(
+        self, db, make_user,
+    ):
+        make_user(role="creator", name="Signed up only")
+        assert val(db, "creator_accounts") == 1
+        assert val(db, "creators_with_a_collective") == 0
+
+    def test_a_test_classified_operator_is_still_excluded_from_production(
+        self, db, client, make_user, make_space,
+    ):
+        """Widening the population must not weaken the classification."""
+        fixture = make_user(role="admin", name="Fixture admin",
+                            reporting_class=TEST)
+        make_space(creator=fixture, name="Sandbox", reporting_class=PRODUCTION)
+        names = {r["name"] for r in client.get(
+            CREATORS, params={"population": "production"}).json()}
+        assert "Fixture admin" not in names
+
+
+class TestEarningsSayWhoseTheyAre:
+    def test_earnings_split_founder_operated_from_independent(
+        self, db, make_user, make_space,
+    ):
+        founder = make_user(role="admin")
+        founder_space = make_space(creator=founder, reporting_class=PRODUCTION)
+        kelly = make_user(role="creator")
+        kelly_space = make_space(creator=kelly, reporting_class=PRODUCTION)
+        _pay(db, founder_space, founder, make_user(),
+             when=datetime(2026, 10, 10), net=7000)
+        _pay(db, kelly_space, kelly, make_user(),
+             when=datetime(2026, 10, 10), net=3000)
+
+        window = Window(datetime(2026, 10, 1), datetime(2026, 11, 1), "oct")
+        v = REGISTRY.get("creator_earnings_cents").evaluate(
+            db, platform_scope(), window,
+        )
+        assert v.value == 10000, "the total is still what creators earned"
+        assert v.qualifiers["by_operator_cents"] == {
+            "founder_operated": 7000,
+            "independent": 3000,
+        }
+
+    def test_the_split_sums_to_the_total(self, db, make_user, make_space):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator, reporting_class=PRODUCTION)
+        _pay(db, space, creator, make_user(), when=datetime(2026, 10, 5), net=4200)
+        window = Window(datetime(2026, 10, 1), datetime(2026, 11, 1), "oct")
+        v = REGISTRY.get("creator_earnings_cents").evaluate(
+            db, platform_scope(), window,
+        )
+        split = v.qualifiers["by_operator_cents"]
+        assert split["founder_operated"] + split["independent"] == v.value
+
+    def test_only_earnings_carry_the_split(self, db):
+        """Gross sales and payouts are not creator-attributed figures."""
+        window = Window(datetime(2026, 10, 1), datetime(2026, 11, 1), "oct")
+        for key in ("gross_collective_sales_cents", "platform_fee_revenue_cents"):
+            v = REGISTRY.get(key).evaluate(db, platform_scope(), window)
+            assert "by_operator_cents" not in v.qualifiers, key
+
+
+class TestCardsRespectTheirStatedPopulation:
+    """A page headed "Production" showed production trends above
+    whole-platform figures, and nothing said which was which."""
+
+    def test_query_narrows_by_population(
+        self, db, client, make_user, make_space,
+    ):
+        prod = make_space(reporting_class=PRODUCTION)
+        demo = make_space(reporting_class=DEMONSTRATION)
+        creator = make_user(role="creator")
+        _pay(db, prod, creator, make_user(), when=datetime(2026, 10, 5), net=1000)
+        _pay(db, demo, creator, make_user(), when=datetime(2026, 10, 5), net=9000)
+
+        def earnings(population):
+            body = client.get("/api/admin/reporting/query", params={
+                "keys": "creator_earnings_cents",
+                "period": "all_time", "population": population,
+            }).json()
+            return body["metrics"][0]["value"], body["population"]["key"]
+
+        everything, pop_all = earnings("all")
+        production, pop_prod = earnings("production")
+        assert (pop_all, pop_prod) == ("all", "production")
+        assert everything == 10000
+        assert production == 1000
+
+    def test_the_default_is_the_complete_ledger(self, client):
+        body = client.get("/api/admin/reporting/query", params={
+            "keys": "creator_earnings_cents", "period": "all_time",
+        }).json()
+        assert body["population"]["key"] == "all"
+
+    def test_an_unknown_population_is_422(self, client):
+        assert client.get("/api/admin/reporting/query", params={
+            "keys": "unique_members", "population": "pretend",
+        }).status_code == 422
+
+    def test_the_result_says_which_population_it_describes(self, client):
+        body = client.get("/api/admin/reporting/query", params={
+            "keys": "unique_members", "population": "production",
+        }).json()
+        assert body["population"]["label"] == "Production"
+        assert "subset of the ledger" in body["population"]["note"]

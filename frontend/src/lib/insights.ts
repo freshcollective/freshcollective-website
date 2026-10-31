@@ -97,6 +97,16 @@ export interface MetricResult {
   period: PeriodBounds
   /** Absent for all-time, where there is nothing to compare against. */
   comparison: PeriodBounds | null
+  /**
+   * Which population these figures describe.
+   *
+   * Carried so a card can say so. Without it the cards beneath a chart
+   * were computed over every Collective and account while the chart
+   * above them honoured the filter — a page headed "Production"
+   * showing production trends and whole-platform figures, with nothing
+   * marking the difference.
+   */
+  population: { key: string; label: string; note: string } | null
   metrics: MetricValue[]
   comparison_metrics: MetricValue[] | null
 }
@@ -170,8 +180,13 @@ export async function fetchMetrics(
   keys: string[],
   period: PeriodKey,
   signal?: AbortSignal,
+  population = 'all',
 ): Promise<MetricResult> {
-  const query = new URLSearchParams({ keys: keys.join(','), period })
+  const query = new URLSearchParams({
+    keys: keys.join(','),
+    period,
+    population,
+  })
   const res = await fetch(`/api/admin/reporting/query?${query}`, {
     credentials: 'include',
     signal,

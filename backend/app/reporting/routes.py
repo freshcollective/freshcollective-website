@@ -114,9 +114,19 @@ class PeriodOut(BaseModel):
     ends_at: str | None = None
 
 
+class PopulationOut(BaseModel):
+    key: str
+    label: str
+    note: str
+
+
 class MetricResultOut(BaseModel):
     period: PeriodOut
     comparison: PeriodOut | None = None
+    #: Which population these figures describe, so a card can say so
+    #: rather than leaving the reader to assume it matches the chart
+    #: above it.
+    population: PopulationOut | None = None
     metrics: list[MetricValueOut]
     #: Same metrics over the previous comparable window. Absent for
     #: all-time, where there is nothing to compare against — never a
@@ -214,12 +224,6 @@ class HistoryRangeOut(BaseModel):
     starts_on: str
     ends_on: str
     days: int
-
-
-class PopulationOut(BaseModel):
-    key: str
-    label: str
-    note: str
 
 
 class ControlOptionsOut(BaseModel):
@@ -321,6 +325,13 @@ def query_metrics(
     compare: bool = Query(
         True, description="Also compute the previous comparable period.",
     ),
+    population: str = Query(
+        "all",
+        description=(
+            "Reporting-class population, matching /history. Defaults to "
+            "the complete ledger."
+        ),
+    ),
     db: Session = Depends(get_db),
     scope: ReportScope = Depends(admin_scope),
 ):
@@ -329,12 +340,24 @@ def query_metrics(
     Batched because a dashboard panel wants eight figures for the same
     window, and eight round trips would each resolve the period
     separately — which is how two surfaces start disagreeing.
+
+    Takes the same ``population`` as ``/history`` for the same reason.
+    Without it the cards beneath a chart were computed over every
+    Collective and account while the chart above them honoured the
+    filter, so a page headed "Production" showed production trends and
+    whole-platform figures and nothing said which was which.
     """
     if period not in VALID_PERIODS:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid period {period!r}. Valid: {list(VALID_PERIODS)}.",
         )
+    try:
+        pop = Population.parse(population)
+    except UnknownPopulation:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown population {population!r}.",
+        ) from None
 
     requested = [k.strip() for k in keys.split(",") if k.strip()]
     if not requested:
@@ -356,7 +379,7 @@ def query_metrics(
         out: list[MetricValueOut] = []
         for m in selected:
             try:
-                out.append(_value_out(m, m.evaluate(db, scope, window)))
+                out.append(_value_out(m, m.evaluate(db, scope, window, pop)))
             except ScopeDenied as exc:
                 # 403 rather than a quiet omission: a caller asking for
                 # something it may not see should be told, not handed a
@@ -368,6 +391,9 @@ def query_metrics(
     return MetricResultOut(
         period=_period_out(current),
         comparison=_period_out(comparison) if comparison else None,
+        population=PopulationOut(
+            key=pop.view.value, label=pop.label, note=pop.note,
+        ),
         metrics=evaluate(current),
         comparison_metrics=(
             evaluate(comparison) if (comparison and compare) else None
@@ -532,17 +558,29 @@ def list_creators(
             status_code=422, detail=f"Unknown population {population!r}.",
         ) from None
 
-    creators = db.query(_User).filter(_User.role == _UserRole.creator.value)
-    excluded = pop.excluded_account_select()
-    if excluded is not None:
-        creators = creators.filter(_User.id.notin_(excluded))
-    creators = creators.order_by(_User.created_at).all()
-
     space_q = db.query(Space)
     space_ids = pop.space_id_select()
     if space_ids is not None:
         space_q = space_q.filter(Space.id.in_(space_ids))
     spaces = space_q.order_by(Space.created_at).all()
+
+    # Anyone who operates a Collective, whatever their role — not
+    # ``role == 'creator'`` alone. The founder's account is an
+    # administrator and operates two production Collectives, so a role
+    # test dropped them from this list entirely and the founder-operated
+    # table read "none in this classification" while two sat in front of
+    # the reader. Role is what an account may do; operating a Collective
+    # is what it has done, and this list is about the second.
+    operator_ids = {sp.creator_id for sp in spaces if sp.creator_id}
+    creators = db.query(_User).filter(
+        (_User.role == _UserRole.creator.value) | (_User.id.in_(operator_ids))
+        if operator_ids
+        else (_User.role == _UserRole.creator.value)
+    )
+    excluded = pop.excluded_account_select()
+    if excluded is not None:
+        creators = creators.filter(_User.id.notin_(excluded))
+    creators = creators.order_by(_User.created_at).all()
 
     founders = {
         r[0] for r in db.execute(founder_operated_space_ids())
