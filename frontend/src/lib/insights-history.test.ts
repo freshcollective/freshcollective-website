@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { STATUS } from './insights-palette.ts'
+import { HUE_MARK, HUE_UI, INK, STATUS } from './insights-palette.ts'
 
 import {
   QUALITY_LABEL,
@@ -2050,5 +2050,93 @@ describe('World Insights heading ladder', () => {
       [15.5],
       `panel headings should all be 15.5px, found ${[...found].join(', ')}`,
     )
+  })
+})
+
+/**
+ * Contrast, computed rather than judged.
+ *
+ * Two supporting ink steps shipped below AA because they were chosen
+ * by eye — 4.4:1 and 3.3:1, the lighter one colouring an interactive
+ * disclosure button. Both looked fine. Contrast is arithmetic, so it
+ * is checked as arithmetic.
+ *
+ * Data marks are exempt from the text thresholds: a 2px line is not
+ * text, every chart carries a legend and direct labels, and the
+ * registry's table view restates each series. Gold sits at 2.08:1
+ * against white and is legitimate for that reason — but only for
+ * that reason, so it is pinned here as a mark and never used as ink.
+ */
+describe('World Insights contrast', () => {
+  const WHITE = '#FFFFFF'
+
+  const channel = (v: number) =>
+    v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+
+  /** Flatten an rgba() over white; pass a hex through unchanged. */
+  const solid = (c: string) => {
+    const m = /rgba?\((\d+), *(\d+), *(\d+)(?:, *([\d.]+))?\)/.exec(c)
+    if (!m) return c
+    const a = m[4] === undefined ? 1 : Number(m[4])
+    return `#${[1, 2, 3]
+      .map((i) =>
+        Math.round(Number(m[i]) * a + 255 * (1 - a))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')}`
+  }
+
+  const luminance = (hex: string) => {
+    const h = solid(hex)
+    const [r, g, b] = [1, 3, 5].map((i) =>
+      channel(parseInt(h.slice(i, i + 2), 16) / 255),
+    )
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  const ratio = (fg: string, bg: string) => {
+    const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  test('every ink step clears AA for normal text on white', () => {
+    for (const [name, colour] of Object.entries(INK)) {
+      const r = ratio(colour, WHITE)
+      assert.ok(
+        r >= 4.5,
+        `INK.${name} (${colour} → ${solid(colour)}) is ${r.toFixed(2)}:1 ` +
+          `on white, below AA 4.5:1`,
+      )
+    }
+  })
+
+  test('every status colour is readable as text', () => {
+    for (const [name, step] of Object.entries(STATUS)) {
+      const r = ratio(step.fg, WHITE)
+      assert.ok(r >= 4.5, `STATUS.${name}.fg is ${r.toFixed(2)}:1, below 4.5:1`)
+    }
+  })
+
+  test('the readable form of each hue is readable', () => {
+    for (const [name, step] of Object.entries(HUE_UI)) {
+      const r = ratio(step.text, WHITE)
+      assert.ok(r >= 4.5, `HUE_UI.${name}.text is ${r.toFixed(2)}:1`)
+    }
+  })
+
+  test('status never collides with an identity hue', () => {
+    // Watermelon is an ordinary series colour and the error red is an
+    // obligation. If they converge, one of the two stops meaning what
+    // it says.
+    for (const [sName, step] of Object.entries(STATUS)) {
+      for (const [hName, hue] of Object.entries(HUE_MARK)) {
+        assert.notEqual(
+          step.fg.toLowerCase(),
+          hue.toLowerCase(),
+          `STATUS.${sName} and the ${hName} series are the same colour`,
+        )
+      }
+    }
   })
 })
