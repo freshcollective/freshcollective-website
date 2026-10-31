@@ -22,6 +22,10 @@ import {
   seriesKey,
   tooltipLeft,
   xLabelCapacity,
+  type Creator,
+  CREATOR_STAGES,
+  byOperator,
+  stageCounts,
   type HistoryPoint,
   type HistorySeries,
   CHART_HUES,
@@ -512,7 +516,7 @@ describe('the chart stays inside its card at any width', () => {
         const stride = Math.ceil(count / maxLabels)
         for (let i = 1; i < ticks.length; i += 1) {
           assert.ok(
-            ticks[i] - ticks[i - 1] >= stride / 2,
+            ticks[i] - ticks[i - 1] >= stride,
             `count=${count} max=${maxLabels} ticks=${ticks} collide at ${i}`,
           )
         }
@@ -1311,5 +1315,246 @@ describe('comparing series that begin at different times', () => {
     const a = series({ collective_id: 'c1', points: pts([1, 2, 3]) })
     const b = series({ key: 'unique_members', collective_id: 'c2', points: pts([4, 5, 6]) })
     assert.deepEqual(historyQuality([a, b]), [])
+  })
+})
+
+describe('the Collectives page says what it is measuring', () => {
+  const PAGE = 'src/app/admin/insights/collectives/page.tsx'
+  const TABLE = 'src/components/admin/insights/StandingsTable.tsx'
+
+  test('the growth ranking states that it is absolute, not a percentage', () => {
+    // "Growing fastest" reads as a rate; the ranking is absolute. The
+    // difference changes the order, so it has to be on the card.
+    const src = read(TABLE)
+    assert.match(src, /absolute number, not a percentage/)
+    assert.match(src, /added 40 members ranks above one that doubled/)
+  })
+
+  test('the percentage is shown beside the absolute figure', () => {
+    const src = read(TABLE)
+    assert.match(src, /function percent/)
+    assert.match(src, /s\.changePct !== null/)
+  })
+
+  test('the ranking titles do not imply a rate', () => {
+    // Checked against the TITLES map rather than the whole file: the
+    // doc comment beside it explains why "growing fastest" was wrong,
+    // and a blunt scan reads the explanation as the offence.
+    const src = read(TABLE)
+    const titles = /const TITLES[\s\S]*?\n\}/.exec(src)?.[0] ?? ''
+    assert.ok(titles, 'could not find the titles')
+    assert.ok(!/fastest/i.test(titles), '"fastest" implies a rate')
+    assert.match(titles, /Biggest increase/)
+  })
+
+  test('the theme counts say they are people, not memberships', () => {
+    const src = read(PAGE)
+    assert.match(src, /Distinct people/)
+    assert.match(src, /not\s*\n?\s*memberships/)
+    assert.match(src, /counted once for it/)
+    assert.match(src, /not meant to be summed/)
+  })
+
+  test('the status cards ask a live question, not a historical one', () => {
+    // Status is one column with no history, so a closed period has no
+    // honest answer — asking for one put "Not yet" on a card whose
+    // heading says "right now".
+    const src = read(PAGE)
+    assert.match(src, /useMetrics\(STATUS_KEYS, 'all_time'\)/)
+    assert.match(src, /Collectives right now/)
+    for (const key of [
+      'total_collectives', 'active_collectives',
+      'draft_collectives', 'archived_collectives',
+    ]) {
+      assert.ok(
+        new RegExp(`pick\\(status, '${key}'\\)`).test(src),
+        `${key} should read from the live fetch`,
+      )
+    }
+  })
+
+  test('the period selector still governs what genuinely varies by period', () => {
+    const src = read(PAGE)
+    assert.match(src, /useMetrics\(CARD_KEYS, period\)/)
+    const cardKeys = /const CARD_KEYS = \[([\s\S]*?)\]/.exec(src)?.[1] ?? ''
+    assert.ok(!cardKeys.includes('collectives'), 'status must not be period-bound')
+    assert.ok(cardKeys.includes('engagement_by_theme'))
+  })
+})
+
+describe('the creator journey is a position, not a score', () => {
+  const creator = (over: Partial<Creator> = {}): Creator => ({
+    id: 'u1', name: 'Someone', founder_operated: false,
+    reporting_class: null, created_at: '2026-01-01', collectives: [],
+    first_collective_at: null, stage: 'registered', members: 0,
+    earned_cents: 0, ...over,
+  })
+
+  test('the stages are declared in one place, in order', () => {
+    assert.deepEqual(
+      CREATOR_STAGES.map((s) => s.key),
+      ['registered', 'building', 'attracting', 'earning'],
+    )
+  })
+
+  test('reached only ever narrows', () => {
+    const counts = stageCounts([
+      creator({ id: 'a', stage: 'registered' }),
+      creator({ id: 'b', stage: 'building' }),
+      creator({ id: 'c', stage: 'attracting' }),
+      creator({ id: 'd', stage: 'earning' }),
+    ])
+    assert.deepEqual(counts.map((c) => c.reached), [4, 3, 2, 1])
+  })
+
+  test('at shows where people stopped, and does not narrow', () => {
+    const counts = stageCounts([
+      creator({ id: 'a', stage: 'building' }),
+      creator({ id: 'b', stage: 'building' }),
+      creator({ id: 'c', stage: 'earning' }),
+    ])
+    const at = Object.fromEntries(counts.map((c) => [c.key, c.at]))
+    assert.equal(at.registered, 0)
+    assert.equal(at.building, 2, 'two creators have stopped at building')
+    assert.equal(at.earning, 1)
+  })
+
+  test('every creator is counted exactly once across the at counts', () => {
+    const people = [
+      creator({ id: 'a', stage: 'registered' }),
+      creator({ id: 'b', stage: 'building' }),
+      creator({ id: 'c', stage: 'building' }),
+      creator({ id: 'd', stage: 'earning' }),
+    ]
+    const total = stageCounts(people).reduce((n, c) => n + c.at, 0)
+    assert.equal(total, people.length)
+  })
+
+  test('an empty platform produces zeroes rather than nothing', () => {
+    const counts = stageCounts([])
+    assert.equal(counts.length, CREATOR_STAGES.length)
+    assert.ok(counts.every((c) => c.at === 0 && c.reached === 0))
+  })
+
+  test('founder-operated is kept apart from independent', () => {
+    const { founder, independent } = byOperator([
+      creator({ id: 'a', founder_operated: true }),
+      creator({ id: 'b', founder_operated: false }),
+    ])
+    assert.deepEqual(founder.map((c) => c.id), ['a'])
+    assert.deepEqual(independent.map((c) => c.id), ['b'])
+  })
+
+  test('nobody is dropped by the split', () => {
+    const people = [
+      creator({ id: 'a', founder_operated: true }),
+      creator({ id: 'b' }),
+      creator({ id: 'c' }),
+    ]
+    const { founder, independent } = byOperator(people)
+    assert.equal(founder.length + independent.length, people.length)
+  })
+})
+
+describe('the Creators page', () => {
+  const PAGE = 'src/app/admin/insights/creators/page.tsx'
+  const JOURNEY = 'src/components/admin/insights/CreatorJourney.tsx'
+
+  test('leads with the journey and puts the cards underneath', () => {
+    const src = read(PAGE)
+    assert.ok(src.indexOf('<HistoryControls') < src.indexOf('<CreatorJourney'))
+    assert.ok(src.indexOf('<CreatorJourney') < src.indexOf('<InsightCard'))
+  })
+
+  test('it produces no score and no creator ranking', () => {
+    // Checked as code rather than as prose. Both files *say* the words
+    // — explaining why there is no ranking is the point — so a scan
+    // for them bans the explanation rather than the thing. What must
+    // not exist is an identifier holding a computed score, or a sort
+    // that orders creators by one.
+    const src = read(PAGE) + read(JOURNEY)
+    assert.ok(
+      !/\b\w*[Ss]core\b\s*[=:]/.test(src),
+      'no identifier may hold a creator score',
+    )
+    assert.ok(
+      !/creators[\s\S]{0,40}\.sort\(/.test(src),
+      'creators must not be ordered by a computed value',
+    )
+    // The stage is read straight from the backend and only counted
+    // here — the component renders `c.stage`, it does not decide it.
+    assert.match(read('src/lib/insights-history.ts'), /c\.stage === stage\.key/)
+    assert.match(read(JOURNEY), /\{c\.stage\}/)
+  })
+
+  test('independent and founder-operated are separate tables', () => {
+    const src = read(JOURNEY)
+    assert.match(src, /Independent creators/)
+    assert.match(src, /Founder-operated/)
+    assert.match(src, /byOperator/)
+  })
+
+  test('publishing is explicitly not a funnel stage', () => {
+    // spaces.status has no history, so it would be the one step of
+    // the funnel nobody could trust.
+    assert.ok(
+      !CREATOR_STAGES.some((s) => /publish/i.test(s.key + s.label)),
+      'publishing cannot be reconstructed and must not be a stage',
+    )
+    assert.match(read(PAGE), /Publishing is not a stage here/)
+  })
+
+  test('status cards ask the live question', () => {
+    assert.match(read(PAGE), /useMetrics\(STATUS_KEYS, 'all_time'\)/)
+  })
+
+  test('it reuses the shared charts and controls', () => {
+    const src = read(PAGE)
+    for (const c of [
+      '<HistoryPanel', '<HistoryControls', '<PeriodSelect', '<InsightCard',
+    ]) {
+      assert.ok(src.includes(c), `${c} should be reused`)
+    }
+    assert.ok(!/<svg/.test(withoutDocComments(src)), 'no hand-rolled chart')
+  })
+
+  test('defaults to Production, like Growth and Collectives', () => {
+    assert.match(read(PAGE), /useState<PopulationKey>\('production'\)/)
+  })
+})
+
+describe('a count axis steps in whole things', () => {
+  test('a small count range does not produce half-unit ticks', () => {
+    // "0 / 0.5 / 1" on a chart of creators registered reads as half a
+    // creator, which is a precision the data does not have.
+    const d = niceDomain([0, 1, 1, 0], 4, { integer: true })
+    for (const t of d.ticks) {
+      assert.equal(t, Math.round(t), `tick ${t} is not a whole number`)
+    }
+  })
+
+  test('the integer constraint never collapses the axis', () => {
+    for (const values of [[0, 1], [1], [0, 2], [3, 7], [0, 0, 1]]) {
+      const d = niceDomain(values, 4, { integer: true })
+      assert.ok(d.max > d.min, `${values} collapsed`)
+      assert.ok(d.ticks.length >= 2)
+    }
+  })
+
+  test('money keeps its fine steps, because cents are already whole', () => {
+    const d = niceDomain([0, 250, 500], 4)
+    assert.ok(d.ticks.length >= 2)
+    assert.ok(d.max >= 500)
+  })
+
+  test('a large count range is unaffected by the constraint', () => {
+    const plain = niceDomain([0, 1200], 4)
+    const integral = niceDomain([0, 1200], 4, { integer: true })
+    assert.deepEqual(plain.ticks, integral.ticks)
+  })
+
+  test('the chart asks for integer steps only for counts', () => {
+    const src = read('src/components/admin/insights/charts/TimeSeriesChart.tsx')
+    assert.match(src, /integer: unit === 'count'/)
   })
 })

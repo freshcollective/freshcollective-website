@@ -555,6 +555,15 @@ class TestScopeEnforcement:
             "overlap_vs_engagement",
             "engagement_by_theme",
             "retention_cohorts",
+            # The creator journey. Platform-only for both reasons at
+            # once: each stage is a count across every creator, and
+            # telling one creator how many others reached the stage
+            # they are stuck at is exactly the cross-creator comparison
+            # this access level exists to prevent.
+            "creators_registered",
+            "creators_with_a_collective",
+            "creators_with_a_member",
+            "creators_earning",
         }
 
     def test_no_metric_reads_a_member_authored_column(self):

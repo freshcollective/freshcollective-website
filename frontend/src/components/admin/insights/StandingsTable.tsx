@@ -18,8 +18,28 @@ export type StandingsMode = 'size' | 'growing' | 'quietening'
 
 const TITLES: Record<StandingsMode, string> = {
   size: 'Largest by membership',
-  growing: 'Growing fastest',
-  quietening: 'Getting quieter',
+  growing: 'Biggest increase',
+  quietening: 'Biggest decrease',
+}
+
+/**
+ * What each ranking is actually ordered by, said on the card.
+ *
+ * "Growing fastest" reads as a rate and the ranking is absolute, which
+ * is a difference worth stating rather than leaving to be inferred: a
+ * Collective that added forty members ranks above one that doubled
+ * from two to four, and the opposite order would be equally defensible
+ * for a different question. Absolute is the right default here because
+ * the page is about where the platform's members are — but only if it
+ * says so. The percentage is shown beside each figure where there is a
+ * base to compute one from.
+ */
+const BASIS: Record<StandingsMode, string> = {
+  size: 'By members at the end of the range.',
+  growing:
+    'By the change in members between the first and last complete period — the absolute number, not a percentage. A Collective that added 40 members ranks above one that doubled from 2 to 4.',
+  quietening:
+    'By the same absolute change, smallest first. Only Collectives that actually went backwards are listed.',
 }
 
 /**
@@ -42,12 +62,10 @@ export function StandingsTable({
   series,
   mode,
   unit,
-  metricName,
 }: {
   series: HistorySeries[]
   mode: StandingsMode
   unit: HistorySeries['unit']
-  metricName: string
 }) {
   const standings = collectiveStandings(series)
   if (standings.length === 0) return null
@@ -69,9 +87,7 @@ export function StandingsTable({
         {TITLES[mode]}
       </h3>
       <p className="mb-3 mt-1 text-[12.5px]" style={{ color: INK_MUTED }}>
-        {mode === 'size'
-          ? `By ${metricName.toLowerCase()} at the end of the range.`
-          : `Change in ${metricName.toLowerCase()} across the range.`}
+        {BASIS[mode]}
       </p>
 
       {shown.length === 0 ? (
@@ -96,6 +112,15 @@ export function StandingsTable({
                   ? formatExactValue(unit, s.latest as number)
                   : signed(unit, s.change as number)}
               </span>
+              {mode !== 'size' && s.changePct !== null && (
+                <span
+                  className="w-16 shrink-0 text-right tabular-nums"
+                  style={{ color: INK_MUTED }}
+                  title="Change as a proportion of the figure at the start of the range"
+                >
+                  {percent(s.changePct)}
+                </span>
+              )}
             </li>
           ))}
         </ol>
@@ -125,6 +150,11 @@ export function StandingsTable({
       )}
     </div>
   )
+}
+
+function percent(fraction: number): string {
+  const pct = Math.round(fraction * 100)
+  return `${pct > 0 ? '+' : pct < 0 ? '−' : ''}${Math.abs(pct)}%`
 }
 
 function signed(unit: HistorySeries['unit'], value: number): string {

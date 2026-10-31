@@ -368,3 +368,73 @@ class TestTheTestClassification:
         owed = val(db, "outstanding_payouts_cents")
         assert owed.value == 9000
         assert owed.qualifiers["by_reporting_class_cents"][TEST] == 9000
+
+
+class TestALiveWindowIsAnswerable:
+    """"This month" ends now, and "how many right now" has an answer.
+
+    The defect: ``_observation_quality`` compared the window's closing
+    instant against the last *completed* reporting day, so a window
+    ending at this moment looked like a day that had not finished and
+    was refused. Every Collective-status card therefore read "Not yet"
+    under ``this_month`` and ``this_fy`` — the two periods a reader
+    actually looks at — while the figure was sitting there to be
+    counted.
+
+    The guard it must not break is the one next door: a *past* day's
+    Collective status still cannot be reconstructed, and the nightly
+    job asking for today must still decline.
+    """
+
+    STATUS_KEYS = (
+        "total_collectives", "active_collectives",
+        "draft_collectives", "archived_collectives",
+    )
+
+    def _window(self, period):
+        from app.core.periods import resolve_period
+        current, _ = resolve_period(period)
+        return Window(current.starts_at, current.ends_at, current.label)
+
+    @pytest.mark.parametrize("period", ["this_month", "this_fy", "all_time"])
+    def test_a_period_ending_now_gets_the_live_count(
+        self, db, make_space, period,
+    ):
+        make_space(status="active")
+        for key in self.STATUS_KEYS:
+            v = REGISTRY.get(key).evaluate(db, platform_scope(), self._window(period))
+            assert v.available, f"{key} under {period}: {v.unavailable_reason}"
+            assert v.qualifiers["provenance"] == "observed"
+
+    def test_a_closed_past_period_is_still_unavailable(self, db, make_space):
+        """Not a regression — the honest answer. Collective status is
+        one column with no history, so the end of last month cannot be
+        reconstructed and must not be answered with today's count."""
+        make_space(status="active")
+        v = REGISTRY.get("active_collectives").evaluate(
+            db, platform_scope(), self._window("last_month"),
+        )
+        assert not v.available
+        assert "not kept as history" in v.unavailable_reason
+
+    def test_the_nightly_still_declines_a_day_that_has_not_finished(self, db):
+        """Its window closes at tomorrow's local midnight, which is in
+        the future, so there is nothing to observe yet."""
+        from app.core.periods import completed_reporting_date, reporting_date_bounds
+
+        today = completed_reporting_date(datetime.utcnow()) + timedelta(days=1)
+        starts_at, ends_at = reporting_date_bounds(today)
+        v = REGISTRY.get("active_collectives").evaluate(
+            db, platform_scope(), Window(starts_at, ends_at, "today"),
+        )
+        assert not v.available
+        assert "has not finished yet" in v.unavailable_reason
+
+    def test_a_past_day_is_still_refused_so_no_observation_is_invented(self, db):
+        from app.core.periods import reporting_date_bounds
+
+        starts_at, ends_at = reporting_date_bounds(date(2026, 3, 2))
+        v = REGISTRY.get("active_collectives").evaluate(
+            db, platform_scope(), Window(starts_at, ends_at, "march"),
+        )
+        assert not v.available

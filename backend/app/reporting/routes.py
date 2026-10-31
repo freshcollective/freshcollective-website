@@ -40,6 +40,7 @@ from app.core.periods import (
 )
 from app.models.user import User
 from app.reporting import engagement as _engagement  # noqa: F401 — populates REGISTRY
+from app.reporting import creators as _creators  # noqa: F401 — populates REGISTRY
 from app.reporting import metrics as _metrics  # noqa: F401 — populates REGISTRY
 from app.reporting.registry import (
     REGISTRY,
@@ -156,6 +157,23 @@ class CollectiveOut(BaseModel):
     #: ranked against one with two years, and a reader cannot tell the
     #: difference from a short line alone.
     history_begins: str | None = None
+
+
+class CreatorOut(BaseModel):
+    id: str
+    name: str
+    #: True when this creator holds the platform admin role, derived
+    #: from the data rather than from a list of names.
+    founder_operated: bool
+    reporting_class: str | None = None
+    created_at: str
+    collectives: list[str] = []
+    first_collective_at: str | None = None
+    #: How far along the journey: registered → building → attracting →
+    #: earning. The furthest stage reached, never a score.
+    stage: str
+    members: int = 0
+    earned_cents: int = 0
 
 
 class HistorySeriesOut(BaseModel):
@@ -468,6 +486,136 @@ def _collective_rows(db: Session, population: Population) -> list:
             reporting_class=sp.reporting_class,
             created_at=sp.created_at.isoformat() if sp.created_at else "",
             history_begins=floor.isoformat() if floor else None,
+        ))
+    return out
+
+
+@router.get("/creators", response_model=list[CreatorOut])
+def list_creators(
+    population: str = Query(
+        "all", description="Reporting-class population to list within.",
+    ),
+    db: Session = Depends(get_db),
+    scope: ReportScope = Depends(admin_scope),
+):
+    """Every creator, with how far along the journey they are.
+
+    The detail beneath the funnel charts: the charts say how many
+    creators have reached each stage, and this says which. Stages are
+    the furthest point reached, never a score — "earning" implies
+    "attracting" implies "building", so a creator appears at one stage
+    rather than being rated across several.
+
+    Founder-operated is kept distinct from independent throughout, and
+    the classification filter keeps test identities out of the
+    production view without hiding them from their own.
+    """
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
+    from app.core.config import settings as _settings
+    from app.models.payment import PaymentTransaction
+    from app.models.platform import (
+        Space,
+        SpaceMembership,
+        SpaceMembershipStatus,
+    )
+    from app.models.user import User as _User
+    from app.models.user import UserRole as _UserRole
+    from app.reporting.creators import founder_operated_space_ids
+    from app.reporting.eligibility import member_purchase_filters
+
+    try:
+        pop = Population.parse(population)
+    except UnknownPopulation:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown population {population!r}.",
+        ) from None
+
+    creators = db.query(_User).filter(_User.role == _UserRole.creator.value)
+    excluded = pop.excluded_account_select()
+    if excluded is not None:
+        creators = creators.filter(_User.id.notin_(excluded))
+    creators = creators.order_by(_User.created_at).all()
+
+    space_q = db.query(Space)
+    space_ids = pop.space_id_select()
+    if space_ids is not None:
+        space_q = space_q.filter(Space.id.in_(space_ids))
+    spaces = space_q.order_by(Space.created_at).all()
+
+    founders = {
+        r[0] for r in db.execute(founder_operated_space_ids())
+    }
+
+    # Batched, so the page does not cost one query per creator.
+    member_counts = dict(
+        db.execute(
+            _select(
+                SpaceMembership.space_id, _func.count(_func.distinct(SpaceMembership.user_id))
+            )
+            .where(SpaceMembership.status == SpaceMembershipStatus.active)
+            .group_by(SpaceMembership.space_id)
+        ).all()
+    )
+    if excluded is not None:
+        member_counts = dict(
+            db.execute(
+                _select(
+                    SpaceMembership.space_id,
+                    _func.count(_func.distinct(SpaceMembership.user_id)),
+                )
+                .where(
+                    SpaceMembership.status == SpaceMembershipStatus.active,
+                    SpaceMembership.user_id.notin_(excluded),
+                )
+                .group_by(SpaceMembership.space_id)
+            ).all()
+        )
+    earned = dict(
+        db.execute(
+            _select(
+                PaymentTransaction.space_id,
+                _func.coalesce(
+                    _func.sum(PaymentTransaction.net_creator_amount_cents), 0
+                ),
+            )
+            .where(*member_purchase_filters(_settings.stripe_mode))
+            .group_by(PaymentTransaction.space_id)
+        ).all()
+    )
+
+    by_creator: dict[str, list] = {}
+    for sp in spaces:
+        by_creator.setdefault(sp.creator_id, []).append(sp)
+
+    out: list[CreatorOut] = []
+    for c in creators:
+        owned = by_creator.get(c.id, [])
+        members = sum(member_counts.get(sp.id, 0) for sp in owned)
+        money = sum(int(earned.get(sp.id, 0)) for sp in owned)
+        if money > 0:
+            stage = "earning"
+        elif members > 0:
+            stage = "attracting"
+        elif owned:
+            stage = "building"
+        else:
+            stage = "registered"
+        out.append(CreatorOut(
+            id=c.id,
+            name=c.name or "(unnamed)",
+            founder_operated=any(sp.id in founders for sp in owned),
+            reporting_class=c.reporting_class,
+            created_at=c.created_at.isoformat() if c.created_at else "",
+            collectives=[sp.name for sp in owned],
+            first_collective_at=(
+                owned[0].created_at.isoformat()
+                if owned and owned[0].created_at else None
+            ),
+            stage=stage,
+            members=members,
+            earned_cents=money,
         ))
     return out
 

@@ -59,12 +59,26 @@ const COMPARISON_KEYS = [
   'gross_collective_sales_cents',
 ]
 
-/** Platform-level figures, which no Collective comparison can answer. */
-const CARD_KEYS = [
+/**
+ * Collective status, asked as a live question.
+ *
+ * These four describe what exists **now**, and status is one column
+ * with no history behind it — so a period that closed in the past has
+ * no honest answer and the cards correctly refused one. Rather than
+ * show "Not yet" on a card whose heading says "right now", they are
+ * fetched over all time, which the registry treats as the live
+ * question it is. The period selector below governs the figures that
+ * genuinely vary by period.
+ */
+const STATUS_KEYS = [
   'total_collectives',
   'active_collectives',
   'draft_collectives',
   'archived_collectives',
+]
+
+/** Platform-level figures, which no Collective comparison can answer. */
+const CARD_KEYS = [
   'multi_collective_members',
   'memberships_per_member',
   'engagement_by_theme',
@@ -84,6 +98,7 @@ export default function CollectivesPage() {
 
   const [period, setPeriod] = useState<PeriodKey>('this_month')
   const { data: cards, error: cardError, loading } = useMetrics(CARD_KEYS, period)
+  const { data: status } = useMetrics(STATUS_KEYS, 'all_time')
 
   // The selector follows the classification filter, so it can never
   // offer a Collective the charts would then exclude. Changing the
@@ -192,9 +207,11 @@ export default function CollectivesPage() {
               className="mb-4 mt-1 max-w-[72ch] text-[12.5px]"
               style={{ color: INK_MUTED }}
             >
-              Over the range selected above. Size and change are kept apart on
-              purpose: a Collective can be the largest and the quietest at
-              once, and one number covering both would say neither.
+              Over the range selected above. Size and change are kept apart
+              on purpose: a Collective can be the largest and the quietest
+              at once, and one number covering both would say neither.
+              Change is ranked by the <strong>absolute</strong> number of
+              members gained or lost, with the percentage beside it.
             </p>
             <div className="grid gap-4 lg:grid-cols-3">
               {(['size', 'growing', 'quietening'] as const).map((mode) => (
@@ -203,7 +220,6 @@ export default function CollectivesPage() {
                   series={seriesFor('unique_members')}
                   mode={mode}
                   unit="count"
-                  metricName="Members"
                 />
               ))}
             </div>
@@ -305,34 +321,36 @@ export default function CollectivesPage() {
         {cardError && <Problem message={cardError} />}
         {loading && !cards && <Waiting />}
 
+        {status && (
+          <Band
+            title="Collectives right now"
+            note="A count at this moment, whichever period is selected above. Status is stored as one value with no history behind it, so this is observed rather than reconstructed — and a past date genuinely has no answer, which is why these do not follow the period."
+          >
+            <InsightCard
+              metric={pick(status, 'total_collectives')}
+              hue="navy"
+              caption="all Collectives, at any stage"
+            />
+            <InsightCard
+              metric={pick(status, 'active_collectives')}
+              hue="teal"
+              caption="published and open"
+            />
+            <InsightCard
+              metric={pick(status, 'draft_collectives')}
+              hue="navy"
+              caption="still being built"
+            />
+            <InsightCard
+              metric={pick(status, 'archived_collectives')}
+              hue="navy"
+              caption="closed, and kept"
+            />
+          </Band>
+        )}
+
         {cards && (
           <>
-            <Band
-              title="Collectives in existence"
-              note="Observed on the day, never reconstructed — a Collective's status is stored as one value with no history behind it."
-            >
-              <InsightCard
-                metric={pick(cards, 'total_collectives')}
-                hue="navy"
-                caption="all Collectives, at any stage"
-              />
-              <InsightCard
-                metric={pick(cards, 'active_collectives')}
-                hue="teal"
-                caption="published and open"
-              />
-              <InsightCard
-                metric={pick(cards, 'draft_collectives')}
-                hue="navy"
-                caption="still being built"
-              />
-              <InsightCard
-                metric={pick(cards, 'archived_collectives')}
-                hue="navy"
-                caption="closed, and kept"
-              />
-            </Band>
-
             <Band
               title="Members across Collectives"
               note="Whether people are finding more than one community here. A platform question by nature — no single Collective can answer it."
@@ -401,10 +419,18 @@ function ThemeBreakdown({ data }: { data: MetricResult }) {
       <h4 className="font-serif text-[16px]" style={{ color: INK }}>
         Themes finding people
       </h4>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        Active members in the Collectives carrying each theme. Themes are
-        multi-select, so a Collective counts under every theme it claims and
-        these add up to more than the platform total.
+      <p className="mb-3 mt-1 max-w-[78ch] text-[12.5px]" style={{ color: INK_MUTED }}>
+        <strong style={{ color: INK }}>Distinct people</strong> — not
+        memberships, and not acts of participation. Each figure is the
+        number of individuals who did something in a Collective carrying
+        that theme during the selected period. Somebody active in two
+        Collectives that share a theme is counted once for it.
+      </p>
+      <p className="mb-3 max-w-[78ch] text-[12.5px]" style={{ color: INK_MUTED }}>
+        Themes are multi-select, so one Collective counts under every theme
+        it claims and a person active there is counted under each of them —
+        which is why these add up to more than the number of active people
+        on the platform. They are not meant to be summed.
       </p>
       <ul className="m-0 list-none space-y-1.5 p-0">
         {rows.map(([theme, count]) => (

@@ -114,9 +114,15 @@ export function TimeSeriesChart({
   )
 
   const domain = useMemo(() => {
-    if (kind === 'stacked') return niceDomain(stackTotals(seriesValues))
-    return niceDomain(seriesValues.flat())
-  }, [kind, seriesValues])
+    // Counts are whole things, so the axis steps in whole things.
+    // Money is already an integer number of cents and its labels are
+    // formatted as dollars, so it needs no such constraint.
+    const opts = { integer: unit === 'count' }
+    if (kind === 'stacked') {
+      return niceDomain(stackTotals(seriesValues), 4, opts)
+    }
+    return niceDomain(seriesValues.flat(), 4, opts)
+  }, [kind, seriesValues, unit])
 
   // Both paddings are measured from the text that will actually go in
   // them rather than guessed. A fixed 52px left margin is too much for

@@ -13,4 +13,5 @@ that depends on them.
 
 from app.reporting import registry  # noqa: F401
 from app.reporting import metrics  # noqa: F401 — registers the core family
+from app.reporting import creators  # noqa: F401 — registers the creator journey
 from app.reporting import engagement  # noqa: F401 — registers participation

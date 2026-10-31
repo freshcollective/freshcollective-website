@@ -235,7 +235,11 @@ export interface Domain {
  * chart that floors it at zero would hide the only month worth looking
  * at.
  */
-export function niceDomain(values: (number | null)[], targetTicks = 4): Domain {
+export function niceDomain(
+  values: (number | null)[],
+  targetTicks = 4,
+  options: { integer?: boolean } = {},
+): Domain {
   const present = values.filter((v): v is number => v !== null && Number.isFinite(v))
   if (present.length === 0) return { min: 0, max: 1, ticks: [0, 1] }
 
@@ -243,7 +247,13 @@ export function niceDomain(values: (number | null)[], targetTicks = 4): Domain {
   const hi = Math.max(0, ...present)
   if (lo === 0 && hi === 0) return { min: 0, max: 1, ticks: [0, 1] }
 
-  const step = niceStep((hi - lo) / Math.max(1, targetTicks))
+  let step = niceStep((hi - lo) / Math.max(1, targetTicks))
+  if (options.integer) {
+    // Half a creator is not a quantity. A count axis over a small
+    // range picked 0.5 steps and labelled them, which reads as a
+    // precision the data does not have.
+    step = Math.max(1, Math.round(step))
+  }
   const min = Math.floor(lo / step) * step
   const max = Math.ceil(hi / step) * step
   const ticks: number[] = []
@@ -411,8 +421,9 @@ export function xTickIndices(count: number, maxLabels: number): number[] {
     // The final period is always labelled, but appending it blindly can
     // place it a single bucket from its neighbour — which collides at
     // exactly the narrow widths that forced the thinning. Where it
-    // would land too close, it replaces that neighbour instead.
-    if (last - out[out.length - 1] < stride / 2) out.pop()
+    // would land closer than the stride the rest of the axis uses, it
+    // replaces that neighbour instead, so the spacing stays even.
+    if (last - out[out.length - 1] < stride) out.pop()
     out.push(last)
   }
   return out
@@ -1134,4 +1145,122 @@ export function byGrowth(
 /** A Collective whose figure fell over the range. */
 export function isQuietening(s: CollectiveStanding): boolean {
   return s.comparable && s.change !== null && s.change < 0
+}
+
+// ---------------------------------------------------------------------------
+// Creators
+// ---------------------------------------------------------------------------
+
+export interface Creator {
+  id: string
+  name: string
+  /** Derived from the admin role, not from a list of names. */
+  founder_operated: boolean
+  reporting_class: string | null
+  created_at: string
+  collectives: string[]
+  first_collective_at: string | null
+  /** The furthest point reached, never a score. */
+  stage: CreatorStage
+  members: number
+  earned_cents: number
+}
+
+export type CreatorStage =
+  | 'registered'
+  | 'building'
+  | 'attracting'
+  | 'earning'
+
+/**
+ * The journey, in order.
+ *
+ * Each stage implies the ones before it, which is what makes a funnel
+ * a funnel and not a score: a creator is *at* one stage rather than
+ * rated across several. The order is declared once here so the chart,
+ * the table and the sort cannot disagree about it.
+ */
+export const CREATOR_STAGES: {
+  key: CreatorStage
+  label: string
+  metric: string | null
+  blurb: string
+}[] = [
+  {
+    key: 'registered',
+    label: 'Registered',
+    metric: 'registered_creators',
+    blurb: 'Has a creator account.',
+  },
+  {
+    key: 'building',
+    label: 'Building',
+    metric: 'creators_with_a_collective',
+    blurb: 'Has built at least one Collective.',
+  },
+  {
+    key: 'attracting',
+    label: 'Attracting',
+    metric: 'creators_with_a_member',
+    blurb: 'Somebody has joined.',
+  },
+  {
+    key: 'earning',
+    label: 'Earning',
+    metric: 'creators_earning',
+    blurb: 'A payment has settled.',
+  },
+]
+
+export async function fetchCreators(
+  population: PopulationKey,
+  signal?: AbortSignal,
+): Promise<Creator[]> {
+  const res = await fetch(
+    `/api/admin/reporting/creators?population=${population}`,
+    { signal, credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(`Could not load creators (${res.status}).`)
+  return res.json()
+}
+
+/** How many creators sit at each stage, and how many reached it. */
+export interface StageCount {
+  key: CreatorStage
+  label: string
+  blurb: string
+  /** Creators whose furthest point is exactly this stage. */
+  at: number
+  /** Creators who reached this stage or went beyond it. */
+  reached: number
+}
+
+/**
+ * Count creators by stage, both ways round.
+ *
+ * `reached` is the funnel — it only ever narrows. `at` is where people
+ * are now, and it does not, which is the more useful number for "who
+ * is stuck". Reporting only the first would hide a creator who built
+ * something and stopped; only the second would hide the shape.
+ */
+export function stageCounts(creators: Creator[]): StageCount[] {
+  const order = CREATOR_STAGES.map((s) => s.key)
+  return CREATOR_STAGES.map((stage, i) => ({
+    key: stage.key,
+    label: stage.label,
+    blurb: stage.blurb,
+    at: creators.filter((c) => c.stage === stage.key).length,
+    reached: creators.filter((c) => order.indexOf(c.stage) >= i).length,
+  }))
+}
+
+/** Split founder-operated from independent, keeping both visible. */
+export function byOperator(creators: Creator[]): {
+  founder: Creator[]
+  independent: Creator[]
+} {
+  return {
+    founder: creators.filter((c) => c.founder_operated),
+    independent: creators.filter((c) => !c.founder_operated),
+  }
 }

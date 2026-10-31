@@ -748,11 +748,9 @@ def _ownership_split(q, retained) -> dict:
     status or reclassifies a row. Whether founder earnings *should* be
     treated as settled is an open accounting decision.
     """
-    founder_space_ids = (
-        select(Space.id)
-        .join(User, User.id == Space.creator_id)
-        .where(User.role == UserRole.admin.value)
-    )
+    from app.reporting.creators import founder_operated_space_ids
+
+    founder_space_ids = founder_operated_space_ids()
 
     def _sum_where(condition):
         return func.coalesce(
@@ -1524,19 +1522,28 @@ def _observation_quality(window: Window) -> tuple[str | None, str | None]:
         # Live question, live answer.
         return "observed", None
 
-    today = completed_reporting_date(datetime.utcnow())
+    now = datetime.utcnow()
+    if as_at > now:
+        # A day that has not finished. The nightly job asking for today
+        # lands here — its window closes at tomorrow's local midnight —
+        # and there is genuinely nothing to observe yet.
+        return None, (
+            "This day has not finished yet, so there is no end-of-day count "
+            "for it."
+        )
+
+    today = completed_reporting_date(now)
     # ``ends_at`` is exclusive, so the day being described ends the
     # instant before it.
     day = (as_at - timedelta(microseconds=1)).date()
     behind = (today - day).days
 
-    if behind < 0:
-        # A day that has not finished. Nothing to observe yet.
-        return None, (
-            "This day has not finished yet, so there is no end-of-day count "
-            "for it."
-        )
-    if behind == 0:
+    if behind <= 0:
+        # Either the last completed day, or a window that closes at this
+        # moment — "this month so far", "this financial year". The
+        # second is a live question and was being refused as an
+        # unfinished day, which put "Not yet" on every Collective-status
+        # card for the periods a reader actually looks at.
         return "observed", None
     if behind <= OBSERVATION_GRACE_DAYS:
         return "observed_late", None
