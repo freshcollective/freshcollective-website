@@ -11,7 +11,7 @@ import {
   formatCount,
 } from '@/lib/insights'
 import { type Tone, toneStyle } from '@/lib/insights-palette'
-import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
+import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
 
 /**
  * Can these figures be trusted?
@@ -69,11 +69,11 @@ export default function DataHealthPage() {
         <div
           className="rounded-2xl p-5"
           style={{
-            background: 'rgba(214, 96, 87, 0.06)',
-            border: '1px solid rgba(214, 96, 87, 0.28)',
+            background: STATUS.error.bg,
+            border: `1px solid ${STATUS.error.border}`,
           }}
         >
-          <p className="text-[13.5px]" style={{ color: '#a63c30' }}>
+          <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
             {error}
           </p>
         </div>

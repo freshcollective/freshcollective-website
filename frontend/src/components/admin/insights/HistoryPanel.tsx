@@ -16,7 +16,7 @@ import {
   seriesKey,
 } from '@/lib/insights-history'
 import { type ChartKind, TimeSeriesChart } from './charts/TimeSeriesChart'
-import { INK as FC_INK, SURFACE } from '@/lib/insights-palette'
+import { CHART, HUE_MARK, INK as FC_INK, SURFACE } from '@/lib/insights-palette'
 
 const INK = FC_INK.heading
 const INK_MUTED = FC_INK.muted
@@ -268,7 +268,10 @@ function QualityLine({
       <span
         aria-hidden="true"
         className="mt-[1px] shrink-0"
-        style={{ color: caution ? '#d4b048' : 'rgba(12, 24, 38, 0.35)' }}
+        // Decorative: aria-hidden, and the word beside it ("Observed.",
+        // "Reconstructed.") carries the meaning, so this never encodes
+        // anything by colour alone.
+        style={{ color: caution ? HUE_MARK.gold : CHART.axis }}
       >
         {caution ? '\u25cf' : '\u25cb'}
       </span>

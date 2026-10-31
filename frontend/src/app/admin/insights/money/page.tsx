@@ -432,7 +432,7 @@ function Owed({
       >
         {formatMoney(amount)}
       </dd>
-      <dd className="text-[11.5px]" style={{ color: 'rgba(12, 24, 38, 0.42)' }}>
+      <dd className="text-[11.5px]" style={{ color: FC_INK.faint }}>
         {hint}
       </dd>
     </div>

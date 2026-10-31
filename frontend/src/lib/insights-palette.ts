@@ -128,10 +128,19 @@ export const INK = {
   heading: '#0C1826',
   /** Body copy on a card. */
   body: 'rgba(12, 24, 38, 0.82)',
-  /** Supporting lines, captions, axis labels. */
-  muted: 'rgba(12, 24, 38, 0.58)',
+  /**
+   * Supporting lines, captions, axis labels.
+   *
+   * Both this and ``faint`` below are set by contrast rather than by
+   * eye. On white, this hue needs alpha 0.62 to clear WCAG AA for
+   * normal text; the airier 0.58 and 0.44 they replaced measured
+   * 4.4:1 and 3.3:1, and the lighter of the two was carrying the
+   * "What does this mean?" button — interactive text, so the 3:1
+   * non-text allowance did not apply to it.
+   */
+  muted: 'rgba(12, 24, 38, 0.68)', // 6.2:1
   /** Disclosure triggers and the quietest metadata. */
-  faint: 'rgba(12, 24, 38, 0.44)',
+  faint: 'rgba(12, 24, 38, 0.62)', // 5.0:1
 } as const
 
 /** Chart furniture. Recessive by design — the marks carry the chart. */
