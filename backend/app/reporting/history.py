@@ -58,7 +58,11 @@ from app.core.periods import (
     resolve_history_range,
 )
 from app.models.reporting_aggregate import MetricDaily
-from app.reporting.aggregates import PLATFORM_DIMENSION, store_eligible
+from app.reporting.aggregates import (
+    PLATFORM_DIMENSION,
+    space_dimension,
+    store_eligible,
+)
 from app.reporting.population import ALL, Population
 from app.reporting.registry import (
     REGISTRY,
@@ -67,7 +71,7 @@ from app.reporting.registry import (
     Provenance,
     Window,
 )
-from app.reporting.scope import ReportScope
+from app.reporting.scope import Audience, ReportScope, ScopeDenied
 
 #: The most buckets one request will assemble. A guard against a
 #: pathological ask — twelve months grouped daily under a population
@@ -76,6 +80,17 @@ from app.reporting.scope import ReportScope
 #: coarser grouping rather than quietly truncating the range, because a
 #: silently shortened chart is indistinguishable from a quiet period.
 MAX_BUCKETS = 400
+
+#: The most series one request will assemble when fanning out across
+#: Collectives. Sized for the Collectives page: six metrics across the
+#: four Collectives the chart palette can distinguish. Deliberately one
+#: request rather than one per panel — two requests seconds apart can
+#: straddle midnight in Sydney and resolve different last-completed
+#: days, which would put two charts on one page on different axes.
+#:
+#: It bounds the fan-out only. A platform request has always been one
+#: series per metric and several pages ask for eight or more.
+MAX_SERIES = 24
 
 #: How confident a provenance is, least first. A bucket takes the
 #: minimum of the days inside it.
@@ -142,6 +157,11 @@ class Series:
     limitations: str | None = None
     observation_only: bool = False
     qualifiers: dict = field(default_factory=dict)
+    #: Set when this series is one Collective's figures rather than the
+    #: platform's. The name travels with it so a chart comparing four
+    #: Collectives can label its lines without a second lookup.
+    collective_id: str | None = None
+    collective_name: str | None = None
 
     @property
     def has_any_value(self) -> bool:
@@ -305,18 +325,48 @@ def build_series(
     buckets: list[Bucket],
     *,
     population: Population = ALL,
-    dimension: str = PLATFORM_DIMENSION,
+    space_id: str | None = None,
+    collective_name: str | None = None,
 ) -> Series:
-    """One metric's chart series over already-resolved buckets."""
+    """One metric's chart series, platform-wide or for one Collective.
+
+    ``space_id`` switches both halves of the calculation together, which
+    is the point of doing it here rather than at the call site: the
+    stored path reads that Collective's own daily rows, and the
+    recomputed path evaluates against a scope restricted to it. Setting
+    only one of the two would produce a chart labelled with one
+    Collective and filled with the platform's figures — and under a
+    population filter the recomputed path is the only path, so the bug
+    would appear exactly when somebody narrowed to Production.
+    """
     metric = REGISTRY.get(metric_key)
     scope.require(metric.access, metric.key)
+
+    if space_id is not None:
+        # A creator may only ask about Collectives they manage. These
+        # routes are admin-only today; the check lives here so a
+        # creator-facing route cannot be one forgotten WHERE away from
+        # another creator's figures.
+        if not scope.is_platform and space_id not in scope.space_ids:
+            raise ScopeDenied(
+                f"{metric.key!r} was asked for a Collective outside this scope"
+            )
+        if "space_id" not in metric.dimensions:
+            return _platform_only_series(metric, buckets, space_id, collective_name)
+
+    dimension = (
+        space_dimension(space_id) if space_id is not None else PLATFORM_DIMENSION
+    )
+    series_scope = _one_collective(space_id) if space_id is not None else scope
 
     use_stored = store_eligible(metric) and population.is_all
     if use_stored:
         points = _stored_points(db, metric, buckets, dimension)
         source = "stored"
     else:
-        points = _recomputed_points(db, metric, scope, buckets, population)
+        points = _recomputed_points(
+            db, metric, series_scope, buckets, population,
+        )
         source = "recomputed"
 
     quals: dict = dict(population.qualifiers())
@@ -340,6 +390,8 @@ def build_series(
         aggregation=metric.aggregation.value,
         source=source,
         points=points,
+        collective_id=space_id,
+        collective_name=collective_name,
         definition=metric.definition,
         source_of_truth=metric.source_of_truth,
         date_basis=metric.date_basis.value,
@@ -347,6 +399,67 @@ def build_series(
         limitations=metric.limitations,
         observation_only=metric.observation_only,
         qualifiers=quals,
+    )
+
+
+def _one_collective(space_id: str) -> ReportScope:
+    """A platform-audience scope restricted to one Collective.
+
+    Platform audience because the asker is an administrator entitled to
+    every metric; restricted because the question is about one
+    Collective. Those are different axes, and conflating them would
+    either hide platform-only metrics from an admin or show a creator
+    somebody else's.
+    """
+    return ReportScope(
+        audience=Audience.platform, user_id=None, space_ids=(space_id,),
+    )
+
+
+def _platform_only_series(
+    metric: Metric,
+    buckets: list[Bucket],
+    space_id: str,
+    collective_name: str | None,
+) -> Series:
+    """A metric that has no per-Collective meaning, asked for one.
+
+    Unavailable with a reason rather than an error or, worse, the
+    platform figure repeated under each Collective's name — which is
+    what a chart comparing Collectives on subscription revenue would
+    otherwise show: four identical lines.
+    """
+    reason = (
+        f"{metric.display_name} is measured for the platform as a whole and "
+        "cannot be broken down by Collective."
+    )
+    return Series(
+        key=metric.key,
+        display_name=metric.display_name,
+        unit=metric.resolved_unit.value,
+        aggregation=metric.aggregation.value,
+        source="recomputed",
+        points=[
+            Point(
+                label=b.label,
+                starts_on=b.starts_on,
+                ends_on=b.ends_on,
+                unavailable_reason=reason,
+                complete=b.complete,
+                clipped=b.clipped,
+                days_expected=b.days,
+            )
+            for b in buckets
+        ],
+        collective_id=space_id,
+        collective_name=collective_name,
+        definition=metric.definition,
+        source_of_truth=metric.source_of_truth,
+        date_basis=metric.date_basis.value,
+        availability=metric.availability.value,
+        limitations=metric.limitations,
+        observation_only=metric.observation_only,
+        qualifiers={"platform_only_metric": reason},
     )
 
 

@@ -11,9 +11,15 @@ import {
   axisLabelSpace,
   directLabelSpace,
   estimateTextWidth,
+  MIN_COMPARABLE_PERIODS,
+  byGrowth,
+  bySize,
+  collectiveStandings,
   historyQuality,
+  isQuietening,
   pointQuality,
   populationNotes,
+  seriesKey,
   tooltipLeft,
   xLabelCapacity,
   type HistoryPoint,
@@ -90,6 +96,8 @@ function series(over: Partial<HistorySeries> = {}): HistorySeries {
     limitations: null,
     observation_only: false,
     qualifiers: {},
+    collective_id: null,
+    collective_name: null,
     points: [point()],
     ...over,
   }
@@ -922,14 +930,20 @@ describe('reconstructed is not a synonym for doubtful', () => {
   })
 
   test('a gap in one series is not hidden by an observation in another', () => {
+    // Surfaced as coverage rather than as "unavailable": the period
+    // is not unknown, one of the series simply has no figure for it.
+    // Either way the reader is told — silence was the failure.
     const a = sound({ points: [point({ available: false, value: null })] })
     const b = sound({ key: 'b', points: [point()] })
-    assert.ok(historyQuality([a, b]).some((q) => q.kind === 'unavailable'))
+    const notes = historyQuality([a, b])
+    assert.ok(notes.some((q) => q.kind === 'coverage'))
+    assert.ok(notes.some((q) => q.caution), 'and flagged as a caution')
   })
 
   test('every kind has a label a reader can read', () => {
     for (const kind of [
       'observed', 'reconstructed', 'limited', 'incomplete', 'unavailable',
+      'coverage',
     ] as const) {
       assert.ok(QUALITY_LABEL[kind], `no label for ${kind}`)
     }
@@ -1024,5 +1038,278 @@ describe('two charts on one page share an axis density', () => {
 
   test('an empty axis still reports a usable capacity', () => {
     assert.ok(xLabelCapacity([], 600) >= 2)
+  })
+})
+
+describe('comparing Collectives without flattering the new ones', () => {
+  const at = (values: (number | null)[], over: Partial<HistoryPoint> = {}) =>
+    values.map((v, i) => point({
+      label: `p${i}`,
+      value: v,
+      available: v !== null,
+      unavailable_reason: v === null ? 'No figure.' : null,
+      complete: true,
+      clipped: false,
+      ...over,
+    }))
+
+  const coll = (id: string, name: string, values: (number | null)[]) =>
+    series({ key: 'unique_members', collective_id: id, collective_name: name,
+             points: at(values) })
+
+  test('a standing carries the first and last figure and the change', () => {
+    const [s] = collectiveStandings([coll('a', 'EMBODY', [10, 12, 14, 20])])
+    assert.equal(s.collectiveName, 'EMBODY')
+    assert.equal(s.earliest, 10)
+    assert.equal(s.latest, 20)
+    assert.equal(s.change, 10)
+    assert.equal(s.changePct, 1)
+    assert.ok(s.comparable)
+  })
+
+  test('platform series are not standings', () => {
+    assert.deepEqual(collectiveStandings([series()]), [])
+  })
+
+  test('largest is ranked on the current figure', () => {
+    const { ranked } = bySize([
+      coll('a', 'A', [1, 2, 3, 50]),
+      coll('b', 'B', [90, 90, 90, 90]),
+    ].flatMap((s) => collectiveStandings([s])))
+    assert.deepEqual(ranked.map((r) => r.collectiveName), ['B', 'A'])
+  })
+
+  test('a young Collective is still ranked by size', () => {
+    // Being small and new is a fact about it, not a distortion.
+    const young = collectiveStandings([coll('a', 'New', [null, null, null, 4])])
+    const { ranked, withheld } = bySize(young)
+    assert.equal(ranked.length, 1)
+    assert.equal(withheld.length, 0)
+  })
+
+  test('a young Collective is NOT ranked on growth', () => {
+    // One member to two is a 100% rise and would top the table.
+    const young = collectiveStandings([coll('a', 'New', [null, null, null, 2])])
+    const { ranked, withheld } = byGrowth(young)
+    assert.equal(ranked.length, 0)
+    assert.equal(withheld.length, 1)
+    assert.match(withheld[0].reason ?? '', /too few to compare/)
+  })
+
+  test('the reason distinguishes limited history from poor performance', () => {
+    const [s] = collectiveStandings([coll('a', 'New', [null, null, 1, 2])])
+    assert.ok(!s.comparable)
+    assert.ok(/history/i.test(s.reason ?? ''), s.reason ?? 'no reason given')
+  })
+
+  test('a Collective with no figures at all says so', () => {
+    const [s] = collectiveStandings([coll('a', 'Empty', [null, null, null, null])])
+    assert.equal(s.latest, null)
+    assert.equal(s.reason, 'No figures in this range.')
+    assert.equal(bySize([s]).ranked.length, 0)
+    assert.equal(bySize([s]).withheld.length, 1)
+  })
+
+  test('nothing is silently dropped — every Collective is ranked or explained', () => {
+    const all = [
+      coll('a', 'Established', [10, 12, 14, 20]),
+      coll('b', 'New', [null, null, null, 3]),
+      coll('c', 'Empty', [null, null, null, null]),
+    ].flatMap((s) => collectiveStandings([s]))
+    for (const { ranked, withheld } of [bySize(all), byGrowth(all)]) {
+      assert.equal(ranked.length + withheld.length, 3)
+    }
+  })
+
+  test('growth ranks largest increase first and quietening the reverse', () => {
+    const all = [
+      coll('a', 'Up', [10, 12, 14, 30]),
+      coll('b', 'Down', [40, 30, 25, 20]),
+      coll('c', 'Flat', [5, 5, 5, 5]),
+    ].flatMap((s) => collectiveStandings([s]))
+    assert.deepEqual(
+      byGrowth(all, 'up').ranked.map((r) => r.collectiveName),
+      ['Up', 'Flat', 'Down'],
+    )
+    assert.deepEqual(
+      byGrowth(all, 'down').ranked.map((r) => r.collectiveName),
+      ['Down', 'Flat', 'Up'],
+    )
+  })
+
+  test('only a genuine fall counts as quietening', () => {
+    const [up] = collectiveStandings([coll('a', 'Up', [1, 2, 3, 9])])
+    const [flat] = collectiveStandings([coll('b', 'Flat', [5, 5, 5, 5])])
+    const [down] = collectiveStandings([coll('c', 'Down', [9, 6, 4, 1])])
+    assert.equal(isQuietening(up), false)
+    assert.equal(isQuietening(flat), false)
+    assert.equal(isQuietening(down), true)
+  })
+
+  test('an unfinished period never decides the direction', () => {
+    // A half-finished week is three days against seven; reading it as
+    // the endpoint turns every Collective into a collapsing one.
+    const points = [
+      ...at([10, 12, 14, 16]),
+      point({ label: 'p4', value: 2, complete: false }),
+    ]
+    const [s] = collectiveStandings([
+      series({ collective_id: 'a', collective_name: 'A', points }),
+    ])
+    assert.equal(s.latest, 16, 'the last complete period decides')
+    assert.ok((s.change as number) > 0)
+  })
+
+  test('a zero starting point does not produce an infinite percentage', () => {
+    const [s] = collectiveStandings([coll('a', 'A', [0, 1, 2, 3])])
+    assert.equal(s.change, 3)
+    assert.equal(s.changePct, null, 'no percentage from a zero base')
+  })
+
+  test('the comparison threshold is stated, not hidden', () => {
+    assert.ok(MIN_COMPARABLE_PERIODS >= 2)
+    const table = read('src/components/admin/insights/StandingsTable.tsx')
+    assert.match(table, /MIN_COMPARABLE_PERIODS/)
+    assert.match(table, /Limited history, not poor performance/)
+  })
+})
+
+describe('the Collectives page', () => {
+  const PAGE = 'src/app/admin/insights/collectives/page.tsx'
+
+  test('leads with charts and puts the cards underneath', () => {
+    const src = read(PAGE)
+    assert.ok(src.indexOf('<HistoryControls') < src.indexOf('<HistoryPanel'))
+    assert.ok(src.indexOf('<HistoryPanel') < src.indexOf('<InsightCard'))
+  })
+
+  test('defaults to Production, like Growth', () => {
+    assert.match(read(PAGE), /useState<PopulationKey>\('production'\)/)
+  })
+
+  test('compares no more Collectives than the palette has hues', () => {
+    // A fifth line would repeat a colour, which is indistinguishable
+    // from one line.
+    const src = read(PAGE)
+    assert.match(src, /MAX_COMPARED = CHART_HUES\.length/)
+  })
+
+  test('it introduces no blended engagement score', () => {
+    const src = withoutDocComments(read(PAGE))
+    // The measures must stay separate: no arithmetic combining one
+    // participation metric with another.
+    assert.ok(
+      !/participation_acts'\)[^)]*\)?\s*[-+*/]\s*pick\(/.test(src),
+      'participation measures must not be combined',
+    )
+    assert.ok(!/engagementScore|blendedScore|overallScore/i.test(src))
+  })
+
+  test('the themes breakdown is read from the metric, not recomputed', () => {
+    const src = read(PAGE)
+    assert.match(src, /active_members_by_theme/)
+    assert.match(src, /multi-select/, 'the double-counting must be disclosed')
+  })
+
+  test('it reuses the shared chart and control components', () => {
+    const src = read(PAGE)
+    for (const component of [
+      '<HistoryPanel', '<HistoryControls', '<PeriodSelect',
+      '<CollectiveSelect', '<StandingsTable', '<InsightCard',
+    ]) {
+      assert.ok(src.includes(component), `${component} should be reused`)
+    }
+    assert.ok(!/<svg/.test(withoutDocComments(src)), 'no hand-rolled chart')
+  })
+
+  test('every compared metric can actually be broken down per Collective', () => {
+    // A platform-only metric would draw one identical line per
+    // Collective; the backend returns a gap instead, but the page
+    // should not be asking in the first place.
+    const src = read(PAGE)
+    const keys = /const COMPARISON_KEYS = \[([\s\S]*?)\]/.exec(src)?.[1] ?? ''
+    for (const forbidden of [
+      'subscription_revenue_cents',
+      'registered_users',
+      'contribution_after_processing_cents',
+    ]) {
+      assert.ok(!keys.includes(forbidden), `${forbidden} is platform-level`)
+    }
+  })
+})
+
+describe('comparing series that begin at different times', () => {
+  const pts = (values: (number | null)[]) =>
+    values.map((v, i) => point({
+      label: `p${i}`, value: v, available: v !== null,
+      unavailable_reason: v === null ? 'No figure.' : null,
+    }))
+
+  test('a key is unique across a comparison', () => {
+    // Four Collectives on one metric all carry the same metric key;
+    // React reusing one chart component's state for another's data
+    // shows the wrong Collective in a tooltip.
+    const a = series({ collective_id: 'c1' })
+    const b = series({ collective_id: 'c2' })
+    assert.notEqual(seriesKey(a), seriesKey(b))
+    assert.equal(seriesKey(series()), 'unique_members')
+  })
+
+  test('a period is only unavailable when nothing at all is known', () => {
+    // The old rule said "9 of 13 periods cannot be established" over a
+    // chart drawing one blank band, because a Collective that opened
+    // in September has no August.
+    const established = series({ collective_id: 'c1', points: pts([1, 2, 3]) })
+    const newcomer = series({
+      key: 'unique_members', collective_id: 'c2', points: pts([null, null, 3]),
+    })
+    const gap = historyQuality([established, newcomer]).find(
+      (q) => q.text.includes('cannot be established'),
+    )
+    assert.equal(gap, undefined, 'no period here is wholly unknown')
+  })
+
+  test('a period nobody has a figure for is still unavailable', () => {
+    const a = series({ collective_id: 'c1', points: pts([1, null, 3]) })
+    const b = series({ key: 'unique_members', collective_id: 'c2', points: pts([2, null, 4]) })
+    const gap = historyQuality([a, b]).find((q) => q.text.includes('cannot be established'))
+    assert.match(gap?.text ?? '', /1 of 3/)
+  })
+
+  test('partial coverage is reported as its own thing', () => {
+    const established = series({ collective_id: 'c1', points: pts([1, 2, 3]) })
+    const newcomer = series({
+      key: 'unique_members', collective_id: 'c2', points: pts([null, null, 3]),
+    })
+    const note = historyQuality([established, newcomer]).find(
+      (q) => q.kind === 'coverage',
+    )
+    assert.ok(note, 'a reader must be told some lines start later')
+    assert.match(note!.text, /2 of 3 periods/)
+    assert.match(note!.text, /not the same as a fall to nothing/)
+    assert.equal(QUALITY_LABEL.coverage, 'Shorter history')
+    assert.notEqual(
+      QUALITY_LABEL.coverage, QUALITY_LABEL.unavailable,
+      'two different facts must not share a label',
+    )
+  })
+
+  test('the note matches what the chart actually shades', () => {
+    // emptyBucketIndices decides the hatched bands; the unavailable
+    // count must agree with it or the words contradict the picture.
+    const a = series({ collective_id: 'c1', points: pts([1, null, 3]) })
+    const b = series({ key: 'unique_members', collective_id: 'c2', points: pts([null, null, 4]) })
+    const shaded = emptyBucketIndices([a, b]).length
+    const stated = historyQuality([a, b]).find((q) =>
+      q.text.includes('cannot be established'),
+    )
+    assert.equal(shaded, 1)
+    assert.match(stated?.text ?? '', new RegExp(`${shaded} of 3`))
+  })
+
+  test('fully covered series need no coverage note', () => {
+    const a = series({ collective_id: 'c1', points: pts([1, 2, 3]) })
+    const b = series({ key: 'unique_members', collective_id: 'c2', points: pts([4, 5, 6]) })
+    assert.deepEqual(historyQuality([a, b]), [])
   })
 })

@@ -61,6 +61,29 @@ class ReportScope:
     def is_platform(self) -> bool:
         return self.audience is Audience.platform
 
+    @property
+    def space_filter(self) -> tuple[str, ...] | None:
+        """The Collectives a calculation must stay inside, or None for all.
+
+        Audience and restriction are **different axes**, and reading
+        one for the other was a real defect: the daily loader builds a
+        per-Collective scope as ``Audience.platform`` with one
+        ``space_id`` — platform because the loader is entitled to every
+        metric, one Collective because that is the row it is computing.
+        Every calculation then asked ``if not scope.is_platform``, saw
+        a platform audience, and skipped the restriction entirely, so
+        each Collective's stored row held the platform total.
+
+        So entitlement is ``is_platform`` and restriction is this. An
+        empty tuple from a creator means they manage nothing, which is
+        a filter matching no rows rather than no filter at all — the
+        distinction between "all Collectives" and "none" that a bare
+        list cannot carry.
+        """
+        if self.space_ids:
+            return self.space_ids
+        return None if self.is_platform else ()
+
     def may_see(self, access: Access) -> bool:
         return self.is_platform or access is Access.creator_visible
 

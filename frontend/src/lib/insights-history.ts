@@ -68,7 +68,25 @@ export interface HistorySeries {
   limitations: string | null
   observation_only: boolean
   qualifiers: Record<string, unknown>
+  /** Set when the series is one Collective rather than the platform. */
+  collective_id: string | null
+  collective_name: string | null
   points: HistoryPoint[]
+}
+
+export interface Collective {
+  id: string
+  name: string
+  slug: string
+  status: string
+  reporting_class: string | null
+  created_at: string
+  /**
+   * The oldest stored reporting date for this Collective, or null when
+   * nothing has been built. What separates a quiet Collective from a
+   * new one — a short line means both, and only this says which.
+   */
+  history_begins: string | null
 }
 
 export interface HistoryBucket {
@@ -91,6 +109,7 @@ export interface HistoryResult {
   population: { key: PopulationKey; label: string; note: string }
   buckets: HistoryBucket[]
   series: HistorySeries[]
+  collectives: Collective[]
   options: {
     ranges: { key: HistoryRangeKey; label: string }[]
     groupings: Grouping[]
@@ -131,6 +150,21 @@ export const GROUPING_LABELS: Record<Grouping, string> = {
  */
 export const CHART_HUES = ['teal', 'navy', 'gold', 'coral'] as const
 
+/**
+ * A React key that is unique across a comparison.
+ *
+ * The metric key alone is not. Comparing four Collectives on members
+ * gives four series all keyed ``unique_members``, and React quietly
+ * reuses one component's state for another's data — which on a chart
+ * means a tooltip showing the wrong Collective's figures.
+ */
+export function seriesKey(s: {
+  key: string
+  collective_id?: string | null
+}): string {
+  return s.collective_id ? `${s.key}:${s.collective_id}` : s.key
+}
+
 export type ChartHue = (typeof CHART_HUES)[number]
 
 export const HUE_STROKE: Record<ChartHue, string> = {
@@ -150,6 +184,7 @@ export async function fetchHistory(
   grouping: Grouping,
   population: PopulationKey,
   signal?: AbortSignal,
+  collectives?: string[],
 ): Promise<HistoryResult> {
   const params = new URLSearchParams({
     keys: keys.join(','),
@@ -157,6 +192,9 @@ export async function fetchHistory(
     grouping,
     population,
   })
+  if (collectives && collectives.length > 0) {
+    params.set('collectives', collectives.join(','))
+  }
   const res = await fetch(`/api/admin/reporting/history?${params}`, {
     signal,
     credentials: 'include',
@@ -692,6 +730,12 @@ export type QualityKind =
   | 'limited'
   | 'incomplete'
   | 'unavailable'
+  //: Only arises when comparing series side by side: some of them
+  //: start later than others. Not a fifth kind of *value* — every
+  //: value is still one of the four above — but a fact about the
+  //: comparison, and it needs its own label because "Unavailable"
+  //: said twice about two different things reads as a repetition.
+  | 'coverage'
 
 export interface QualityNote {
   kind: QualityKind
@@ -726,6 +770,9 @@ const SEVERITY: Record<QualityKind, number> = {
   incomplete: 2,
   limited: 3,
   unavailable: 4,
+  //: Never the worst kind of a period — it describes the set of
+  //: series rather than any one value, and is reported separately.
+  coverage: -1,
 }
 
 const QUALITY_PROSE: Record<QualityKind, string> = {
@@ -736,6 +783,7 @@ const QUALITY_PROSE: Record<QualityKind, string> = {
     'Calculated afterwards, and the detail needed to be certain was not recorded at the time, so it may be incomplete.',
   incomplete: 'Built from fewer days than the period covers.',
   unavailable: 'Cannot be established.',
+  coverage: 'Missing for at least one of the series compared.',
 }
 
 export const QUALITY_LABEL: Record<QualityKind, string> = {
@@ -744,6 +792,7 @@ export const QUALITY_LABEL: Record<QualityKind, string> = {
   limited: 'Historical limitation',
   incomplete: 'Part period',
   unavailable: 'Unavailable',
+  coverage: 'Shorter history',
 }
 
 /**
@@ -768,12 +817,27 @@ export function historyQuality(series: HistorySeries[]): QualityNote[] {
   if (total === 0) return []
 
   const counts = new Map<QualityKind, number>()
+  let partiallyCovered = 0
   for (let i = 0; i < total; i += 1) {
+    const kinds = series
+      .map((s) => (s.points[i] ? pointQuality(s.points[i], s) : null))
+      .filter((k): k is QualityKind => k !== null)
+    const known = kinds.filter((k) => k !== 'unavailable')
+
+    if (known.length === 0) {
+      // Nothing at all is known here, which is the hatched band the
+      // chart draws. Counting a period as unavailable merely because
+      // *one* series lacks a figure said "9 of 13 periods cannot be
+      // established" over a chart showing a single blank band — a
+      // Collective that opened in September has no August, and that
+      // is a fact about its age rather than a hole in the data.
+      counts.set('unavailable', (counts.get('unavailable') ?? 0) + 1)
+      continue
+    }
+    if (known.length < kinds.length) partiallyCovered += 1
+
     let worst: QualityKind = 'observed'
-    for (const s of series) {
-      const p = s.points[i]
-      if (!p) continue
-      const kind = pointQuality(p, s)
+    for (const kind of known) {
       if (SEVERITY[kind] > SEVERITY[worst]) worst = kind
     }
     counts.set(worst, (counts.get(worst) ?? 0) + 1)
@@ -783,7 +847,11 @@ export function historyQuality(series: HistorySeries[]): QualityNote[] {
   // saying "every period was recorded at the time" under every chart is
   // how a page teaches people to stop reading it.
   const kinds = [...counts.keys()]
-  if (kinds.length === 1 && (kinds[0] === 'observed' || kinds[0] === 'reconstructed')) {
+  if (
+    partiallyCovered === 0 &&
+    kinds.length === 1 &&
+    (kinds[0] === 'observed' || kinds[0] === 'reconstructed')
+  ) {
     return []
   }
 
@@ -791,6 +859,16 @@ export function historyQuality(series: HistorySeries[]): QualityNote[] {
     'unavailable', 'limited', 'incomplete', 'reconstructed', 'observed',
   ]
   const out: QualityNote[] = []
+  if (partiallyCovered > 0) {
+    out.push({
+      kind: 'coverage',
+      caution: true,
+      text:
+        `${partiallyCovered} of ${total} periods have no figure for at ` +
+        'least one series. A line begins where that history does, which ' +
+        'is not the same as a fall to nothing.',
+    })
+  }
   for (const kind of order) {
     const n = counts.get(kind)
     if (!n) continue
@@ -909,4 +987,151 @@ export function tooltipLeft(
   const preferred =
     pointX + offset + w <= containerWidth ? pointX + offset : pointX - offset - w
   return Math.max(0, Math.min(preferred, containerWidth - w))
+}
+
+// ---------------------------------------------------------------------------
+// Comparing Collectives
+// ---------------------------------------------------------------------------
+
+export async function fetchCollectives(
+  population: PopulationKey,
+  signal?: AbortSignal,
+): Promise<Collective[]> {
+  const res = await fetch(
+    `/api/admin/reporting/collectives?population=${population}`,
+    { signal, credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(`Could not load Collectives (${res.status}).`)
+  return res.json()
+}
+
+/**
+ * The fewest periods with a figure before a Collective may be ranked
+ * against another.
+ *
+ * Four, so a weekly comparison needs most of a month. The number is
+ * arbitrary; having one is not. Ranking a Collective that opened on
+ * Tuesday against one that has been running two years produces a table
+ * whose top entry is always the newest thing on the platform.
+ */
+export const MIN_COMPARABLE_PERIODS = 4
+
+export interface CollectiveStanding {
+  collectiveId: string
+  collectiveName: string
+  /** The most recent figure, or null if the series is empty. */
+  latest: number | null
+  /** The figure at the start of the range. */
+  earliest: number | null
+  change: number | null
+  changePct: number | null
+  periodsWithData: number
+  totalPeriods: number
+  /** Whether this Collective may be ranked on change. */
+  comparable: boolean
+  /** Why not, when it may not be. Shown instead of a rank. */
+  reason: string | null
+}
+
+/**
+ * Turn one metric's per-Collective series into standings.
+ *
+ * Deliberately **not** a new metric. Every number here is one the
+ * registry already produced, read off the series the API returned; the
+ * only arithmetic is subtracting one of those values from another to
+ * describe a direction. A growth *metric* would belong in the registry
+ * with a date basis and a definition — this is a comparison of figures
+ * that already have both.
+ */
+export function collectiveStandings(
+  series: HistorySeries[],
+): CollectiveStanding[] {
+  return series
+    .filter((s) => s.collective_id !== null)
+    .map((s) => {
+      const known = s.points.filter(
+        (p) => p.available && p.value !== null,
+      )
+      // The last *complete* period, so a half-finished week never
+      // reads as a collapse. Falls back to the last known point when
+      // every period is partial, which is the case for a very short
+      // range.
+      const complete = known.filter((p) => p.complete && !p.clipped)
+      const usable = complete.length > 0 ? complete : known
+      const latest = usable.length ? (usable[usable.length - 1].value as number) : null
+      const earliest = usable.length ? (usable[0].value as number) : null
+
+      const startsLate =
+        usable.length > 0 && s.points.findIndex((p) => p === usable[0]) > 0 &&
+        !s.points[0].available
+      const tooShort = usable.length < MIN_COMPARABLE_PERIODS
+
+      let reason: string | null = null
+      if (usable.length === 0) reason = 'No figures in this range.'
+      else if (tooShort) {
+        reason = `Only ${usable.length} complete ${
+          usable.length === 1 ? 'period' : 'periods'
+        } of history — too few to compare.`
+      } else if (startsLate) {
+        reason = 'History begins part-way through this range.'
+      }
+
+      const change =
+        latest !== null && earliest !== null ? latest - earliest : null
+      return {
+        collectiveId: s.collective_id as string,
+        collectiveName: s.collective_name ?? s.display_name,
+        latest,
+        earliest,
+        change,
+        changePct:
+          change !== null && earliest !== null && earliest !== 0
+            ? change / earliest
+            : null,
+        periodsWithData: known.length,
+        totalPeriods: s.points.length,
+        comparable: reason === null,
+        reason,
+      }
+    })
+}
+
+/**
+ * Largest first. Needs only a current figure, so a new Collective is
+ * ranked here even though it cannot be ranked on growth — being small
+ * and new is not a distortion, whereas growing from one to two members
+ * is a 100% rise.
+ */
+export function bySize(
+  standings: CollectiveStanding[],
+): { ranked: CollectiveStanding[]; withheld: CollectiveStanding[] } {
+  const ranked = standings.filter((s) => s.latest !== null)
+  ranked.sort((a, b) => (b.latest as number) - (a.latest as number))
+  return { ranked, withheld: standings.filter((s) => s.latest === null) }
+}
+
+/**
+ * Fastest-growing first, or quietest first when `direction` is 'down'.
+ *
+ * Only Collectives with enough history appear in the ranking. The rest
+ * are returned separately, with the reason — "not enough history" and
+ * "not growing" look identical in a table that silently drops one of
+ * them, and the first is the more common.
+ */
+export function byGrowth(
+  standings: CollectiveStanding[],
+  direction: 'up' | 'down' = 'up',
+): { ranked: CollectiveStanding[]; withheld: CollectiveStanding[] } {
+  const ranked = standings.filter((s) => s.comparable && s.change !== null)
+  ranked.sort((a, b) =>
+    direction === 'up'
+      ? (b.change as number) - (a.change as number)
+      : (a.change as number) - (b.change as number),
+  )
+  return { ranked, withheld: standings.filter((s) => !s.comparable) }
+}
+
+/** A Collective whose figure fell over the range. */
+export function isQuietening(s: CollectiveStanding): boolean {
+  return s.comparable && s.change !== null && s.change < 0
 }

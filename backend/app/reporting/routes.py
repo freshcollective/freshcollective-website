@@ -142,6 +142,22 @@ class HistoryPointOut(BaseModel):
     partial_data: bool = False
 
 
+class CollectiveOut(BaseModel):
+    id: str
+    name: str
+    slug: str
+    status: str
+    #: NULL until an operator assigns one. Never inferred.
+    reporting_class: str | None = None
+    created_at: str
+    #: The oldest stored reporting date for this Collective, or null
+    #: when nothing has been built for it. What separates "quiet" from
+    #: "new" — a Collective with three weeks of history should not be
+    #: ranked against one with two years, and a reader cannot tell the
+    #: difference from a short line alone.
+    history_begins: str | None = None
+
+
 class HistorySeriesOut(BaseModel):
     key: str
     display_name: str
@@ -160,6 +176,9 @@ class HistorySeriesOut(BaseModel):
     limitations: str | None = None
     observation_only: bool = False
     qualifiers: dict = {}
+    #: Set when the series is one Collective rather than the platform.
+    collective_id: str | None = None
+    collective_name: str | None = None
     points: list[HistoryPointOut] = []
 
 
@@ -207,6 +226,9 @@ class HistoryResultOut(BaseModel):
     buckets: list[HistoryBucketOut]
     series: list[HistorySeriesOut]
     options: ControlOptionsOut
+    #: The Collectives this result covers, in the order asked for.
+    #: Empty for a platform-wide result.
+    collectives: list[CollectiveOut] = []
 
 
 def _definition(m: Metric) -> MetricDefinitionOut:
@@ -399,6 +421,79 @@ class HealthOut(BaseModel):
     note: str | None = None
 
 
+def _collective_rows(db: Session, population: Population) -> list:
+    """Collectives in a population, newest first, with their history floor.
+
+    Separate from ``/platform/collectives`` on purpose rather than by
+    accident. That endpoint answers a management question — live
+    communities, with member and Pathway counts — and returns only
+    active ones. This answers a reporting question: which Collectives
+    may be compared under this classification filter, including the
+    drafts and archived ones that a ``test`` or ``demonstration``
+    population is largely made of. Reusing the management shape would
+    have hidden exactly the Collectives those filters exist to show.
+    """
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
+    from app.models.platform import Space
+    from app.models.reporting_aggregate import MetricDaily
+
+    q = db.query(Space)
+    space_ids = population.space_id_select()
+    if space_ids is not None:
+        q = q.filter(Space.id.in_(space_ids))
+    spaces = q.order_by(Space.created_at.desc()).all()
+
+    # One query for every Collective's history floor rather than one
+    # each: this list is rendered as a selector and a per-row query
+    # would make opening the page O(Collectives).
+    floors = dict(
+        db.execute(
+            _select(
+                MetricDaily.dimension, _func.min(MetricDaily.reporting_date),
+            )
+            .where(MetricDaily.dimension.like("space:%"))
+            .group_by(MetricDaily.dimension)
+        ).all()
+    )
+    out = []
+    for sp in spaces:
+        floor = floors.get(f"space:{sp.id}")
+        out.append(CollectiveOut(
+            id=sp.id,
+            name=sp.name,
+            slug=sp.slug,
+            status=sp.status,
+            reporting_class=sp.reporting_class,
+            created_at=sp.created_at.isoformat() if sp.created_at else "",
+            history_begins=floor.isoformat() if floor else None,
+        ))
+    return out
+
+
+@router.get("/collectives", response_model=list[CollectiveOut])
+def list_collectives(
+    population: str = Query(
+        "all", description="Reporting-class population to list within.",
+    ),
+    db: Session = Depends(get_db),
+    scope: ReportScope = Depends(admin_scope),
+):
+    """The Collectives a comparison may be built from.
+
+    Filtered by the same population vocabulary the charts use, so the
+    selector cannot offer a Collective the charts would then exclude.
+    """
+    try:
+        pop = Population.parse(population)
+    except UnknownPopulation:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown population {population!r}.",
+        ) from None
+    return _collective_rows(db, pop)
+
+
 @router.get("/history", response_model=HistoryResultOut)
 def metric_history(
     keys: str = Query(..., description="Comma-separated metric keys."),
@@ -410,6 +505,14 @@ def metric_history(
     ),
     population: str = Query(
         "all", description="Reporting-class population. 'all' for the ledger.",
+    ),
+    collectives: str | None = Query(
+        None,
+        description=(
+            "Comma-separated Collective ids. Omit for platform-wide "
+            "figures; supply them to compare Collectives, which returns "
+            "one series per metric per Collective."
+        ),
     ),
     db: Session = Depends(get_db),
     scope: ReportScope = Depends(admin_scope),
@@ -470,11 +573,57 @@ def metric_history(
             ),
         )
 
+    chosen: list[CollectiveOut] = []
+    if collectives is not None:
+        wanted = [c.strip() for c in collectives.split(",") if c.strip()]
+        if not wanted:
+            raise HTTPException(
+                status_code=422, detail="No Collective ids supplied.",
+            )
+        # Looked up rather than trusted: an id that does not exist would
+        # otherwise come back as a series of gaps, which reads as a
+        # quiet Collective rather than as a typo.
+        known = {c.id: c for c in _collective_rows(db, Population.parse("all"))}
+        missing = [c for c in wanted if c not in known]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown Collective(s): {', '.join(sorted(missing))}.",
+            )
+        chosen = [known[c] for c in wanted]
+
+    # The cap guards the fan-out, which multiplies. A platform request
+    # has always been one series per metric and several pages ask for
+    # eight or more, so capping that too would be a regression dressed
+    # as a safeguard.
+    total_series = len(requested) * len(chosen)
+    if chosen and total_series > _history.MAX_SERIES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{total_series} series exceeds the {_history.MAX_SERIES} this "
+                "endpoint will assemble. Ask for fewer metrics or fewer "
+                "Collectives at once."
+            ),
+        )
+
     try:
-        series = [
-            _history.build_series(db, key, scope, buckets, population=pop)
-            for key in requested
-        ]
+        if chosen:
+            series = [
+                _history.build_series(
+                    db, key, scope, buckets,
+                    population=pop,
+                    space_id=c.id,
+                    collective_name=c.name,
+                )
+                for key in requested
+                for c in chosen
+            ]
+        else:
+            series = [
+                _history.build_series(db, key, scope, buckets, population=pop)
+                for key in requested
+            ]
     except ScopeDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -514,6 +663,8 @@ def metric_history(
                 limitations=s.limitations,
                 observation_only=s.observation_only,
                 qualifiers=s.qualifiers,
+                collective_id=s.collective_id,
+                collective_name=s.collective_name,
                 points=[
                     HistoryPointOut(
                         label=p.label,
@@ -542,6 +693,7 @@ def metric_history(
             groupings=list(VALID_GROUPINGS),
             populations=view_options(),
         ),
+        collectives=chosen,
     )
 
 

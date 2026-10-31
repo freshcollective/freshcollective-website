@@ -5,6 +5,7 @@ import {
   type HistorySeries,
   describeGap,
   formatExactValue,
+  seriesKey,
 } from '@/lib/insights-history'
 
 const INK = '#0C1826'
@@ -48,7 +49,7 @@ export function ChartTable({
             </th>
             {series.map((s) => (
               <th
-                key={s.key}
+                key={seriesKey(s)}
                 scope="col"
                 className="border-b py-1.5 pr-3 text-right font-semibold"
                 style={{ borderColor: RULE, color: INK }}
@@ -82,7 +83,7 @@ export function ChartTable({
                     : null
                 return (
                   <td
-                    key={s.key}
+                    key={seriesKey(s)}
                     className="border-b py-1.5 pr-3 text-right tabular-nums"
                     style={{ borderColor: RULE, color: value ? INK : INK_MUTED }}
                   >

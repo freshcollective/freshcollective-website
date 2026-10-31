@@ -20,6 +20,7 @@ import {
   axisLabelSpace,
   directLabelSpace,
   scaleY,
+  seriesKey,
   shortBucketLabel,
   spreadLabels,
   xLabelCapacity,
@@ -174,9 +175,9 @@ export function TimeSeriesChart({
       if (kind === 'stacked') {
         const seg = stackAt(seriesValues, lastIndex).find((sg) => sg.seriesIndex === i)
         if (!seg) return null
-        return { key: s.key, name: s.display_name, y: y((seg.from + seg.to) / 2) }
+        return { key: seriesKey(s), name: s.display_name, y: y((seg.from + seg.to) / 2) }
       }
-      return { key: s.key, name: s.display_name, y: y(values[lastIndex] as number) }
+      return { key: seriesKey(s), name: s.display_name, y: y(values[lastIndex] as number) }
     })
     const present = raw.filter((r): r is NonNullable<typeof r> => r !== null)
     const spread = spreadLabels(
@@ -233,7 +234,7 @@ export function TimeSeriesChart({
       {multi && (
         <ul className="mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
           {series.map((s, i) => (
-            <li key={s.key} className="flex items-center gap-1.5">
+            <li key={seriesKey(s)} className="flex items-center gap-1.5">
               <span
                 aria-hidden="true"
                 className="inline-block h-2 w-2 rounded-full"
@@ -499,7 +500,7 @@ function LineMarks({
         const stroke = HUE_STROKE[hues[si] ?? 'teal']
         const runs = valueSegments(values)
         return (
-          <g key={series[si].key}>
+          <g key={seriesKey(series[si])}>
             {runs.map((run, ri) => {
               if (run.length === 1) {
                 // A single known period between two gaps is still a
@@ -707,7 +708,7 @@ function Tooltip({
       {series.map((s, i) => {
         const p = s.points[index]
         return (
-          <div key={s.key} className="flex items-baseline gap-1.5">
+          <div key={seriesKey(s)} className="flex items-baseline gap-1.5">
             <span
               aria-hidden="true"
               className="mt-[5px] inline-block h-2 w-2 shrink-0 rounded-full"
@@ -734,7 +735,7 @@ function Tooltip({
         if (notes.length === 0) return null
         return (
           <p
-            key={`note-${s.key}`}
+            key={`note-${seriesKey(s)}`}
             className="mt-1.5 text-[11.5px] leading-snug"
             style={{ color: INK_MUTED }}
           >

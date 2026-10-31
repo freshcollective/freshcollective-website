@@ -83,7 +83,11 @@ from app.reporting.registry import (
     MetricValue,
     Window,
 )
-from app.reporting.population import ALL, Population
+from app.reporting.population import (
+    ALL,
+    DIMENSION as POPULATION_DIMENSION,
+    Population,
+)
 from app.reporting.scope import Access, ReportScope
 
 #: The acts that count as participation, as reported in qualifiers so a
@@ -178,12 +182,32 @@ def participation_events():
     ).subquery("participation")
 
 
-def _scoped(q, part, scope: ReportScope):
-    if scope.is_platform:
-        return q
-    if not scope.space_ids:
-        return q.where(literal(False))
-    return q.where(part.c.space_id.in_(scope.space_ids))
+def _scoped(q, part, scope: ReportScope, population: Population = ALL):
+    """Restrict a participation query to a scope and a population.
+
+    Both narrowings happen here because every engagement metric routes
+    through this one function, and a classification filter applied in
+    six places is a classification filter forgotten in one.
+
+    The account half matters more for engagement than it does anywhere
+    else: a test account posting in a production Collective is activity
+    that never happened, and participation counts are what would be
+    read as a community being alive. ``user_id`` and ``space_id`` are
+    both NOT NULL on every branch of ``participation_events``, so plain
+    IN / NOT IN are safe here.
+    """
+    allowed = scope.space_filter
+    if allowed is not None:
+        if not allowed:
+            return q.where(literal(False))
+        q = q.where(part.c.space_id.in_(allowed))
+    spaces = population.space_id_select()
+    if spaces is not None:
+        q = q.where(part.c.space_id.in_(spaces))
+    excluded = population.excluded_account_select()
+    if excluded is not None:
+        q = q.where(part.c.user_id.notin_(excluded))
+    return q
 
 
 def _windowed(q, part, window: Window):
@@ -195,11 +219,16 @@ def _windowed(q, part, window: Window):
 
 
 def _active_people(
-    db: Session, scope: ReportScope, window: Window, *, creators_only: bool = False,
+    db: Session,
+    scope: ReportScope,
+    window: Window,
+    population: Population = ALL,
+    *,
+    creators_only: bool = False,
 ) -> int:
     part = participation_events()
     q = select(func.count(func.distinct(part.c.user_id))).select_from(part)
-    q = _windowed(_scoped(q, part, scope), part, window)
+    q = _windowed(_scoped(q, part, scope, population), part, window)
     if creators_only:
         from app.models.user import User
 
@@ -218,7 +247,7 @@ def _active_members(
     population: Population = ALL,
 ) -> MetricValue:
     part = participation_events()
-    total = _active_people(db, scope, window)
+    total = _active_people(db, scope, window, population)
     by_kind = db.execute(
         _windowed(
             _scoped(
@@ -227,6 +256,7 @@ def _active_members(
                 .group_by(part.c.kind),
                 part,
                 scope,
+                population,
             ),
             part,
             window,
@@ -271,7 +301,7 @@ REGISTRY.add(Metric(
         "never summed from daily figures. Measures participation, not "
         "visits — no page views or sessions are recorded."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     personal_data=True,
     compute=_active_members,
 ))
@@ -293,7 +323,7 @@ def _active_creators(
     part = participation_events()
     q = select(func.distinct(part.c.user_id)).select_from(part)
     participating = {
-        r[0] for r in db.execute(_windowed(_scoped(q, part, scope), part, window))
+        r[0] for r in db.execute(_windowed(_scoped(q, part, scope, population), part, window))
     }
 
     pub = select(func.distinct(Activity.actor_user_id)).where(
@@ -307,11 +337,12 @@ def _active_creators(
         pub = pub.where(Activity.created_at >= window.starts_at)
     if window.ends_at is not None:
         pub = pub.where(Activity.created_at < window.ends_at)
-    if not scope.is_platform:
-        if not scope.space_ids:
-            pub = pub.where(literal(False))
-        else:
-            pub = pub.where(Activity.collective_id.in_(scope.space_ids))
+    allowed = scope.space_filter
+    if allowed is not None:
+        pub = pub.where(
+            literal(False) if not allowed
+            else Activity.collective_id.in_(allowed)
+        )
     publishing = {r[0] for r in db.execute(pub)}
 
     from app.models.user import User
@@ -348,6 +379,7 @@ REGISTRY.add(Metric(
     availability=Availability.full,
     limitations="Non-additive across periods.",
     personal_data=True,
+    dimensions=(POPULATION_DIMENSION,),
     compute=_active_creators,
 ))
 
@@ -377,7 +409,7 @@ def _returning_participants(
 
     def people(w: Window) -> set[str]:
         q = select(func.distinct(part.c.user_id)).select_from(part)
-        return {r[0] for r in db.execute(_windowed(_scoped(q, part, scope), part, w))}
+        return {r[0] for r in db.execute(_windowed(_scoped(q, part, scope, population), part, w))}
 
     now_set, before_set = people(window), people(previous)
     both = now_set & before_set
@@ -411,7 +443,7 @@ REGISTRY.add(Metric(
         "Undefined for all time, which needs no comparison period. "
         "Non-additive."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     personal_data=True,
     compute=_returning_participants,
 ))
@@ -432,7 +464,7 @@ def _participation_acts(
                 select(part.c.kind, func.count())
                 .select_from(part)
                 .group_by(part.c.kind),
-                part, scope,
+                part, scope, population,
             ),
             part, window,
         )
@@ -458,7 +490,7 @@ REGISTRY.add(Metric(
     date_basis=DateBasis.business_event,
     access=Access.creator_visible,
     availability=Availability.full,
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_participation_acts,
 ))
 
@@ -483,11 +515,11 @@ def _gathering_attendance(
         q = q.where(Event.starts_at >= window.starts_at)
     if window.ends_at is not None:
         q = q.where(Event.starts_at < window.ends_at)
-    if not scope.is_platform:
-        if not scope.space_ids:
-            q = q.where(literal(False))
-        else:
-            q = q.where(Event.space_id.in_(scope.space_ids))
+    allowed = scope.space_filter
+    if allowed is not None:
+        q = q.where(
+            literal(False) if not allowed else Event.space_id.in_(allowed)
+        )
     booked, attended = db.execute(q).one()
     booked, attended = int(booked or 0), int(attended or 0)
     return MetricValue(
@@ -522,7 +554,7 @@ REGISTRY.add(Metric(
         "Depends on a creator marking the register. An unmarked Gathering is "
         "indistinguishable from an unattended one."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_gathering_attendance,
 ))
 
@@ -545,11 +577,11 @@ def _pathway_steps_completed(
         q = q.where(StepProgress.completed_at >= window.starts_at)
     if window.ends_at is not None:
         q = q.where(StepProgress.completed_at < window.ends_at)
-    if not scope.is_platform:
-        if not scope.space_ids:
-            q = q.where(literal(False))
-        else:
-            q = q.where(Pathway.space_id.in_(scope.space_ids))
+    allowed = scope.space_filter
+    if allowed is not None:
+        q = q.where(
+            literal(False) if not allowed else Pathway.space_id.in_(allowed)
+        )
     steps, people = db.execute(q).one()
     return MetricValue(
         key="pathway_steps_completed",
@@ -575,7 +607,7 @@ REGISTRY.add(Metric(
         "There is no start timestamp on a step, so time-to-complete is not "
         "available for any period."
     ),
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_pathway_steps_completed,
 ))
 
@@ -594,7 +626,7 @@ def _participation_rate(
     person in three Collectives would make the platform look three times
     less engaged than it is.
     """
-    active = _active_people(db, scope, window)
+    active = _active_people(db, scope, window, population)
     members = REGISTRY.get("unique_members").evaluate(db, scope, Window()).value or 0
     if not members:
         return MetricValue(
@@ -624,7 +656,7 @@ REGISTRY.add(Metric(
     access=Access.creator_visible,
     availability=Availability.full,
     limitations="A ratio — recompute it, never average two periods.",
-    dimensions=("space_id",),
+    dimensions=("space_id", POPULATION_DIMENSION),
     compute=_participation_rate,
 ))
 
@@ -688,6 +720,7 @@ REGISTRY.add(Metric(
         "at Collective scope."
     ),
     personal_data=True,
+    dimensions=(POPULATION_DIMENSION,),
     compute=_overlap_vs_engagement,
 ))
 
@@ -711,7 +744,7 @@ def _engagement_by_theme(
         .join(Space, Space.id == part.c.space_id)
         .distinct()
     )
-    q = _windowed(_scoped(q, part, scope), part, window)
+    q = _windowed(_scoped(q, part, scope, population), part, window)
     buckets: dict[str, set[str]] = {}
     for themes, user_id in db.execute(q):
         for theme in themes or ["(none)"]:
@@ -748,6 +781,7 @@ REGISTRY.add(Metric(
         "Multi-select dimension: counts by theme exceed the number of "
         "Collectives and the number of active members."
     ),
+    dimensions=(POPULATION_DIMENSION,),
     compute=_engagement_by_theme,
 ))
 
@@ -782,7 +816,7 @@ def _retention_cohorts(
 
     part = participation_events()
     active_q = select(func.distinct(part.c.user_id)).select_from(part)
-    active_q = _windowed(_scoped(active_q, part, scope), part, window)
+    active_q = _windowed(_scoped(active_q, part, scope, population), part, window)
     active = {r[0] for r in db.execute(active_q)}
 
     cohorts = []
@@ -834,5 +868,6 @@ REGISTRY.add(Metric(
         "spanning that period understate churn."
     ),
     personal_data=True,
+    dimensions=(POPULATION_DIMENSION,),
     compute=_retention_cohorts,
 ))

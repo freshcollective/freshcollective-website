@@ -212,13 +212,14 @@ def _population_qualifiers(
 
 def _apply_scope(q, scope: ReportScope):
     """Restrict a payment query to the Collectives a scope may see."""
-    if scope.is_platform:
+    allowed = scope.space_filter
+    if allowed is None:
         return q
-    if not scope.space_ids:
+    if not allowed:
         # Manages nothing, so the honest answer is zero rather than
         # everything — which is what an unfiltered query would return.
         return q.filter(False)
-    return q.filter(PaymentTransaction.space_id.in_(scope.space_ids))
+    return q.filter(PaymentTransaction.space_id.in_(allowed))
 
 
 def _window(q, column, window: Window):
@@ -1105,10 +1106,11 @@ def _membership_query(
                 SpaceMembership.removed_at > as_at,
             ),
         )
-    if not scope.is_platform:
-        if not scope.space_ids:
+    allowed = scope.space_filter
+    if allowed is not None:
+        if not allowed:
             return q.filter(False)
-        q = q.filter(SpaceMembership.space_id.in_(scope.space_ids))
+        q = q.filter(SpaceMembership.space_id.in_(allowed))
     # The two independent dimensions. Both columns are NOT NULL here, so
     # a plain IN / NOT IN is safe — unlike the payment equivalent, where
     # a deleted account leaves a NULL that must not drop the row.
@@ -1198,11 +1200,11 @@ def _memberships_started(
     rather than the same one with a date filter.
     """
     q = db.query(SpaceMembership)
-    if not scope.is_platform:
-        if not scope.space_ids:
-            q = q.filter(False)
-        else:
-            q = q.filter(SpaceMembership.space_id.in_(scope.space_ids))
+    allowed = scope.space_filter
+    if allowed is not None:
+        q = q.filter(False) if not allowed else q.filter(
+            SpaceMembership.space_id.in_(allowed)
+        )
     spaces = population.space_id_select()
     if spaces is not None:
         q = q.filter(SpaceMembership.space_id.in_(spaces))
@@ -1304,8 +1306,8 @@ def _overlap_counts(
     )
 
     q = db.query(per_user.c.n, func.count()).group_by(per_user.c.n)
-    if not scope.is_platform:
-        if not scope.space_ids:
+    if scope.space_filter is not None:
+        if not scope.space_filter:
             return {"one": 0, "two": 0, "three_plus": 0, "multi": 0}
         cohort = (
             _membership_query(db, scope, as_at=as_at, population=population)
@@ -1573,13 +1575,14 @@ def _collectives(status: str | None, key: str):
         spaces = population.space_id_select()
         if spaces is not None:
             q = q.filter(Space.id.in_(spaces))
-        if not scope.is_platform:
-            if not scope.space_ids:
+        allowed = scope.space_filter
+        if allowed is not None:
+            if not allowed:
                 return MetricValue(
                     key=key, value=0,
                     qualifiers={"provenance": provenance, "observation_only": True},
                 )
-            q = q.filter(Space.id.in_(scope.space_ids))
+            q = q.filter(Space.id.in_(allowed))
         return MetricValue(
             key=key,
             value=int(q.scalar() or 0),

@@ -39,7 +39,13 @@ from app.models.payment import (
     PaymentTransactionStatus,
     PaymentTransactionType,
 )
-from app.models.platform import SpaceMembership, SpaceMembershipStatus, SpaceRole
+from app.models.platform import (
+    CommunityPost,
+    ConversationChannel,
+    SpaceMembership,
+    SpaceMembershipStatus,
+    SpaceRole,
+)
 from app.models.reporting_aggregate import MetricDaily
 from app.reporting import aggregates, history
 from app.reporting.aggregates import store_eligible
@@ -50,7 +56,7 @@ from app.reporting.classification import (
     TEST,
 )
 from app.reporting.population import Population, PopulationView
-from app.reporting.registry import REGISTRY, Window
+from app.reporting.registry import REGISTRY, MetricValue, Window
 from app.reporting.scope import platform_scope
 
 NOW = datetime(2026, 10, 31, 9, 0)
@@ -436,13 +442,56 @@ class TestPopulationFiltersBothDimensions:
         assert demo_members.value == 1
 
     def test_a_metric_that_cannot_be_narrowed_is_unavailable_not_unfiltered(self, db):
-        """The worst available failure, prevented by declaration."""
-        m = REGISTRY.get("active_members")
-        assert not m.honours_population
-        v = m.evaluate(
+        """The worst available failure, prevented by declaration.
+
+        Built here rather than borrowed from the registry. Every metric
+        declares the dimension today, so picking a real one to stand for
+        "doesn't" made this test a hostage to that staying true — it
+        broke the moment the engagement family learned to filter. The
+        guard is what matters and it is tested directly.
+        """
+        from app.reporting.registry import (
+            Access, Aggregation, DateBasis, Availability, Grain, Metric,
+        )
+
+        unfilterable = Metric(
+            key="pretend_metric",
+            display_name="Pretend metric",
+            definition="Exists only to exercise the guard.",
+            source_of_truth="nothing",
+            grain=Grain.snapshot,
+            aggregation=Aggregation.snapshot,
+            date_basis=DateBasis.none,
+            access=Access.creator_visible,
+            availability=Availability.full,
+            dimensions=(),
+            compute=lambda db, scope, window, population=None: MetricValue(
+                key="pretend_metric", value=999,
+            ),
+        )
+        assert not unfilterable.honours_population
+
+        allowed = unfilterable.evaluate(db, platform_scope(), Window())
+        assert allowed.value == 999, "an unfiltered ask still works"
+
+        narrowed = unfilterable.evaluate(
             db, platform_scope(), Window(), Population(PopulationView.production))
-        assert v.value is None
-        assert "cannot be narrowed by reporting class" in v.unavailable_reason
+        assert narrowed.value is None, (
+            "it must refuse rather than return the unfiltered 999 under a "
+            "'Production' label"
+        )
+        assert "cannot be narrowed by reporting class" in narrowed.unavailable_reason
+
+    def test_every_metric_in_the_registry_can_now_be_narrowed(self):
+        """So the guard above is unreachable from the API.
+
+        Engagement was the last family that could not be filtered, which
+        meant a Production view of Collective activity silently returned
+        a gap. Now that all of them can, a classification filter means
+        the same thing on every World Insights page.
+        """
+        cannot = [m.key for m in REGISTRY.all() if not m.honours_population]
+        assert not cannot, f"these cannot be narrowed: {cannot}"
 
     def test_every_growth_and_money_metric_on_the_two_pages_can_be_narrowed(self):
         charted = (
@@ -857,17 +906,392 @@ class TestTheHistoryEndpoint:
             # Fewer stored days than a year, so the range collapsed.
             assert len(r.json()["buckets"]) <= history.MAX_BUCKETS
 
-    def test_a_metric_that_cannot_be_narrowed_reports_a_reason_per_point(
-        self, client,
-    ):
+    def test_engagement_can_be_narrowed_like_everything_else(self, client):
+        """It could not be, and a Production view of activity was a gap."""
         body = client.get(HISTORY, params={
-            "keys": "active_members", "population": "production",
+            "keys": "active_members,participation_acts",
+            "population": "production",
             "range": "last_30_days", "grouping": "weekly",
         }).json()
-        points = body["series"][0]["points"]
-        assert points, "the series must still have buckets to draw a gap in"
-        assert all(p["value"] is None for p in points)
-        assert all(
-            "cannot be narrowed by reporting class" in p["unavailable_reason"]
-            for p in points
+        for s in body["series"]:
+            assert s["points"], "the series must still have buckets"
+            assert not any(
+                "cannot be narrowed" in (p["unavailable_reason"] or "")
+                for p in s["points"]
+            ), f"{s['key']} still refuses a population"
+
+
+# ---------------------------------------------------------------------------
+# Per-Collective comparison
+# ---------------------------------------------------------------------------
+
+COLLECTIVES = "/api/admin/reporting/collectives"
+
+
+class TestTheCollectivesListing:
+    def test_it_lists_collectives_with_their_classification(
+        self, client, make_space,
+    ):
+        make_space(name="EMBODY", reporting_class=PRODUCTION)
+        make_space(name="A fixture", reporting_class=TEST)
+        rows = client.get(COLLECTIVES).json()
+        by_name = {r["name"]: r for r in rows}
+        assert by_name["EMBODY"]["reporting_class"] == PRODUCTION
+        assert by_name["A fixture"]["reporting_class"] == TEST
+
+    def test_the_population_filter_narrows_the_selector(
+        self, client, make_space,
+    ):
+        make_space(name="Real", reporting_class=PRODUCTION)
+        make_space(name="Fixture", reporting_class=TEST)
+        names = {
+            r["name"]
+            for r in client.get(COLLECTIVES, params={"population": "production"}).json()
+        }
+        assert "Real" in names
+        assert "Fixture" not in names, (
+            "the selector must not offer a Collective the charts exclude"
         )
+
+    def test_test_and_demonstration_stay_reachable_through_their_filters(
+        self, client, make_space,
+    ):
+        make_space(name="Fixture", reporting_class=TEST)
+        make_space(name="Showcase", reporting_class=DEMONSTRATION)
+        for name, pop in (("Fixture", TEST), ("Showcase", DEMONSTRATION)):
+            names = {
+                r["name"]
+                for r in client.get(COLLECTIVES, params={"population": pop}).json()
+            }
+            assert name in names, f"{name} unreachable under {pop}"
+
+    def test_a_draft_collective_is_still_listed(self, client, make_space):
+        """The management endpoint shows active only; a test Collective
+        is often a draft, and hiding it would empty the filter that
+        exists to show it."""
+        make_space(name="Unfinished", status="draft", reporting_class=TEST)
+        names = {r["name"] for r in client.get(COLLECTIVES).json()}
+        assert "Unfinished" in names
+
+    def test_history_begins_separates_new_from_quiet(
+        self, db, client, make_space,
+    ):
+        space = make_space(name="Newcomer", reporting_class=PRODUCTION)
+        _store_for_space(db, space.id, "unique_members", date(2026, 10, 20), 3)
+        row = next(
+            r for r in client.get(COLLECTIVES).json() if r["name"] == "Newcomer"
+        )
+        assert row["history_begins"] == "2026-10-20"
+
+    def test_a_collective_with_no_history_says_so_rather_than_zero(
+        self, client, make_space,
+    ):
+        make_space(name="Nothing yet", reporting_class=PRODUCTION)
+        row = next(
+            r for r in client.get(COLLECTIVES).json() if r["name"] == "Nothing yet"
+        )
+        assert row["history_begins"] is None
+
+    def test_an_unknown_population_is_422(self, client):
+        assert client.get(
+            COLLECTIVES, params={"population": "pretend"}
+        ).status_code == 422
+
+
+def _store_for_space(db, space_id, key, day, value, aggregation="snapshot"):
+    db.add(MetricDaily(
+        id=_uid("md"),
+        metric_key=key,
+        reporting_date=day,
+        dimension=aggregates.space_dimension(space_id),
+        aggregation=aggregation,
+        value=value,
+        provenance="observed",
+        computed_at=datetime.utcnow(),
+    ))
+    db.flush()
+
+
+class TestComparingCollectives:
+    def test_one_series_per_metric_per_collective(self, client, make_space):
+        a = make_space(name="EMBODY", reporting_class=PRODUCTION)
+        b = make_space(name="Life in Full Colour", reporting_class=PRODUCTION)
+        body = client.get(HISTORY, params={
+            "keys": "unique_members,memberships_started",
+            "collectives": f"{a.id},{b.id}",
+            "range": "last_30_days", "grouping": "weekly",
+        }).json()
+        assert len(body["series"]) == 4
+        assert {s["collective_name"] for s in body["series"]} == {
+            "EMBODY", "Life in Full Colour",
+        }
+
+    def test_each_series_is_labelled_with_its_collective(self, client, make_space):
+        a = make_space(name="EMBODY", reporting_class=PRODUCTION)
+        body = client.get(HISTORY, params={
+            "keys": "unique_members", "collectives": a.id,
+        }).json()
+        s = body["series"][0]
+        assert s["collective_id"] == a.id
+        assert s["collective_name"] == "EMBODY"
+        assert [c["id"] for c in body["collectives"]] == [a.id]
+
+    def test_a_platform_request_is_unchanged(self, client):
+        body = client.get(HISTORY, params={"keys": "unique_members"}).json()
+        assert body["series"][0]["collective_id"] is None
+        assert body["collectives"] == []
+
+    def test_each_collective_reads_its_own_stored_rows(
+        self, db, client, make_space,
+    ):
+        a = make_space(name="A", reporting_class=PRODUCTION)
+        b = make_space(name="B", reporting_class=PRODUCTION)
+        day = completed_reporting_date(datetime.utcnow())
+        _store_for_space(db, a.id, "unique_members", day, 11)
+        _store_for_space(db, b.id, "unique_members", day, 22)
+        body = client.get(HISTORY, params={
+            "keys": "unique_members",
+            "collectives": f"{a.id},{b.id}",
+            "range": "last_30_days", "grouping": "daily",
+        }).json()
+        latest = {
+            s["collective_name"]: [p["value"] for p in s["points"] if p["available"]]
+            for s in body["series"]
+        }
+        assert latest["A"] == [11]
+        assert latest["B"] == [22], (
+            "each Collective must read its own dimension, not the platform's"
+        )
+
+    def test_a_filtered_comparison_recomputes_against_that_collective(
+        self, db, client, make_space, make_user,
+    ):
+        """The bug this guards: under a population filter the stored
+        path is skipped, and a recompute that ignored the Collective
+        would fill every line with the platform's figures."""
+        a = make_space(name="A", reporting_class=PRODUCTION)
+        b = make_space(name="B", reporting_class=PRODUCTION)
+        for _ in range(3):
+            _join(db, make_user(), a)
+        _join(db, make_user(), b)
+
+        body = client.get(HISTORY, params={
+            "keys": "unique_members",
+            "collectives": f"{a.id},{b.id}",
+            "population": "production",
+            "range": "last_30_days", "grouping": "monthly",
+        }).json()
+        values = {
+            s["collective_name"]: max(
+                (p["value"] for p in s["points"] if p["available"]), default=None
+            )
+            for s in body["series"]
+        }
+        assert values["A"] == 3
+        assert values["B"] == 1
+        assert all(s["source"] == "recomputed" for s in body["series"])
+
+    def test_a_test_account_does_not_inflate_one_collectives_figures(
+        self, db, client, make_space, make_user,
+    ):
+        a = make_space(name="A", reporting_class=PRODUCTION)
+        _join(db, make_user(), a)
+        _join(db, make_user(reporting_class=TEST), a)
+        body = client.get(HISTORY, params={
+            "keys": "unique_members", "collectives": a.id,
+            "population": "production",
+            "range": "last_30_days", "grouping": "monthly",
+        }).json()
+        best = max(
+            p["value"] for p in body["series"][0]["points"] if p["available"]
+        )
+        assert best == 1, "the account dimension must apply per Collective too"
+
+    def test_a_platform_only_metric_is_unavailable_per_collective(
+        self, client, make_space,
+    ):
+        """Four identical lines would be worse than four gaps."""
+        a = make_space(name="A", reporting_class=PRODUCTION)
+        body = client.get(HISTORY, params={
+            "keys": "subscription_revenue_cents", "collectives": a.id,
+        }).json()
+        s = body["series"][0]
+        assert all(p["value"] is None for p in s["points"])
+        assert "cannot be broken down by Collective" in (
+            s["points"][0]["unavailable_reason"]
+        )
+
+    def test_an_unknown_collective_is_404_not_a_quiet_line(self, client):
+        r = client.get(HISTORY, params={
+            "keys": "unique_members", "collectives": "space_does_not_exist",
+        })
+        assert r.status_code == 404
+        assert "Unknown Collective" in r.json()["detail"]
+
+    def test_too_many_series_is_refused_by_name(self, client, make_space):
+        # Derived from the cap rather than hard-coded, so raising the
+        # cap cannot leave this test asserting nothing.
+        keys = [
+            m.key for m in REGISTRY.all()
+            if "space_id" in m.dimensions and store_eligible(m)
+        ][:6]
+        spaces = [make_space().id for _ in range(history.MAX_SERIES // len(keys) + 1)]
+        assert len(keys) * len(spaces) > history.MAX_SERIES
+        r = client.get(HISTORY, params={
+            "keys": ",".join(keys), "collectives": ",".join(spaces),
+        })
+        assert r.status_code == 422
+        assert "exceeds the" in r.json()["detail"]
+
+    def test_the_page_s_own_comparison_fits_inside_the_cap(self, client, make_space):
+        """Six metrics across four Collectives is what the Collectives
+        page asks for in one request, deliberately as one request: two
+        requests seconds apart can straddle midnight in Sydney and
+        resolve different last-completed days."""
+        spaces = [make_space().id for _ in range(4)]
+        r = client.get(HISTORY, params={
+            "keys": (
+                "unique_members,memberships_started,participation_acts,"
+                "gathering_attendance,pathway_steps_completed,"
+                "gross_collective_sales_cents"
+            ),
+            "collectives": ",".join(spaces),
+        })
+        assert r.status_code == 200, r.text
+        assert len(r.json()["series"]) == 24
+
+    def test_no_collective_ids_is_422(self, client):
+        assert client.get(HISTORY, params={
+            "keys": "unique_members", "collectives": " ,",
+        }).status_code == 422
+
+    def test_snapshots_and_flows_still_fold_differently_per_collective(
+        self, db, client, make_space,
+    ):
+        a = make_space(name="A", reporting_class=PRODUCTION)
+        last = completed_reporting_date(datetime.utcnow())
+        for i in range(3):
+            day = last - timedelta(days=i)
+            _store_for_space(db, a.id, "unique_members", day, 10 + i)
+            _store_for_space(
+                db, a.id, "memberships_started", day, 2, aggregation="additive",
+            )
+        body = client.get(HISTORY, params={
+            "keys": "unique_members,memberships_started",
+            "collectives": a.id,
+            "range": "last_30_days", "grouping": "monthly",
+        }).json()
+        by_key = {s["key"]: s for s in body["series"]}
+        snap = [p for p in by_key["unique_members"]["points"] if p["available"]][-1]
+        flow = [p for p in by_key["memberships_started"]["points"] if p["available"]][-1]
+        assert snap["value"] == 10, "a snapshot takes the latest day, not the sum"
+        assert flow["value"] == 6, "a flow sums its days"
+
+
+class TestAPerCollectiveRowHoldsThatCollectivesFigure:
+    """The defect this class exists for.
+
+    ``aggregates._space_scope`` builds a per-Collective scope as
+    ``Audience.platform`` with one ``space_id`` — platform because the
+    loader may compute every metric, one Collective because that is the
+    row being written. Every calculation then asked
+    ``if not scope.is_platform``, saw a platform audience and skipped
+    the restriction, so each Collective's stored row held the platform
+    total.
+
+    Nothing displayed those rows, so no wrong figure ever reached a
+    reader — the Collectives comparison would have been the first
+    surface to read them, and it would have drawn every Collective as
+    an identical line.
+    """
+
+    def _two_collectives(self, db, make_space, make_user):
+        a, b = make_space(name="A"), make_space(name="B")
+        for _ in range(3):
+            _join(db, make_user(), a)
+        _join(db, make_user(), b)
+        return a, b
+
+    def test_the_loader_writes_each_collectives_own_membership_count(
+        self, db, make_space, make_user,
+    ):
+        a, b = self._two_collectives(db, make_space, make_user)
+        day = date(2026, 10, 20)
+        aggregates.rebuild_day(db, day, space_ids=[a.id, b.id])
+        db.flush()
+        db.expire_all()
+        rows = {
+            r.dimension: r.value
+            for r in db.query(MetricDaily).filter(
+                MetricDaily.metric_key == "unique_members",
+                MetricDaily.reporting_date == day,
+            )
+        }
+        assert rows[aggregates.space_dimension(a.id)] == 3
+        assert rows[aggregates.space_dimension(b.id)] == 1
+        assert rows[aggregates.PLATFORM_DIMENSION] == 4
+
+    def test_a_scope_restriction_applies_whatever_the_audience(
+        self, db, make_space, make_user,
+    ):
+        """Entitlement and restriction are separate axes."""
+        a, b = self._two_collectives(db, make_space, make_user)
+        restricted = aggregates._space_scope(a.id)
+        assert restricted.is_platform, "the loader is entitled to every metric"
+        assert restricted.space_filter == (a.id,), "and restricted to one"
+        assert REGISTRY.get("unique_members").evaluate(
+            db, restricted, Window(),
+        ).value == 3
+
+    def test_an_unrestricted_platform_scope_still_sees_everything(
+        self, db, make_space, make_user,
+    ):
+        self._two_collectives(db, make_space, make_user)
+        assert platform_scope().space_filter is None
+        assert REGISTRY.get("unique_members").evaluate(
+            db, platform_scope(), Window(),
+        ).value == 4
+
+    def test_a_creator_managing_nothing_still_sees_nothing(self, db):
+        from app.reporting.scope import Audience, ReportScope
+
+        nobody = ReportScope(audience=Audience.creator, user_id="u", space_ids=())
+        assert nobody.space_filter == (), (
+            "an empty restriction must mean 'no rows', never 'no filter'"
+        )
+        assert REGISTRY.get("unique_members").evaluate(db, nobody, Window()).value == 0
+
+    def test_money_is_scoped_per_collective_too(
+        self, db, make_space, make_user,
+    ):
+        a, b = make_space(name="A"), make_space(name="B")
+        creator = make_user(role="creator")
+        _txn(db, space=a, creator=creator, payer=make_user(), gross=1000)
+        _txn(db, space=b, creator=creator, payer=make_user(), gross=9000)
+        window = Window(datetime(2026, 10, 1), datetime(2026, 11, 1), "oct")
+        assert REGISTRY.get("gross_collective_sales_cents").evaluate(
+            db, aggregates._space_scope(a.id), window,
+        ).value == 1000
+
+    def test_engagement_is_scoped_per_collective_too(
+        self, db, make_space, make_user,
+    ):
+        a, b = make_space(name="A"), make_space(name="B")
+        for space, n in ((a, 2), (b, 5)):
+            channel = ConversationChannel(
+                id=_uid("ch"), space_id=space.id, name="General",
+                slug=f"general-{uuid.uuid4().hex[:6]}", channel_type="standard",
+            )
+            db.add(channel)
+            db.flush()
+            for _ in range(n):
+                db.add(CommunityPost(
+                    id=_uid("cp"), space_id=space.id, channel_id=channel.id,
+                    author_id=make_user().id, body="hello",
+                    created_at=datetime(2026, 10, 10),
+                ))
+        db.flush()
+        window = Window(datetime(2026, 10, 1), datetime(2026, 11, 1), "oct")
+        assert REGISTRY.get("participation_acts").evaluate(
+            db, aggregates._space_scope(a.id), window,
+        ).value == 2

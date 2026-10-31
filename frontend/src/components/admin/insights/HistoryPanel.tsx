@@ -13,6 +13,7 @@ import {
   QUALITY_LABEL,
   historyQuality,
   populationNotes,
+  seriesKey,
 } from '@/lib/insights-history'
 import { type ChartKind, TimeSeriesChart } from './charts/TimeSeriesChart'
 
@@ -65,6 +66,7 @@ export function HistoryPanel({
   height,
   footnote,
   prominent = false,
+  collectiveIds,
 }: {
   title: string
   /** One short, human sentence. The detail goes in `footnote`. */
@@ -79,6 +81,12 @@ export function HistoryPanel({
   footnote?: string
   /** The lead chart on a page: taller, and titled a size up. */
   prominent?: boolean
+  /**
+   * Compare Collectives on a single metric instead of several metrics
+   * on the platform. One line per Collective, in the order given, each
+   * labelled with its own name.
+   */
+  collectiveIds?: string[]
 }) {
   const [showTable, setShowTable] = useState(false)
   const [showMeaning, setShowMeaning] = useState(false)
@@ -88,9 +96,24 @@ export function HistoryPanel({
   // Ordered by the panel's own key list rather than by the response, so
   // a series keeps the hue the panel assigned it however the backend
   // happens to order them.
-  const ordered = keys
-    .map((k) => series.find((s) => s.key === k))
-    .filter((s): s is NonNullable<typeof s> => Boolean(s))
+  const ordered = collectiveIds
+    ? // Comparison mode: one metric, one line per Collective. The
+      // Collective's name becomes the series name, because on this
+      // chart "EMBODY" is the identity and "Unique members" is the
+      // axis — using the metric name would label every line the same.
+      collectiveIds
+        .map((id) => {
+          const match = series.find(
+            (s) => s.key === keys[0] && s.collective_id === id,
+          )
+          return match
+            ? { ...match, display_name: match.collective_name ?? match.display_name }
+            : undefined
+        })
+        .filter((s): s is NonNullable<typeof s> => Boolean(s))
+    : keys
+        .map((k) => series.find((s) => s.key === k))
+        .filter((s): s is NonNullable<typeof s> => Boolean(s))
 
   // Two different things, deliberately not one list. A caution says
   // "trust this less"; a note says "here is how this was established".
@@ -265,7 +288,7 @@ function Meaning({
   return (
     <div className="max-w-[78ch] space-y-3.5">
       {series.map((s) => (
-        <div key={s.key}>
+        <div key={seriesKey(s)}>
           <p className="text-[12.5px] font-semibold" style={{ color: INK }}>
             {s.display_name}
           </p>
@@ -323,6 +346,14 @@ function Meaning({
               <Fact label="Part period">
                 Fewer days were recorded than the period covers, so the
                 figure understates it.
+              </Fact>
+            )}
+            {quality.some((q) => q.kind === 'coverage') && (
+              <Fact label="Shorter history">
+                One of the series compared begins later than the others —
+                a Collective that opened in September has no August. Its
+                line starts where its history does, which is not a fall to
+                nothing.
               </Fact>
             )}
             {quality.some((q) => q.kind === 'unavailable') && (

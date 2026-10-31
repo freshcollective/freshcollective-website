@@ -25,6 +25,7 @@ export function useHistory(
   range: HistoryRangeKey,
   grouping: Grouping,
   population: PopulationKey,
+  collectives: string[] = [],
 ) {
   const [state, setState] = useState<{
     data: HistoryResult | null
@@ -33,7 +34,8 @@ export function useHistory(
   }>({ data: null, for: null, error: null })
 
   const keyList = keys.join(',')
-  const asked = `${keyList}|${range}|${grouping}|${population}`
+  const collectiveList = collectives.join(',')
+  const asked = `${keyList}|${range}|${grouping}|${population}|${collectiveList}`
 
   useEffect(() => {
     const controller = new AbortController()
@@ -44,6 +46,7 @@ export function useHistory(
       grouping,
       population,
       controller.signal,
+      collectiveList ? collectiveList.split(',') : [],
     )
       .then((data) => {
         if (!cancelled) setState({ data, for: asked, error: null })
@@ -56,7 +59,7 @@ export function useHistory(
       cancelled = true
       controller.abort()
     }
-  }, [keyList, range, grouping, population, asked])
+  }, [keyList, collectiveList, range, grouping, population, asked])
 
   return {
     data: state.error ? null : state.data,
