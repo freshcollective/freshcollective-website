@@ -290,7 +290,15 @@ for _key, _name, _definition, _source, _compute in _STAGES:
             "creator with three Collectives is one creator throughout. A "
             "snapshot — take the latest, never sum across periods."
         ),
-        dimensions=("space_id", POPULATION_DIMENSION),
+        # **No ``space_id``.** Per Collective these degenerate to a
+        # boolean — "does this Collective's creator have a member" is 0
+        # or 1 — which is not a figure anybody would read, and
+        # declaring the dimension made the loader write twenty-one such
+        # rows a day beside the four that mean something. A request to
+        # break one of these down by Collective is refused with a
+        # reason instead, which is the honest answer: the creator
+        # journey is a platform-level question.
+        dimensions=(POPULATION_DIMENSION,),
         personal_data=True,
         compute=_compute,
     ))
