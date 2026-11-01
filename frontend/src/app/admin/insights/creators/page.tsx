@@ -295,8 +295,13 @@ export default function CreatorsPage() {
               <InsightCard
                 metric={pick(cards, 'outstanding_payouts_cents')}
                 hue="navy"
-                emphasiseValue={
+                // Outstanding, not overdue: money earned and not yet
+                // transferred is the normal state of a payouts balance,
+                // so it gets the obligation colour rather than a warning.
+                emphasis={
                   (pick(cards, 'outstanding_payouts_cents')?.value ?? 0) > 0
+                    ? 'obligation'
+                    : undefined
                 }
                 caption="earned by creators and not yet transferred"
               />
@@ -332,7 +337,7 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
     <CardNote span="mb-8">
       <h4
         className="font-serif text-[15.5px]"
-        style={{ color: ON_NAVY.ink.heading }}
+        style={{ color: ON_NAVY.ink }}
       >
         Whose earnings those are
       </h4>
@@ -350,11 +355,7 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
       </dl>
       <p
         className="mt-2.5 text-[12px] leading-snug"
-        style={{
-          color: ON_NAVY.ink.muted,
-          fontFamily: 'Georgia, serif',
-          fontStyle: 'italic',
-        }}
+        style={{ color: ON_NAVY.ink }}
       >
         {String(metric.qualifiers?.operator_note ?? '')}
       </p>
@@ -398,18 +399,18 @@ function Split({
 }) {
   return (
     <div>
-      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink.muted }}>
+      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
         {label}
       </dt>
       <dd
         className="m-0 text-[18px] tabular-nums"
-        style={{ color: ON_NAVY.ink.heading, fontFamily: 'Georgia, serif' }}
+        style={{ color: ON_NAVY.ink, fontFamily: 'Georgia, serif' }}
       >
         {formatMoney(cents)}
       </dd>
       <p
         className="mt-0.5 text-[11.5px] leading-snug"
-        style={{ color: ON_NAVY.ink.muted }}
+        style={{ color: ON_NAVY.ink }}
       >
         {note}
       </p>

@@ -271,8 +271,13 @@ export default function MoneyPage() {
               <InsightCard
                 metric={pick(data, 'outstanding_payouts_cents')}
                 hue="navy"
-                emphasiseValue={
+                // Outstanding, not overdue: money earned and not yet
+                // transferred is the normal state of a payouts balance,
+                // so it gets the obligation colour rather than a warning.
+                emphasis={
                   (pick(data, 'outstanding_payouts_cents')?.value ?? 0) > 0
+                    ? 'obligation'
+                    : undefined
                 }
                 caption="owed to creators right now"
               />
@@ -331,7 +336,7 @@ function NotProfitNote() {
         border, which is what keeps this the same object as the teal
         note rather than a second kind of panel.
       */}
-      <p className="text-[12.5px]" style={{ color: ON_NAVY.ink.body }}>
+      <p className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
         Contribution is income less Stripe&rsquo;s processing fees only. It is not
         profit — hosting, software, and everything else it takes to run Fresh
         Collective sit outside the platform and are not in this figure.
@@ -364,16 +369,10 @@ function WhoIsOwedNote({ data }: { data: MetricResult }) {
   )
 
   return (
-    <div
-      className="mb-8 rounded-2xl p-5"
-      style={{
-        background: 'rgba(56, 116, 180, 0.06)',
-        border: '1px solid rgba(56, 116, 180, 0.22)',
-      }}
-    >
+    <CardNote span="mb-8">
       <h4
         className="font-serif text-[15.5px] leading-tight"
-        style={{ color: INK }}
+        style={{ color: ON_NAVY.ink }}
       >
         Who that is owed to
       </h4>
@@ -390,25 +389,18 @@ function WhoIsOwedNote({ data }: { data: MetricResult }) {
         />
       </dl>
       {classes.length > 0 && (
-        <p className="mt-3 text-[12.5px]" style={{ color: INK_MUTED }}>
+        <p className="mt-3 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
           By activity:{' '}
           {classes
             .map(([name, cents]) => `${humaniseClass(name)} ${formatMoney(cents)}`)
             .join(' · ')}
         </p>
       )}
-      <p
-        className="mt-3 text-[12.5px]"
-        style={{
-          color: INK_MUTED,
-          fontFamily: 'Georgia, serif',
-          fontStyle: 'italic',
-        }}
-      >
+      <p className="mt-3 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
         A Stripe payout into Fresh Collective&rsquo;s bank account is not a creator
         payout, so nothing here is cleared by one.
       </p>
-    </div>
+    </CardNote>
   )
 }
 
@@ -423,16 +415,16 @@ function Owed({
 }) {
   return (
     <div>
-      <dt className="text-[12.5px]" style={{ color: INK_MUTED }}>
+      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
         {label}
       </dt>
       <dd
         className="text-[19px] tabular-nums"
-        style={{ color: INK, fontWeight: 600 }}
+        style={{ color: ON_NAVY.ink, fontWeight: 600 }}
       >
         {formatMoney(amount)}
       </dd>
-      <dd className="text-[11.5px]" style={{ color: FC_INK.faint }}>
+      <dd className="text-[11.5px]" style={{ color: ON_NAVY.ink }}>
         {hint}
       </dd>
     </div>
@@ -454,7 +446,7 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
   if (gross === 0) {
     return (
       <CardNote>
-        <p className="text-[13px]" style={{ color: ON_NAVY.ink.muted }}>
+        <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
           No member purchases in this period, so there is nothing to divide up
           yet.
         </p>
@@ -465,17 +457,13 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
   const share = Math.round((fee / gross) * 100)
   return (
     <CardNote>
-      <p className="text-[13px]" style={{ color: ON_NAVY.ink.body }}>
+      <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
         Of {formatMoney(gross)} members paid, {formatMoney(creators)} is the
         creators&rsquo; and {formatMoney(fee)} is ours — about {share}%.
       </p>
       <p
         className="mt-2 text-[12.5px]"
-        style={{
-          color: ON_NAVY.ink.muted,
-          fontFamily: 'Georgia, serif',
-          fontStyle: 'italic',
-        }}
+        style={{ color: ON_NAVY.ink }}
       >
         The large number is the one that passes through; the small one is the
         one that stays.

@@ -58,7 +58,30 @@ export const INSIGHT_HUES: readonly InsightHue[] = [
 /** Data-mark colours: the hue at the strength a line or bar needs. */
 export const HUE_MARK: Record<InsightHue, string> = {
   teal: '#0E9A95',
-  navy: '#1D5390',
+  /**
+   * `--fc-surface-inverse`, the platform's deep navy, used here as a
+   * deliberate dark anchor rather than a fourth mid-tone hue.
+   *
+   * The palette validator FAILs it twice — lightness 0.201 against a
+   * 0.43-0.77 band, chroma 0.033 against a 0.1 floor — and both
+   * checks are asking "is this a legible mid-tone hue?", which is the
+   * wrong question for an ink-dark anchor. The checks that decide
+   * whether a reader can tell the series apart both PASS with it, and
+   * the worst pair in the palette (watermelon-teal, ΔE 8.4 protan)
+   * does not involve navy at all: at L 0.20 against teal, gold and
+   * watermelon it is the *most* separable slot, by lightness rather
+   * than by hue.
+   *
+   * The real constraint it has to clear is that a near-black line
+   * could read as chart furniture rather than as data. It does not:
+   * the grid is 7% ink and the axis 16%, so inside the plot a 2px
+   * #071824 line is by far the darkest thing and reads as the series.
+   * Verified by rendering, not by assuming.
+   *
+   * Where navy *cannot* work — a navy dot on a navy card — the
+   * exception is ``ON_NAVY.hue.navy``, not a second palette.
+   */
+  navy: '#071824',
   gold: '#D4B048',
   watermelon: '#DC6F5C',
 }
@@ -183,15 +206,22 @@ export const ON_NAVY = {
   /** The disclosure panel, a shade lifted off the card. */
   well: 'rgba(255, 255, 255, 0.06)',
 
-  ink: {
-    /** --fc-ink-heading-inverse. Headings and the figure. */
-    heading: '#FFFFFF', // 18.0:1
-    /** Supporting description — soft white, still comfortably AA. */
-    body: 'rgba(255, 255, 255, 0.78)', // 11.2:1
-    muted: 'rgba(255, 255, 255, 0.72)', // 9.6:1
-    /** Disclosure triggers. Interactive text, so AA applies in full. */
-    faint: 'rgba(255, 255, 255, 0.66)', // 8.3:1
-  },
+  /**
+   * One ink, and it is pure white.
+   *
+   * This replaced a four-step ladder of translucent whites (0.78 /
+   * 0.72 / 0.66). Every step cleared AA on its own, but the effect
+   * read as grey and muted rather than crisp, and the lower steps
+   * were doing work that type should do. Rank is now carried by
+   * size, weight and spacing — a 13.5px semibold heading over a 28px
+   * serif figure over 12.5px supporting copy — so nothing on a dark
+   * card is dimmed to signal that it matters less.
+   *
+   * Deliberately a single value rather than four keys holding the
+   * same colour: there is no second ink to reach for, which is the
+   * only thing that stops the ladder growing back.
+   */
+  ink: '#FFFFFF', // 18.0:1 on the card, 15.3:1 on a tinted note
 
   /**
    * Identity hues as they appear on navy.
@@ -253,6 +283,58 @@ export const ON_NAVY = {
   /** Focus ring. The dark-teal ring used on white vanishes here. */
   focus: '#55B8B6',
 } as const
+
+/**
+ * Full-colour cards, for the few figures that should be found first.
+ *
+ * A figure that needs attention used to be an amber number on an
+ * otherwise ordinary navy card, which read as disconnected — the
+ * colour sat on the value alone and the card around it said nothing.
+ * These give the whole card the colour instead.
+ *
+ * The four kinds are kept apart because conflating them is how a
+ * dashboard cries wolf. **An outstanding obligation is not overdue**:
+ * money owed to a creator that is simply not yet paid is the normal
+ * state of a payouts ledger, and colouring it like a failure would
+ * teach a caretaker to ignore the colour that means failure.
+ *
+ * Every surface carries pure white text, so each is a step dark
+ * enough for white to clear AA. Watermelon itself (#DC6F5C) is only
+ * 3.25:1 against white and cannot host body text — `obligation` uses
+ * #A8402C, which is already the palette's readable form of watermelon
+ * rather than a new colour.
+ */
+export type EmphasisKind = 'obligation' | 'overdue' | 'warning' | 'error'
+
+export const EMPHASIS: Record<
+  EmphasisKind,
+  { surface: string; label: string; hover: string }
+> = {
+  /** Owed, and not yet due. The normal state of a payouts balance. */
+  obligation: {
+    surface: '#A8402C', // white 6.1:1
+    label: 'Outstanding',
+    hover: '#93381D',
+  },
+  /** Owed past the point it should have been settled. */
+  overdue: {
+    surface: '#8F2F1C', // white 8.0:1
+    label: 'Overdue',
+    hover: '#7A2817',
+  },
+  /** Not money: something a caretaker should look at. */
+  warning: {
+    surface: '#B45309', // white 5.0:1
+    label: 'Needs attention',
+    hover: '#92400E',
+  },
+  /** Something failed. Reserved, and rare. */
+  error: {
+    surface: '#B91C1C', // white 6.5:1
+    label: 'Failed',
+    hover: '#991B1B',
+  },
+}
 
 /**
  * A status *tone* — the vocabulary surfaces use when the colour means

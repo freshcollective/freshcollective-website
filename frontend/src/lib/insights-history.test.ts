@@ -4,7 +4,14 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { HUE_MARK, HUE_UI, INK, ON_NAVY, STATUS } from './insights-palette.ts'
+import {
+  EMPHASIS,
+  HUE_MARK,
+  HUE_UI,
+  INK,
+  ON_NAVY,
+  STATUS,
+} from './insights-palette.ts'
 
 import {
   QUALITY_LABEL,
@@ -428,10 +435,17 @@ describe('the chart palette', () => {
     // Re-stepping any of these invalidates the colour-vision
     // separation that was measured, so the values are pinned:
     //   node scripts/validate_palette.js \
-    //     "#0E9A95,#1D5390,#D4B048,#DC6F5C" --mode light --surface "#FFFFFF"
+    //     "#0E9A95,#071824,#D4B048,#DC6F5C" --mode light --surface "#FFFFFF"
+    //
+    // That run reports two FAILs, both against #071824 and both
+    // asking whether it is a legible *mid-tone* hue — it is not, and
+    // is not meant to be. The checks that decide whether a reader can
+    // tell the four apart (CVD separation, normal-vision floor) pass
+    // with it, and the worst pair in the palette does not involve
+    // navy. See the note on HUE_MARK.navy.
     assert.deepEqual(HUE_STROKE, {
       teal: '#0E9A95',
-      navy: '#1D5390',
+      navy: '#071824',
       gold: '#D4B048',
       watermelon: '#DC6F5C',
     })
@@ -444,6 +458,11 @@ describe('the chart palette', () => {
     // the token values fall below the chroma floor a data mark needs.
     assert.equal(HUE_STROKE.gold, '#D4B048', 'the Fresh Collective gold')
     assert.equal(HUE_STROKE.watermelon, '#DC6F5C', '--fc-type-video coral')
+    assert.equal(
+      HUE_STROKE.navy,
+      ON_NAVY.surface,
+      'the chart navy is --fc-surface-inverse itself, not a near miss',
+    )
   })
 
   test('no chart hue is also a status colour', () => {
@@ -2154,9 +2173,7 @@ describe('World Insights contrast', () => {
   test('every colour on the navy card clears AA against it', () => {
     const navy = ON_NAVY.surface
     const checks: Array<[string, string]> = [
-      ...Object.entries(ON_NAVY.ink).map(
-        ([k, v]) => [`ink.${k}`, v] as [string, string],
-      ),
+      ['ink', ON_NAVY.ink] as [string, string],
       ...Object.entries(ON_NAVY.status).map(
         ([k, v]) => [`status.${k}`, v] as [string, string],
       ),
@@ -2190,7 +2207,7 @@ describe('World Insights contrast', () => {
         `the ${accent} note should be lighter than the card`,
       )
       const checks = {
-        ...ON_NAVY.ink,
+        ink: ON_NAVY.ink,
         ...ON_NAVY.status,
         ...ON_NAVY.hue,
       } as Record<string, string>
@@ -2219,6 +2236,91 @@ describe('World Insights contrast', () => {
         `${hue} must be restepped for navy if the light value fails there`,
       )
     }
+  })
+
+  test('dark cards carry pure white, never a dimmed white', () => {
+    // The ladder of translucent whites that preceded this all cleared
+    // AA and still read as grey. Rank is type now, not opacity, so a
+    // reintroduced rgba() here is the regression to catch.
+    assert.equal(ON_NAVY.ink, '#FFFFFF')
+  })
+
+  test('nothing on a dark card is italic', () => {
+    // A whole supporting sentence in italic serif is harder to read
+    // than the figure it supports. Page-level notes on the white
+    // background keep theirs; these components are the dark ones.
+    for (const f of [
+      'src/components/admin/insights/InsightCard.tsx',
+      'src/app/admin/insights/growth/page.tsx',
+      'src/app/admin/insights/money/page.tsx',
+      'src/app/admin/insights/creators/page.tsx',
+    ]) {
+      const src = withoutDocComments(read(f))
+      assert.ok(
+        !/fontStyle:\s*'italic'/.test(src),
+        `${f} still sets an italic on a dark card`,
+      )
+    }
+  })
+
+  test('every emphasis surface carries white text accessibly', () => {
+    for (const [kind, step] of Object.entries(EMPHASIS)) {
+      for (const [which, bg] of [
+        ['surface', step.surface],
+        ['hover', step.hover],
+      ] as const) {
+        const r = ratio('#FFFFFF', bg)
+        assert.ok(
+          r >= 4.5,
+          `EMPHASIS.${kind}.${which} (${bg}) gives white ${r.toFixed(2)}:1, ` +
+            `below AA 4.5:1`,
+        )
+      }
+    }
+  })
+
+  test('the status chip darkens its card, so white still clears AA', () => {
+    // A translucent white chip is the obvious choice and is wrong: it
+    // lightens the surface and took white below AA on obligation
+    // (4.12:1) and warning (3.54:1).
+    const src = read('src/components/admin/insights/InsightCard.tsx')
+    const chip = /background: 'rgba\(0, 0, 0, ([\d.]+)\)'/.exec(src)
+    assert.ok(chip, 'the emphasis chip should darken, not lighten')
+    const alpha = Number(chip[1])
+    for (const [kind, step] of Object.entries(EMPHASIS)) {
+      const base = [1, 3, 5].map((i) =>
+        parseInt(step.surface.slice(i, i + 2), 16),
+      )
+      const darkened = `#${base
+        .map((v) =>
+          Math.round(v * (1 - alpha))
+            .toString(16)
+            .padStart(2, '0'),
+        )
+        .join('')}`
+      const r = ratio('#FFFFFF', darkened)
+      assert.ok(r >= 4.5, `${kind} chip gives white ${r.toFixed(2)}:1`)
+    }
+  })
+
+  test('watermelon itself is too light to host white text', () => {
+    // The reason `obligation` is #A8402C and not the watermelon a
+    // reader sees on the charts. Stated as a test so the "just use
+    // the brand colour" edit fails rather than ships.
+    assert.ok(ratio('#FFFFFF', HUE_MARK.watermelon) < 4.5)
+    assert.equal(EMPHASIS.obligation.surface, HUE_UI.watermelon.text)
+  })
+
+  test('an obligation is not an overdue one, nor a failure', () => {
+    // Money owed and not yet paid is the normal state of a payouts
+    // ledger. If it shared a colour with a failure, the colour that
+    // means failure would stop meaning anything.
+    const surfaces = Object.values(EMPHASIS).map((e) => e.surface)
+    assert.equal(new Set(surfaces).size, surfaces.length)
+    const labels = Object.values(EMPHASIS).map((e) => e.label)
+    assert.equal(new Set(labels).size, labels.length)
+    assert.equal(EMPHASIS.obligation.label, 'Outstanding')
+    assert.notEqual(EMPHASIS.obligation.surface, EMPHASIS.overdue.surface)
   })
 
   test('status never collides with an identity hue', () => {

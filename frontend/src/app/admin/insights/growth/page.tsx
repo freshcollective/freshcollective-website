@@ -266,7 +266,7 @@ function OverlapNote({ data }: { data: MetricResult }) {
 
   return (
     <CardNote accent="teal">
-      <p className="text-[13px]" style={{ color: ON_NAVY.ink.body }}>
+      <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
         {formatCount(members)} {members === 1 ? 'person holds' : 'people hold'}{' '}
         {formatCount(memberships)}{' '}
         {memberships === 1 ? 'membership' : 'memberships'} between them
@@ -281,11 +281,7 @@ function OverlapNote({ data }: { data: MetricResult }) {
       </p>
       <p
         className="mt-2 text-[12.5px]"
-        style={{
-          color: ON_NAVY.ink.muted,
-          fontFamily: 'Georgia, serif',
-          fontStyle: 'italic',
-        }}
+        style={{ color: ON_NAVY.ink }}
       >
         Memberships outnumbering people is a good sign, not a double count.
       </p>

@@ -8,7 +8,12 @@ import {
   formatValue,
   qualifierNote,
 } from '@/lib/insights'
-import { ON_NAVY, type InsightHue } from '@/lib/insights-palette'
+import {
+  EMPHASIS,
+  ON_NAVY,
+  type EmphasisKind,
+  type InsightHue,
+} from '@/lib/insights-palette'
 
 /**
  * The figures band is dark.
@@ -26,15 +31,18 @@ import { ON_NAVY, type InsightHue } from '@/lib/insights-palette'
  */
 const CARD_BG = ON_NAVY.surface
 const CARD_BORDER = `1px solid ${ON_NAVY.edge}`
-const INK = ON_NAVY.ink.heading
-const INK_MUTED = ON_NAVY.ink.muted
-const INK_SOFTER = ON_NAVY.ink.faint
 
-const SERIF_ITALIC: React.CSSProperties = {
-  color: INK_MUTED,
-  fontFamily: 'Georgia, serif',
-  fontStyle: 'italic',
-}
+/**
+ * One ink on a dark card, and it is pure white.
+ *
+ * Everything here used to sit on a ladder of translucent whites, and
+ * the result read as grey. Rank is carried by size and weight now —
+ * see ``CardHeading`` (13.5 semibold), the figure (28 serif) and the
+ * caption (12.5 regular) — so no line is dimmed to say it matters
+ * less. The caption also lost its italic: a whole sentence in italic
+ * serif is harder to read than the thing it supports.
+ */
+const INK = ON_NAVY.ink
 
 /**
  * One figure, and everything needed to trust it.
@@ -62,7 +70,7 @@ export function InsightCard({
   previousLabel,
   hue = 'teal',
   caption,
-  emphasiseValue,
+  emphasis,
 }: {
   metric: MetricValue | null
   previous?: MetricValue | null
@@ -71,16 +79,17 @@ export function InsightCard({
   /** A short line under the figure, in the warm register. */
   caption?: string
   /**
-   * Render the figure in the **status** colour rather than the card's
-   * hue, for a genuine obligation or alarm.
+   * Give the whole card a colour, for a figure that should be found
+   * first on the page.
    *
-   * Deliberately not one of the four chart hues. Now that watermelon
-   * is an ordinary series colour, an obligation drawn in it would be
-   * indistinguishable from the fourth line on a chart — so it takes
-   * the amber from ``--fc-status-warning``, which no series uses.
-   * Reserve it for something a caretaker should actually act on.
+   * Colouring the *value* alone was the earlier attempt and it read
+   * as disconnected — an amber number floating on a navy card, with
+   * the card itself saying nothing. The kinds are distinct because an
+   * outstanding obligation is not an overdue one and neither is a
+   * failure; see ``EMPHASIS``. Reserve this for figures that genuinely
+   * deserve to interrupt someone.
    */
-  emphasiseValue?: boolean
+  emphasis?: EmphasisKind
 }) {
   const [open, setOpen] = useState(false)
   const detailsId = useId()
@@ -91,12 +100,23 @@ export function InsightCard({
         className="rounded-2xl p-5"
         style={{ background: CARD_BG, border: CARD_BORDER }}
       >
-        <p className="text-[12.5px]" style={{ color: INK_SOFTER }}>
+        <p className="text-[12.5px]" style={{ color: INK }}>
           Not available
         </p>
       </div>
     )
   }
+
+  const emph = emphasis ? EMPHASIS[emphasis] : null
+  const surface = emph
+    ? {
+        background: emph.surface,
+        border: '1px solid rgba(255, 255, 255, 0.22)',
+        // Hover lives in CSS rather than React state so a card that
+        // is not interactive does not need a listener to look alive.
+        ['--emph-hover' as string]: emph.hover,
+      }
+    : { background: CARD_BG, border: CARD_BORDER }
 
   const def = metric.definition
   const note = qualifierNote(metric)
@@ -110,15 +130,38 @@ export function InsightCard({
       // which refuses to shrink below its content and pushes the card
       // past the column it sits in. ``break-words`` is the backstop for
       // a single long token with nowhere to wrap.
-      className="flex min-w-0 flex-col rounded-2xl p-5 break-words"
-      style={{ background: CARD_BG, border: CARD_BORDER }}
+      className={`flex min-w-0 flex-col rounded-2xl p-5 break-words${
+        emph ? ' transition-colors hover:[background:var(--emph-hover)]' : ''
+      }`}
+      style={surface}
     >
-      <CardHeading hue={hue}>{def.display_name}</CardHeading>
+      <CardHeading hue={hue} plain={Boolean(emph)}>
+        {def.display_name}
+      </CardHeading>
+
+      {emph && (
+        // A chip, not an uppercase eyebrow — Fresh Collective's design
+        // language rules those out, and this needs to read as a state
+        // ("Outstanding", not "Overdue") rather than as a label for
+        // the heading above it.
+        <p className="mt-2">
+          <span
+            className="inline-block rounded-full px-2 py-[3px] text-[11.5px] font-semibold"
+            // Darkens rather than lightens the surface. A translucent
+            // *white* chip read as the obvious choice and took white
+            // text below AA on two of the four kinds; going the other
+            // way raises contrast instead of eroding it.
+            style={{ color: INK, background: 'rgba(0, 0, 0, 0.22)' }}
+          >
+            {emph.label}
+          </span>
+        </p>
+      )}
 
       {metric.available ? (
         <p
           className="mt-2.5 font-serif text-[26px] leading-tight md:text-[28px]"
-          style={{ color: emphasiseValue ? ON_NAVY.status.warning : INK }}
+          style={{ color: INK }}
         >
           {formatValue(metric)}
         </p>
@@ -126,24 +169,24 @@ export function InsightCard({
         <>
           <p
             className="mt-3 font-serif text-[22px] leading-tight"
-            style={{ color: INK_SOFTER }}
+            style={{ color: INK }}
           >
             Not yet
           </p>
-          <p className="mt-1 text-[12.5px]" style={{ color: INK_MUTED }}>
+          <p className="mt-1 text-[12.5px]" style={{ color: INK }}>
             {metric.unavailable_reason}
           </p>
         </>
       )}
 
       {caption && metric.available && (
-        <p className="mt-1 text-[12.5px]" style={SERIF_ITALIC}>
+        <p className="mt-1.5 text-[12.5px] leading-snug" style={{ color: INK }}>
           {caption}
         </p>
       )}
 
       {comparison && (
-        <p className="mt-3 text-[12.5px]" style={{ color: INK_MUTED }}>
+        <p className="mt-3 text-[12.5px]" style={{ color: INK }}>
           {comparison}
         </p>
       )}
@@ -160,7 +203,7 @@ export function InsightCard({
         aria-expanded={open}
         aria-controls={detailsId}
         className="mt-3 rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
-        style={{ color: INK_SOFTER, outlineColor: ON_NAVY.focus }}
+        style={{ color: INK, outlineColor: ON_NAVY.focus }}
       >
         {open ? 'Hide what this means' : 'What does this mean?'}
       </button>
@@ -175,18 +218,18 @@ export function InsightCard({
             {def.definition}
           </p>
           {def.limitations && (
-            <p className="mt-2 text-[12.5px]" style={{ color: INK_MUTED }}>
+            <p className="mt-2 text-[12.5px]" style={{ color: INK }}>
               <strong style={{ fontWeight: 600 }}>Worth knowing: </strong>
               {def.limitations}
             </p>
           )}
           <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
-            <dt style={{ color: INK_SOFTER }}>Comes from</dt>
-            <dd style={{ color: INK_MUTED }}>{def.source_of_truth}</dd>
-            <dt style={{ color: INK_SOFTER }}>Counted by</dt>
-            <dd style={{ color: INK_MUTED }}>{describeBasis(def.date_basis)}</dd>
-            <dt style={{ color: INK_SOFTER }}>Adds up?</dt>
-            <dd style={{ color: INK_MUTED }}>
+            <dt style={{ color: INK }}>Comes from</dt>
+            <dd style={{ color: INK }}>{def.source_of_truth}</dd>
+            <dt style={{ color: INK }}>Counted by</dt>
+            <dd style={{ color: INK }}>{describeBasis(def.date_basis)}</dd>
+            <dt style={{ color: INK }}>Adds up?</dt>
+            <dd style={{ color: INK }}>
               {describeAggregation(def.aggregation)}
             </dd>
           </dl>
@@ -259,18 +302,27 @@ function describeAggregation(aggregation: string): string {
  */
 export function CardHeading({
   hue,
+  plain = false,
   children,
 }: {
   hue: InsightHue
+  /**
+   * Drop the dot. On a full-colour card it would be a second colour
+   * competing with the surface, and the surface is already the
+   * association the dot exists to make.
+   */
+  plain?: boolean
   children: React.ReactNode
 }) {
   return (
     <h4 className="flex items-start gap-1.5 text-[13.5px] font-semibold leading-snug">
-      <span
-        aria-hidden="true"
-        className="mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-        style={{ background: ON_NAVY.hue[hue] }}
-      />
+      {!plain && (
+        <span
+          aria-hidden="true"
+          className="mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full"
+          style={{ background: ON_NAVY.hue[hue] }}
+        />
+      )}
       <span className="min-w-0" style={{ color: INK }}>
         {children}
       </span>
