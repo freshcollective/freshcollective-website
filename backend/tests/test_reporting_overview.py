@@ -231,3 +231,96 @@ class TestFreshCollectiveRevenue:
             REGISTRY.get("fresh_collective_revenue_cents").evaluate(
                 db, creator, JUNE, Population(PopulationView.all),
             )
+
+
+class TestOneControlDrivesCardsAndCharts:
+    """``/query`` accepts the rolling ranges ``/history`` already did.
+
+    The Overview wants a single reporting-period selector. The two
+    vocabularies had grown up apart — ``/history`` speaks in ranges
+    ending on the last completed day, ``/query`` in named calendar
+    periods — and inventing a mapping between them would mislabel
+    every figure, since "last 3 months" is not "this month".
+    """
+
+    @pytest.fixture
+    def client(self, db, make_user):
+        from fastapi.testclient import TestClient
+
+        from app.auth.dependencies import get_admin_user, get_current_user
+        from app.core.database import get_db
+        from app.main import app
+
+        admin = make_user(role="admin")
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: admin
+        app.dependency_overrides[get_admin_user] = lambda: admin
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+
+    @pytest.mark.parametrize(
+        "period",
+        ["last_30_days", "last_3_months", "last_12_months",
+         "this_month", "this_fy", "all_time"],
+    )
+    def test_every_overview_period_is_accepted(self, client, period):
+        r = client.get(
+            "/api/admin/reporting/query",
+            params={"keys": "unique_members", "period": period},
+        )
+        assert r.status_code == 200, r.text
+
+    def test_the_named_periods_still_mean_what_they_did(self, client):
+        from datetime import timezone
+
+        from app.core.periods import resolve_period, resolve_reporting_period
+
+        # A fixed instant: `this_month` ends at *now*, so two calls a
+        # microsecond apart are legitimately different.
+        now = datetime(2026, 10, 15, 3, 0, tzinfo=timezone.utc)
+        for key in ("this_month", "last_month", "this_fy", "all_time"):
+            assert resolve_reporting_period(key, now) == resolve_period(key, now)
+
+    def test_a_rolling_range_compares_with_the_span_before_it(self):
+        from app.core.periods import resolve_reporting_period
+
+        current, previous = resolve_reporting_period("last_30_days")
+        assert previous is not None
+        # Immediately before: the thirty days before these thirty,
+        # never a calendar month.
+        assert previous.ends_at == current.starts_at
+
+        # Both cover thirty Australian days. They are **not** the same
+        # number of hours, and must not be asserted to be: one of them
+        # crosses the daylight-saving change, so it is 23 hours shorter
+        # in absolute time while still being thirty days. Comparing
+        # elapsed hours here would turn correct DST handling into a
+        # failing test twice a year.
+        for bounds in (current, previous):
+            hours = (bounds.ends_at - bounds.starts_at).total_seconds() / 3600
+            assert 30 * 24 - 1 <= hours <= 30 * 24 + 1
+
+    def test_an_unknown_period_is_still_refused(self, client):
+        r = client.get(
+            "/api/admin/reporting/query",
+            params={"keys": "unique_members", "period": "last_fortnight"},
+        )
+        assert r.status_code == 422
+
+    def test_a_snapshot_is_not_turned_into_a_period_total(self, client, db, make_user, make_space):
+        """A rolling range must not make a snapshot accumulate."""
+        space = make_space(reporting_class=PRODUCTION)
+        for _ in range(3):
+            _join(db, make_user(), space, datetime(2026, 10, 20))
+
+        thirty = client.get(
+            "/api/admin/reporting/query",
+            params={"keys": "unique_members", "period": "last_30_days"},
+        ).json()["metrics"][0]["value"]
+        year = client.get(
+            "/api/admin/reporting/query",
+            params={"keys": "unique_members", "period": "last_12_months"},
+        ).json()["metrics"][0]["value"]
+        # Same people, whichever window is asked for — a snapshot is
+        # as-at, not a sum over the range.
+        assert thirty == year

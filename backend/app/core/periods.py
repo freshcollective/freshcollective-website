@@ -452,6 +452,73 @@ def resolve_history_range(
     return DateRange(label, floor, last)
 
 
+#: Range keys the reporting ``/query`` endpoint accepts in addition to
+#: :data:`VALID_PERIODS`, so one control can drive both the cards and
+#: the charts on a dashboard.
+#:
+#: Deliberately a separate set rather than a wider ``PeriodKey``. That
+#: type is also read by several unrelated admin endpoints, and
+#: broadening it there would quietly change what they accept.
+RANGE_PERIOD_KEYS: tuple[str, ...] = (
+    "last_30_days",
+    "last_3_months",
+    "last_12_months",
+)
+
+VALID_REPORTING_PERIODS: tuple[str, ...] = VALID_PERIODS + RANGE_PERIOD_KEYS
+
+
+def resolve_reporting_period(
+    key: str,
+    now: datetime | None = None,
+) -> tuple[PeriodBounds, PeriodBounds | None]:
+    """``(current, previous)`` for a period key *or* a history range key.
+
+    The Overview wants one control driving both its charts and the
+    figures beside them, and the two vocabularies had grown up apart:
+    ``/history`` speaks in ranges ending on the last completed day,
+    ``/query`` in named calendar periods. Rather than invent a mapping
+    between them — "last 3 months" is not "this month" and pretending
+    otherwise would mislabel every figure — this resolves a range key
+    directly into the bounds ``/query`` already works in.
+
+    The comparison window is the span of equal length immediately
+    before, which is the only honest previous for a rolling range: the
+    thirty days before these thirty. Note that a rolling range ends on
+    the **last completed day**, not now, for the same reason the charts
+    do — today is still happening and a part-day drags every figure
+    down.
+    """
+    if key in VALID_PERIODS:
+        return resolve_period(key, now)  # type: ignore[arg-type]
+    if key not in RANGE_PERIOD_KEYS:
+        raise ValueError(
+            f"Unknown period: {key!r}. "
+            f"Valid: {list(VALID_REPORTING_PERIODS)}"
+        )
+
+    current = resolve_history_range(key, now)
+    starts_at, _ = reporting_date_bounds(current.starts_on)
+    _, ends_at = reporting_date_bounds(current.ends_on)
+
+    span_days = (current.ends_on - current.starts_on).days + 1
+    prev_end = current.starts_on - _timedelta_cls(days=1)
+    prev_start = prev_end - _timedelta_cls(days=span_days - 1)
+    prev_starts_at, _ = reporting_date_bounds(prev_start)
+    _, prev_ends_at = reporting_date_bounds(prev_end)
+
+    return (
+        PeriodBounds(
+            label=current.label, starts_at=starts_at, ends_at=ends_at,
+        ),
+        PeriodBounds(
+            label=f"the {span_days} days before",
+            starts_at=prev_starts_at,
+            ends_at=prev_ends_at,
+        ),
+    )
+
+
 def _shift_months(day: _date_cls, months: int) -> _date_cls:
     """Move a date by whole months, clamping to the month's last day.
 

@@ -2806,98 +2806,134 @@ describe('the Overview dashboard', () => {
     }
   })
 
-  test('each band asks for the population its question needs', () => {
-    // The whole correctness of the page. Narrowing money to
-    // production would hide real Stripe movements in a demonstration
-    // Collective; widening membership to the ledger would count test
-    // accounts as people who joined.
-    assert.match(src(), /useMetrics\(AT_A_GLANCE, period, 'production'\)/)
-    assert.match(src(), /useMetrics\(MONEY, period, 'all'\)/)
-    assert.match(src(), /useMetrics\(CREATORS, period, 'production'\)/)
-    assert.match(src(), /useMetrics\(LEARNING, period, 'all'\)/)
-    assert.match(src(), /useHistory\(TREND_KEYS, range, grouping, 'production'\)/)
+  test('it is chart-led, not a wall of cards', () => {
+    // The redesign's whole point. Charts outnumber the compact
+    // figures, and the graduated card bands the detailed dashboards
+    // use do not appear here at all.
+    const body = src()
+    const charts = body.match(/<HistoryPanel/g)?.length ?? 0
+    const tiles = body.match(/<Tile/g)?.length ?? 0
+    assert.ok(charts >= 5, `expected a grid of charts, found ${charts}`)
+    assert.ok(tiles <= 4, 'four compact figures at most')
+    assert.ok(
+      !/<CardGroup|<InsightCard/.test(body),
+      'the Overview should not reuse the detailed pages\' card bands',
+    )
   })
 
-  test('the differing scopes are stated on the page, not just in code', () => {
-    assert.match(src(), /Production activity only/)
-    assert.match(src(), /complete ledger/)
-    assert.match(src(), /internal operations/)
+  test('one control drives the figures and the charts alike', () => {
+    const body = src()
+    // A single range selector, and no second date control.
+    assert.equal(body.match(/<HistoryControls/g)?.length, 1)
+    assert.ok(!/<PeriodSelect/.test(body), 'no duplicate date control')
+    for (const call of body.matchAll(/useMetrics\([A-Z_]+, (\w+),/g)) {
+      assert.equal(call[1], 'range', 'every figure follows the one selector')
+    }
+  })
+
+  test('each band asks for the population its question needs', () => {
+    const body = src()
+    assert.match(body, /useMetrics\(HEADLINE, range, 'production'\)/)
+    assert.match(body, /useMetrics\(MONEY, range, 'all'\)/)
+    assert.match(body, /useHistory\(TRENDS, range, grouping, 'production'\)/)
+    assert.match(body, /useHistory\(MONEY_TRENDS, range, grouping, 'all'\)/)
+  })
+
+  test('a snapshot is labelled as one, and never compared blindly', () => {
+    const body = src()
+    assert.match(body, /right now/)
+    // Active Collectives is observation-only, so it is given no
+    // previous value to compare against.
+    const tile = /<Tile\s+metric=\{pick\(headline\.data, 'active_collectives'\)\}[\s\S]*?\/>/.exec(body)
+    assert.ok(tile, 'the Active Collectives tile should exist')
+    assert.ok(
+      !/previous=/.test(tile[0]),
+      'an observation-only snapshot must not be given a comparison',
+    )
   })
 
   test('it counts people, not memberships', () => {
-    // `memberships_started` would overstate arrivals by exactly the
-    // amount of enthusiasm a new member shows.
     assert.match(src(), /members_joined/)
     assert.ok(
-      !/memberships_started/.test(src()),
+      !/memberships_started/.test(src().replace(/footnote="[^"]*"/g, '')),
       'the Overview must not present the membership flow as new members',
     )
   })
 
-  test('Fresh Collective revenue is never gross Collective sales', () => {
-    assert.match(src(), /fresh_collective_revenue_cents/)
-    // Both appear, and the band says plainly which is which.
-    assert.match(src(), /gross_collective_sales_cents/)
-    assert.match(src(), /most of that larger figure is creators' money/)
+  test('participation is compared in one unit, and never summed', () => {
+    const body = src()
+    // All three are distinct-people counts, which is what makes them
+    // comparable; bookings, steps and posts are not.
+    for (const k of [
+      'gathering_attendees', 'pathway_participants', 'conversation_contributors',
+    ]) {
+      assert.ok(body.includes(k), `${k} should be charted`)
+    }
+    assert.match(body, /must not be added/)
+    // Overlapping series must not be stacked.
+    const panel = /title="How people take part"[\s\S]*?\/>/.exec(body)
+    assert.ok(panel)
+    assert.match(panel[0], /kind="line"/)
+  })
+
+  test('the money chart does not imply gross sales are ours', () => {
+    const panel = /title="Gross sales against our own revenue"[\s\S]*?\/>/.exec(
+      src(),
+    )
+    assert.ok(panel)
+    assert.match(panel[0], /kind="line"/)
+    assert.ok(
+      !/kind="stacked"/.test(panel[0]),
+      'stacking gross against revenue would imply the whole is ours',
+    )
+    assert.match(panel[0], /mostly theirs/)
+  })
+
+  test('the creator funnel reuses the one that already exists', () => {
+    // Not a second funnel calculation — the Creators dashboard\'s own.
+    assert.match(src(), /stageCounts\(creators\)/)
   })
 
   test('it recomputes nothing in the browser', () => {
     const body = src()
-    // No arithmetic on metric values: every figure is a registry
-    // metric rendered as it arrived.
     assert.ok(
       !/\.value\s*[-+*/]\s/.test(body),
-      'the Overview must not do arithmetic on metric values',
+      'arithmetic on metric values belongs in lib/insights, not the page',
     )
+    assert.match(body, /compactComparison\(/)
     assert.ok(!/<svg/.test(body), 'no hand-rolled chart')
   })
 
-  test('attention lists only actionable states, and never a score', () => {
+  test('an outstanding balance alone is not an alert', () => {
+    const body = src()
+    // The founder-operated balance is Fresh Collective owing itself.
+    // Only money owed to an independent creator is actionable.
+    assert.match(body, /split\.externalCents > 0/)
     assert.ok(
-      !/health score|overall score|business health/i.test(src()),
+      !/split\.founderCents > 0/.test(body),
+      'a founder-operated balance must not raise a management alert',
+    )
+    assert.match(body, /Nothing needs attention/)
+    assert.ok(
+      !/health score|overall score|business health/i.test(body),
       'no invented overall health score',
     )
-    // An outstanding balance is not an alarm.
-    assert.match(src(), /Outstanding, not overdue/)
-    assert.match(src(), /Nothing needs attention/)
   })
 
-  test('founder-operated balances are not called debts to others', () => {
-    assert.match(src(), /Fresh Collective owing itself/)
-    assert.match(src(), /not overdue to anybody/)
-  })
-
-  test('it links onward rather than making whole cards clickable', () => {
-    assert.match(src(), /View \{label\} details/)
+  test('it links onward without swallowing the charts', () => {
+    const body = src()
+    assert.match(body, /View \{linkLabel\} details/)
     assert.ok(
-      !/<Link[^>]*>\s*<InsightCard/s.test(src()),
-      'a metric card must not be wrapped in a link — it owns a button',
+      !/<Link[^>]*>\s*<HistoryPanel/s.test(body),
+      'a chart must not be wrapped in a navigation link',
     )
   })
 
-  test('it reuses the shared components', () => {
-    for (const c of [
-      '<HistoryPanel', '<InsightCard', '<CardNote', '<CardGroup',
-      '<PeriodSelect', '<HistoryControls',
-    ]) {
-      assert.ok(src().includes(c), `${c} should be reused`)
-    }
-  })
-
-  test('the two trend charts stack on a narrow screen', () => {
+  test('the grid is two across on a laptop and stacks below it', () => {
     assert.match(src(), /grid gap-4 lg:grid-cols-2/)
   })
 })
 
-/**
- * The Overview must agree with the dashboard it links to.
- *
- * Reading the same registry metric is most of that, and the rest is
- * asking it with the same population. This reads each dashboard's own
- * default rather than restating it, so if a detailed page changes its
- * default the mismatch surfaces here instead of as two pages quietly
- * disagreeing about the same number.
- */
 describe('Overview figures reconcile with the detailed dashboards', () => {
   const defaultPopulation = (slug: string) => {
     const m = /useState<PopulationKey>\('([a-z_]+)'\)/.exec(
@@ -2909,17 +2945,17 @@ describe('Overview figures reconcile with the detailed dashboards', () => {
 
   const overviewPopulationFor = (constant: string) => {
     const src = read('src/app/admin/insights/overview/page.tsx')
-    const m = new RegExp(`useMetrics\\(${constant}, period, '([a-z_]+)'\\)`).exec(
-      src,
-    )
+    const m = new RegExp(
+      `use(?:Metrics|History)\\(${constant}, range,(?: grouping,)? '([a-z_]+)'\\)`,
+    ).exec(src)
     assert.ok(m, `the Overview should fetch ${constant}`)
     return m[1]
   }
 
   test('members, Collectives and participation match Growth', () => {
-    assert.equal(overviewPopulationFor('AT_A_GLANCE'), defaultPopulation('growth'))
+    assert.equal(overviewPopulationFor('HEADLINE'), defaultPopulation('growth'))
     assert.equal(
-      overviewPopulationFor('AT_A_GLANCE'),
+      overviewPopulationFor('TRENDS'),
       defaultPopulation('participation'),
     )
   })
@@ -2932,23 +2968,28 @@ describe('Overview figures reconcile with the detailed dashboards', () => {
   })
 
   test('creator figures match the Creators dashboard', () => {
-    assert.equal(overviewPopulationFor('CREATORS'), defaultPopulation('creators'))
+    // The funnel is fetched from /reporting/creators directly, with
+    // the same population the Creators dashboard defaults to.
+    assert.match(
+      read('src/app/admin/insights/overview/page.tsx'),
+      new RegExp(`fetchCreators\\('${defaultPopulation('creators')}'`),
+    )
   })
 
-  test('the trend charts use the same population as the cards beside them', () => {
-    const src = read('src/app/admin/insights/overview/page.tsx')
-    const history = /useHistory\(TREND_KEYS, range, grouping, '([a-z_]+)'\)/.exec(
-      src,
+  test('the trend charts use the same population as the figures above', () => {
+    assert.equal(
+      overviewPopulationFor('TRENDS'),
+      overviewPopulationFor('HEADLINE'),
     )
-    assert.ok(history)
-    assert.equal(history[1], overviewPopulationFor('AT_A_GLANCE'))
+    // The money chart deliberately does not: it is the ledger.
+    assert.equal(overviewPopulationFor('MONEY_TRENDS'), 'all')
   })
 
   test('every metric the Overview names is a real registry key', () => {
     // Guards the typo that renders an empty card rather than an error.
     const src = read('src/app/admin/insights/overview/page.tsx')
     const declared = new Set<string>()
-    for (const block of ['AT_A_GLANCE', 'MONEY', 'CREATORS', 'LEARNING', 'TREND_KEYS']) {
+    for (const block of ['HEADLINE', 'MONEY', 'LEARNING', 'TRENDS', 'MONEY_TRENDS']) {
       const m = new RegExp(`const ${block} = \\[([^\\]]*)\\]`, 's').exec(src)
       assert.ok(m, `${block} should be declared as a list`)
       for (const k of m[1].matchAll(/'([a-z_]+)'/g)) declared.add(k[1])
@@ -2963,9 +3004,9 @@ describe('Overview figures reconcile with the detailed dashboards', () => {
     for (const key of [
       'unique_members',
       'members_joined',
-      'participation_rate',
       'fresh_collective_revenue_cents',
-      'active_creators',
+      'creator_accounts',
+      'active_members',
     ]) {
       assert.ok(declared.has(key), `${key} should be on the Overview`)
     }

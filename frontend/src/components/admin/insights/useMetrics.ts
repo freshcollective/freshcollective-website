@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from 'react'
 
-import { type MetricResult, type PeriodKey, fetchMetrics } from '@/lib/insights'
+import {
+  type MetricResult,
+  type ReportingPeriod,
+  fetchMetrics,
+} from '@/lib/insights'
 
 /**
  * Fetch a set of metrics for a period, keeping the previous figures on
@@ -21,7 +25,7 @@ import { type MetricResult, type PeriodKey, fetchMetrics } from '@/lib/insights'
  */
 export function useMetrics(
   keys: string[],
-  period: PeriodKey,
+  period: ReportingPeriod,
   population = 'all',
   collectives: string[] = [],
 ) {

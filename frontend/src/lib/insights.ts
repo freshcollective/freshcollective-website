@@ -113,6 +113,23 @@ export interface MetricResult {
 
 export type PeriodKey = 'this_month' | 'last_month' | 'this_fy' | 'all_time'
 
+/**
+ * The rolling ranges ``/query`` also accepts, matching ``/history``.
+ *
+ * Added so one control can drive a dashboard's cards and its charts.
+ * The two vocabularies had grown up apart, and mapping between them
+ * in the client would have mislabelled every figure — "last 3
+ * months" is not "this month". Kept out of ``PERIOD_OPTIONS``, so
+ * the seven detailed dashboards keep the four named periods they
+ * have always offered.
+ */
+export type RollingPeriodKey =
+  | 'last_30_days'
+  | 'last_3_months'
+  | 'last_12_months'
+
+export type ReportingPeriod = PeriodKey | RollingPeriodKey
+
 /** The period choices, in the order a caretaker thinks about them. */
 export const PERIOD_OPTIONS: [PeriodKey, string][] = [
   ['this_month', 'This month'],
@@ -178,7 +195,7 @@ export interface ReportingJobRun {
  */
 export async function fetchMetrics(
   keys: string[],
-  period: PeriodKey,
+  period: ReportingPeriod,
   signal?: AbortSignal,
   population = 'all',
   /**
@@ -346,6 +363,33 @@ export function comparisonSentence(
   const pct = Math.round((Math.abs(delta) / previous.value) * 100)
   return `${magnitude} ${direction} ${previousLabel.toLowerCase()} (${pct}%).`
 }
+
+/**
+ * The same comparison as :func:`comparisonSentence`, in a few words.
+ *
+ * A compact tile has no room for "3 more than last month (14%)", but
+ * it must not grow its own arithmetic to say "+3" — that is how two
+ * surfaces start disagreeing about the same delta. Both forms share
+ * the guards that matter: nothing is returned when the previous
+ * figure is missing, and a percentage is never computed against zero.
+ */
+export function compactComparison(
+  m: MetricValue | null,
+  previous: MetricValue | null | undefined,
+  previousLabel: string | null,
+): string | null {
+  if (!m || !previous) return null
+  if (m.value === null || previous.value === null) return null
+  if (!previousLabel) return null
+  const delta = m.value - previous.value
+  if (delta === 0) return `unchanged on ${previousLabel.toLowerCase()}`
+  const magnitude = isMoney(m.key)
+    ? formatMoney(Math.abs(delta))
+    : formatCount(Math.abs(delta))
+  const sign = delta > 0 ? '+' : '\u2212'
+  return `${sign}${magnitude} on ${previousLabel.toLowerCase()}`
+}
+
 
 /**
  * A short, human note about what a figure cannot tell you.

@@ -5,374 +5,570 @@ import { useEffect, useState } from 'react'
 
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
-import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
-import {
-  CardGroup,
-  CardSurfaceScope,
-  InsightsSection,
-} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
-import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { useHistory } from '@/components/admin/insights/useHistory'
 import { useMetrics } from '@/components/admin/insights/useMetrics'
 import {
   type MetricResult,
-  type PeriodKey,
+  type MetricValue,
   type ReportingHealth,
+  compactComparison,
   describeHealth,
   fetchHealth,
   formatCount,
   formatMoney,
+  formatValue,
   outstandingBreakdown,
   pick,
   pickPrevious,
 } from '@/lib/insights'
-import type { Grouping, HistoryRangeKey } from '@/lib/insights-history'
 import {
-  CARD,
+  type Creator,
+  type Grouping,
+  type HistoryRangeKey,
+  fetchCreators,
+  stageCounts,
+} from '@/lib/insights-history'
+import {
+  EMPHASIS,
+  HUE_MARK,
+  HUE_UI,
   INK as FC_INK,
+  type InsightHue,
   STATUS,
-  surfaceForGroup,
+  SURFACE,
   toneStyle,
 } from '@/lib/insights-palette'
 
 /**
- * World Insights Overview — how Fresh Collective is doing.
+ * World Insights Overview — a chart-led management dashboard.
  *
- * The starting point for the seven dashboards behind it, not an
- * eighth collection of every metric. Every figure here is the same
- * registry metric the detailed page uses, asked with the same
- * population, so the Overview and the dashboard it links to cannot
- * disagree: nothing is recomputed in the browser.
+ * Deliberately unlike the seven dashboards behind it. Those are
+ * reference documents: a band of figures, an explanation beside every
+ * one, read when somebody has a question. This is the page somebody
+ * opens with no question yet, so it is mostly pictures — a tight grid
+ * of charts with four compact figures above them, rather than the
+ * graduated bands of coloured cards the detailed pages use. Colour
+ * lives in the plots here; the panels are white.
  *
- * One population does not fit the page
- * ------------------------------------
- * The hardest thing to get right here is that the sections ask
- * different questions and therefore need different populations, and
- * applying one filter to all of them would be wrong in both
- * directions:
+ * One control, two vocabularies
+ * -----------------------------
+ * A single range selector drives everything, which needed ``/query``
+ * to accept the rolling ranges ``/history`` already took. Mapping
+ * between them in the client was the alternative and would have
+ * mislabelled every figure: "last 3 months" is not "this month".
  *
- *   members, Collectives, participation  production
- *   money                                the complete ledger
- *   World Builders                       internal operations
- *
- * Narrowing money to production would hide real Stripe movements that
- * happened in a demonstration Collective; widening membership to the
- * whole ledger would count test accounts as people who joined. So
- * each band fetches its own population and says which one it used —
- * see ``ScopeNote``.
+ * Nothing is recomputed here. Every number is a registry metric
+ * rendered as it arrived, and the creator funnel reuses the Creators
+ * dashboard's own ``stageCounts`` rather than counting stages again.
  */
 
-/** Production: people, Collectives and participation. */
-const AT_A_GLANCE = [
-  'unique_members',
-  'active_collectives',
-  'active_creators',
-  'members_joined',
-  'participation_rate',
-]
+/** Production: people, Collectives, participation. */
+const HEADLINE = ['unique_members', 'active_collectives', 'creator_accounts']
 
-/** The complete ledger: a real payment is real wherever it happened. */
+/** The complete ledger — a real payment is real wherever it happened. */
 const MONEY = [
   'fresh_collective_revenue_cents',
-  'gross_collective_sales_cents',
   'processing_costs_cents',
   'contribution_after_processing_cents',
   'outstanding_payouts_cents',
 ]
 
-/** Production, matching the Creators dashboard's own default. */
-const CREATORS = [
-  'creator_accounts',
-  'creators_with_a_collective',
-  'creators_with_a_member',
-  'creators_earning',
+const LEARNING = ['wb_eligible_creators', 'wb_creator_participation']
+
+/** Production trends. */
+const TRENDS = [
+  'unique_members',
+  'active_members',
+  'members_joined',
+  'gathering_attendees',
+  'pathway_participants',
+  'conversation_contributors',
 ]
 
-/** World Builders is internal operations, so it is asked unfiltered. */
-const LEARNING = ['wb_creator_participation']
+/** The ledger's own trend, so the money chart is not production-only. */
+const MONEY_TRENDS = [
+  'gross_collective_sales_cents',
+  'fresh_collective_revenue_cents',
+]
 
-const TREND_KEYS = ['unique_members', 'active_members']
-
+const INK = FC_INK.heading
 const INK_MUTED = FC_INK.muted
+const CHART_H = 170
 
 export default function OverviewPage() {
-  const [period, setPeriod] = useState<PeriodKey>('this_month')
   const [range, setRange] = useState<HistoryRangeKey>('last_3_months')
   const [grouping, setGrouping] = useState<Grouping>('weekly')
 
-  const production = useMetrics(AT_A_GLANCE, period, 'production')
-  const money = useMetrics(MONEY, period, 'all')
-  const creators = useMetrics(CREATORS, period, 'production')
-  const learning = useMetrics(LEARNING, period, 'all')
-  const history = useHistory(TREND_KEYS, range, grouping, 'production')
+  // The same key drives the figures and the charts.
+  const headline = useMetrics(HEADLINE, range, 'production')
+  const money = useMetrics(MONEY, range, 'all')
+  const learning = useMetrics(LEARNING, range, 'all')
+  const trends = useHistory(TRENDS, range, grouping, 'production')
+  const ledger = useHistory(MONEY_TRENDS, range, grouping, 'all')
+  const creators = useCreators()
   const health = useHealth()
 
-  const previousLabel = production.data?.comparison?.label ?? null
+  const previousLabel = headline.data?.comparison?.label ?? null
 
   return (
     <InsightsShell
       title="Overview"
       intro="How Fresh Collective is performing, what is changing, and what needs attention."
     >
+      <HistoryControls
+        range={range}
+        grouping={grouping}
+        population="production"
+        onRange={setRange}
+        onGrouping={setGrouping}
+        options={trends.data?.options}
+        disabled={trends.loading}
+      />
+
+      {headline.error && <Problem message={headline.error} />}
+
+      {/* Four compact figures. Three are snapshots and say so. */}
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile
+          metric={pick(headline.data, 'unique_members')}
+          previous={pickPrevious(headline.data, 'unique_members')}
+          previousLabel={previousLabel}
+          hue="navy"
+          snapshot
+          href="/admin/insights/growth"
+        />
+        <Tile
+          metric={pick(headline.data, 'active_collectives')}
+          hue="teal"
+          snapshot
+          href="/admin/insights/collectives"
+        />
+        <Tile
+          metric={pick(headline.data, 'creator_accounts')}
+          previous={pickPrevious(headline.data, 'creator_accounts')}
+          previousLabel={previousLabel}
+          hue="gold"
+          snapshot
+          href="/admin/insights/creators"
+        />
+        <Tile
+          metric={pick(money.data, 'fresh_collective_revenue_cents')}
+          previous={pickPrevious(money.data, 'fresh_collective_revenue_cents')}
+          previousLabel={previousLabel}
+          hue="watermelon"
+          scope="complete ledger"
+          href="/admin/insights/money"
+        />
+      </div>
+
+      {trends.error && <Problem message={trends.error} />}
+
+      <Row>
+        <HistoryPanel
+          title="Membership growth"
+          explanation="Distinct people holding a Production membership at the end of each period."
+          data={trends.data}
+          keys={['unique_members']}
+          kind="line"
+          hues={['navy']}
+          height={CHART_H}
+          footnote="An end-of-period state, never a sum of its days."
+        />
+        <HistoryPanel
+          title="Participation over time"
+          explanation="Distinct Production members who did something in each period."
+          data={trends.data}
+          keys={['active_members']}
+          kind="line"
+          hues={['teal']}
+          height={CHART_H}
+          footnote="People, not acts. Somebody who posted four times and attended a Gathering is one participating member."
+        />
+      </Row>
+
+      <Row>
+        <HistoryPanel
+          title="New members"
+          explanation="Distinct people who began a Production membership in each period."
+          data={trends.data}
+          keys={['members_joined']}
+          kind="column"
+          hues={['teal']}
+          height={CHART_H}
+          footnote="People, not memberships: somebody who joined three Collectives is one new member here and three in 'Memberships started' on Growth. Includes existing members joining an additional Collective — the split between them is on the figures table."
+        />
+        <HistoryPanel
+          title="How people take part"
+          explanation="Distinct people in each kind of activity."
+          data={trends.data}
+          keys={[
+            'gathering_attendees',
+            'pathway_participants',
+            'conversation_contributors',
+          ]}
+          kind="line"
+          hues={['gold', 'navy', 'watermelon']}
+          height={CHART_H}
+          footnote="All three count distinct people, so they are comparable — unlike bookings, steps and posts, which are different units. They overlap and must not be added: one person can attend a Gathering and post in the same period."
+        />
+      </Row>
+
+      <Row>
+        <HistoryPanel
+          title="Gross sales against our own revenue"
+          explanation="What members paid creators, and the platform's share of it."
+          data={ledger.data}
+          keys={['gross_collective_sales_cents', 'fresh_collective_revenue_cents']}
+          kind="line"
+          hues={['navy', 'teal']}
+          height={CHART_H}
+          footnote="One axis, deliberately: the distance between the lines is the point. Gross sales is money moved on creators' behalf and is mostly theirs; Fresh Collective revenue is the platform's fee plus creator plan fees. Stacking them would imply the whole of gross sales is ours. The complete ledger, unlike the Production charts above."
+        />
+        <Panel
+          title="The creator journey"
+          note="Each stage implies the ones before it, so a creator stands at one point."
+          href="/admin/insights/creators"
+          linkLabel="Creators"
+        >
+          <Funnel creators={creators} />
+        </Panel>
+      </Row>
+
+      <Row>
+        <Panel
+          title="World Builders"
+          note="The creator learning environment. Internal operations, so never added to the Production figures above."
+          href="/admin/insights/world-builders"
+          linkLabel="World Builders"
+        >
+          <Learning data={learning.data} />
+        </Panel>
+        <Panel
+          title="Where the money goes"
+          note="The complete ledger, for the selected period."
+          href="/admin/insights/money"
+          linkLabel="Money"
+        >
+          <Breakdown data={money.data} />
+        </Panel>
+      </Row>
+
       <Attention money={money.data} health={health} />
-
-      <InsightsSection
-        lead
-        title="Fresh Collective today"
-        intro="The figures a caretaker checks first. Each one is the same measure the detailed dashboard uses."
-      >
-        <div className="mb-5">
-          <PeriodSelect
-            value={period}
-            onChange={setPeriod}
-            disabled={production.loading}
-          />
-        </div>
-
-        {production.error && <Problem message={production.error} />}
-        {production.loading && !production.data && <Waiting />}
-
-        {production.data && (
-          <CardGroup
-            surface={surfaceForGroup(0)}
-            columns={3}
-            title="People and communities"
-            note="Production activity only — genuine Collectives, excluding accounts classified test or demonstration."
-          >
-            <InsightCard
-              metric={pick(production.data, 'unique_members')}
-              previous={pickPrevious(production.data, 'unique_members')}
-              previousLabel={previousLabel}
-              hue="navy"
-              caption="people, counted once each"
-            />
-            <InsightCard
-              metric={pick(production.data, 'active_collectives')}
-              hue="navy"
-              caption="published and open"
-            />
-            <InsightCard
-              metric={pick(production.data, 'active_creators')}
-              previous={pickPrevious(production.data, 'active_creators')}
-              previousLabel={previousLabel}
-              hue="teal"
-              caption="creators who did something in the period"
-            />
-            <InsightCard
-              metric={pick(production.data, 'members_joined')}
-              previous={pickPrevious(production.data, 'members_joined')}
-              previousLabel={previousLabel}
-              hue="teal"
-              caption="people who joined, counted once each"
-            />
-            <InsightCard
-              metric={pick(production.data, 'participation_rate')}
-              previous={pickPrevious(production.data, 'participation_rate')}
-              previousLabel={previousLabel}
-              hue="teal"
-              caption="share of members taking part"
-            />
-            {money.data && (
-              <RevenueCard data={money.data} previousLabel={previousLabel} />
-            )}
-          </CardGroup>
-        )}
-
-        <DeeperLinks
-          links={[
-            ['Growth', '/admin/insights/growth'],
-            ['Participation', '/admin/insights/participation'],
-          ]}
-        />
-      </InsightsSection>
-
-      <InsightsSection
-        title="Joining and taking part"
-        intro="Whether the number of people arriving and the number actually participating are moving together."
-      >
-        <HistoryControls
-          range={range}
-          grouping={grouping}
-          population="production"
-          onRange={setRange}
-          onGrouping={setGrouping}
-          options={history.data?.options}
-          disabled={history.loading}
-        />
-
-        {history.error && <Problem message={history.error} />}
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <HistoryPanel
-            title="Membership over time"
-            explanation="Distinct people holding a membership at the end of each period."
-            data={history.data}
-            keys={['unique_members']}
-            kind="line"
-            hues={['navy']}
-            footnote="An end-of-period state, so a weekly figure is where things stood when the week closed — never a sum of its days."
-          />
-          <HistoryPanel
-            title="Participation over time"
-            explanation="Distinct members who did something in each period."
-            data={history.data}
-            keys={['active_members']}
-            kind="line"
-            hues={['teal']}
-            footnote="People, not acts. Somebody who posted four times and attended a Gathering is one participating member."
-          />
-        </div>
-      </InsightsSection>
-
-      <InsightsSection
-        title="Money"
-        intro="The complete ledger, whatever each Collective's classification — a real Stripe movement is real wherever it happened."
-      >
-        {money.error && <Problem message={money.error} />}
-        {money.data && (
-          <>
-            <CardGroup
-              surface={surfaceForGroup(1)}
-              title="What came in, and whose it is"
-              note="Fresh Collective's own revenue is a fraction of gross Collective sales; most of that larger figure is creators' money."
-            >
-              <InsightCard
-                metric={pick(money.data, 'gross_collective_sales_cents')}
-                hue="navy"
-                caption="what members paid creators — moved on their behalf"
-              />
-              <InsightCard
-                metric={pick(money.data, 'fresh_collective_revenue_cents')}
-                hue="teal"
-                caption="platform fees plus creator plan fees"
-              />
-              <InsightCard
-                metric={pick(money.data, 'processing_costs_cents')}
-                hue="gold"
-                caption="Stripe's fees, which we absorb"
-              />
-              <InsightCard
-                metric={pick(money.data, 'contribution_after_processing_cents')}
-                hue="navy"
-                caption="our revenue less processing — not profit"
-              />
-              <InsightCard
-                metric={pick(money.data, 'outstanding_payouts_cents')}
-                hue="navy"
-                // Outstanding, not overdue: earned and not yet
-                // transferred is the normal state of a payouts balance.
-                emphasis={
-                  (pick(money.data, 'outstanding_payouts_cents')?.value ?? 0) > 0
-                    ? 'obligation'
-                    : undefined
-                }
-                caption="earned by creators and not yet transferred"
-              />
-            </CardGroup>
-
-            <CardSurfaceScope surface={surfaceForGroup(1)}>
-              <OwedTo data={money.data} />
-            </CardSurfaceScope>
-          </>
-        )}
-
-        <DeeperLinks links={[['Money', '/admin/insights/money']]} />
-      </InsightsSection>
-
-      <InsightsSection
-        title="The creator ecosystem"
-        intro="Whether creators are arriving, building, and getting somewhere — not the whole journey, which has its own dashboard."
-      >
-        {creators.error && <Problem message={creators.error} />}
-        {creators.data && (
-          <CardGroup
-            surface={surfaceForGroup(2)}
-            title="Creators and how far they have got"
-            note="Production Collectives, using the Creators dashboard's own definition — anybody operating a Collective counts, whatever their role."
-          >
-            <InsightCard
-              metric={pick(creators.data, 'creator_accounts')}
-              hue="navy"
-              caption="operating a Collective, or holding a creator account"
-            />
-            <InsightCard
-              metric={pick(creators.data, 'creators_with_a_collective')}
-              hue="teal"
-              caption="have built something"
-            />
-            <InsightCard
-              metric={pick(creators.data, 'creators_with_a_member')}
-              hue="teal"
-              caption="somebody has arrived"
-            />
-            <InsightCard
-              metric={pick(creators.data, 'creators_earning')}
-              hue="gold"
-              caption="have taken at least one payment"
-            />
-          </CardGroup>
-        )}
-
-        {learning.data && (
-          <CardGroup
-            surface={surfaceForGroup(3)}
-            title="Learning in World Builders"
-            note="World Builders is the creator learning environment and is classified internal operations, so it is asked unfiltered and never added to the Production figures above."
-          >
-            <InsightCard
-              metric={pick(learning.data, 'wb_creator_participation')}
-              hue="teal"
-              caption="creators who did something there in the period"
-            />
-            <LearningSplit data={learning.data} />
-          </CardGroup>
-        )}
-
-        <DeeperLinks
-          links={[
-            ['Creators', '/admin/insights/creators'],
-            ['World Builders', '/admin/insights/world-builders'],
-          ]}
-        />
-      </InsightsSection>
     </InsightsShell>
   )
 }
 
-/** Data Health, polled once. The indicator in the header shares it. */
-function useHealth() {
-  const [health, setHealth] = useState<ReportingHealth | null>(null)
-  useEffect(() => {
-    const controller = new AbortController()
-    let cancelled = false
-    fetchHealth(controller.signal)
-      .then((h) => {
-        if (!cancelled) setHealth(h)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-      controller.abort()
-    }
-  }, [])
-  return health
+/** Two panels across on a laptop, stacked below it. */
+function Row({ children }: { children: React.ReactNode }) {
+  return <div className="mt-4 grid gap-4 lg:grid-cols-2">{children}</div>
 }
 
 /**
- * What actually needs attention — and nothing else.
+ * A compact headline figure.
  *
- * Two rules decide what may appear here. An item must have a state
- * somebody can act on, and it must be **true**, not inferred: a dip
- * in participation is not a warning, it is a Tuesday. There is
- * deliberately no overall health score, because a single number
- * hiding four unrelated facts is how a dashboard stops being read.
+ * White, not a block of saturated colour: on a page whose job is to
+ * be chart-led, four solid tiles at the top take the attention the
+ * plots should have. Colour appears as a rule down the left edge, in
+ * the same hue the metric wears in the charts below, which is enough
+ * to tie them together.
+ */
+function Tile({
+  metric,
+  previous,
+  previousLabel,
+  hue,
+  snapshot = false,
+  scope,
+  href,
+}: {
+  metric: MetricValue | null
+  previous?: MetricValue | null
+  previousLabel?: string | null
+  hue: InsightHue
+  /** A state right now, not a total over the selected range. */
+  snapshot?: boolean
+  /** Named only when it differs from the rest of the row. */
+  scope?: string
+  href: string
+}) {
+  if (!metric) {
+    return (
+      <div
+        className="min-w-0 rounded-xl p-4"
+        style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
+      >
+        <p className="text-[12.5px]" style={{ color: INK_MUTED }}>
+          Not available
+        </p>
+      </div>
+    )
+  }
+
+  // The comparison the API already returned, rendered — never
+  // recomputed here. See ``compactComparison``.
+  const comparison = compactComparison(metric, previous, previousLabel ?? null)
+
+  return (
+    <Link
+      href={href}
+      className="group min-w-0 rounded-xl p-4 pl-[14px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+      style={{
+        background: '#FFFFFF',
+        border: `1px solid ${SURFACE.cardEdge}`,
+        borderLeft: `3px solid ${HUE_MARK[hue]}`,
+      }}
+    >
+      <p
+        className="text-[12px] leading-snug font-semibold break-words"
+        style={{ color: INK }}
+      >
+        {metric.definition.display_name}
+      </p>
+      <p
+        className="mt-1 font-serif text-[24px] leading-none tabular-nums"
+        style={{ color: INK }}
+      >
+        {metric.available ? formatValue(metric) : '—'}
+      </p>
+      <p className="mt-1.5 text-[11.5px] leading-snug" style={{ color: INK_MUTED }}>
+        {snapshot ? 'right now' : scope ?? 'over the selected period'}
+        {scope && snapshot ? ` · ${scope}` : ''}
+      </p>
+      {/*
+        No comparison for a snapshot that cannot be reconstructed, and
+        none when the previous period had no figure — an invented
+        arrow is worse than none.
+      */}
+      {comparison && (
+        <p className="mt-1 text-[11.5px]" style={{ color: INK_MUTED }}>
+          {comparison}
+        </p>
+      )}
+    </Link>
+  )
+}
+
+/** A white panel, matching the chart panels beside it. */
+function Panel({
+  title,
+  note,
+  href,
+  linkLabel,
+  children,
+}: {
+  title: string
+  note: string
+  href: string
+  linkLabel: string
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      // ``self-start`` so a short panel keeps its own height instead
+      // of stretching to match the chart beside it. A half-empty
+      // bordered box reads as something failing to load; white space
+      // in the grid cell reads as layout.
+      className="flex min-w-0 flex-col self-start rounded-2xl p-5"
+      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
+    >
+      <h4
+        className="font-serif text-[15.5px] leading-tight"
+        style={{ color: INK }}
+      >
+        {title}
+      </h4>
+      <p className="mt-1 max-w-[62ch] text-[12.5px]" style={{ color: INK_MUTED }}>
+        {note}
+      </p>
+      <div className="mt-4">{children}</div>
+      <p className="mt-4 text-[12.5px]">
+        <Link
+          href={href}
+          className="rounded underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+          style={{ color: INK_MUTED }}
+        >
+          View {linkLabel} details
+        </Link>
+      </p>
+    </section>
+  )
+}
+
+/**
+ * The creator journey as a compact bar per stage.
  *
- * The kinds are kept apart in the same way the emphasis cards are:
- * an outstanding balance is money owed and not yet due, which is the
- * normal state of a payouts ledger, and colouring it like a failed
- * run would teach a caretaker to ignore the colour that means
- * something broke.
+ * Uses the Creators dashboard's own ``stageCounts``, so there is one
+ * funnel calculation on the platform rather than two that can drift.
+ */
+function Funnel({ creators }: { creators: Creator[] | null }) {
+  if (creators === null) {
+    return (
+      <p className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        Loading the journey…
+      </p>
+    )
+  }
+  const stages = stageCounts(creators)
+  const total = stages[0]?.reached ?? 0
+  if (total === 0) {
+    return (
+      <p className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        No creators in this classification yet.
+      </p>
+    )
+  }
+
+  return (
+    <ol className="m-0 list-none space-y-2 p-0">
+      {stages.map((s) => (
+        <li key={s.key} className="min-w-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[12.5px]" style={{ color: INK }}>
+              {s.label}
+            </span>
+            <span
+              className="text-[13px] tabular-nums"
+              style={{ color: INK, fontWeight: 600 }}
+            >
+              {formatCount(s.reached)}
+            </span>
+          </div>
+          <div
+            className="mt-1 h-[7px] w-full overflow-hidden rounded-full"
+            style={{ background: 'rgba(15, 30, 55, 0.07)' }}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.max(2, (s.reached / total) * 100)}%`,
+                background: HUE_MARK.teal,
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/** Eligibility, and the smaller number who actually took part. */
+function Learning({ data }: { data: MetricResult | null }) {
+  const eligible = pick(data, 'wb_eligible_creators')
+  const taking = pick(data, 'wb_creator_participation')
+  if (!eligible || !taking) {
+    return (
+      <p className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        Loading…
+      </p>
+    )
+  }
+  const total = eligible.value ?? 0
+  const part = taking.value ?? 0
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-6">
+        <Figure label="Eligible creators" value={formatValue(eligible)} />
+        <Figure label="Took part" value={formatValue(taking)} />
+      </div>
+      <div
+        className="mt-3 h-[9px] w-full overflow-hidden rounded-full"
+        style={{ background: 'rgba(15, 30, 55, 0.07)' }}
+      >
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: total > 0 ? `${Math.min(100, (part / total) * 100)}%` : '0%',
+            background: HUE_MARK.teal,
+          }}
+        />
+      </div>
+      <p className="mt-2 text-[11.5px] leading-snug" style={{ color: INK_MUTED }}>
+        Access is granted automatically to every eligible creator, so joining
+        is not a step anybody chooses — the gap between these two is the
+        thing worth watching. Taking part is not completing.
+      </p>
+    </div>
+  )
+}
+
+/** Revenue, what it cost, and what was left. */
+function Breakdown({ data }: { data: MetricResult | null }) {
+  if (!data) {
+    return (
+      <p className="text-[12.5px]" style={{ color: INK_MUTED }}>
+        Loading…
+      </p>
+    )
+  }
+  const rows: [string, string, MetricValue | null][] = [
+    ['Platform revenue', HUE_MARK.teal, pick(data, 'fresh_collective_revenue_cents')],
+    ['Processing costs', HUE_MARK.gold, pick(data, 'processing_costs_cents')],
+    [
+      'Contribution after processing',
+      HUE_MARK.navy,
+      pick(data, 'contribution_after_processing_cents'),
+    ],
+  ]
+  return (
+    <>
+      <dl className="m-0 space-y-2.5">
+        {rows.map(([label, colour, metric]) => (
+          <div key={label} className="flex items-baseline justify-between gap-3">
+            <dt className="flex min-w-0 items-baseline gap-2 text-[12.5px]" style={{ color: INK }}>
+              <span
+                aria-hidden="true"
+                className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
+                style={{ background: colour }}
+              />
+              <span className="min-w-0">{label}</span>
+            </dt>
+            <dd
+              className="m-0 shrink-0 text-[14px] tabular-nums"
+              style={{ color: INK, fontWeight: 600 }}
+            >
+              {metric && metric.available ? formatValue(metric) : '—'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[11.5px] leading-snug" style={{ color: INK_MUTED }}>
+        Contribution is revenue less Stripe&rsquo;s fees. It is not profit —
+        nothing it takes to run Fresh Collective is in it.
+      </p>
+    </>
+  )
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11.5px]" style={{ color: INK_MUTED }}>
+        {label}
+      </p>
+      <p
+        className="font-serif text-[22px] leading-none tabular-nums"
+        style={{ color: INK }}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * What actually needs attention — at the foot, and usually empty.
+ *
+ * **An outstanding balance is not an alert.** Money a creator has
+ * earned and not yet been sent is the normal state of a payouts
+ * ledger, and the balance against founder-operated Collectives is
+ * Fresh Collective owing itself: listing either as something to act
+ * on teaches a caretaker to ignore this section. Only a balance owed
+ * to an *independent* creator is somebody else's money waiting.
+ *
+ * Nothing here is inferred. A dip in growth or participation is not
+ * a warning, and there is no overall health score.
  */
 function Attention({
   money,
@@ -382,25 +578,23 @@ function Attention({
   health: ReportingHealth | null
 }) {
   const items: {
-    tone: 'alert' | 'gold' | 'teal' | 'navy'
+    tone: 'alert' | 'gold' | 'navy'
     title: string
     detail: string
     href: string
     action: string
+    emphasis?: boolean
   }[] = []
 
-  const owed = pick(money, 'outstanding_payouts_cents')
-  const split = outstandingBreakdown(owed)
-  if (owed?.value && owed.value > 0 && split) {
+  const split = outstandingBreakdown(pick(money, 'outstanding_payouts_cents'))
+  if (split && split.externalCents > 0) {
     items.push({
       tone: 'navy',
+      emphasis: true,
       title: `${formatMoney(split.externalCents)} owed to independent creators`,
       detail:
-        split.founderCents > 0
-          ? `A further ${formatMoney(split.founderCents)} sits against ` +
-            'founder-operated Collectives, which is Fresh Collective ' +
-            'owing itself rather than an obligation to somebody else.'
-          : 'Earned and not yet transferred. Outstanding, not overdue.',
+        'Earned and not yet transferred. Outstanding rather than overdue, ' +
+        'and somebody else’s money.',
       href: '/admin/insights/money',
       action: 'See who it is owed to',
     })
@@ -425,57 +619,62 @@ function Attention({
   if (items.length === 0) {
     return (
       <div
-        className="mb-6 rounded-2xl p-5"
+        className="mt-5 rounded-xl px-4 py-3"
         style={{
           background: toneStyle('teal').bg,
           border: `1px solid ${toneStyle('teal').border}`,
         }}
       >
-        <p className="text-[13.5px]" style={{ color: toneStyle('teal').text }}>
-          Nothing needs attention. No creator payouts are outstanding and
-          reporting history is being recorded cleanly.
+        <p className="text-[12.5px]" style={{ color: toneStyle('teal').text }}>
+          Nothing needs attention. No independent creator is waiting on a
+          payout and reporting history is being recorded cleanly.
         </p>
       </div>
     )
   }
 
   return (
-    <section className="mb-7">
+    <section className="mt-6">
       <h2
-        className="font-serif text-[19px] leading-tight tracking-[-0.01em]"
-        style={{ color: FC_INK.heading }}
+        className="font-serif text-[15.5px] leading-tight"
+        style={{ color: INK }}
       >
         Needs attention
       </h2>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        Only states somebody can act on. An ordinary dip in growth or
-        participation is not listed here.
-      </p>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="mt-2 grid gap-3 lg:grid-cols-2">
         {items.map((item) => {
           const tone = toneStyle(item.tone)
+          const pink = item.emphasis
           return (
             <div
               key={item.title}
-              className="min-w-0 rounded-2xl p-5 break-words"
-              style={{ background: tone.bg, border: `1px solid ${tone.border}` }}
+              className="min-w-0 rounded-xl p-4 break-words"
+              style={
+                pink
+                  ? {
+                      background: '#FFFFFF',
+                      border: `1px solid ${HUE_UI.watermelon.border}`,
+                      borderLeft: `3px solid ${EMPHASIS.obligation.surface}`,
+                    }
+                  : { background: tone.bg, border: `1px solid ${tone.border}` }
+              }
             >
               <h3
-                className="text-[13.5px] font-semibold leading-snug"
-                style={{ color: tone.text }}
+                className="text-[13px] font-semibold leading-snug"
+                style={{ color: pink ? HUE_UI.watermelon.text : tone.text }}
               >
                 {item.title}
               </h3>
               <p
-                className="mt-1.5 max-w-[72ch] text-[12.5px]"
+                className="mt-1 max-w-[70ch] text-[12px] leading-snug"
                 style={{ color: FC_INK.body }}
               >
                 {item.detail}
               </p>
               <Link
                 href={item.href}
-                className="mt-2.5 inline-block rounded text-[12.5px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
-                style={{ color: tone.text }}
+                className="mt-2 inline-block rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
+                style={{ color: pink ? HUE_UI.watermelon.text : tone.text }}
               >
                 {item.action}
               </Link>
@@ -487,141 +686,52 @@ function Attention({
   )
 }
 
-/**
- * Fresh Collective's own revenue, sat among the production figures.
- *
- * Its population is different from every other card in that band —
- * the complete ledger rather than production — so it says so on the
- * card rather than relying on the band's note. A money figure
- * narrowed to production would quietly drop real Stripe movements.
- */
-function RevenueCard({
-  data,
-  previousLabel,
-}: {
-  data: MetricResult
-  previousLabel: string | null
-}) {
-  return (
-    <InsightCard
-      metric={pick(data, 'fresh_collective_revenue_cents')}
-      previous={pickPrevious(data, 'fresh_collective_revenue_cents')}
-      previousLabel={previousLabel}
-      hue="gold"
-      caption="platform fees and creator plans — the complete ledger"
-    />
-  )
+function useCreators() {
+  const [creators, setCreators] = useState<Creator[] | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    let cancelled = false
+    fetchCreators('production', controller.signal)
+      .then((rows) => {
+        if (!cancelled) setCreators(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [])
+  return creators
 }
 
-/** Who the outstanding balance is owed to. Never treated as settled. */
-function OwedTo({ data }: { data: MetricResult }) {
-  const split = outstandingBreakdown(pick(data, 'outstanding_payouts_cents'))
-  if (!split) return null
-  if (split.externalCents === 0 && split.founderCents === 0) return null
-
-  return (
-    <CardNote accent="teal" span="mt-3">
-      <dl className="grid gap-2.5 sm:grid-cols-2">
-        <div>
-          <dt className="text-[12.5px]" style={{ color: CARD.ink }}>
-            Owed to independent creators
-          </dt>
-          <dd
-            className="m-0 text-[18px] tabular-nums"
-            style={{ color: CARD.ink, fontFamily: 'Georgia, serif' }}
-          >
-            {formatMoney(split.externalCents)}
-          </dd>
-          <p className="mt-0.5 text-[11.5px] leading-snug" style={{ color: CARD.ink }}>
-            A genuine obligation to somebody else.
-          </p>
-        </div>
-        <div>
-          <dt className="text-[12.5px]" style={{ color: CARD.ink }}>
-            Owed to founder-operated Collectives
-          </dt>
-          <dd
-            className="m-0 text-[18px] tabular-nums"
-            style={{ color: CARD.ink, fontFamily: 'Georgia, serif' }}
-          >
-            {formatMoney(split.founderCents)}
-          </dd>
-          <p className="mt-0.5 text-[11.5px] leading-snug" style={{ color: CARD.ink }}>
-            Fresh Collective owing itself. Earned and unpaid as recorded, not
-            treated as settled and not overdue to anybody.
-          </p>
-        </div>
-      </dl>
-    </CardNote>
-  )
-}
-
-/** Independent against founder-operated, for World Builders use. */
-function LearningSplit({ data }: { data: MetricResult }) {
-  const metric = pick(data, 'wb_creator_participation')
-  const q = metric?.qualifiers ?? {}
-  const independent = q.independent
-  const founder = q.founder_operated
-  if (typeof independent !== 'number' || typeof founder !== 'number') return null
-
-  return (
-    <CardNote accent="teal" span="sm:col-span-2 lg:col-span-3">
-      <p className="text-[13px]" style={{ color: CARD.ink }}>
-        {formatCount(independent)}{' '}
-        {independent === 1 ? 'independent creator' : 'independent creators'} and{' '}
-        {formatCount(founder)} operating founder-run Collectives took part.
-      </p>
-      <p className="mt-2 text-[12.5px]" style={{ color: CARD.ink }}>
-        Taking part is not completing: no reliable Pathway completion event is
-        recorded, so nothing here says a creator finished anything.
-      </p>
-    </CardNote>
-  )
-}
-
-/**
- * Where to go next.
- *
- * Plain links rather than whole-card targets: a metric card already
- * has a disclosure button inside it, and nesting that in a link
- * makes both harder to reach by keyboard and ambiguous to a screen
- * reader.
- */
-function DeeperLinks({ links }: { links: [string, string][] }) {
-  return (
-    <p className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5 text-[12.5px]">
-      {links.map(([label, href]) => (
-        <Link
-          key={href}
-          href={href}
-          className="rounded underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
-          style={{ color: FC_INK.muted }}
-        >
-          View {label} details
-        </Link>
-      ))}
-    </p>
-  )
-}
-
-function Waiting() {
-  return (
-    <p className="py-10 text-center text-[13.5px]" style={{ color: INK_MUTED }}>
-      Gathering the figures…
-    </p>
-  )
+function useHealth() {
+  const [health, setHealth] = useState<ReportingHealth | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    let cancelled = false
+    fetchHealth(controller.signal)
+      .then((h) => {
+        if (!cancelled) setHealth(h)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [])
+  return health
 }
 
 function Problem({ message }: { message: string }) {
   return (
     <div
-      className="mb-5 rounded-2xl p-5"
+      className="mt-4 rounded-xl p-4"
       style={{
         background: STATUS.error.bg,
         border: `1px solid ${STATUS.error.border}`,
       }}
     >
-      <p className="text-[13.5px]" style={{ color: STATUS.error.fg }}>
+      <p className="text-[13px]" style={{ color: STATUS.error.fg }}>
         {message}
       </p>
     </div>

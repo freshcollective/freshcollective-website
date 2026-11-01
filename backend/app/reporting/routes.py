@@ -38,8 +38,8 @@ from app.core.periods import (
     HISTORY_RANGE_LABELS,
     VALID_GROUPINGS,
     VALID_HISTORY_RANGES,
-    VALID_PERIODS,
-    resolve_period,
+    VALID_REPORTING_PERIODS,
+    resolve_reporting_period,
 )
 from app.models.user import User
 from app.reporting import engagement as _engagement  # noqa: F401 — populates REGISTRY
@@ -335,7 +335,14 @@ def query_metrics(
         ...,
         description="Comma-separated metric keys, from /metrics.",
     ),
-    period: str = Query("this_month", description=f"One of {list(VALID_PERIODS)}"),
+    period: str = Query(
+        "this_month",
+        description=(
+            f"One of {list(VALID_REPORTING_PERIODS)}. The rolling ranges "
+            "are the same ones /history accepts, so a dashboard can "
+            "drive its cards and its charts from one control."
+        ),
+    ),
     compare: bool = Query(
         True, description="Also compute the previous comparable period.",
     ),
@@ -370,10 +377,13 @@ def query_metrics(
     filter, so a page headed "Production" showed production trends and
     whole-platform figures and nothing said which was which.
     """
-    if period not in VALID_PERIODS:
+    if period not in VALID_REPORTING_PERIODS:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid period {period!r}. Valid: {list(VALID_PERIODS)}.",
+            detail=(
+                f"Invalid period {period!r}. "
+                f"Valid: {list(VALID_REPORTING_PERIODS)}."
+            ),
         )
     try:
         pop = Population.parse(population)
@@ -419,7 +429,7 @@ def query_metrics(
         replace(scope, space_ids=space_ids) if space_ids else scope
     )
 
-    current_bounds, previous_bounds = resolve_period(period)  # type: ignore[arg-type]
+    current_bounds, previous_bounds = resolve_reporting_period(period)
     current = _window_from(current_bounds)
 
     def evaluate(window: Window) -> list[MetricValueOut]:
