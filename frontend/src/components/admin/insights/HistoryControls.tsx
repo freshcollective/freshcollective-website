@@ -52,14 +52,22 @@ export function HistoryControls({
   population: PopulationKey
   onRange: (next: HistoryRangeKey) => void
   onGrouping: (next: Grouping) => void
-  onPopulation: (next: PopulationKey) => void
+  /**
+   * Omit on a page where the classification filter does not apply.
+   *
+   * World Builders is the case: it is classified internal_operations,
+   * so offering a Production filter there would empty its own
+   * dashboard. The row is hidden rather than shown inert, because a
+   * disabled filter invites the reader to wonder what it would do.
+   */
+  onPopulation?: (next: PopulationKey) => void
   options?: HistoryResult['options']
   disabled?: boolean
   populationNote?: string
 }) {
   const ranges = options?.ranges ?? RANGE_FALLBACK
   const groupings = options?.groupings ?? (['daily', 'weekly', 'monthly'] as Grouping[])
-  const populations = options?.populations ?? []
+  const populations = onPopulation ? (options?.populations ?? []) : []
 
   return (
     <div className="mb-5 flex flex-col gap-2.5">
@@ -98,7 +106,7 @@ export function HistoryControls({
               key={p.key}
               active={p.key === population}
               disabled={disabled}
-              onClick={() => onPopulation(p.key)}
+              onClick={() => onPopulation?.(p.key)}
               title={p.note}
             >
               {p.label}

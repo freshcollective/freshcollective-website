@@ -25,8 +25,11 @@ not a thing anyone should have to do twice.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_admin_user
@@ -168,6 +171,16 @@ class CollectiveOut(BaseModel):
     #: ranked against one with two years, and a reader cannot tell the
     #: difference from a short line alone.
     history_begins: str | None = None
+    #: True when membership of this Collective is granted automatically
+    #: by role — the structural marker for a learning environment, and
+    #: today only World Builders carries it.
+    #:
+    #: Exposed so a surface can *find* that Collective by its rule
+    #: rather than by its name or slug, which is how the rest of the
+    #: codebase already locates it. A dashboard matching on "World
+    #: Builders" would break the day it is renamed and would silently
+    #: pick up any Collective that happened to share the name.
+    learning_environment: bool = False
 
 
 class CreatorOut(BaseModel):
@@ -333,6 +346,15 @@ def query_metrics(
             "the complete ledger."
         ),
     ),
+    collectives: str | None = Query(
+        None,
+        description=(
+            "Comma-separated Collective ids, matching /history. Omit for "
+            "platform-wide figures. A metric with no per-Collective "
+            "meaning comes back unavailable with a reason rather than "
+            "repeating the platform total under a Collective's name."
+        ),
+    ),
     db: Session = Depends(get_db),
     scope: ReportScope = Depends(admin_scope),
 ):
@@ -373,6 +395,30 @@ def query_metrics(
                 status_code=404, detail=f"Unknown metric {key!r}.",
             ) from None
 
+    space_ids = tuple(
+        c.strip() for c in (collectives or "").split(",") if c.strip()
+    )
+    if space_ids:
+        unknown = _unknown_space_ids(db, space_ids)
+        if unknown:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown Collective ids: {sorted(unknown)}.",
+            )
+        if not scope.is_platform:
+            outside = set(space_ids) - set(scope.space_ids)
+            if outside:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Asked for a Collective outside this scope.",
+                )
+    # Entitlement and restriction are different axes: still a platform
+    # audience (an admin may see every metric), now restricted to the
+    # Collectives asked for. See ReportScope.space_filter.
+    metric_scope = (
+        replace(scope, space_ids=space_ids) if space_ids else scope
+    )
+
     current_bounds, previous_bounds = resolve_period(period)  # type: ignore[arg-type]
     current = _window_from(current_bounds)
 
@@ -380,7 +426,31 @@ def query_metrics(
         out: list[MetricValueOut] = []
         for m in selected:
             try:
-                out.append(_value_out(m, m.evaluate(db, scope, window, pop)))
+                if space_ids and "space_id" not in m.dimensions:
+                    # The same refusal ``/history`` makes. A metric that
+                    # cannot be broken down per Collective must not be
+                    # answered with the platform figure under a
+                    # Collective's name — that is the defect that put
+                    # the platform total into every Collective's stored
+                    # row, and it reads as a plausible number.
+                    out.append(
+                        MetricValueOut(
+                            key=m.key,
+                            value=None,
+                            available=False,
+                            unavailable_reason=(
+                                f"{m.display_name} is measured across the "
+                                "whole platform and has no meaning for a "
+                                "single Collective."
+                            ),
+                            qualifiers={},
+                            definition=_definition(m),
+                        )
+                    )
+                    continue
+                out.append(
+                    _value_out(m, m.evaluate(db, metric_scope, window, pop))
+                )
             except ScopeDenied as exc:
                 # 403 rather than a quiet omission: a caller asking for
                 # something it may not see should be told, not handed a
@@ -466,6 +536,23 @@ class HealthOut(BaseModel):
     note: str | None = None
 
 
+def _unknown_space_ids(db: Session, space_ids: tuple[str, ...]) -> set[str]:
+    """Ids that are not Collectives, so a typo 404s instead of zeroing.
+
+    Without this an unrecognised id narrows every metric to a filter
+    that matches nothing, and the page renders a complete set of
+    confident zeros — which is indistinguishable from a real Collective
+    that has had no activity.
+    """
+    from app.models.platform import Space
+
+    known = {
+        r[0]
+        for r in db.execute(select(Space.id).where(Space.id.in_(space_ids)))
+    }
+    return set(space_ids) - known
+
+
 def _collective_rows(db: Session, population: Population) -> list:
     """Collectives in a population, newest first, with their history floor.
 
@@ -511,6 +598,7 @@ def _collective_rows(db: Session, population: Population) -> list:
             slug=sp.slug,
             status=sp.status,
             reporting_class=sp.reporting_class,
+            learning_environment=sp.auto_grant_role is not None,
             created_at=sp.created_at.isoformat() if sp.created_at else "",
             history_begins=floor.isoformat() if floor else None,
         ))

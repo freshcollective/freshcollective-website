@@ -23,6 +23,7 @@ export function useMetrics(
   keys: string[],
   period: PeriodKey,
   population = 'all',
+  collectives: string[] = [],
 ) {
   const [result, setResult] = useState<{
     data: MetricResult | null
@@ -36,12 +37,22 @@ export function useMetrics(
   // Stable across renders so the effect does not re-run on every paint
   // because an inline array literal is a new object each time.
   const keyList = keys.join(',')
-  const asked = `${keyList}|${period}|${population}`
+  const collectiveList = collectives.join(',')
+  // The Collective filter is part of what was asked, so switching it
+  // reads as loading rather than leaving the previous Collective's
+  // figures on screen under the new name.
+  const asked = `${keyList}|${period}|${population}|${collectiveList}`
 
   useEffect(() => {
     const controller = new AbortController()
     let cancelled = false
-    fetchMetrics(keyList.split(','), period, controller.signal, population)
+    fetchMetrics(
+      keyList.split(','),
+      period,
+      controller.signal,
+      population,
+      collectiveList ? collectiveList.split(',') : [],
+    )
       .then((data) => {
         if (!cancelled) setResult({ data, asked, error: null })
       })
@@ -53,7 +64,7 @@ export function useMetrics(
       cancelled = true
       controller.abort()
     }
-  }, [keyList, period, population, asked])
+  }, [keyList, period, population, collectiveList, asked])
 
   return {
     data: result.error ? null : result.data,

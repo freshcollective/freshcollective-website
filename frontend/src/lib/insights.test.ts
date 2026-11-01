@@ -448,7 +448,11 @@ describe('the pages present figures rather than deriving them', () => {
     const hrefs = [...shell.matchAll(/href: '\/admin\/insights\/([a-z-]+)'/g)].map(
       (m) => m[1],
     )
-    assert.equal(hrefs.length, 6)
+    // Seven since World Builders joined them. The count is pinned so
+    // a tab cannot be dropped silently; the loop below is the part
+    // that matters.
+    assert.equal(hrefs.length, 7)
+    assert.ok(hrefs.includes('world-builders'))
     for (const slug of hrefs) {
       assert.doesNotThrow(
         () => read(`src/app/admin/insights/${slug}/page.tsx`),
@@ -461,7 +465,7 @@ describe('the pages present figures rather than deriving them', () => {
     const shell = read('src/components/admin/insights/InsightsShell.tsx')
     assert.ok(shell.includes('<DataHealthIndicator />'))
     assert.ok(shell.includes("href=\"/admin/insights/data-health\""))
-    // It sits outside the six tabs by design.
+    // It sits outside the seven tabs by design.
     assert.ok(!shell.includes("href: '/admin/insights/data-health'"))
   })
 })

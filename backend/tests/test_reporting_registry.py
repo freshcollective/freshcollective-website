@@ -572,6 +572,14 @@ class TestScopeEnforcement:
             # creator about Collectives that are not theirs.
             "members_leaving_entirely",
             "multi_collective_participants",
+            # World Builders. Platform-only because each is a statement
+            # about the creator population as a whole — how many
+            # creators exist, how many of them took part, how far they
+            # have got. Shown to one creator, every one of these is a
+            # comparison against other creators.
+            "wb_eligible_creators",
+            "wb_creator_participation",
+            "wb_creator_development",
         }
 
     def test_no_metric_reads_a_member_authored_column(self):

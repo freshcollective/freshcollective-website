@@ -2349,3 +2349,126 @@ describe('World Insights contrast', () => {
     }
   })
 })
+
+/**
+ * The World Builders dashboard.
+ *
+ * Three claims hold this page up, and each fails quietly rather than
+ * loudly if it breaks: the Collective stays excluded from Production,
+ * access is not presented as a decision anybody made, and nothing
+ * implies a Pathway was finished.
+ */
+describe('World Builders dashboard', () => {
+  const PAGE = 'src/app/admin/insights/world-builders/page.tsx'
+  const src = () => withoutDocComments(read(PAGE))
+
+  test('it is a tab of its own, not a section of Creators', () => {
+    const shell = read('src/components/admin/insights/InsightsShell.tsx')
+    assert.match(shell, /href: '\/admin\/insights\/world-builders'/)
+    assert.doesNotThrow(() => read(PAGE))
+  })
+
+  test('it finds the Collective by rule, never by name', () => {
+    // A slug can change and a name can be shared. The product locates
+    // World Builders by `auto_grant_role` everywhere else and so does
+    // this page, through the API's `learning_environment` flag.
+    assert.match(src(), /learning_environment/)
+    assert.ok(
+      !/slug\s*===\s*['"]world-builders['"]/.test(src()),
+      'the page must not match on a slug',
+    )
+    assert.ok(
+      !/name\s*===\s*['"]World Builders['"]/.test(src()),
+      'the page must not match on a name',
+    )
+  })
+
+  test('it does not reclassify anything to make itself visible', () => {
+    // The fix for "World Builders is invisible" must never be to make
+    // it production — that would corrupt the other six dashboards.
+    assert.ok(!/['"]production['"]/.test(src()))
+    assert.match(src(), /internal operations|internal_operations/)
+  })
+
+  test('it presents no Joined stage', () => {
+    // Membership is auto-granted, so a funnel step called "joined"
+    // would describe a decision nobody made.
+    assert.ok(
+      /automatically/.test(src()),
+      'the page must say access is automatic',
+    )
+    assert.ok(
+      !/>\s*Joined\s*</.test(src()),
+      'there must be no Joined stage',
+    )
+  })
+
+  test('it never claims a Pathway was completed', () => {
+    const text = src()
+    // Steps are counted and said so; a finished Pathway is not.
+    assert.match(text, /pathway_steps_completed/)
+    assert.ok(
+      !/\bcompleted a Pathway\b/.test(text),
+      'nothing may claim a finished Pathway',
+    )
+    assert.match(text, /No completion event is emitted/)
+  })
+
+  test('it names what it cannot measure rather than leaving a gap', () => {
+    for (const absent of [
+      'Pathway completion',
+      'Resource and Offering use',
+      'First Pathway or Gathering published',
+    ]) {
+      assert.ok(src().includes(absent), `${absent} should be named as absent`)
+    }
+  })
+
+  test('creator development is described, never explained', () => {
+    assert.match(src(), /not evidence that World Builders caused it/)
+    assert.ok(
+      !/because of World Builders|thanks to World Builders/i.test(src()),
+      'no causal claim',
+    )
+  })
+
+  test('it reuses the shared components and adds no arithmetic', () => {
+    for (const c of ['<HistoryPanel', '<InsightCard', '<CardNote', '<PeriodSelect']) {
+      assert.ok(src().includes(c), `${c} should be reused`)
+    }
+    assert.ok(!/<svg/.test(src()), 'no hand-rolled chart')
+  })
+})
+
+/**
+ * Wide content scrolls inside its own container.
+ *
+ * The application ``body`` is a flex container, so every child of it
+ * takes ``min-width: auto`` and refuses to shrink below its content's
+ * min-content width. One table with a ``min-w-[420px]`` inside a card
+ * inside the shell therefore widened the entire page at 390px and
+ * made the body scroll sideways — the exact thing the design rules
+ * forbid, caused by a class nobody would think to look at.
+ */
+describe('the insights shell can shrink', () => {
+  test('the shell root allows itself to be narrowed', () => {
+    const shell = read('src/components/admin/insights/InsightsShell.tsx')
+    assert.match(
+      shell,
+      /className="min-h-full min-w-0"/,
+      'without min-w-0 the shell cannot shrink inside the flex body, and ' +
+        'any wide child widens the whole page',
+    )
+  })
+
+  test('a table that needs more room scrolls in its own container', () => {
+    const page = read('src/app/admin/insights/world-builders/page.tsx')
+    const table = /<table[^>]*min-w-\[/.test(page)
+    if (!table) return
+    assert.match(
+      page,
+      /overflow-x-auto/,
+      'a min-width table must sit inside a scroll container',
+    )
+  })
+})

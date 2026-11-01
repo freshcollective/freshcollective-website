@@ -8,7 +8,9 @@ an error — and because ``participation_rate`` divides by
 one a caller reached for first.
 
 Order matters: the core metrics register before the engagement family
-that depends on them.
+that depends on them, and World Builders last because it reads both the
+creator journey's founder-operated definition and the participation
+event union.
 """
 
 from app.reporting import registry  # noqa: F401
@@ -16,3 +18,4 @@ from app.reporting import metrics  # noqa: F401 — registers the core family
 from app.reporting import creators  # noqa: F401 — registers the creator journey
 from app.reporting import belonging  # noqa: F401 — registers retention and overlap
 from app.reporting import engagement  # noqa: F401 — registers participation
+from app.reporting import world_builders  # noqa: F401 — the learning environment

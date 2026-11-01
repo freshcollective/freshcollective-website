@@ -181,12 +181,20 @@ export async function fetchMetrics(
   period: PeriodKey,
   signal?: AbortSignal,
   population = 'all',
+  /**
+   * Narrow every figure to these Collectives, as ``/history`` already
+   * allows. A metric with no per-Collective meaning comes back
+   * unavailable with a reason rather than as the platform total
+   * wearing a Collective's name.
+   */
+  collectives: string[] = [],
 ): Promise<MetricResult> {
   const query = new URLSearchParams({
     keys: keys.join(','),
     period,
     population,
   })
+  if (collectives.length > 0) query.set('collectives', collectives.join(','))
   const res = await fetch(`/api/admin/reporting/query?${query}`, {
     credentials: 'include',
     signal,

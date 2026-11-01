@@ -92,6 +92,15 @@ export interface Collective {
    * new one — a short line means both, and only this says which.
    */
   history_begins: string | null
+  /**
+   * True when membership is granted automatically by role.
+   *
+   * The structural marker for a creator learning environment — World
+   * Builders today. Surfaces find it by this rather than by name,
+   * which is how the rest of the product locates it: a slug can be
+   * changed and a name can be shared.
+   */
+  learning_environment?: boolean
 }
 
 export interface HistoryBucket {

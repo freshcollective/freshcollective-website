@@ -22,7 +22,7 @@ const INK_SOFTER = FC_INK.faint
 const HAIRLINE = '1px solid rgba(12, 24, 38, 0.08)'
 
 /**
- * The six places to look, and one honest statement about the data.
+ * The seven places to look, and one honest statement about the data.
  *
  * World Insights is where Fresh Collective gets understood as a
  * business; Mother World stays the welcoming overview and World History
@@ -41,6 +41,11 @@ const TABS: { href: string; label: string; blurb: string }[] = [
   { href: '/admin/insights/creators', label: 'Creators', blurb: 'How creators are getting on' },
   { href: '/admin/insights/participation', label: 'Participation', blurb: 'What people are actually doing' },
   { href: '/admin/insights/money', label: 'Money', blurb: 'What comes in, and whose it is' },
+  // Last, and deliberately not folded into Creators. World Builders is
+  // classified internal_operations and stays excluded from every
+  // Production figure on the other six — which is why it needs a tab
+  // of its own rather than a share of theirs.
+  { href: '/admin/insights/world-builders', label: 'World Builders', blurb: 'Where creators learn to build' },
 ]
 
 export function InsightsShell({
@@ -55,7 +60,15 @@ export function InsightsShell({
   const pathname = usePathname()
 
   return (
-    <div className="min-h-full" style={{ background: PAGE_BG }}>
+    // ``min-w-0`` is load-bearing, not tidiness. The application
+    // ``body`` is a flex container, so every child of it defaults to
+    // ``min-width: auto`` and refuses to shrink below its content's
+    // min-content width. One table with a min-width inside a card
+    // inside this shell therefore widened the whole page and made the
+    // body scroll sideways, instead of scrolling inside its own
+    // container. Allowing the shell to shrink is what keeps wide
+    // content's overflow local to the element that owns it.
+    <div className="min-h-full min-w-0" style={{ background: PAGE_BG }}>
       <div className="mx-auto max-w-[1180px] px-5 py-8 md:px-8">
         <header className="mb-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
