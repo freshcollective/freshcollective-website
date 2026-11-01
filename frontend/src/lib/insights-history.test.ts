@@ -2717,14 +2717,19 @@ describe('the emphasis row', () => {
   test('both rows share one column track, so they stay aligned', () => {
     // The emphasis card keeps its normal metric-card width rather than
     // stretching, which is what keeps it lined up with the row above.
-    const grid = /const GRID = '([^']+)'/.exec(src())
-    assert.ok(grid, 'the column track should be declared once')
-    assert.match(grid[1], /sm:grid-cols-2/)
-    assert.match(grid[1], /lg:grid-cols-4/)
-    // Used for both rows, never redefined for one of them.
-    assert.equal(src().match(/grid gap-3 sm:grid-cols-2/g)?.length, 1)
+    // A group may choose a 3- or 4-up track; what matters is that
+    // both of its rows use the *same* one.
+    const body = src()
+    const tracks = [...body.matchAll(/const (GRID_\d) = '([^']+)'/g)]
+    assert.ok(tracks.length >= 1, 'a column track should be declared')
+    for (const [, , cls] of tracks) assert.match(cls, /sm:grid-cols-2/)
+    // One resolved track, used by the standard row and the emphasis
+    // row alike — never a second grid redefined for one of them.
+    assert.match(body, /const grid = columns === 3 \? GRID_3 : GRID_4/)
+    assert.equal(body.match(/className=\{grid\}/g)?.length, 1)
+    assert.match(body, /\$\{grid\}\$\{standard\.length > 0 \? ' mt-3' : ''\}/)
     assert.ok(
-      !/col-span-full|w-full/.test(src()),
+      !/col-span-full|w-full/.test(body),
       'an emphasis card must not stretch across the row',
     )
   })
@@ -2761,6 +2766,208 @@ describe('the emphasis row', () => {
         `${name} uses emphasis outside a CardGroup, which cannot apply ` +
           `the emphasis-row rule`,
       )
+    }
+  })
+})
+
+/**
+ * The Overview.
+ *
+ * A starting point for the seven dashboards behind it. What makes it
+ * trustworthy is that it recomputes nothing and asks each question
+ * with the population that question needs — and both are easy to
+ * break in ways that still render a plausible page.
+ */
+describe('the Overview dashboard', () => {
+  const PAGE = 'src/app/admin/insights/overview/page.tsx'
+  const src = () => withoutDocComments(read(PAGE))
+
+  test('it is the first tab and the landing page', () => {
+    const shell = read('src/components/admin/insights/InsightsShell.tsx')
+    const hrefs = [...shell.matchAll(/href: '\/admin\/insights\/([a-z-]+)'/g)].map(
+      (m) => m[1],
+    )
+    assert.equal(hrefs[0], 'overview')
+    assert.match(
+      read('src/app/admin/insights/page.tsx'),
+      /redirect\('\/admin\/insights\/overview'\)/,
+    )
+  })
+
+  test('every other dashboard is still reachable on its own route', () => {
+    for (const slug of [
+      'growth', 'belonging', 'collectives', 'creators',
+      'participation', 'money', 'world-builders', 'data-health',
+    ]) {
+      assert.doesNotThrow(
+        () => read(`src/app/admin/insights/${slug}/page.tsx`),
+        `/admin/insights/${slug} must keep working`,
+      )
+    }
+  })
+
+  test('each band asks for the population its question needs', () => {
+    // The whole correctness of the page. Narrowing money to
+    // production would hide real Stripe movements in a demonstration
+    // Collective; widening membership to the ledger would count test
+    // accounts as people who joined.
+    assert.match(src(), /useMetrics\(AT_A_GLANCE, period, 'production'\)/)
+    assert.match(src(), /useMetrics\(MONEY, period, 'all'\)/)
+    assert.match(src(), /useMetrics\(CREATORS, period, 'production'\)/)
+    assert.match(src(), /useMetrics\(LEARNING, period, 'all'\)/)
+    assert.match(src(), /useHistory\(TREND_KEYS, range, grouping, 'production'\)/)
+  })
+
+  test('the differing scopes are stated on the page, not just in code', () => {
+    assert.match(src(), /Production activity only/)
+    assert.match(src(), /complete ledger/)
+    assert.match(src(), /internal operations/)
+  })
+
+  test('it counts people, not memberships', () => {
+    // `memberships_started` would overstate arrivals by exactly the
+    // amount of enthusiasm a new member shows.
+    assert.match(src(), /members_joined/)
+    assert.ok(
+      !/memberships_started/.test(src()),
+      'the Overview must not present the membership flow as new members',
+    )
+  })
+
+  test('Fresh Collective revenue is never gross Collective sales', () => {
+    assert.match(src(), /fresh_collective_revenue_cents/)
+    // Both appear, and the band says plainly which is which.
+    assert.match(src(), /gross_collective_sales_cents/)
+    assert.match(src(), /most of that larger figure is creators' money/)
+  })
+
+  test('it recomputes nothing in the browser', () => {
+    const body = src()
+    // No arithmetic on metric values: every figure is a registry
+    // metric rendered as it arrived.
+    assert.ok(
+      !/\.value\s*[-+*/]\s/.test(body),
+      'the Overview must not do arithmetic on metric values',
+    )
+    assert.ok(!/<svg/.test(body), 'no hand-rolled chart')
+  })
+
+  test('attention lists only actionable states, and never a score', () => {
+    assert.ok(
+      !/health score|overall score|business health/i.test(src()),
+      'no invented overall health score',
+    )
+    // An outstanding balance is not an alarm.
+    assert.match(src(), /Outstanding, not overdue/)
+    assert.match(src(), /Nothing needs attention/)
+  })
+
+  test('founder-operated balances are not called debts to others', () => {
+    assert.match(src(), /Fresh Collective owing itself/)
+    assert.match(src(), /not overdue to anybody/)
+  })
+
+  test('it links onward rather than making whole cards clickable', () => {
+    assert.match(src(), /View \{label\} details/)
+    assert.ok(
+      !/<Link[^>]*>\s*<InsightCard/s.test(src()),
+      'a metric card must not be wrapped in a link — it owns a button',
+    )
+  })
+
+  test('it reuses the shared components', () => {
+    for (const c of [
+      '<HistoryPanel', '<InsightCard', '<CardNote', '<CardGroup',
+      '<PeriodSelect', '<HistoryControls',
+    ]) {
+      assert.ok(src().includes(c), `${c} should be reused`)
+    }
+  })
+
+  test('the two trend charts stack on a narrow screen', () => {
+    assert.match(src(), /grid gap-4 lg:grid-cols-2/)
+  })
+})
+
+/**
+ * The Overview must agree with the dashboard it links to.
+ *
+ * Reading the same registry metric is most of that, and the rest is
+ * asking it with the same population. This reads each dashboard's own
+ * default rather than restating it, so if a detailed page changes its
+ * default the mismatch surfaces here instead of as two pages quietly
+ * disagreeing about the same number.
+ */
+describe('Overview figures reconcile with the detailed dashboards', () => {
+  const defaultPopulation = (slug: string) => {
+    const m = /useState<PopulationKey>\('([a-z_]+)'\)/.exec(
+      read(`src/app/admin/insights/${slug}/page.tsx`),
+    )
+    assert.ok(m, `${slug} should declare a default population`)
+    return m[1]
+  }
+
+  const overviewPopulationFor = (constant: string) => {
+    const src = read('src/app/admin/insights/overview/page.tsx')
+    const m = new RegExp(`useMetrics\\(${constant}, period, '([a-z_]+)'\\)`).exec(
+      src,
+    )
+    assert.ok(m, `the Overview should fetch ${constant}`)
+    return m[1]
+  }
+
+  test('members, Collectives and participation match Growth', () => {
+    assert.equal(overviewPopulationFor('AT_A_GLANCE'), defaultPopulation('growth'))
+    assert.equal(
+      overviewPopulationFor('AT_A_GLANCE'),
+      defaultPopulation('participation'),
+    )
+  })
+
+  test('money matches the Money dashboard', () => {
+    // Money defaults to the complete ledger on both, deliberately:
+    // the default belongs to the question, not to the filter.
+    assert.equal(overviewPopulationFor('MONEY'), defaultPopulation('money'))
+    assert.equal(overviewPopulationFor('MONEY'), 'all')
+  })
+
+  test('creator figures match the Creators dashboard', () => {
+    assert.equal(overviewPopulationFor('CREATORS'), defaultPopulation('creators'))
+  })
+
+  test('the trend charts use the same population as the cards beside them', () => {
+    const src = read('src/app/admin/insights/overview/page.tsx')
+    const history = /useHistory\(TREND_KEYS, range, grouping, '([a-z_]+)'\)/.exec(
+      src,
+    )
+    assert.ok(history)
+    assert.equal(history[1], overviewPopulationFor('AT_A_GLANCE'))
+  })
+
+  test('every metric the Overview names is a real registry key', () => {
+    // Guards the typo that renders an empty card rather than an error.
+    const src = read('src/app/admin/insights/overview/page.tsx')
+    const declared = new Set<string>()
+    for (const block of ['AT_A_GLANCE', 'MONEY', 'CREATORS', 'LEARNING', 'TREND_KEYS']) {
+      const m = new RegExp(`const ${block} = \\[([^\\]]*)\\]`, 's').exec(src)
+      assert.ok(m, `${block} should be declared as a list`)
+      for (const k of m[1].matchAll(/'([a-z_]+)'/g)) declared.add(k[1])
+    }
+    for (const key of declared) {
+      assert.ok(
+        src.includes(`'${key}'`),
+        `${key} should be referenced where it is rendered`,
+      )
+    }
+    // Spot-check the ones whose definitions the brief singled out.
+    for (const key of [
+      'unique_members',
+      'members_joined',
+      'participation_rate',
+      'fresh_collective_revenue_cents',
+      'active_creators',
+    ]) {
+      assert.ok(declared.has(key), `${key} should be on the Overview`)
     }
   })
 })

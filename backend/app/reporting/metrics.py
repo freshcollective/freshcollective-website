@@ -1250,6 +1250,183 @@ def _memberships_started(
     )
 
 
+def _members_joined(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """Distinct **people** who began a membership in the window.
+
+    Deliberately not ``memberships_started``, which counts rows and
+    therefore adds up: somebody who joined three Collectives in one
+    month is three memberships started and one person who arrived.
+    The Overview asks "how many people joined", and answering it with
+    the membership flow would overstate arrivals by exactly the amount
+    of enthusiasm a new member shows.
+
+    A distinct count, so it is recomputed over whatever window is
+    asked for and never summed across periods.
+
+    The ``first_time`` qualifier separates people genuinely new to
+    Fresh Collective from existing members who joined another
+    Collective — both are "joined this month", and only one is growth
+    of the membership base. Established from ``joined_at`` alone, so
+    it reconstructs for a past period like the headline does.
+    """
+    def _scoped(q):
+        allowed = scope.space_filter
+        if allowed is not None:
+            q = q.filter(False) if not allowed else q.filter(
+                SpaceMembership.space_id.in_(allowed)
+            )
+        spaces = population.space_id_select()
+        if spaces is not None:
+            q = q.filter(SpaceMembership.space_id.in_(spaces))
+        excluded = population.excluded_account_select()
+        if excluded is not None:
+            q = q.filter(SpaceMembership.user_id.notin_(excluded))
+        return q
+
+    joined = _scoped(db.query(SpaceMembership))
+    if window.starts_at is not None:
+        joined = joined.filter(SpaceMembership.joined_at >= window.starts_at)
+    if window.ends_at is not None:
+        joined = joined.filter(SpaceMembership.joined_at < window.ends_at)
+    people = {
+        r[0]
+        for r in joined.with_entities(SpaceMembership.user_id).distinct().all()
+    }
+
+    # Who among them had no earlier membership anywhere in scope. One
+    # query for the whole cohort rather than one per person.
+    first_time = people
+    if people and window.starts_at is not None:
+        earlier = _scoped(db.query(SpaceMembership)).filter(
+            SpaceMembership.user_id.in_(people),
+            SpaceMembership.joined_at < window.starts_at,
+        )
+        returning = {
+            r[0]
+            for r in earlier.with_entities(SpaceMembership.user_id)
+            .distinct()
+            .all()
+        }
+        first_time = people - returning
+
+    return MetricValue(
+        key="members_joined",
+        value=len(people),
+        qualifiers={
+            **population.qualifiers(),
+            "first_time": len(first_time),
+            "already_a_member_elsewhere": len(people) - len(first_time),
+            "counting_note": (
+                "People, not memberships. Somebody who joined three "
+                "Collectives this period is one person here and three in "
+                "'Memberships started'."
+            ),
+        },
+    )
+
+
+REGISTRY.add(Metric(
+    key="members_joined",
+    display_name="New members",
+    definition=(
+        "Distinct people who began at least one Collective membership "
+        "during the period. Counts people, so somebody who joined three "
+        "Collectives is one new member."
+    ),
+    source_of_truth="space_memberships.joined_at",
+    grain=Grain.period,
+    # Never summable: the same person can appear in two months, and
+    # adding twelve monthly figures would count them twice.
+    aggregation=Aggregation.distinct_count,
+    date_basis=DateBasis.membership_joined,
+    access=Access.creator_visible,
+    availability=Availability.full,
+    limitations=(
+        "Counts people who joined *something* in the period, which "
+        "includes existing members joining an additional Collective. "
+        "The 'first_time' qualifier separates those genuinely new to "
+        "Fresh Collective. A membership that began and ended before "
+        "removal dates were stored cannot be seen at all."
+    ),
+    dimensions=("space_id", POPULATION_DIMENSION),
+    personal_data=True,
+    compute=_members_joined,
+))
+
+
+def _fresh_collective_revenue(
+    db: Session, scope: ReportScope, window: Window,
+    population: Population = ALL,
+) -> MetricValue:
+    """Fresh Collective's own revenue: platform fees plus subscriptions.
+
+    The figure the Overview needs and the one most easily got wrong.
+    It is **not** gross Collective sales — that is money moved on
+    creators' behalf, most of which is theirs — and the two differ by
+    roughly an order of magnitude, so showing the wrong one would
+    overstate the business dramatically.
+
+    Composed through ``evaluate`` rather than by re-querying, the same
+    way ``contribution_after_processing_cents`` is: each component
+    re-checks entitlement and honours the population, so a production
+    revenue figure is production fees plus production subscriptions
+    and never a mix of filtered and unfiltered terms.
+    """
+    fee = REGISTRY.get("platform_fee_revenue_cents").evaluate(
+        db, scope, window, population)
+    subs = REGISTRY.get("subscription_revenue_cents").evaluate(
+        db, scope, window, population)
+    return MetricValue(
+        key="fresh_collective_revenue_cents",
+        value=int(fee.value or 0) + int(subs.value or 0),
+        qualifiers={
+            **population.qualifiers(),
+            "components": {
+                "platform_fee_revenue_cents": fee.value,
+                "subscription_revenue_cents": subs.value,
+            },
+            "not_gross_note": (
+                "Fresh Collective's own revenue. Gross Collective sales "
+                "is a much larger figure and is mostly creators' money."
+            ),
+        },
+    )
+
+
+REGISTRY.add(Metric(
+    key="fresh_collective_revenue_cents",
+    display_name="Fresh Collective revenue",
+    definition=(
+        "What Fresh Collective itself earns: its share of member "
+        "purchases plus the fees creators pay for their platform plans. "
+        "Not gross Collective sales, which is money moved on creators' "
+        "behalf."
+    ),
+    source_of_truth=(
+        "platform_fee_revenue_cents + subscription_revenue_cents, both "
+        "on the settlement date"
+    ),
+    grain=Grain.period,
+    aggregation=Aggregation.additive,
+    date_basis=DateBasis.payment_settled,
+    access=Access.platform_only,
+    availability=Availability.full,
+    limitations=(
+        "Revenue, not profit and not contribution: no operating costs "
+        "and not even Stripe's processing fees are deducted. "
+        "'Contribution after processing costs' is this less those fees."
+    ),
+    # No ``space_id``: creator subscriptions are paid to the platform
+    # and belong to no Collective, so a per-Collective split of this
+    # total would silently drop them.
+    dimensions=(POPULATION_DIMENSION,),
+    compute=_fresh_collective_revenue,
+))
+
+
 REGISTRY.add(Metric(
     key="total_memberships",
     display_name="Collective memberships",

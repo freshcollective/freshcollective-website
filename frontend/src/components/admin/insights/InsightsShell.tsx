@@ -22,7 +22,7 @@ const INK_SOFTER = FC_INK.faint
 const HAIRLINE = '1px solid rgba(12, 24, 38, 0.08)'
 
 /**
- * The seven places to look, and one honest statement about the data.
+ * The eight places to look, and one honest statement about the data.
  *
  * World Insights is where Fresh Collective gets understood as a
  * business; Mother World stays the welcoming overview and World History
@@ -35,6 +35,9 @@ const HAIRLINE = '1px solid rgba(12, 24, 38, 0.08)'
  * *before* reading the figures, not after.
  */
 const TABS: { href: string; label: string; blurb: string }[] = [
+  // First, and where the area opens. A starting point for the seven
+  // that follow rather than an eighth collection of every metric.
+  { href: '/admin/insights/overview', label: 'Overview', blurb: 'How Fresh Collective is doing' },
   { href: '/admin/insights/growth', label: 'Growth', blurb: 'Who is arriving, and how fast' },
   { href: '/admin/insights/belonging', label: 'Belonging', blurb: 'Who stays, and who comes back' },
   { href: '/admin/insights/collectives', label: 'Collectives', blurb: 'How each community is faring' },

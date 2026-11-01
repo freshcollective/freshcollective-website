@@ -580,6 +580,10 @@ class TestScopeEnforcement:
             "wb_eligible_creators",
             "wb_creator_participation",
             "wb_creator_development",
+            # Fresh Collective's own revenue. Platform-only for the
+            # same reason its two components are: it is the platform's
+            # income, not a creator's.
+            "fresh_collective_revenue_cents",
         }
 
     def test_no_metric_reads_a_member_authored_column(self):

@@ -128,13 +128,25 @@ export function CardGroup({
   title,
   note,
   surface,
+  columns = 4,
   children,
 }: {
   title: string
   note: string
   surface: CardSurface
+  /**
+   * How many cards sit across a wide screen. Four by default.
+   *
+   * Three is for a short headline band, where six figures wrapping
+   * 4+2 leaves a conspicuous hole beside the second row; 3+3 is
+   * symmetrical and gives each figure the room a headline deserves.
+   * Both rows of a group share whichever track is chosen, so an
+   * emphasis card still lines up under the cards above it.
+   */
+  columns?: 3 | 4
   children: React.ReactNode
 }) {
+  const grid = columns === 3 ? GRID_3 : GRID_4
   const kids = Children.toArray(children)
   const standard = kids.filter((c) => !isEmphasised(c))
   const emphasised = kids.filter(isEmphasised)
@@ -154,16 +166,14 @@ export function CardGroup({
         >
           {note}
         </p>
-        {standard.length > 0 && (
-          <div className={GRID}>{standard}</div>
-        )}
+        {standard.length > 0 && <div className={grid}>{standard}</div>}
         {/*
           Only rendered when something is actually emphasised, so a
           group with no attention card gains no empty row and no extra
           gap — the common case costs nothing.
         */}
         {emphasised.length > 0 && (
-          <div className={`${GRID}${standard.length > 0 ? ' mt-3' : ''}`}>
+          <div className={`${grid}${standard.length > 0 ? ' mt-3' : ''}`}>
             {emphasised}
           </div>
         )}
@@ -172,8 +182,9 @@ export function CardGroup({
   )
 }
 
-/** One column track, shared by both rows so they stay aligned. */
-const GRID = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4'
+/** Column tracks. Both rows of a group share one, so they align. */
+const GRID_4 = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4'
+const GRID_3 = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
 
 /**
  * Whether a child is asking to be set apart.

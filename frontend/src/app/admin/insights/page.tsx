@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation'
 
 /**
- * World Insights opens on Growth.
+ * World Insights opens on the Overview.
  *
- * A landing page listing the six sections would be a click between the
- * caretaker and the first figure. Growth is the question most often
- * asked first, so it is what the area opens on.
+ * It opened on Growth while Growth was the only broad view; now that
+ * there is a page whose whole job is "how are we doing, and what
+ * needs attention", that is the honest landing place. A caretaker who
+ * wants membership detail is one labelled tab away, and every direct
+ * link into a section still resolves on its own.
  */
 export default function InsightsIndexPage() {
-  redirect('/admin/insights/growth')
+  redirect('/admin/insights/overview')
 }
