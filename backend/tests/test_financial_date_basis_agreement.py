@@ -96,16 +96,20 @@ class TestTheEndpointAndTheRegistryAgree:
         """
         creator = make_user(role="creator")
         space = make_space(creator=creator)
-        now = datetime.utcnow()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Dated from the window the assertion itself resolves, not from
+        # a UTC month computed here. ``this_month`` is an *Australian*
+        # month, so on the 1st and 2nd a UTC month start plus a day is
+        # still in the future and the payment fell outside the window
+        # it was meant to be inside.
+        bounds, _ = resolve_period("this_month")
+        inside = bounds.starts_at + (bounds.ends_at - bounds.starts_at) / 2
         _txn(
             db, space, creator, make_user(),
-            created_at=month_start - timedelta(days=5),
-            settled_at=month_start + timedelta(days=1),
+            created_at=bounds.starts_at - timedelta(days=5),
+            settled_at=inside,
         )
         db.commit()
 
-        bounds, _ = resolve_period("this_month")
         endpoint = client.get(
             "/api/admin/commerce/overview?period=this_month&stripe_mode=test"
         ).json()["current"]["revenue"]["total_gross_sales_cents"]
@@ -118,15 +122,17 @@ class TestTheEndpointAndTheRegistryAgree:
         """A pre-BI-1 payment falls back to creation on both sides."""
         creator = make_user(role="creator")
         space = make_space(creator=creator)
-        now = datetime.utcnow()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # As above: inside the resolved Australian window, rather than
+        # a UTC month start plus two days, which is in the future for
+        # the first two days of any month.
+        bounds, _ = resolve_period("this_month")
+        inside = bounds.starts_at + (bounds.ends_at - bounds.starts_at) / 2
         _txn(
             db, space, creator, make_user(),
-            created_at=month_start + timedelta(days=2),
+            created_at=inside,
             settled_at=None,
         )
         db.commit()
-        bounds, _ = resolve_period("this_month")
         endpoint = client.get(
             "/api/admin/commerce/overview?period=this_month&stripe_mode=test"
         ).json()["current"]["revenue"]["total_gross_sales_cents"]

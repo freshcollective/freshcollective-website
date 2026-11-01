@@ -145,8 +145,40 @@ def _seed(engine) -> dict:
 
 
 def _cleanup(engine, ids: dict) -> None:
-    """Best-effort teardown; always runs, even after an assertion fails."""
+    """Best-effort teardown; always runs, even after an assertion fails.
+
+    This test commits for real — it has to, since it is checking what
+    two concurrent sessions do to each other — so it owns its own
+    teardown rather than riding the savepoint the ``db`` fixture
+    gives everybody else.
+
+    **Order matters, and the event tables come first.** Acquiring an
+    Offering emits a communication event and a business event, and
+    both reference the user and space through SET NULL foreign keys.
+    Deleting the users first does not remove them; it blanks the only
+    columns that identify them, leaving rows nothing can match. They
+    accumulated ten and five a run until a reconciler test that reads
+    the oldest two hundred communication events stopped reaching its
+    own, and failed somewhere else entirely.
+    """
     with engine.begin() as c:
+        users = [ids[k] for k in ("owner", "taker", "taker2") if k in ids]
+        c.execute(
+            text(
+                "DELETE FROM communication_events "
+                "WHERE actor_user_id = ANY(:u) OR source_id = ANY(:u) "
+                "OR source_id = :s"
+            ),
+            {"u": users, "s": ids["space"]},
+        )
+        c.execute(
+            text(
+                "DELETE FROM business_events "
+                "WHERE space_id = :s OR user_id = ANY(:u) "
+                "OR actor_user_id = ANY(:u) OR creator_user_id = ANY(:u)"
+            ),
+            {"s": ids["space"], "u": users},
+        )
         c.execute(
             text("DELETE FROM offering_entitlements WHERE offering_id = :o"),
             {"o": ids["offering"]},

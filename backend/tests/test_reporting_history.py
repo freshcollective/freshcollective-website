@@ -1169,9 +1169,16 @@ class TestComparingCollectives:
         self, db, client, make_space,
     ):
         a = make_space(name="A", reporting_class=PRODUCTION)
+        # Three consecutive days, anchored so they share one monthly
+        # bucket. Anchoring on the last completed day alone straddles
+        # the month end on the 1st and 2nd — October would hold two of
+        # them and November one, and the last available bucket would
+        # be November's single day. The flow folding is right in that
+        # case; the assumption that the three land together was not.
         last = completed_reporting_date(datetime.utcnow())
+        anchor = last if last.day >= 3 else last - timedelta(days=last.day)
         for i in range(3):
-            day = last - timedelta(days=i)
+            day = anchor - timedelta(days=i)
             _store_for_space(db, a.id, "unique_members", day, 10 + i)
             _store_for_space(
                 db, a.id, "memberships_started", day, 2, aggregation="additive",

@@ -64,7 +64,27 @@ def test_only_world(db, make_user, make_space, make_event):
 
     One Collective, one member, and one of every kind of activity the
     registry recognises. Under ``production`` nothing here counts.
+
+    The premise has to be *established*, not assumed. Migration 095
+    seeds the World Builders Collective into every environment,
+    ``fc_test`` included, and it arrives unclassified — so "every
+    record is test-classified" was false before this fixture wrote a
+    single row, and the two metrics that count Collectives saw one
+    more under ``all`` than under ``test``. They were obeying the
+    filter correctly and failing a test that had assumed an empty
+    database.
+
+    So any Collective already present is classified ``test`` here.
+    That happens inside the test's transaction and is rolled back
+    with everything else: the seeded row is legitimate data and is
+    neither deleted nor permanently altered.
     """
+    from app.models.platform import Space as _Space
+
+    for existing in db.query(_Space).all():
+        existing.reporting_class = TEST
+    db.flush()
+
     # The creator is classified too. An *unclassified* account is
     # deliberately counted as production — that is the rule — so a
     # fixture that left the Collective's owner unclassified would make

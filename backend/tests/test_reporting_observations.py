@@ -408,14 +408,53 @@ class TestALiveWindowIsAnswerable:
 
     def test_a_closed_past_period_is_still_unavailable(self, db, make_space):
         """Not a regression — the honest answer. Collective status is
-        one column with no history, so the end of last month cannot be
-        reconstructed and must not be answered with today's count."""
+        one column with no history, so a past day cannot be
+        reconstructed and must not be answered with today's count.
+
+        Dated explicitly rather than via ``last_month``. A closed
+        month is only beyond ``OBSERVATION_GRACE_DAYS`` from the
+        fourth of the following month: on the 1st to the 3rd, last
+        month's final day is one to three days behind and the grace
+        answers it ``observed_late``, which is the rule working as
+        designed — a missed night gets one more chance to record the
+        day. The guard here is about a day beyond any such repair.
+        """
+        from app.core.periods import reporting_date_bounds
+        from app.reporting.metrics import OBSERVATION_GRACE_DAYS
+
         make_space(status="active")
+        long_ago = completed_reporting_date(datetime.utcnow()) - timedelta(
+            days=OBSERVATION_GRACE_DAYS + 30,
+        )
+        starts_at, ends_at = reporting_date_bounds(long_ago)
         v = REGISTRY.get("active_collectives").evaluate(
-            db, platform_scope(), self._window("last_month"),
+            db, platform_scope(), Window(starts_at, ends_at, "a day long past"),
         )
         assert not v.available
         assert "not kept as history" in v.unavailable_reason
+
+    def test_the_grace_answers_a_day_just_behind(self, db, make_space):
+        """The other side of the same rule, pinned deliberately.
+
+        Within the grace a day is answered and marked ``observed_late``
+        — that is what lets a missed nightly run repair yesterday. The
+        test above and this one are the two edges of
+        ``OBSERVATION_GRACE_DAYS``, and neither should move without
+        the other being reconsidered.
+        """
+        from app.core.periods import reporting_date_bounds
+        from app.reporting.metrics import OBSERVATION_GRACE_DAYS
+
+        make_space(status="active")
+        recent = completed_reporting_date(datetime.utcnow()) - timedelta(
+            days=OBSERVATION_GRACE_DAYS,
+        )
+        starts_at, ends_at = reporting_date_bounds(recent)
+        v = REGISTRY.get("active_collectives").evaluate(
+            db, platform_scope(), Window(starts_at, ends_at, "just behind"),
+        )
+        assert v.available
+        assert v.qualifiers["provenance"] == "observed_late"
 
     def test_the_nightly_still_declines_a_day_that_has_not_finished(self, db):
         """Its window closes at tomorrow's local midnight, which is in
