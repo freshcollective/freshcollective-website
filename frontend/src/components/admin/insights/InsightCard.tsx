@@ -12,6 +12,8 @@ import {
   CARD,
   CARD_SURFACES,
   EMPHASIS,
+  EMPHASIS_CHIP_DARKEN,
+  EMPHASIS_FOCUS_HALO,
   type EmphasisKind,
   type InsightHue,
 } from '@/lib/insights-palette'
@@ -161,7 +163,15 @@ export function InsightCard({
             // *white* chip read as the obvious choice and took white
             // text below AA on two of the four kinds; going the other
             // way raises contrast instead of eroding it.
-            style={{ color: INK, background: 'rgba(0, 0, 0, 0.22)' }}
+            // Darkens rather than lightens the surface. A translucent
+            // white chip reads as the obvious choice and takes white
+            // below AA; going the other way raises contrast. The depth
+            // is shared so every kind's chip clears AA, including the
+            // pink one, whose card does not.
+            style={{
+              color: INK,
+              background: `rgba(0, 0, 0, ${EMPHASIS_CHIP_DARKEN})`,
+            }}
           >
             {emph.label}
           </span>
@@ -212,8 +222,23 @@ export function InsightCard({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={detailsId}
-        className="mt-3 rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
-        style={{ color: INK, outlineColor: CARD.focus }}
+        className={
+          'mt-3 rounded text-[12px] underline decoration-dotted ' +
+          'underline-offset-2 focus-visible:outline-2 ' +
+          'focus-visible:outline-offset-2' +
+          // A second, dark ring only where one is needed. On an
+          // emphasis card no single colour clears 3:1 on all four
+          // surfaces, so the indicator becomes white-on-navy and one
+          // of its two edges always carries.
+          (emph ? ' focus-visible:[box-shadow:0_0_0_4px_var(--focus-halo)]' : '')
+        }
+        style={{
+          color: INK,
+          outlineColor: CARD.focus,
+          ...(emph
+            ? { ['--focus-halo' as string]: EMPHASIS_FOCUS_HALO }
+            : {}),
+        }}
       >
         {open ? 'Hide what this means' : 'What does this mean?'}
       </button>

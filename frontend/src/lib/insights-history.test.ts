@@ -8,6 +8,8 @@ import {
   CARD,
   CARD_SURFACES,
   EMPHASIS,
+  EMPHASIS_CHIP_DARKEN,
+  EMPHASIS_FOCUS_HALO,
   HUE_MARK,
   HUE_UI,
   INK,
@@ -438,29 +440,43 @@ describe('the chart palette', () => {
     // Re-stepping any of these invalidates the colour-vision
     // separation that was measured, so the values are pinned:
     //   node scripts/validate_palette.js \
-    //     "#0E9A95,#071824,#D4B048,#DC6F5C" --mode light --surface "#FFFFFF"
+    //     "#0E9A95,#071824,#D4B048,#FF6A7A" --mode light --surface "#FFFFFF"
     //
-    // That run reports two FAILs, both against #071824 and both
-    // asking whether it is a legible *mid-tone* hue — it is not, and
-    // is not meant to be. The checks that decide whether a reader can
-    // tell the four apart (CVD separation, normal-vision floor) pass
-    // with it, and the worst pair in the palette does not involve
-    // navy. See the note on HUE_MARK.navy.
+    // That run FAILs three checks and the honest position differs:
+    //
+    //   * lightness band and chroma floor, both against #071824.
+    //     Both ask whether it is a legible *mid-tone* hue. It is not,
+    //     and is not meant to be — it is a deliberate dark anchor,
+    //     and it is the most separable slot in the palette.
+    //   * CVD separation: #FF6A7A against #0E9A95 is ΔE 4.1 under
+    //     protanopia, below even the 6-8 floor band. That is a real
+    //     limitation of the approved watermelon rather than a quibble
+    //     with the checker, and it is recorded here instead of being
+    //     waved away. See the test below for which charts it affects.
     assert.deepEqual(HUE_STROKE, {
       teal: '#0E9A95',
       navy: '#071824',
       gold: '#D4B048',
-      watermelon: '#DC6F5C',
+      watermelon: '#FF6A7A',
     })
   })
 
   test('every hue traces to a Fresh Collective token or named colour', () => {
-    // The point of the pass: World Insights should look like part of
-    // the platform. Gold and watermelon are the token values exactly;
-    // teal and navy are chart-strength steps of the same hues, because
-    // the token values fall below the chroma floor a data mark needs.
+    // Gold is the token value exactly; teal and navy are
+    // chart-strength steps of the same hues.
     assert.equal(HUE_STROKE.gold, '#D4B048', 'the Fresh Collective gold')
-    assert.equal(HUE_STROKE.watermelon, '#DC6F5C', '--fc-type-video coral')
+    // Watermelon deliberately departs from --fc-type-video (#DC6F5C).
+    // That token is a Pathway *content* colour and remains one
+    // everywhere else in the product; inside World Insights the
+    // orange-coral read as a third warm colour beside gold rather
+    // than as a partner to the navy and teal, and #FF6A7A was
+    // approved in its place. The token itself is left alone.
+    assert.equal(HUE_STROKE.watermelon, '#FF6A7A', 'the approved pink')
+    assert.match(
+      readFileSync(join(ROOT, 'src/styles/fc-tokens.css'), 'utf8'),
+      /--fc-type-video:\s*#DC6F5C/i,
+      'the platform token must stay as it is — other surfaces use it',
+    )
     assert.equal(
       HUE_STROKE.navy,
       CARD.surface,
@@ -2177,9 +2193,6 @@ describe('World Insights contrast', () => {
     const navy = CARD.surface
     const checks: Array<[string, string]> = [
       ['ink', CARD.ink] as [string, string],
-      ...Object.entries(CARD.status).map(
-        ([k, v]) => [`status.${k}`, v] as [string, string],
-      ),
       // The hues carry text on this surface too — the gold qualifier
       // note is drawn in CARD.hue.gold — so they are held to the
       // text threshold here rather than the 3:1 graphical one.
@@ -2211,7 +2224,6 @@ describe('World Insights contrast', () => {
       )
       const checks = {
         ink: CARD.ink,
-        ...CARD.status,
         ...CARD.hue,
       } as Record<string, string>
       for (const [name, colour] of Object.entries(checks)) {
@@ -2230,8 +2242,6 @@ describe('World Insights contrast', () => {
     // colour on navy because it is "the same hue". Two of them do not
     // survive the move: the deep status red falls to 2.79:1 and the
     // navy series mark to 2.84:1.
-    assert.notEqual(CARD.status.error, STATUS.error.fg)
-    assert.notEqual(CARD.status.warning, STATUS.warning.fg)
     for (const hue of Object.keys(CARD.hue)) {
       const onNavy = CARD.hue[hue as keyof typeof CARD.hue]
       assert.ok(
@@ -2266,13 +2276,46 @@ describe('World Insights contrast', () => {
     }
   })
 
-  test('every emphasis surface carries white text accessibly', () => {
+  /**
+   * The approved watermelon does not meet AA, and this records it.
+   *
+   * Written as a pin rather than an exemption on purpose. Dropping
+   * the threshold for the whole family, or skipping `obligation`,
+   * would make the suite quietly stop measuring the one surface most
+   * worth measuring. Instead the three that meet AA are held to it,
+   * and the one that does not is pinned at the figure it actually
+   * achieves — so a change in either direction is noticed and has to
+   * be argued for.
+   */
+  const BELOW_AA_BY_DESIGN: Record<
+    string,
+    { surface: number; hover: number }
+  > = {
+    // White on #FF6A7A. Approved with the shortfall understood. Below
+    // 4.5:1 for normal text and below 3:1 even for large bold text,
+    // so no typographic change makes it compliant and none is
+    // claimed. The hover state inherits the shortfall and is pinned
+    // with it rather than quietly exempted.
+    obligation: { surface: 2.77, hover: 3.4 },
+  }
+
+  test('every emphasis surface carries white text as well as it can', () => {
     for (const [kind, step] of Object.entries(EMPHASIS)) {
       for (const [which, bg] of [
         ['surface', step.surface],
         ['hover', step.hover],
       ] as const) {
         const r = ratio('#FFFFFF', bg)
+        const known = BELOW_AA_BY_DESIGN[kind]?.[which]
+        if (known !== undefined) {
+          assert.equal(
+            Number(r.toFixed(2)),
+            known,
+            `EMPHASIS.${kind}.${which} is a known AA exception pinned ` +
+              `at ${known}:1; it now measures ${r.toFixed(2)}:1`,
+          )
+          continue
+        }
         assert.ok(
           r >= 4.5,
           `EMPHASIS.${kind}.${which} (${bg}) gives white ${r.toFixed(2)}:1, ` +
@@ -2282,14 +2325,42 @@ describe('World Insights contrast', () => {
     }
   })
 
+  test('the AA exception is one surface, and is not spreading', () => {
+    // A guard against the shortfall being used as a precedent.
+    assert.deepEqual(Object.keys(BELOW_AA_BY_DESIGN), ['obligation'])
+    for (const kind of ['overdue', 'warning', 'error'] as const) {
+      assert.ok(ratio('#FFFFFF', EMPHASIS[kind].surface) >= 4.5)
+    }
+  })
+
+  test('focus stays visible on an emphasis card without a compliant ring', () => {
+    // No single ring colour clears 3:1 on all four surfaces: white is
+    // 2.77:1 on the pink, navy is 2.14:1 on overdue. The indicator is
+    // two rings, so one of its edges always carries.
+    for (const [kind, step] of Object.entries(EMPHASIS)) {
+      const best = Math.max(
+        ratio(CARD.focus, step.surface),
+        ratio(EMPHASIS_FOCUS_HALO, step.surface),
+      )
+      assert.ok(
+        best >= 3,
+        `focus on ${kind} is only ${best.toFixed(2)}:1 at its best edge`,
+      )
+    }
+    // And the two rings are plainly distinct from each other.
+    assert.ok(ratio(CARD.focus, EMPHASIS_FOCUS_HALO) >= 3)
+  })
+
   test('the status chip darkens its card, so white still clears AA', () => {
     // A translucent white chip is the obvious choice and is wrong: it
     // lightens the surface and took white below AA on obligation
     // (4.12:1) and warning (3.54:1).
-    const src = read('src/components/admin/insights/InsightCard.tsx')
-    const chip = /background: 'rgba\(0, 0, 0, ([\d.]+)\)'/.exec(src)
-    assert.ok(chip, 'the emphasis chip should darken, not lighten')
-    const alpha = Number(chip[1])
+    const alpha = EMPHASIS_CHIP_DARKEN
+    assert.match(
+      read('src/components/admin/insights/InsightCard.tsx'),
+      /rgba\(0, 0, 0, \$\{EMPHASIS_CHIP_DARKEN\}\)/,
+      'the emphasis chip should darken, not lighten',
+    )
     for (const [kind, step] of Object.entries(EMPHASIS)) {
       const base = [1, 3, 5].map((i) =>
         parseInt(step.surface.slice(i, i + 2), 16),
@@ -2306,12 +2377,17 @@ describe('World Insights contrast', () => {
     }
   })
 
-  test('watermelon itself is too light to host white text', () => {
-    // The reason `obligation` is #A8402C and not the watermelon a
-    // reader sees on the charts. Stated as a test so the "just use
-    // the brand colour" edit fails rather than ships.
+  test('the obligation card is the watermelon a reader sees on charts', () => {
+    // It used to be #A8402C — the readable-on-white form — precisely
+    // because the series colour was too light for white text. That is
+    // still true of the approved pink and it is now used anyway, so
+    // the card and the chart series are one colour. The trade is
+    // recorded in BELOW_AA_BY_DESIGN rather than hidden here.
+    assert.equal(EMPHASIS.obligation.surface, HUE_MARK.watermelon)
     assert.ok(ratio('#FFFFFF', HUE_MARK.watermelon) < 4.5)
-    assert.equal(EMPHASIS.obligation.surface, HUE_UI.watermelon.text)
+    // The readable-on-white form still exists for text on a light
+    // surface, and still clears AA there.
+    assert.ok(ratio(HUE_UI.watermelon.text, '#FFFFFF') >= 4.5)
   })
 
   test('an obligation is not an overdue one, nor a failure', () => {
@@ -2339,17 +2415,10 @@ describe('World Insights contrast', () => {
         )
       }
     }
-    // The same rule on navy, where watermelon and a red sit closer.
-    for (const [sName, fg] of Object.entries(CARD.status)) {
-      if (sName === 'healthy') continue // healthy is teal by design
-      for (const [hName, hue] of Object.entries(CARD.hue)) {
-        assert.notEqual(
-          fg.toLowerCase(),
-          hue.toLowerCase(),
-          `CARD.status.${sName} and the ${hName} series are the same`,
-        )
-      }
-    }
+    // There is no second status family on the cards to check. The
+    // one that existed rendered nowhere, and was removed rather than
+    // re-stepped when the new watermelon landed ΔE 6.6 from its
+    // error red.
   })
 })
 
@@ -2623,7 +2692,7 @@ describe('the metric-card ramp', () => {
         `EMPHASIS.${kind} must not reuse a ramp surface`,
       )
     }
-    assert.equal(EMPHASIS.obligation.surface, '#A8402C')
+    assert.equal(EMPHASIS.obligation.surface, '#FF6A7A')
     assert.notEqual(EMPHASIS.obligation.surface, EMPHASIS.overdue.surface)
     assert.notEqual(EMPHASIS.warning.surface, EMPHASIS.error.surface)
   })

@@ -42,7 +42,19 @@
  * gold for sparing use.
  *
  *   node scripts/validate_palette.js \
- *     "#0E9A95,#1D5390,#D4B048,#DC6F5C" --mode light --surface "#FFFFFF"
+ *     "#0E9A95,#071824,#D4B048,#FF6A7A" --mode light --surface "#FFFFFF"
+ *
+ * That run does not pass cleanly, and the two reasons are different
+ * in kind. The lightness and chroma FAILs are both #071824 being
+ * asked whether it is a mid-tone hue, which it is deliberately not.
+ * The CVD FAIL is real: #FF6A7A against #0E9A95 is ΔE 4.1 under
+ * protanopia, so a reader with red-blindness may not separate the
+ * pink and teal lines by colour. Three charts pair them — Money's
+ * refunds panel, Belonging's joining-and-leaving, and the Creators
+ * journey. On all three, identity is also carried by a legend,
+ * direct labels and a table view, so it is recoverable; it is not,
+ * however, recoverable from colour alone, and that is a cost of the
+ * approved watermelon rather than something the code can fix.
  */
 
 export type InsightHue = 'teal' | 'navy' | 'gold' | 'watermelon'
@@ -83,7 +95,17 @@ export const HUE_MARK: Record<InsightHue, string> = {
    */
   navy: '#071824',
   gold: '#D4B048',
-  watermelon: '#DC6F5C',
+  /**
+   * Watermelon pink. Approved as the house watermelon after the
+   * orange-coral it replaced read as a third warm colour beside gold
+   * rather than as a partner to the navy and teal.
+   *
+   * On white it measures 2.77:1, which is the same band the gold has
+   * always sat in (2.08:1) and is discharged the same way: every
+   * chart carries a legend, direct labels and a table view, so no
+   * series is identified by colour alone. It is a mark, never text.
+   */
+  watermelon: '#FF6A7A',
 }
 
 /**
@@ -116,10 +138,11 @@ export const HUE_UI: Record<
     border: 'rgba(212, 176, 72, 0.30)',
   },
   watermelon: {
-    dot: '#DC6F5C',
-    text: '#A8402C',
-    bg: 'rgba(220, 111, 92, 0.10)',
-    border: 'rgba(220, 111, 92, 0.28)',
+    dot: '#FF6A7A',
+    /** The readable-on-white form: same hue, taken down to 6.5:1. */
+    text: '#AB2F42',
+    bg: 'rgba(255, 106, 122, 0.12)',
+    border: 'rgba(255, 106, 122, 0.34)',
   },
 }
 
@@ -321,15 +344,18 @@ export const CARD = {
     teal: '#55B8B6',
     navy: '#6E9BD8',
     gold: '#D4B048',
-    watermelon: '#DC6F5C',
+    watermelon: '#FF6A7A',
   } as Record<InsightHue, string>,
 
-  status: {
-    healthy: '#55B8B6',
-    warning: '#D97706',
-    /** Kept OKLab ΔE 9.6 clear of watermelon. */
-    error: '#FF8A80',
-  },
+  /*
+   * There was a ``status`` family here — healthy/warning/error steps
+   * for a coloured card. Nothing ever rendered it: page-level panels
+   * use ``STATUS`` on white, and a card that needs attention uses
+   * ``EMPHASIS``. It is deleted rather than re-stepped, because its
+   * error red sat OKLab ΔE 6.6 from the new watermelon and the only
+   * honest options were to move a colour nothing draws or to remove
+   * it.
+   */
 
   /**
    * The wash that marks an explanatory note among the cards.
@@ -347,12 +373,36 @@ export const CARD = {
   },
 
   /**
-   * Focus ring. White, because it is the only one that survives the
-   * whole ramp: the accent teal reads 7.65:1 on navy and collapses to
-   * 2.25:1 on rich teal, which is the surface it would matter on.
+   * Focus ring on the navy-to-teal ramp. White, because it is the
+   * only colour that survives all four steps: the accent teal reads
+   * 7.65:1 on navy and collapses to 2.25:1 on rich teal.
+   *
+   * Emphasis cards need a second ring on top of it — see
+   * ``EMPHASIS_FOCUS_HALO``.
    */
   focus: '#FFFFFF',
 } as const
+
+/**
+ * The outer ring that keeps focus visible on an emphasis card.
+ *
+ * No single colour clears 3:1 on all four emphasis surfaces: white
+ * reads 2.77:1 on the pink and navy reads 2.14:1 on overdue. So the
+ * indicator is two rings — white against navy at 18:1 — which means
+ * whichever surface it lands on, one of its two edges is doing the
+ * work. The weakest case across the four is 5.02:1.
+ */
+export const EMPHASIS_FOCUS_HALO = '#071824'
+
+/**
+ * How far the status chip darkens its card.
+ *
+ * Raised from 0.22 when the obligation surface became pink: at the
+ * old value the chip label measured 4.35:1 and fell below AA with
+ * the card. This is the one place on that card where readability
+ * could be improved without touching the approved background.
+ */
+export const EMPHASIS_CHIP_DARKEN = 0.32
 
 /**
  * Full-colour cards, for the few figures that should be found first.
@@ -368,11 +418,9 @@ export const CARD = {
  * state of a payouts ledger, and colouring it like a failure would
  * teach a caretaker to ignore the colour that means failure.
  *
- * Every surface carries pure white text, so each is a step dark
- * enough for white to clear AA. Watermelon itself (#DC6F5C) is only
- * 3.25:1 against white and cannot host body text — `obligation` uses
- * #A8402C, which is already the palette's readable form of watermelon
- * rather than a new colour.
+ * Every surface carries pure white text. Three of the four are dark
+ * enough for that to clear AA; `obligation` is not, and is the
+ * approved exception — see the note on it below.
  */
 export type EmphasisKind = 'obligation' | 'overdue' | 'warning' | 'error'
 
@@ -380,17 +428,39 @@ export const EMPHASIS: Record<
   EmphasisKind,
   { surface: string; label: string; hover: string }
 > = {
-  /** Owed, and not yet due. The normal state of a payouts balance. */
+  /**
+   * Owed, and not yet due. The normal state of a payouts balance.
+   *
+   * **This one does not meet WCAG AA, and that is a decision rather
+   * than an oversight.** White on #FF6A7A measures 2.77:1, against
+   * 4.5:1 for normal text and 3:1 even for large bold text — so no
+   * change of size or weight brings it into compliance, and none is
+   * claimed. The combination was reviewed and chosen deliberately.
+   *
+   * What is done about it, short of changing the colour: the chip
+   * darkens enough to clear AA on its own, the focus ring carries a
+   * dark halo so it stays visible, the figure is 28px serif, the
+   * disclosure keeps its underline so it is identifiable without
+   * colour, and nothing on the card is dimmed below pure white.
+   */
   obligation: {
-    surface: '#A8402C', // white 6.1:1
+    surface: '#FF6A7A', // white 2.77:1 — below AA, see above
     label: 'Outstanding',
-    hover: '#93381D',
+    hover: '#EC586A',
   },
-  /** Owed past the point it should have been settled. */
+  /**
+   * Owed past the point it should have been settled.
+   *
+   * Re-hued into the same family as ``obligation`` rather than left
+   * as the old brown-red: two states of one thing read as related
+   * when they share a hue and differ in depth, and as unrelated when
+   * one is pink and the other brown. Graver and accessible — OKLab
+   * ΔE 27.5 from the pink, so it is never mistaken for it.
+   */
   overdue: {
-    surface: '#8F2F1C', // white 8.0:1
+    surface: '#932034', // white 8.4:1
     label: 'Overdue',
-    hover: '#7A2817',
+    hover: '#7E1A2C',
   },
   /** Not money: something a caretaker should look at. */
   warning: {
