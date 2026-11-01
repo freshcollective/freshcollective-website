@@ -7,6 +7,7 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -28,7 +29,7 @@ import {
   CHART_HUES,
   fetchCollectives,
 } from '@/lib/insights-history'
-import { HUE_MARK, INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
+import { HUE_MARK, INK as FC_INK, STATUS, SURFACE, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Participation — whether people are doing anything, and what.
@@ -359,7 +360,7 @@ export default function ParticipationPage() {
 
         {cards && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(0)}
               title="People"
               note="Distinct people, counted once each however much they did."
             >
@@ -383,9 +384,9 @@ export default function ParticipationPage() {
                 hue="gold"
                 caption="also took part in the previous period"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="Activity"
               note="How much happened. These count acts, not people — the band above counts people."
             >
@@ -409,7 +410,7 @@ export default function ParticipationPage() {
                 hue="navy"
                 caption="people contributing to Conversations"
               />
-            </Band>
+            </CardGroup>
           </>
         )}
       </InsightsSection>
@@ -489,27 +490,6 @@ const KIND_LABELS: Record<string, string> = {
   purchase: 'Purchases',
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
-        {title}
-      </h4>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (

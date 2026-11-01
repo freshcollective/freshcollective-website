@@ -10,6 +10,8 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
+  CardSurfaceScope,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -30,7 +32,7 @@ import {
   type PopulationKey,
   fetchCreators,
 } from '@/lib/insights-history'
-import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
+import { CARD, INK as FC_INK, STATUS, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Creators — who is building here, and how far they get.
@@ -230,7 +232,7 @@ export default function CreatorsPage() {
         {loading && !cards && <Waiting />}
 
         {status && (
-          <Band
+          <CardGroup surface={surfaceForGroup(0)}
             title="Collectives right now"
             note="A count at this moment, whichever period is selected above. Status is stored as one value with no history behind it, so a past date genuinely has no answer — these do not follow the period."
           >
@@ -244,12 +246,12 @@ export default function CreatorsPage() {
               hue="navy"
               caption="built but not yet opened"
             />
-          </Band>
+          </CardGroup>
         )}
 
         {cards && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="Creators"
               note="Accounts and activity across the selected period."
             >
@@ -263,9 +265,9 @@ export default function CreatorsPage() {
                 hue="teal"
                 caption="creators who did something in the period"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(2)}
               title={`Earned and paid in ${cards.period.label.toLowerCase()}`}
               note="Figures for the selected period. Both are flows — money that moved during it."
             >
@@ -284,11 +286,13 @@ export default function CreatorsPage() {
                 hue="gold"
                 caption="what creators paid us for their plans"
               />
-            </Band>
+            </CardGroup>
 
-            <WhoseEarnings data={cards} />
+            <CardSurfaceScope surface={surfaceForGroup(2)}>
+              <WhoseEarnings data={cards} />
+            </CardSurfaceScope>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(3)}
               title="Owed right now"
               note="A balance at this moment, not a period figure — it does not belong beside the figures above and is not comparable with them. A reporting period does not narrow it."
             >
@@ -306,7 +310,7 @@ export default function CreatorsPage() {
                 caption="earned by creators and not yet transferred"
               />
               <WhoIsOwed data={cards} />
-            </Band>
+            </CardGroup>
           </>
         )}
       </InsightsSection>
@@ -337,7 +341,7 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
     <CardNote span="mb-8">
       <h4
         className="font-serif text-[15.5px]"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         Whose earnings those are
       </h4>
@@ -355,7 +359,7 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
       </dl>
       <p
         className="mt-2.5 text-[12px] leading-snug"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         {String(metric.qualifiers?.operator_note ?? '')}
       </p>
@@ -399,18 +403,18 @@ function Split({
 }) {
   return (
     <div>
-      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+      <dt className="text-[12.5px]" style={{ color: CARD.ink }}>
         {label}
       </dt>
       <dd
         className="m-0 text-[18px] tabular-nums"
-        style={{ color: ON_NAVY.ink, fontFamily: 'Georgia, serif' }}
+        style={{ color: CARD.ink, fontFamily: 'Georgia, serif' }}
       >
         {formatMoney(cents)}
       </dd>
       <p
         className="mt-0.5 text-[11.5px] leading-snug"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         {note}
       </p>
@@ -418,27 +422,6 @@ function Split({
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
-        {title}
-      </h4>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (

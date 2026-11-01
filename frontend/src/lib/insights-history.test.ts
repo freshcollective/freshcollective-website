@@ -5,12 +5,15 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
+  CARD,
+  CARD_SURFACES,
   EMPHASIS,
   HUE_MARK,
   HUE_UI,
   INK,
-  ON_NAVY,
   STATUS,
+  SURFACE_ORDER,
+  surfaceForGroup,
 } from './insights-palette.ts'
 
 import {
@@ -460,7 +463,7 @@ describe('the chart palette', () => {
     assert.equal(HUE_STROKE.watermelon, '#DC6F5C', '--fc-type-video coral')
     assert.equal(
       HUE_STROKE.navy,
-      ON_NAVY.surface,
+      CARD.surface,
       'the chart navy is --fc-surface-inverse itself, not a near miss',
     )
   })
@@ -2162,7 +2165,7 @@ describe('World Insights contrast', () => {
     // Not a new navy, and not --fc-pathway-navy (a Pathway content
     // colour). #071824 is --fc-surface-inverse: every PageHero, the
     // top of the public footer, and four occurrences on the homepage.
-    assert.equal(ON_NAVY.surface, '#071824')
+    assert.equal(CARD.surface, '#071824')
     const tokens = readFileSync(
       join(ROOT, 'src/styles/fc-tokens.css'),
       'utf8',
@@ -2171,25 +2174,25 @@ describe('World Insights contrast', () => {
   })
 
   test('every colour on the navy card clears AA against it', () => {
-    const navy = ON_NAVY.surface
+    const navy = CARD.surface
     const checks: Array<[string, string]> = [
-      ['ink', ON_NAVY.ink] as [string, string],
-      ...Object.entries(ON_NAVY.status).map(
+      ['ink', CARD.ink] as [string, string],
+      ...Object.entries(CARD.status).map(
         ([k, v]) => [`status.${k}`, v] as [string, string],
       ),
       // The hues carry text on this surface too — the gold qualifier
-      // note is drawn in ON_NAVY.hue.gold — so they are held to the
+      // note is drawn in CARD.hue.gold — so they are held to the
       // text threshold here rather than the 3:1 graphical one.
-      ...Object.entries(ON_NAVY.hue).map(
+      ...Object.entries(CARD.hue).map(
         ([k, v]) => [`hue.${k}`, v] as [string, string],
       ),
-      ['focus', ON_NAVY.focus],
+      ['focus', CARD.focus],
     ]
     for (const [name, colour] of checks) {
       const r = ratio(colour, navy)
       assert.ok(
         r >= 4.5,
-        `ON_NAVY.${name} (${colour}) is ${r.toFixed(2)}:1 on ${navy}, ` +
+        `CARD.${name} (${colour}) is ${r.toFixed(2)}:1 on ${navy}, ` +
           `below AA 4.5:1`,
       )
     }
@@ -2200,16 +2203,16 @@ describe('World Insights contrast', () => {
     // card and is the surface that actually binds. An earlier error
     // red cleared AA on the card at 4.61:1 and failed here at 3.92:1 —
     // the card alone is the easier test, and passing it proves little.
-    for (const [accent, tint] of Object.entries(ON_NAVY.noteTint)) {
-      const surface = solid(tint, ON_NAVY.surface)
+    for (const [accent, tint] of Object.entries(CARD.noteTint)) {
+      const surface = solid(tint, CARD.surface)
       assert.ok(
-        luminance(surface, surface) > luminance(ON_NAVY.surface, ON_NAVY.surface),
+        luminance(surface, surface) > luminance(CARD.surface, CARD.surface),
         `the ${accent} note should be lighter than the card`,
       )
       const checks = {
-        ink: ON_NAVY.ink,
-        ...ON_NAVY.status,
-        ...ON_NAVY.hue,
+        ink: CARD.ink,
+        ...CARD.status,
+        ...CARD.hue,
       } as Record<string, string>
       for (const [name, colour] of Object.entries(checks)) {
         const r = ratio(colour, surface)
@@ -2227,12 +2230,12 @@ describe('World Insights contrast', () => {
     // colour on navy because it is "the same hue". Two of them do not
     // survive the move: the deep status red falls to 2.79:1 and the
     // navy series mark to 2.84:1.
-    assert.notEqual(ON_NAVY.status.error, STATUS.error.fg)
-    assert.notEqual(ON_NAVY.status.warning, STATUS.warning.fg)
-    for (const hue of Object.keys(ON_NAVY.hue)) {
-      const onNavy = ON_NAVY.hue[hue as keyof typeof ON_NAVY.hue]
+    assert.notEqual(CARD.status.error, STATUS.error.fg)
+    assert.notEqual(CARD.status.warning, STATUS.warning.fg)
+    for (const hue of Object.keys(CARD.hue)) {
+      const onNavy = CARD.hue[hue as keyof typeof CARD.hue]
       assert.ok(
-        ratio(onNavy, ON_NAVY.surface) >= 4.5,
+        ratio(onNavy, CARD.surface) >= 4.5,
         `${hue} must be restepped for navy if the light value fails there`,
       )
     }
@@ -2242,7 +2245,7 @@ describe('World Insights contrast', () => {
     // The ladder of translucent whites that preceded this all cleared
     // AA and still read as grey. Rank is type now, not opacity, so a
     // reintroduced rgba() here is the regression to catch.
-    assert.equal(ON_NAVY.ink, '#FFFFFF')
+    assert.equal(CARD.ink, '#FFFFFF')
   })
 
   test('nothing on a dark card is italic', () => {
@@ -2337,13 +2340,13 @@ describe('World Insights contrast', () => {
       }
     }
     // The same rule on navy, where watermelon and a red sit closer.
-    for (const [sName, fg] of Object.entries(ON_NAVY.status)) {
+    for (const [sName, fg] of Object.entries(CARD.status)) {
       if (sName === 'healthy') continue // healthy is teal by design
-      for (const [hName, hue] of Object.entries(ON_NAVY.hue)) {
+      for (const [hName, hue] of Object.entries(CARD.hue)) {
         assert.notEqual(
           fg.toLowerCase(),
           hue.toLowerCase(),
-          `ON_NAVY.status.${sName} and the ${hName} series are the same`,
+          `CARD.status.${sName} and the ${hName} series are the same`,
         )
       }
     }
@@ -2470,5 +2473,158 @@ describe('the insights shell can shrink', () => {
       /overflow-x-auto/,
       'a min-width table must sit inside a scroll container',
     )
+  })
+})
+
+/**
+ * The graduated card surfaces.
+ *
+ * Six rows of one navy read as a slab, so the figures band now walks
+ * navy → midnight → ocean → rich teal. Three things can quietly break
+ * that: a step too bright for white text, a progression that stops
+ * being a progression, and colour bound to the physical row instead
+ * of the logical group.
+ */
+describe('the metric-card ramp', () => {
+  const WHITE = '#FFFFFF'
+
+  const rgb = (hex: string) =>
+    [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+
+  const chan = (v: number) =>
+    v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+
+  const lum = (hex: string) => {
+    const [r, g, b] = rgb(hex).map((v) => chan(v / 255))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  /** A wash composited over a surface, as CardNote draws it. */
+  const tinted = (tint: string, surface: string) => {
+    const m = /rgba\((\d+), *(\d+), *(\d+), *([\d.]+)\)/.exec(tint)!
+    const base = rgb(surface)
+    return `#${[1, 2, 3]
+      .map((i) =>
+        Math.round(Number(m[i]) * Number(m[4]) + base[i - 1] * (1 - Number(m[4])))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')}`
+  }
+
+  test('it starts on the platform\'s own inverse surface', () => {
+    assert.equal(CARD_SURFACES.navy.surface, '#071824')
+    const tokens = readFileSync(join(ROOT, 'src/styles/fc-tokens.css'), 'utf8')
+    assert.match(tokens, /--fc-surface-inverse:\s*#071824/i)
+  })
+
+  test('every step carries pure white text accessibly', () => {
+    for (const step of SURFACE_ORDER) {
+      const r = contrast(WHITE, CARD_SURFACES[step].surface)
+      assert.ok(
+        r >= 4.5,
+        `${step} (${CARD_SURFACES[step].surface}) gives white ` +
+          `${r.toFixed(2)}:1, below AA 4.5:1`,
+      )
+    }
+  })
+
+  test('it actually progresses, rather than just differing', () => {
+    // Each step lighter than the last. A ramp that wandered would
+    // still pass a contrast check and would not read as a direction.
+    const lums = SURFACE_ORDER.map((s) => lum(CARD_SURFACES[s].surface))
+    for (let i = 1; i < lums.length; i += 1) {
+      assert.ok(
+        lums[i] > lums[i - 1],
+        `${SURFACE_ORDER[i]} must be lighter than ${SURFACE_ORDER[i - 1]}`,
+      )
+    }
+  })
+
+  test('an explanatory note stays legible on every step', () => {
+    // The tint composites over the group's surface, so the brightest
+    // step is the one that binds — and a note on rich teal is the
+    // lightest surface white text ever sits on.
+    for (const step of SURFACE_ORDER) {
+      for (const accent of ['teal', 'gold'] as const) {
+        const surface = tinted(
+          CARD.noteTint[accent],
+          CARD_SURFACES[step].surface,
+        )
+        const r = contrast(WHITE, surface)
+        assert.ok(
+          r >= 4.5,
+          `a ${accent} note on ${step} (${surface}) gives white ` +
+            `${r.toFixed(2)}:1`,
+        )
+      }
+    }
+  })
+
+  test('the focus ring survives the whole ramp', () => {
+    // The accent teal reads 7.65:1 on navy and 2.25:1 on rich teal,
+    // which is why the ring is white. A focus indicator is a non-text
+    // graphic, so 3:1 is the bar.
+    for (const step of SURFACE_ORDER) {
+      const r = contrast(CARD.focus, CARD_SURFACES[step].surface)
+      assert.ok(r >= 3, `focus ring on ${step} is ${r.toFixed(2)}:1`)
+    }
+  })
+
+  test('the colour belongs to the group, not to the card', () => {
+    // Cards read the surface from context so a group that is one row
+    // on a desktop and four rows on a phone keeps one colour. A page
+    // passing a surface to an individual card would break that at a
+    // breakpoint, invisibly.
+    for (const name of [
+      'growth', 'money', 'collectives', 'creators',
+      'participation', 'belonging', 'world-builders',
+    ]) {
+      const src = withoutDocComments(
+        read(`src/app/admin/insights/${name}/page.tsx`),
+      )
+      assert.ok(
+        !/<InsightCard[^>]*\bsurface=/s.test(src),
+        `${name} assigns a surface to a card rather than to its group`,
+      )
+      if (src.includes('<CardGroup')) {
+        assert.match(
+          src,
+          /surface=\{surfaceForGroup\(/,
+          `${name} should take its surfaces from the shared ramp`,
+        )
+      }
+    }
+  })
+
+  test('groups step down the ramp in order, and clamp', () => {
+    assert.equal(surfaceForGroup(0), 'navy')
+    assert.equal(surfaceForGroup(1), 'midnight')
+    assert.equal(surfaceForGroup(2), 'ocean')
+    assert.equal(surfaceForGroup(3), 'rich')
+    // A page longer than the ramp repeats the last step rather than
+    // wrapping back to navy, which would read as a new beginning.
+    assert.equal(surfaceForGroup(4), 'rich')
+    assert.equal(surfaceForGroup(9), 'rich')
+  })
+
+  test('emphasis still interrupts the ramp, and stays semantic', () => {
+    // An emphasis card is allowed to break the progression — that is
+    // the point of it — but only for the four declared meanings.
+    const surfaces = SURFACE_ORDER.map((s) => CARD_SURFACES[s].surface)
+    for (const [kind, step] of Object.entries(EMPHASIS)) {
+      assert.ok(
+        !surfaces.includes(step.surface),
+        `EMPHASIS.${kind} must not reuse a ramp surface`,
+      )
+    }
+    assert.equal(EMPHASIS.obligation.surface, '#A8402C')
+    assert.notEqual(EMPHASIS.obligation.surface, EMPHASIS.overdue.surface)
+    assert.notEqual(EMPHASIS.warning.surface, EMPHASIS.error.surface)
   })
 })

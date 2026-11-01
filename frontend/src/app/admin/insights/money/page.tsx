@@ -6,6 +6,8 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
+  CardSurfaceScope,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -27,7 +29,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
-import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
+import { CARD, INK as FC_INK, STATUS, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Money — what comes in, and whose it is.
@@ -80,7 +82,6 @@ const HISTORY_KEYS = [
   'refunds_cents',
 ]
 
-const INK = FC_INK.heading
 const INK_MUTED = FC_INK.muted
 
 export default function MoneyPage() {
@@ -204,7 +205,7 @@ export default function MoneyPage() {
 
         {data && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(0)}
               title="Fresh Collective's own income"
               note="The two streams that are genuinely ours: the fee kept from member purchases, and what creators pay for their plans."
             >
@@ -239,11 +240,13 @@ export default function MoneyPage() {
                 hue="teal"
                 caption="our income less processing — not profit"
               />
-            </Band>
+            </CardGroup>
 
-            <NotProfitNote />
+            <CardSurfaceScope surface={surfaceForGroup(1)}>
+              <NotProfitNote />
+            </CardSurfaceScope>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="Money we moved for creators"
               note="Volume, not income. Most of this belongs to the creators who earned it."
             >
@@ -281,9 +284,9 @@ export default function MoneyPage() {
                 }
                 caption="owed to creators right now"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(2)}
               title="Money that went back"
               note="Counted on the day the refund happened, so a closed month's figures never change afterwards."
             >
@@ -294,7 +297,7 @@ export default function MoneyPage() {
                 hue="watermelon"
                 caption="returned to members"
               />
-            </Band>
+            </CardGroup>
           </>
         )}
       </InsightsSection>
@@ -309,9 +312,13 @@ export default function MoneyPage() {
           </>
         }
       >
-          <WhoIsOwedNote data={data} />
+          <CardSurfaceScope surface={surfaceForGroup(3)}>
+            <WhoIsOwedNote data={data} />
+          </CardSurfaceScope>
           <div className="mt-4">
-            <WhoseMoneyNote data={data} />
+            <CardSurfaceScope surface={surfaceForGroup(3)}>
+              <WhoseMoneyNote data={data} />
+            </CardSurfaceScope>
           </div>
         </InsightsSection>
       )}
@@ -336,7 +343,7 @@ function NotProfitNote() {
         border, which is what keeps this the same object as the teal
         note rather than a second kind of panel.
       */}
-      <p className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+      <p className="text-[12.5px]" style={{ color: CARD.ink }}>
         Contribution is income less Stripe&rsquo;s processing fees only. It is not
         profit — hosting, software, and everything else it takes to run Fresh
         Collective sit outside the platform and are not in this figure.
@@ -372,7 +379,7 @@ function WhoIsOwedNote({ data }: { data: MetricResult }) {
     <CardNote span="mb-8">
       <h4
         className="font-serif text-[15.5px] leading-tight"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         Who that is owed to
       </h4>
@@ -389,14 +396,14 @@ function WhoIsOwedNote({ data }: { data: MetricResult }) {
         />
       </dl>
       {classes.length > 0 && (
-        <p className="mt-3 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+        <p className="mt-3 text-[12.5px]" style={{ color: CARD.ink }}>
           By activity:{' '}
           {classes
             .map(([name, cents]) => `${humaniseClass(name)} ${formatMoney(cents)}`)
             .join(' · ')}
         </p>
       )}
-      <p className="mt-3 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+      <p className="mt-3 text-[12.5px]" style={{ color: CARD.ink }}>
         A Stripe payout into Fresh Collective&rsquo;s bank account is not a creator
         payout, so nothing here is cleared by one.
       </p>
@@ -415,16 +422,16 @@ function Owed({
 }) {
   return (
     <div>
-      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+      <dt className="text-[12.5px]" style={{ color: CARD.ink }}>
         {label}
       </dt>
       <dd
         className="text-[19px] tabular-nums"
-        style={{ color: ON_NAVY.ink, fontWeight: 600 }}
+        style={{ color: CARD.ink, fontWeight: 600 }}
       >
         {formatMoney(amount)}
       </dd>
-      <dd className="text-[11.5px]" style={{ color: ON_NAVY.ink }}>
+      <dd className="text-[11.5px]" style={{ color: CARD.ink }}>
         {hint}
       </dd>
     </div>
@@ -446,7 +453,7 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
   if (gross === 0) {
     return (
       <CardNote>
-        <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
+        <p className="text-[13px]" style={{ color: CARD.ink }}>
           No member purchases in this period, so there is nothing to divide up
           yet.
         </p>
@@ -457,13 +464,13 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
   const share = Math.round((fee / gross) * 100)
   return (
     <CardNote>
-      <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
+      <p className="text-[13px]" style={{ color: CARD.ink }}>
         Of {formatMoney(gross)} members paid, {formatMoney(creators)} is the
         creators&rsquo; and {formatMoney(fee)} is ours — about {share}%.
       </p>
       <p
         className="mt-2 text-[12.5px]"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         The large number is the one that passes through; the small one is the
         one that stays.
@@ -472,27 +479,6 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h3 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
-        {title}
-      </h3>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (

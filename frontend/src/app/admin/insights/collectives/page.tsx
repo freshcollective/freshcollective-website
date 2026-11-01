@@ -6,7 +6,10 @@ import { CollectiveSelect } from '@/components/admin/insights/CollectiveSelect'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
-import { InsightsSection } from '@/components/admin/insights/InsightsSection'
+import {
+  CardGroup,
+  InsightsSection,
+} from '@/components/admin/insights/InsightsSection'
 import { InsightsShell } from '@/components/admin/insights/InsightsShell'
 import { PeriodSelect } from '@/components/admin/insights/PeriodSelect'
 import { StandingsTable } from '@/components/admin/insights/StandingsTable'
@@ -26,7 +29,7 @@ import {
   CHART_HUES,
   fetchCollectives,
 } from '@/lib/insights-history'
-import { HUE_MARK, INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
+import { HUE_MARK, INK as FC_INK, STATUS, SURFACE, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Collectives — how each community is faring, side by side.
@@ -309,7 +312,7 @@ export default function CollectivesPage() {
         {loading && !cards && <Waiting />}
 
         {status && (
-          <Band
+          <CardGroup surface={surfaceForGroup(0)}
             title="Collectives right now"
             note="A count at this moment, whichever period is selected above. Status is stored as one value with no history behind it, so this is observed rather than reconstructed — and a past date genuinely has no answer, which is why these do not follow the period."
           >
@@ -333,12 +336,12 @@ export default function CollectivesPage() {
               hue="navy"
               caption="closed, and kept"
             />
-          </Band>
+          </CardGroup>
         )}
 
         {cards && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="Members across Collectives"
               note="Whether people are finding more than one community here. A platform question by nature — no single Collective can answer it."
             >
@@ -352,7 +355,7 @@ export default function CollectivesPage() {
                 hue="navy"
                 caption="communities per person, on average"
               />
-            </Band>
+            </CardGroup>
 
             <ThemeBreakdown data={cards} />
           </>
@@ -444,27 +447,6 @@ function ThemeBreakdown({ data }: { data: MetricResult }) {
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
-        {title}
-      </h4>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (

@@ -6,6 +6,8 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
+  CardSurfaceScope,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -25,7 +27,7 @@ import {
   type HistoryRangeKey,
   fetchCollectives,
 } from '@/lib/insights-history'
-import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
+import { CARD, INK as FC_INK, STATUS, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * World Builders — the creator learning environment, measured.
@@ -256,7 +258,7 @@ export default function WorldBuildersPage() {
             {scoped.loading && !scoped.data && <Waiting />}
 
             {platform.data && (
-              <Band
+              <CardGroup surface={surfaceForGroup(0)}
                 title="Reach"
                 note="Eligibility is a platform figure; the rest describe World Builders itself."
               >
@@ -278,12 +280,12 @@ export default function WorldBuildersPage() {
                   caption="creators who did something in the period"
                 />
                 <EligibilityNote data={platform.data} />
-              </Band>
+              </CardGroup>
             )}
 
             {scoped.data && (
               <>
-                <Band
+                <CardGroup surface={surfaceForGroup(1)}
                   title="What they did"
                   note="Activity inside World Builders over the selected period."
                 >
@@ -307,9 +309,9 @@ export default function WorldBuildersPage() {
                     hue="navy"
                     caption="people who finished at least one step"
                   />
-                </Band>
+                </CardGroup>
 
-                <Band
+                <CardGroup surface={surfaceForGroup(2)}
                   title="Gatherings and Conversations"
                   note="Booking is an intention; attendance is a record somebody marked."
                 >
@@ -333,13 +335,17 @@ export default function WorldBuildersPage() {
                     hue="watermelon"
                     caption="people who posted, commented or reacted"
                   />
-                </Band>
+                </CardGroup>
               </>
             )}
 
-            {platform.data && <Development data={platform.data} />}
+            <CardSurfaceScope surface={surfaceForGroup(3)}>
+              {platform.data && <Development data={platform.data} />}
+            </CardSurfaceScope>
 
-            <NotMeasured />
+            <CardSurfaceScope surface={surfaceForGroup(4)}>
+              <NotMeasured />
+            </CardSurfaceScope>
           </InsightsSection>
         </>
       )}
@@ -389,11 +395,11 @@ function EligibilityNote({ data }: { data: MetricResult }) {
 
   return (
     <CardNote accent="teal">
-      <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
+      <p className="text-[13px]" style={{ color: CARD.ink }}>
         Access is granted automatically, so joining is not a step a
         creator takes.
       </p>
-      <p className="mt-2 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+      <p className="mt-2 text-[12.5px]" style={{ color: CARD.ink }}>
         {formatCount(without)} eligible{' '}
         {without === 1 ? 'creator holds' : 'creators hold'} no membership row
         yet, and {formatCount(notEligible)}{' '}
@@ -448,13 +454,13 @@ function Development({ data }: { data: MetricResult }) {
           <table className="w-full min-w-[420px] border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="py-1.5 text-left font-semibold" style={{ color: ON_NAVY.ink }}>
+                <th className="py-1.5 text-left font-semibold" style={{ color: CARD.ink }}>
                   &nbsp;
                 </th>
-                <th className="py-1.5 pl-4 text-right font-semibold" style={{ color: ON_NAVY.ink }}>
+                <th className="py-1.5 pl-4 text-right font-semibold" style={{ color: CARD.ink }}>
                   Took part
                 </th>
-                <th className="py-1.5 pl-4 text-right font-semibold" style={{ color: ON_NAVY.ink }}>
+                <th className="py-1.5 pl-4 text-right font-semibold" style={{ color: CARD.ink }}>
                   Did not
                 </th>
               </tr>
@@ -462,18 +468,18 @@ function Development({ data }: { data: MetricResult }) {
             <tbody>
               {rows.map(([label, key]) => (
                 <tr key={key}>
-                  <td className="py-1.5" style={{ color: ON_NAVY.ink }}>
+                  <td className="py-1.5" style={{ color: CARD.ink }}>
                     {label}
                   </td>
                   <td
                     className="py-1.5 pl-4 text-right tabular-nums"
-                    style={{ color: ON_NAVY.ink }}
+                    style={{ color: CARD.ink }}
                   >
                     {formatCount(took[key] ?? 0)}
                   </td>
                   <td
                     className="py-1.5 pl-4 text-right tabular-nums"
-                    style={{ color: ON_NAVY.ink }}
+                    style={{ color: CARD.ink }}
                   >
                     {formatCount(didnt[key] ?? 0)}
                   </td>
@@ -482,7 +488,7 @@ function Development({ data }: { data: MetricResult }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 max-w-[80ch] text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+        <p className="mt-3 max-w-[80ch] text-[12.5px]" style={{ color: CARD.ink }}>
           Descriptive only. Creators who come looking for guidance are not
           a random sample of creators — somebody already building is more
           likely to arrive here — so a difference between these columns is
@@ -536,11 +542,11 @@ function NotMeasured() {
           <CardNote key={title} accent="gold">
             <h4
               className="text-[13.5px] font-semibold leading-snug"
-              style={{ color: ON_NAVY.ink }}
+              style={{ color: CARD.ink }}
             >
               {title}
             </h4>
-            <p className="mt-2 text-[12.5px]" style={{ color: ON_NAVY.ink }}>
+            <p className="mt-2 text-[12.5px]" style={{ color: CARD.ink }}>
               {why}
             </p>
           </CardNote>
@@ -550,30 +556,6 @@ function NotMeasured() {
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h3
-        className="font-serif text-[15.5px] leading-tight"
-        style={{ color: '#0C1826' }}
-      >
-        {title}
-      </h3>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function NotFound() {
   return (

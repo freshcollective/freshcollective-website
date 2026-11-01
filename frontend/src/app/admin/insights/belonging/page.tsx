@@ -7,6 +7,7 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -26,7 +27,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
-import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
+import { INK as FC_INK, STATUS, SURFACE, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Belonging — staying, coming back, and finding more than one home.
@@ -271,7 +272,7 @@ export default function BelongingPage() {
 
         {detail && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(0)}
               title="Staying and returning"
               note="Distinct people, counted once each."
             >
@@ -285,9 +286,9 @@ export default function BelongingPage() {
                 hue="teal"
                 caption="share of members taking part"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="More than one home"
               note="Membership overlap, which is not the same as participating in several."
             >
@@ -301,7 +302,7 @@ export default function BelongingPage() {
                 hue="navy"
                 caption="communities per person, on average"
               />
-            </Band>
+            </CardGroup>
           </>
         )}
       </InsightsSection>
@@ -454,27 +455,6 @@ function OverlapAndParticipation({ data }: { data: MetricResult | null }) {
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h4 className="font-serif text-[15.5px] leading-tight" style={{ color: INK }}>
-        {title}
-      </h4>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (

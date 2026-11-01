@@ -79,7 +79,7 @@ export const HUE_MARK: Record<InsightHue, string> = {
    * Verified by rendering, not by assuming.
    *
    * Where navy *cannot* work — a navy dot on a navy card — the
-   * exception is ``ON_NAVY.hue.navy``, not a second palette.
+   * exception is ``CARD.hue.navy``, not a second palette.
    */
   navy: '#071824',
   gold: '#D4B048',
@@ -198,78 +198,144 @@ export const CHART = {
  * hue: the series blue (a navy mark on a navy card is invisible) and
  * the error red.
  */
-export const ON_NAVY = {
-  /** --fc-surface-inverse. The card itself. */
-  surface: '#071824',
-  /** A hairline that reads as an edge, not a frame. No shadow. */
-  edge: 'rgba(255, 255, 255, 0.12)',
-  /** The disclosure panel, a shade lifted off the card. */
-  well: 'rgba(255, 255, 255, 0.06)',
+/**
+ * The metric-card surfaces: a graduated run through Fresh Collective's
+ * navy and teal families.
+ *
+ * One navy card is calm. Six rows of the same navy is a slab, and the
+ * page stopped having a shape — so the colour now moves as you read
+ * down it, navy to teal, one step per group of cards.
+ *
+ * **A group, never a row.** The surface is chosen by what the cards
+ * mean and is carried to them by context, so four cards that sit in
+ * one row on a desktop and stack into four rows on a phone keep one
+ * colour. Binding colour to the physical row CSS happened to produce
+ * would repaint the page at every breakpoint.
+ *
+ * Derived, not invented
+ * ---------------------
+ * ``navy`` is ``--fc-surface-inverse`` unchanged. The other three walk
+ * the OKLab hue from navy's -119° to the Fresh Collective accent hue
+ * at -166°, lifting lightness as they go, so the last step lands on
+ * the same hue as ``--fc-accent-500`` and ``--fc-accent-700`` — one
+ * family, four depths, rather than four colours that happen to sit
+ * near each other. Perceptual steps are even (ΔE 11.4, 9.2, 12.9) so
+ * no transition reads as a jump.
+ *
+ * Every surface carries pure white text, and the brightest is the
+ * binding one: ``rich`` is as fresh as it can be and still clear AA
+ * for body text at 5.31:1. A step brighter (L 0.56) measures 4.48:1
+ * and was rejected — the teal is bounded by legibility, not taste.
+ */
+export type CardSurface = 'navy' | 'midnight' | 'ocean' | 'rich'
+
+/** The order a page walks through, top to bottom. */
+export const SURFACE_ORDER: readonly CardSurface[] = [
+  'navy',
+  'midnight',
+  'ocean',
+  'rich',
+] as const
+
+/**
+ * The step the nth group of cards sits on, counting from the top.
+ *
+ * Sequential and clamped rather than spread across the ramp: a
+ * reader learns "it gets greener as I go down", and that stays true
+ * whether a page has two groups or five. Spreading instead — always
+ * finishing on rich teal — would mean the same group took a different
+ * colour on two pages, and a group that disappeared because its data
+ * was missing would repaint every group below it.
+ *
+ * A page longer than the ramp repeats the last step. Four depths is
+ * as far as the navy-to-teal family goes before white text stops
+ * clearing AA, so the alternative is not a fifth colour.
+ */
+export function surfaceForGroup(index: number): CardSurface {
+  return SURFACE_ORDER[Math.min(index, SURFACE_ORDER.length - 1)]
+}
+
+export const CARD_SURFACES: Record<
+  CardSurface,
+  { surface: string; edge: string; well: string; label: string }
+> = {
+  /** --fc-surface-inverse, unchanged. White 18.0:1. */
+  navy: {
+    surface: '#071824',
+    edge: 'rgba(255, 255, 255, 0.12)',
+    well: 'rgba(255, 255, 255, 0.06)',
+    label: 'Deep navy',
+  },
+  /** White 13.1:1. */
+  midnight: {
+    surface: '#0D334F',
+    edge: 'rgba(255, 255, 255, 0.14)',
+    well: 'rgba(255, 255, 255, 0.07)',
+    label: 'Midnight blue',
+  },
+  /** White 9.2:1. */
+  ocean: {
+    surface: '#0A4F59',
+    edge: 'rgba(255, 255, 255, 0.16)',
+    well: 'rgba(255, 255, 255, 0.08)',
+    label: 'Deep ocean teal',
+  },
+  /** White 5.3:1 — the brightest the ramp can go and stay AA. */
+  rich: {
+    surface: '#1E7776',
+    edge: 'rgba(255, 255, 255, 0.20)',
+    well: 'rgba(255, 255, 255, 0.10)',
+    label: 'Rich teal',
+  },
+}
+
+/**
+ * Everything that has to be legible on a coloured card.
+ *
+ * Named for the job rather than for navy, because the cards stopped
+ * being all navy. ``surface``/``edge``/``well`` remain here as the
+ * default step so a card with no group around it still renders.
+ */
+export const CARD = {
+  ...CARD_SURFACES.navy,
 
   /**
-   * One ink, and it is pure white.
+   * One ink, and it is pure white, on every surface in the ramp.
    *
-   * This replaced a four-step ladder of translucent whites (0.78 /
-   * 0.72 / 0.66). Every step cleared AA on its own, but the effect
-   * read as grey and muted rather than crisp, and the lower steps
-   * were doing work that type should do. Rank is now carried by
-   * size, weight and spacing — a 13.5px semibold heading over a 28px
-   * serif figure over 12.5px supporting copy — so nothing on a dark
-   * card is dimmed to signal that it matters less.
-   *
-   * Deliberately a single value rather than four keys holding the
-   * same colour: there is no second ink to reach for, which is the
-   * only thing that stops the ladder growing back.
+   * This replaced a ladder of translucent whites that each cleared AA
+   * and still read as grey. Rank is carried by size and weight — a
+   * 13.5px semibold heading over a 28px serif figure over 12.5px
+   * supporting copy — so nothing on a coloured card is dimmed to
+   * signal that it matters less.
    */
-  ink: '#FFFFFF', // 18.0:1 on the card, 15.3:1 on a tinted note
+  ink: '#FFFFFF',
 
   /**
-   * Identity hues as they appear on navy.
+   * Identity hues as they appear on a coloured card.
    *
-   * Teal, gold and watermelon are the token values unchanged. Blue is
-   * a lighter step of `--fc-pathway-blue` (#4F7ABE), which at 4.17:1
-   * is fine for a dot but not for text; #6E9BD8 reaches 6.3:1 and
-   * keeps OKLab ΔE 11 from teal, so the two never read as one series.
+   * Teal, gold and watermelon are token values unchanged. Blue is a
+   * lighter step of ``--fc-pathway-blue``, which at 4.17:1 is fine
+   * for a dot and not for text.
    */
   hue: {
-    teal: '#55B8B6', // --fc-accent-400, 7.7:1
-    navy: '#6E9BD8', // lighter --fc-pathway-blue, 6.3:1
-    gold: '#D4B048', // 8.7:1
-    watermelon: '#DC6F5C', // --fc-type-video, 5.6:1
+    teal: '#55B8B6',
+    navy: '#6E9BD8',
+    gold: '#D4B048',
+    watermelon: '#DC6F5C',
   } as Record<InsightHue, string>,
 
-  /**
-   * Status on navy. Still a separate family from the hues above.
-   *
-   * Warning is `--fc-status-warning` exactly (#D97706) — the *token*
-   * value, where the light card needed a darkened #B45309 to clear AA
-   * on white. Error is a much lighter step of `--fc-status-error`,
-   * since the token itself is 2.79:1 here and effectively invisible.
-   *
-   * Both are measured against the *lightest* navy surface they can
-   * land on, which is a tinted note rather than the card — about half
-   * a point of contrast separates the two, and the first error red
-   * tried cleared AA on the card and failed on the note.
-   */
   status: {
     healthy: '#55B8B6',
     warning: '#D97706',
-    /**
-     * Kept well clear of watermelon (OKLab ΔE 9.6). The nearer reds
-     * that also pass contrast sit at ΔE 4–7 from it, which on a page
-     * where watermelon is an ordinary series colour would make an
-     * alarm look like the fourth line again.
-     */
+    /** Kept OKLab ΔE 9.6 clear of watermelon. */
     error: '#FF8A80',
   },
 
   /**
    * The wash that marks an explanatory note among the cards.
    *
-   * Here rather than in the component so the contrast test can
-   * composite them: a note's background is navy *plus* this, which is
-   * a lighter surface than the card and therefore the one every
-   * status and ink colour has to survive.
+   * Composited over whichever surface the group is using, so a note
+   * is recognisably the same object at every step of the ramp.
    */
   noteTint: {
     teal: 'rgba(85, 184, 182, 0.10)',
@@ -280,8 +346,12 @@ export const ON_NAVY = {
     gold: 'rgba(212, 176, 72, 0.34)',
   },
 
-  /** Focus ring. The dark-teal ring used on white vanishes here. */
-  focus: '#55B8B6',
+  /**
+   * Focus ring. White, because it is the only one that survives the
+   * whole ramp: the accent teal reads 7.65:1 on navy and collapses to
+   * 2.25:1 on rich teal, which is the surface it would matter on.
+   */
+  focus: '#FFFFFF',
 } as const
 
 /**

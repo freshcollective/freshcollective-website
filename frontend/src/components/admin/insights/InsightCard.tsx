@@ -9,11 +9,13 @@ import {
   qualifierNote,
 } from '@/lib/insights'
 import {
+  CARD,
+  CARD_SURFACES,
   EMPHASIS,
-  ON_NAVY,
   type EmphasisKind,
   type InsightHue,
 } from '@/lib/insights-palette'
+import { useCardSurface } from './InsightsSection'
 
 /**
  * The figures band is dark.
@@ -24,13 +26,19 @@ import {
  * the page two clear registers — charts on white, the figures behind
  * them on navy — without adding a shadow or a third container.
  *
- * Every colour comes from ``ON_NAVY``, which is measured against
+ * Every colour comes from ``CARD``, which is measured against
  * #071824 rather than inherited from the light palette. Nothing here
  * is a page-level override: this component renders every metric card
  * on all six dashboards, so changing it changes all of them.
  */
-const CARD_BG = ON_NAVY.surface
-const CARD_BORDER = `1px solid ${ON_NAVY.edge}`
+/**
+ * Rank is type, not opacity. See ``CARD.ink``.
+ *
+ * The surface itself comes from the group this card sits in rather
+ * than from a constant: the figures band runs navy → midnight →
+ * ocean → rich teal as a reader moves down the page, and a card does
+ * not get to disagree with its group.
+ */
 
 /**
  * One ink on a dark card, and it is pure white.
@@ -42,7 +50,7 @@ const CARD_BORDER = `1px solid ${ON_NAVY.edge}`
  * less. The caption also lost its italic: a whole sentence in italic
  * serif is harder to read than the thing it supports.
  */
-const INK = ON_NAVY.ink
+const INK = CARD.ink
 
 /**
  * One figure, and everything needed to trust it.
@@ -93,12 +101,14 @@ export function InsightCard({
 }) {
   const [open, setOpen] = useState(false)
   const detailsId = useId()
+  const group = useCardSurface()
+  const step = CARD_SURFACES[group]
 
   if (!metric) {
     return (
       <div
         className="rounded-2xl p-5"
-        style={{ background: CARD_BG, border: CARD_BORDER }}
+        style={{ background: step.surface, border: `1px solid ${step.edge}` }}
       >
         <p className="text-[12.5px]" style={{ color: INK }}>
           Not available
@@ -116,7 +126,7 @@ export function InsightCard({
         // is not interactive does not need a listener to look alive.
         ['--emph-hover' as string]: emph.hover,
       }
-    : { background: CARD_BG, border: CARD_BORDER }
+    : { background: step.surface, border: `1px solid ${step.edge}` }
 
   const def = metric.definition
   const note = qualifierNote(metric)
@@ -192,7 +202,7 @@ export function InsightCard({
       )}
 
       {note && (
-        <p className="mt-2 text-[12px]" style={{ color: ON_NAVY.hue.gold }}>
+        <p className="mt-2 text-[12px]" style={{ color: CARD.hue.gold }}>
           {note}
         </p>
       )}
@@ -203,7 +213,7 @@ export function InsightCard({
         aria-expanded={open}
         aria-controls={detailsId}
         className="mt-3 rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
-        style={{ color: INK, outlineColor: ON_NAVY.focus }}
+        style={{ color: INK, outlineColor: CARD.focus }}
       >
         {open ? 'Hide what this means' : 'What does this mean?'}
       </button>
@@ -212,7 +222,7 @@ export function InsightCard({
         <div
           id={detailsId}
           className="mt-3 rounded-lg px-3 py-2.5"
-          style={{ background: ON_NAVY.well }}
+          style={{ background: step.well }}
         >
           <p className="text-[12.5px]" style={{ color: INK }}>
             {def.definition}
@@ -320,7 +330,7 @@ export function CardHeading({
         <span
           aria-hidden="true"
           className="mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-          style={{ background: ON_NAVY.hue[hue] }}
+          style={{ background: CARD.hue[hue] }}
         />
       )}
       <span className="min-w-0" style={{ color: INK }}>
@@ -339,7 +349,7 @@ export function CardHeading({
  * share one component and one surface.
  *
  * The accent tints the navy rather than replacing it: a flat overlay
- * composited over ``ON_NAVY.surface``, so a teal note and a gold note
+ * composited over ``CARD.surface``, so a teal note and a gold note
  * are recognisably the same object in two registers, and neither
  * becomes a second kind of card.
  */
@@ -353,15 +363,21 @@ export function CardNote({
   span?: string
   children: React.ReactNode
 }) {
-  const tint = accent === 'plain' ? null : ON_NAVY.noteTint[accent]
-  const edge = accent === 'plain' ? ON_NAVY.edge : ON_NAVY.noteEdge[accent]
+  const group = useCardSurface()
+  const step = CARD_SURFACES[group]
+  const tint = accent === 'plain' ? null : CARD.noteTint[accent]
+  const edge = accent === 'plain' ? step.edge : CARD.noteEdge[accent]
   return (
     <div
       className={`min-w-0 rounded-2xl p-5 break-words ${span ?? ''}`}
       style={{
+        // The accent tints whichever step the group is on rather than
+        // replacing it, so a note stays recognisably the same object
+        // all the way down the ramp instead of becoming a fifth
+        // colour that interrupts the progression.
         background: tint
-          ? `linear-gradient(0deg, ${tint}, ${tint}), ${ON_NAVY.surface}`
-          : ON_NAVY.surface,
+          ? `linear-gradient(0deg, ${tint}, ${tint}), ${step.surface}`
+          : step.surface,
         border: `1px solid ${edge}`,
       }}
     >

@@ -6,6 +6,7 @@ import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
 import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
+  CardGroup,
   InsightsSection,
   PanelGroup,
 } from '@/components/admin/insights/InsightsSection'
@@ -25,7 +26,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
-import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
+import { CARD, INK as FC_INK, STATUS, surfaceForGroup } from '@/lib/insights-palette'
 
 /**
  * Growth — who is arriving, and how fast.
@@ -177,7 +178,7 @@ export default function GrowthPage() {
 
         {data && (
           <>
-            <Band
+            <CardGroup surface={surfaceForGroup(0)}
               title="Right now"
               note="A count at this moment, whichever period is selected above — these describe today, not a span of time."
             >
@@ -201,9 +202,9 @@ export default function GrowthPage() {
                 hue="teal"
                 caption="people who have found more than one home here"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(1)}
               title="The wider world"
               note="Accounts and Collectives in existence, whether or not anyone has joined anything."
             >
@@ -227,9 +228,9 @@ export default function GrowthPage() {
                 hue="teal"
                 caption="published and open"
               />
-            </Band>
+            </CardGroup>
 
-            <Band
+            <CardGroup surface={surfaceForGroup(2)}
               title={`What happened in ${data.period.label.toLowerCase()}`}
               note="A count across the selected period, so these do add up over time."
             >
@@ -241,7 +242,7 @@ export default function GrowthPage() {
                 caption="new memberships, counting each Collective joined"
               />
               <OverlapNote data={data} />
-            </Band>
+            </CardGroup>
           </>
         )}
       </InsightsSection>
@@ -266,7 +267,7 @@ function OverlapNote({ data }: { data: MetricResult }) {
 
   return (
     <CardNote accent="teal">
-      <p className="text-[13px]" style={{ color: ON_NAVY.ink }}>
+      <p className="text-[13px]" style={{ color: CARD.ink }}>
         {formatCount(members)} {members === 1 ? 'person holds' : 'people hold'}{' '}
         {formatCount(memberships)}{' '}
         {memberships === 1 ? 'membership' : 'memberships'} between them
@@ -281,7 +282,7 @@ function OverlapNote({ data }: { data: MetricResult }) {
       </p>
       <p
         className="mt-2 text-[12.5px]"
-        style={{ color: ON_NAVY.ink }}
+        style={{ color: CARD.ink }}
       >
         Memberships outnumbering people is a good sign, not a double count.
       </p>
@@ -289,30 +290,6 @@ function OverlapNote({ data }: { data: MetricResult }) {
   )
 }
 
-function Band({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mb-8">
-      <h3
-        className="font-serif text-[15.5px] leading-tight"
-        style={{ color: '#0C1826' }}
-      >
-        {title}
-      </h3>
-      <p className="mb-3 mt-1 max-w-[72ch] text-[12.5px]" style={{ color: INK_MUTED }}>
-        {note}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-    </section>
-  )
-}
 
 function Waiting() {
   return (
