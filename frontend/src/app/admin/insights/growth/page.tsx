@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
-import { InsightCard } from '@/components/admin/insights/InsightCard'
+import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
   InsightsSection,
   PanelGroup,
@@ -25,7 +25,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
-import { INK as FC_INK, STATUS } from '@/lib/insights-palette'
+import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
 
 /**
  * Growth — who is arriving, and how fast.
@@ -265,14 +265,8 @@ function OverlapNote({ data }: { data: MetricResult }) {
   if (members === 0) return null
 
   return (
-    <div
-      className="rounded-2xl p-5"
-      style={{
-        background: 'rgba(56, 160, 158, 0.06)',
-        border: '1px solid rgba(56, 160, 158, 0.22)',
-      }}
-    >
-      <p className="text-[13px]" style={{ color: 'rgba(12, 24, 38, 0.78)' }}>
+    <CardNote accent="teal">
+      <p className="text-[13px]" style={{ color: ON_NAVY.ink.body }}>
         {formatCount(members)} {members === 1 ? 'person holds' : 'people hold'}{' '}
         {formatCount(memberships)}{' '}
         {memberships === 1 ? 'membership' : 'memberships'} between them
@@ -288,14 +282,14 @@ function OverlapNote({ data }: { data: MetricResult }) {
       <p
         className="mt-2 text-[12.5px]"
         style={{
-          color: INK_MUTED,
+          color: ON_NAVY.ink.muted,
           fontFamily: 'Georgia, serif',
           fontStyle: 'italic',
         }}
       >
         Memberships outnumbering people is a good sign, not a double count.
       </p>
-    </div>
+    </CardNote>
   )
 }
 

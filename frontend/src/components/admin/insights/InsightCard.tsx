@@ -8,19 +8,27 @@ import {
   formatValue,
   qualifierNote,
 } from '@/lib/insights'
-import {
-  HUE_UI,
-  INK as FC_INK,
-  STATUS,
-  SURFACE,
-  type InsightHue,
-} from '@/lib/insights-palette'
+import { ON_NAVY, type InsightHue } from '@/lib/insights-palette'
 
-const CARD_BG = SURFACE.card
-const CARD_BORDER = `1px solid ${SURFACE.cardEdge}`
-const INK = FC_INK.heading
-const INK_MUTED = FC_INK.muted
-const INK_SOFTER = FC_INK.faint
+/**
+ * The figures band is dark.
+ *
+ * On a white page of white chart panels, a white card had nothing to
+ * separate it from the page, so the detail under "The figures behind
+ * them" dissolved into the background. Inverting just this band gives
+ * the page two clear registers — charts on white, the figures behind
+ * them on navy — without adding a shadow or a third container.
+ *
+ * Every colour comes from ``ON_NAVY``, which is measured against
+ * #071824 rather than inherited from the light palette. Nothing here
+ * is a page-level override: this component renders every metric card
+ * on all six dashboards, so changing it changes all of them.
+ */
+const CARD_BG = ON_NAVY.surface
+const CARD_BORDER = `1px solid ${ON_NAVY.edge}`
+const INK = ON_NAVY.ink.heading
+const INK_MUTED = ON_NAVY.ink.muted
+const INK_SOFTER = ON_NAVY.ink.faint
 
 const SERIF_ITALIC: React.CSSProperties = {
   color: INK_MUTED,
@@ -110,7 +118,7 @@ export function InsightCard({
       {metric.available ? (
         <p
           className="mt-2.5 font-serif text-[26px] leading-tight md:text-[28px]"
-          style={{ color: emphasiseValue ? STATUS.warning.fg : INK }}
+          style={{ color: emphasiseValue ? ON_NAVY.status.warning : INK }}
         >
           {formatValue(metric)}
         </p>
@@ -141,7 +149,7 @@ export function InsightCard({
       )}
 
       {note && (
-        <p className="mt-2 text-[12px]" style={{ color: HUE_UI.gold.text }}>
+        <p className="mt-2 text-[12px]" style={{ color: ON_NAVY.hue.gold }}>
           {note}
         </p>
       )}
@@ -151,8 +159,8 @@ export function InsightCard({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={detailsId}
-        className="mt-3 rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#246B6A]"
-        style={{ color: INK_SOFTER }}
+        className="mt-3 rounded text-[12px] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{ color: INK_SOFTER, outlineColor: ON_NAVY.focus }}
       >
         {open ? 'Hide what this means' : 'What does this mean?'}
       </button>
@@ -161,7 +169,7 @@ export function InsightCard({
         <div
           id={detailsId}
           className="mt-3 rounded-lg px-3 py-2.5"
-          style={{ background: 'rgba(12, 24, 38, 0.03)' }}
+          style={{ background: ON_NAVY.well }}
         >
           <p className="text-[12.5px]" style={{ color: INK }}>
             {def.definition}
@@ -261,11 +269,51 @@ export function CardHeading({
       <span
         aria-hidden="true"
         className="mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-        style={{ background: HUE_UI[hue].dot }}
+        style={{ background: ON_NAVY.hue[hue] }}
       />
       <span className="min-w-0" style={{ color: INK }}>
         {children}
       </span>
     </h4>
+  )
+}
+
+/**
+ * An explanatory panel that sits among the metric cards.
+ *
+ * Five of these had grown across three pages, each restating its own
+ * wash — two teal, one gold, two plain white. In the dark band a
+ * white panel among navy cards reads as a rendering fault, so they
+ * share one component and one surface.
+ *
+ * The accent tints the navy rather than replacing it: a flat overlay
+ * composited over ``ON_NAVY.surface``, so a teal note and a gold note
+ * are recognisably the same object in two registers, and neither
+ * becomes a second kind of card.
+ */
+export function CardNote({
+  accent = 'plain',
+  span,
+  children,
+}: {
+  accent?: 'teal' | 'gold' | 'plain'
+  /** Grid spans, for a note that should sit wider than one column. */
+  span?: string
+  children: React.ReactNode
+}) {
+  const tint = accent === 'plain' ? null : ON_NAVY.noteTint[accent]
+  const edge = accent === 'plain' ? ON_NAVY.edge : ON_NAVY.noteEdge[accent]
+  return (
+    <div
+      className={`min-w-0 rounded-2xl p-5 break-words ${span ?? ''}`}
+      style={{
+        background: tint
+          ? `linear-gradient(0deg, ${tint}, ${tint}), ${ON_NAVY.surface}`
+          : ON_NAVY.surface,
+        border: `1px solid ${edge}`,
+      }}
+    >
+      {children}
+    </div>
   )
 }

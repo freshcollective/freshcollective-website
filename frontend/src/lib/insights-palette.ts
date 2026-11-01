@@ -153,6 +153,108 @@ export const CHART = {
 } as const
 
 /**
+ * The deep-navy card, and everything that has to be legible on it.
+ *
+ * The surface is `--fc-surface-inverse` (#071824) — Fresh Collective's
+ * existing inverse surface, the one behind every `PageHero` and at the
+ * top of the public footer, so the figures band reads as part of the
+ * platform rather than as a reporting product's idea of a dark card.
+ * Not a new navy, and not `--fc-pathway-navy`, which is a *content*
+ * colour for Pathway cards.
+ *
+ * This is a **selected** dark palette, not the light one inverted.
+ * Every value below was measured against #071824, and most of the
+ * light-surface colours turned out to be wrong there in both
+ * directions: the dark steps chosen to carry a 2px line on white
+ * (teal #0E9A95) go muddy, while the deep status red (#B91C1C) falls
+ * to 2.79:1 and disappears.
+ *
+ * Where an existing token already works on navy it is used unchanged —
+ * `--fc-accent-400`, gold, watermelon and `--fc-status-warning` all
+ * clear AA on this surface. Only two needed a lighter step of a token
+ * hue: the series blue (a navy mark on a navy card is invisible) and
+ * the error red.
+ */
+export const ON_NAVY = {
+  /** --fc-surface-inverse. The card itself. */
+  surface: '#071824',
+  /** A hairline that reads as an edge, not a frame. No shadow. */
+  edge: 'rgba(255, 255, 255, 0.12)',
+  /** The disclosure panel, a shade lifted off the card. */
+  well: 'rgba(255, 255, 255, 0.06)',
+
+  ink: {
+    /** --fc-ink-heading-inverse. Headings and the figure. */
+    heading: '#FFFFFF', // 18.0:1
+    /** Supporting description — soft white, still comfortably AA. */
+    body: 'rgba(255, 255, 255, 0.78)', // 11.2:1
+    muted: 'rgba(255, 255, 255, 0.72)', // 9.6:1
+    /** Disclosure triggers. Interactive text, so AA applies in full. */
+    faint: 'rgba(255, 255, 255, 0.66)', // 8.3:1
+  },
+
+  /**
+   * Identity hues as they appear on navy.
+   *
+   * Teal, gold and watermelon are the token values unchanged. Blue is
+   * a lighter step of `--fc-pathway-blue` (#4F7ABE), which at 4.17:1
+   * is fine for a dot but not for text; #6E9BD8 reaches 6.3:1 and
+   * keeps OKLab ΔE 11 from teal, so the two never read as one series.
+   */
+  hue: {
+    teal: '#55B8B6', // --fc-accent-400, 7.7:1
+    navy: '#6E9BD8', // lighter --fc-pathway-blue, 6.3:1
+    gold: '#D4B048', // 8.7:1
+    watermelon: '#DC6F5C', // --fc-type-video, 5.6:1
+  } as Record<InsightHue, string>,
+
+  /**
+   * Status on navy. Still a separate family from the hues above.
+   *
+   * Warning is `--fc-status-warning` exactly (#D97706) — the *token*
+   * value, where the light card needed a darkened #B45309 to clear AA
+   * on white. Error is a much lighter step of `--fc-status-error`,
+   * since the token itself is 2.79:1 here and effectively invisible.
+   *
+   * Both are measured against the *lightest* navy surface they can
+   * land on, which is a tinted note rather than the card — about half
+   * a point of contrast separates the two, and the first error red
+   * tried cleared AA on the card and failed on the note.
+   */
+  status: {
+    healthy: '#55B8B6',
+    warning: '#D97706',
+    /**
+     * Kept well clear of watermelon (OKLab ΔE 9.6). The nearer reds
+     * that also pass contrast sit at ΔE 4–7 from it, which on a page
+     * where watermelon is an ordinary series colour would make an
+     * alarm look like the fourth line again.
+     */
+    error: '#FF8A80',
+  },
+
+  /**
+   * The wash that marks an explanatory note among the cards.
+   *
+   * Here rather than in the component so the contrast test can
+   * composite them: a note's background is navy *plus* this, which is
+   * a lighter surface than the card and therefore the one every
+   * status and ink colour has to survive.
+   */
+  noteTint: {
+    teal: 'rgba(85, 184, 182, 0.10)',
+    gold: 'rgba(212, 176, 72, 0.10)',
+  },
+  noteEdge: {
+    teal: 'rgba(85, 184, 182, 0.34)',
+    gold: 'rgba(212, 176, 72, 0.34)',
+  },
+
+  /** Focus ring. The dark-teal ring used on white vanishes here. */
+  focus: '#55B8B6',
+} as const
+
+/**
  * A status *tone* — the vocabulary surfaces use when the colour means
  * "how is this going", not "which series is this".
  *

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { HUE_MARK, HUE_UI, INK, STATUS } from './insights-palette.ts'
+import { HUE_MARK, HUE_UI, INK, ON_NAVY, STATUS } from './insights-palette.ts'
 
 import {
   QUALITY_LABEL,
@@ -2073,30 +2073,43 @@ describe('World Insights contrast', () => {
   const channel = (v: number) =>
     v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
 
-  /** Flatten an rgba() over white; pass a hex through unchanged. */
-  const solid = (c: string) => {
+  const bytes = (hex: string) =>
+    [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+
+  /**
+   * Flatten an rgba() over the surface it actually sits on.
+   *
+   * The backdrop is a parameter because getting it wrong makes the
+   * check pass while measuring nothing: the navy card's ink is white
+   * at a low alpha, and compositing that over an assumed white page
+   * returns pure white and a triumphant 18:1.
+   */
+  const solid = (c: string, backdrop: string) => {
     const m = /rgba?\((\d+), *(\d+), *(\d+)(?:, *([\d.]+))?\)/.exec(c)
     if (!m) return c
     const a = m[4] === undefined ? 1 : Number(m[4])
+    const base = bytes(backdrop)
     return `#${[1, 2, 3]
       .map((i) =>
-        Math.round(Number(m[i]) * a + 255 * (1 - a))
+        Math.round(Number(m[i]) * a + base[i - 1] * (1 - a))
           .toString(16)
           .padStart(2, '0'),
       )
       .join('')}`
   }
 
-  const luminance = (hex: string) => {
-    const h = solid(hex)
-    const [r, g, b] = [1, 3, 5].map((i) =>
-      channel(parseInt(h.slice(i, i + 2), 16) / 255),
+  const luminance = (colour: string, backdrop: string) => {
+    const [r, g, b] = bytes(solid(colour, backdrop)).map((v) =>
+      channel(v / 255),
     )
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
   }
 
+  /** ``fg`` is composited over ``bg``, which must itself be opaque. */
   const ratio = (fg: string, bg: string) => {
-    const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
+    const [hi, lo] = [luminance(fg, bg), luminance(bg, bg)].sort(
+      (a, b) => b - a,
+    )
     return (hi + 0.05) / (lo + 0.05)
   }
 
@@ -2105,7 +2118,8 @@ describe('World Insights contrast', () => {
       const r = ratio(colour, WHITE)
       assert.ok(
         r >= 4.5,
-        `INK.${name} (${colour} → ${solid(colour)}) is ${r.toFixed(2)}:1 ` +
+        `INK.${name} (${colour} → ${solid(colour, WHITE)}) is ` +
+          `${r.toFixed(2)}:1 ` +
           `on white, below AA 4.5:1`,
       )
     }
@@ -2125,6 +2139,88 @@ describe('World Insights contrast', () => {
     }
   })
 
+  test('the navy card is Fresh Collective\'s own inverse surface', () => {
+    // Not a new navy, and not --fc-pathway-navy (a Pathway content
+    // colour). #071824 is --fc-surface-inverse: every PageHero, the
+    // top of the public footer, and four occurrences on the homepage.
+    assert.equal(ON_NAVY.surface, '#071824')
+    const tokens = readFileSync(
+      join(ROOT, 'src/styles/fc-tokens.css'),
+      'utf8',
+    )
+    assert.match(tokens, /--fc-surface-inverse:\s*#071824/i)
+  })
+
+  test('every colour on the navy card clears AA against it', () => {
+    const navy = ON_NAVY.surface
+    const checks: Array<[string, string]> = [
+      ...Object.entries(ON_NAVY.ink).map(
+        ([k, v]) => [`ink.${k}`, v] as [string, string],
+      ),
+      ...Object.entries(ON_NAVY.status).map(
+        ([k, v]) => [`status.${k}`, v] as [string, string],
+      ),
+      // The hues carry text on this surface too — the gold qualifier
+      // note is drawn in ON_NAVY.hue.gold — so they are held to the
+      // text threshold here rather than the 3:1 graphical one.
+      ...Object.entries(ON_NAVY.hue).map(
+        ([k, v]) => [`hue.${k}`, v] as [string, string],
+      ),
+      ['focus', ON_NAVY.focus],
+    ]
+    for (const [name, colour] of checks) {
+      const r = ratio(colour, navy)
+      assert.ok(
+        r >= 4.5,
+        `ON_NAVY.${name} (${colour}) is ${r.toFixed(2)}:1 on ${navy}, ` +
+          `below AA 4.5:1`,
+      )
+    }
+  })
+
+  test('colours survive the lightest navy surface, not just the card', () => {
+    // A tinted note is navy plus a 10% wash, so it is lighter than the
+    // card and is the surface that actually binds. An earlier error
+    // red cleared AA on the card at 4.61:1 and failed here at 3.92:1 —
+    // the card alone is the easier test, and passing it proves little.
+    for (const [accent, tint] of Object.entries(ON_NAVY.noteTint)) {
+      const surface = solid(tint, ON_NAVY.surface)
+      assert.ok(
+        luminance(surface, surface) > luminance(ON_NAVY.surface, ON_NAVY.surface),
+        `the ${accent} note should be lighter than the card`,
+      )
+      const checks = {
+        ...ON_NAVY.ink,
+        ...ON_NAVY.status,
+        ...ON_NAVY.hue,
+      } as Record<string, string>
+      for (const [name, colour] of Object.entries(checks)) {
+        const r = ratio(colour, surface)
+        assert.ok(
+          r >= 4.5,
+          `${name} (${colour}) is ${r.toFixed(2)}:1 on the ${accent} note ` +
+            `(${surface}), below AA 4.5:1`,
+        )
+      }
+    }
+  })
+
+  test('the dark palette is selected, not the light one flipped', () => {
+    // The failure this guards against is reusing a light-surface
+    // colour on navy because it is "the same hue". Two of them do not
+    // survive the move: the deep status red falls to 2.79:1 and the
+    // navy series mark to 2.84:1.
+    assert.notEqual(ON_NAVY.status.error, STATUS.error.fg)
+    assert.notEqual(ON_NAVY.status.warning, STATUS.warning.fg)
+    for (const hue of Object.keys(ON_NAVY.hue)) {
+      const onNavy = ON_NAVY.hue[hue as keyof typeof ON_NAVY.hue]
+      assert.ok(
+        ratio(onNavy, ON_NAVY.surface) >= 4.5,
+        `${hue} must be restepped for navy if the light value fails there`,
+      )
+    }
+  })
+
   test('status never collides with an identity hue', () => {
     // Watermelon is an ordinary series colour and the error red is an
     // obligation. If they converge, one of the two stops meaning what
@@ -2135,6 +2231,17 @@ describe('World Insights contrast', () => {
           step.fg.toLowerCase(),
           hue.toLowerCase(),
           `STATUS.${sName} and the ${hName} series are the same colour`,
+        )
+      }
+    }
+    // The same rule on navy, where watermelon and a red sit closer.
+    for (const [sName, fg] of Object.entries(ON_NAVY.status)) {
+      if (sName === 'healthy') continue // healthy is teal by design
+      for (const [hName, hue] of Object.entries(ON_NAVY.hue)) {
+        assert.notEqual(
+          fg.toLowerCase(),
+          hue.toLowerCase(),
+          `ON_NAVY.status.${sName} and the ${hName} series are the same`,
         )
       }
     }

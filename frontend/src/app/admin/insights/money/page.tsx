@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
-import { InsightCard } from '@/components/admin/insights/InsightCard'
+import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
   InsightsSection,
   PanelGroup,
@@ -27,7 +27,7 @@ import type {
   HistoryRangeKey,
   PopulationKey,
 } from '@/lib/insights-history'
-import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
+import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
 
 /**
  * Money — what comes in, and whose it is.
@@ -324,19 +324,19 @@ export default function MoneyPage() {
  */
 function NotProfitNote() {
   return (
-    <div
-      className="mb-8 rounded-2xl p-4"
-      style={{
-        background: 'rgba(212, 176, 72, 0.08)',
-        border: '1px solid rgba(212, 176, 72, 0.28)',
-      }}
-    >
-      <p className="text-[12.5px]" style={{ color: '#8A6A15' }}>
+    <CardNote accent="gold" span="mb-8">
+      {/*
+        Soft white, not gold. Gold text on a gold-tinted navy clears
+        contrast but reads as olive; the accent does its work in the
+        border, which is what keeps this the same object as the teal
+        note rather than a second kind of panel.
+      */}
+      <p className="text-[12.5px]" style={{ color: ON_NAVY.ink.body }}>
         Contribution is income less Stripe&rsquo;s processing fees only. It is not
         profit — hosting, software, and everything else it takes to run Fresh
         Collective sit outside the platform and are not in this figure.
       </p>
-    </div>
+    </CardNote>
   )
 }
 
@@ -453,35 +453,26 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
 
   if (gross === 0) {
     return (
-      <div
-        className="rounded-2xl p-5"
-        style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
-      >
-        <p className="text-[13px]" style={{ color: INK_MUTED }}>
+      <CardNote>
+        <p className="text-[13px]" style={{ color: ON_NAVY.ink.muted }}>
           No member purchases in this period, so there is nothing to divide up
           yet.
         </p>
-      </div>
+      </CardNote>
     )
   }
 
   const share = Math.round((fee / gross) * 100)
   return (
-    <div
-      className="rounded-2xl p-5"
-      style={{
-        background: 'rgba(56, 116, 180, 0.06)',
-        border: '1px solid rgba(56, 116, 180, 0.22)',
-      }}
-    >
-      <p className="text-[13px]" style={{ color: 'rgba(12, 24, 38, 0.78)' }}>
+    <CardNote>
+      <p className="text-[13px]" style={{ color: ON_NAVY.ink.body }}>
         Of {formatMoney(gross)} members paid, {formatMoney(creators)} is the
         creators&rsquo; and {formatMoney(fee)} is ours — about {share}%.
       </p>
       <p
         className="mt-2 text-[12.5px]"
         style={{
-          color: INK_MUTED,
+          color: ON_NAVY.ink.muted,
           fontFamily: 'Georgia, serif',
           fontStyle: 'italic',
         }}
@@ -489,7 +480,7 @@ function WhoseMoneyNote({ data }: { data: MetricResult }) {
         The large number is the one that passes through; the small one is the
         one that stays.
       </p>
-    </div>
+    </CardNote>
   )
 }
 

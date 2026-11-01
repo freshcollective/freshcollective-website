@@ -8,7 +8,7 @@ import {
 } from '@/components/admin/insights/CreatorJourney'
 import { HistoryControls } from '@/components/admin/insights/HistoryControls'
 import { HistoryPanel } from '@/components/admin/insights/HistoryPanel'
-import { InsightCard } from '@/components/admin/insights/InsightCard'
+import { CardNote, InsightCard } from '@/components/admin/insights/InsightCard'
 import {
   InsightsSection,
   PanelGroup,
@@ -30,7 +30,7 @@ import {
   type PopulationKey,
   fetchCreators,
 } from '@/lib/insights-history'
-import { INK as FC_INK, STATUS, SURFACE } from '@/lib/insights-palette'
+import { INK as FC_INK, ON_NAVY, STATUS } from '@/lib/insights-palette'
 
 /**
  * Creators — who is building here, and how far they get.
@@ -329,11 +329,11 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
   if (total === 0) return null
 
   return (
-    <div
-      className="mb-8 rounded-2xl p-5"
-      style={{ background: '#FFFFFF', border: `1px solid ${SURFACE.cardEdge}` }}
-    >
-      <h4 className="font-serif text-[15.5px]" style={{ color: INK }}>
+    <CardNote span="mb-8">
+      <h4
+        className="font-serif text-[15.5px]"
+        style={{ color: ON_NAVY.ink.heading }}
+      >
         Whose earnings those are
       </h4>
       <dl className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
@@ -350,11 +350,15 @@ function WhoseEarnings({ data }: { data: MetricResult }) {
       </dl>
       <p
         className="mt-2.5 text-[12px] leading-snug"
-        style={{ color: INK_MUTED, fontFamily: 'Georgia, serif', fontStyle: 'italic' }}
+        style={{
+          color: ON_NAVY.ink.muted,
+          fontFamily: 'Georgia, serif',
+          fontStyle: 'italic',
+        }}
       >
         {String(metric.qualifiers?.operator_note ?? '')}
       </p>
-    </div>
+    </CardNote>
   )
 }
 
@@ -366,13 +370,7 @@ function WhoIsOwed({ data }: { data: MetricResult }) {
   const founder = q.owed_to_founder_operated_collectives_cents
   if (typeof external !== 'number' || typeof founder !== 'number') return null
   return (
-    <div
-      className="rounded-2xl p-5 sm:col-span-2 lg:col-span-3"
-      style={{
-        background: 'rgba(56, 160, 158, 0.06)',
-        border: '1px solid rgba(56, 160, 158, 0.22)',
-      }}
-    >
+    <CardNote accent="teal" span="sm:col-span-2 lg:col-span-3">
       <dl className="grid gap-2.5 sm:grid-cols-2">
         <Split
           label="Owed to independent creators"
@@ -385,7 +383,7 @@ function WhoIsOwed({ data }: { data: MetricResult }) {
           note="Fresh Collective owing itself. Earned and unpaid as recorded, not treated as settled."
         />
       </dl>
-    </div>
+    </CardNote>
   )
 }
 
@@ -400,16 +398,19 @@ function Split({
 }) {
   return (
     <div>
-      <dt className="text-[12.5px]" style={{ color: INK_MUTED }}>
+      <dt className="text-[12.5px]" style={{ color: ON_NAVY.ink.muted }}>
         {label}
       </dt>
       <dd
         className="m-0 text-[18px] tabular-nums"
-        style={{ color: INK, fontFamily: 'Georgia, serif' }}
+        style={{ color: ON_NAVY.ink.heading, fontFamily: 'Georgia, serif' }}
       >
         {formatMoney(cents)}
       </dd>
-      <p className="mt-0.5 text-[11.5px] leading-snug" style={{ color: INK_MUTED }}>
+      <p
+        className="mt-0.5 text-[11.5px] leading-snug"
+        style={{ color: ON_NAVY.ink.muted }}
+      >
         {note}
       </p>
     </div>
