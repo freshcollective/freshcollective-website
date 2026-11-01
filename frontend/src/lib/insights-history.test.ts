@@ -2628,3 +2628,70 @@ describe('the metric-card ramp', () => {
     assert.notEqual(EMPHASIS.warning.surface, EMPHASIS.error.surface)
   })
 })
+
+/**
+ * Emphasis cards sit on their own row.
+ *
+ * A watermelon card beside a rich teal one makes both harder to read
+ * — two saturated surfaces at the same size compete, and the
+ * emphasis stops reading as emphasis.
+ */
+describe('the emphasis row', () => {
+  const src = () =>
+    withoutDocComments(read('src/components/admin/insights/InsightsSection.tsx'))
+
+  test('a group separates emphasised cards from ordinary ones', () => {
+    assert.match(src(), /const standard = kids\.filter/)
+    assert.match(src(), /const emphasised = kids\.filter/)
+  })
+
+  test('both rows share one column track, so they stay aligned', () => {
+    // The emphasis card keeps its normal metric-card width rather than
+    // stretching, which is what keeps it lined up with the row above.
+    const grid = /const GRID = '([^']+)'/.exec(src())
+    assert.ok(grid, 'the column track should be declared once')
+    assert.match(grid[1], /sm:grid-cols-2/)
+    assert.match(grid[1], /lg:grid-cols-4/)
+    // Used for both rows, never redefined for one of them.
+    assert.equal(src().match(/grid gap-3 sm:grid-cols-2/g)?.length, 1)
+    assert.ok(
+      !/col-span-full|w-full/.test(src()),
+      'an emphasis card must not stretch across the row',
+    )
+  })
+
+  test('no emphasis card means no extra row and no extra gap', () => {
+    // Guarded on length, and the top margin only applies when there is
+    // actually a row above to separate from.
+    assert.match(src(), /emphasised\.length > 0 && \(/)
+    assert.match(src(), /standard\.length > 0 \? ' mt-3' : ''/)
+  })
+
+  test('the split reads the card\'s own prop, not a page declaration', () => {
+    // `emphasis` is conditional — outstanding payouts are only an
+    // obligation while something is owed — so a page declaring the
+    // layout would have to repeat that condition and the two would
+    // drift apart.
+    assert.match(src(), /function isEmphasised/)
+    assert.match(src(), /isValidElement\(child\)/)
+    assert.match(src(), /emphasis\?: unknown/)
+  })
+
+  test('every emphasis card on every page sits inside a group', () => {
+    // The rule lives in CardGroup, so a card placed outside one would
+    // silently opt out of it.
+    for (const name of [
+      'growth', 'money', 'collectives', 'creators',
+      'participation', 'belonging', 'world-builders',
+    ]) {
+      const page = read(`src/app/admin/insights/${name}/page.tsx`)
+      if (!/\bemphasis=/.test(withoutDocComments(page))) continue
+      assert.match(
+        page,
+        /<CardGroup/,
+        `${name} uses emphasis outside a CardGroup, which cannot apply ` +
+          `the emphasis-row rule`,
+      )
+    }
+  })
+})

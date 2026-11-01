@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext } from 'react'
+import { Children, createContext, isValidElement, useContext } from 'react'
 
 import { type CardSurface, INK, SURFACE } from '@/lib/insights-palette'
 
@@ -107,6 +107,22 @@ export function useCardSurface(): CardSurface {
  * position. Inferring it would be tidier to call and wrong the moment
  * a group is added, removed, or hidden because its data is missing —
  * the colours would shift under a reader who had learned them.
+ *
+ * Emphasis cards drop to their own row
+ * ------------------------------------
+ * A watermelon card beside a rich teal one makes both harder to read:
+ * two saturated surfaces at the same size compete, and the emphasis
+ * stops reading as emphasis. So a group puts its ordinary cards in
+ * one grid and any emphasis cards in a second grid directly beneath,
+ * still in the group and still on the same column track, so the
+ * attention card lines up with the row above rather than floating
+ * free or stretching across it.
+ *
+ * The split is computed from the children's actual ``emphasis`` prop
+ * rather than declared by the page, because the prop is conditional —
+ * outstanding payouts are only an obligation while something is
+ * owed. A page declaring the layout would have to repeat that
+ * condition, and the two would drift.
  */
 export function CardGroup({
   title,
@@ -119,6 +135,10 @@ export function CardGroup({
   surface: CardSurface
   children: React.ReactNode
 }) {
+  const kids = Children.toArray(children)
+  const standard = kids.filter((c) => !isEmphasised(c))
+  const emphasised = kids.filter(isEmphasised)
+
   return (
     <CardSurfaceContext.Provider value={surface}>
       <section className="mb-8">
@@ -134,11 +154,39 @@ export function CardGroup({
         >
           {note}
         </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {children}
-        </div>
+        {standard.length > 0 && (
+          <div className={GRID}>{standard}</div>
+        )}
+        {/*
+          Only rendered when something is actually emphasised, so a
+          group with no attention card gains no empty row and no extra
+          gap — the common case costs nothing.
+        */}
+        {emphasised.length > 0 && (
+          <div className={`${GRID}${standard.length > 0 ? ' mt-3' : ''}`}>
+            {emphasised}
+          </div>
+        )}
       </section>
     </CardSurfaceContext.Provider>
+  )
+}
+
+/** One column track, shared by both rows so they stay aligned. */
+const GRID = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4'
+
+/**
+ * Whether a child is asking to be set apart.
+ *
+ * Reads the rendered element's own prop, so a card that is only
+ * sometimes an obligation sits in the ordinary row the rest of the
+ * time. A `false` from a `{cond && <Card/>}` is not an element and
+ * falls through harmlessly.
+ */
+function isEmphasised(child: React.ReactNode): boolean {
+  return (
+    isValidElement(child) &&
+    Boolean((child.props as { emphasis?: unknown } | null)?.emphasis)
   )
 }
 
