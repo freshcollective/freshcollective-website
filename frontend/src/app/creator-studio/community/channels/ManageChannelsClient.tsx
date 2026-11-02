@@ -102,6 +102,11 @@ export default function ManageChannelsClient({
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [broadenPrompt, setBroadenPrompt] = useState<{
+    channelId: string
+    patch: Record<string, unknown>
+    message: string
+  } | null>(null)
   const [, startTransition] = useTransition()
 
   const eligiblePathways = useMemo(
@@ -204,9 +209,22 @@ export default function ManageChannelsClient({
       )
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(typeof data.detail === 'string' ? data.detail : 'Could not update Channel.')
+        const detail = data.detail
+        if (detail && typeof detail === 'object' && detail.code === 'would_broaden_access') {
+          // Not a failure — a consequence the creator has not yet
+          // acknowledged. Offer the same save again, confirmed, rather
+          // than making them reconstruct it.
+          setBroadenPrompt({
+            channelId,
+            patch,
+            message: String(detail.message ?? 'This would widen who can read this channel.'),
+          })
+          return
+        }
+        setError(typeof detail === 'string' ? detail : 'Could not update Channel.')
         return
       }
+      setBroadenPrompt(null)
       await refresh()
     } finally {
       setBusy(false)
@@ -269,6 +287,36 @@ export default function ManageChannelsClient({
         </div>
       )}
 
+      {broadenPrompt && (
+        <div
+          className="mb-4 rounded-lg px-4 py-3 text-[13px]"
+          style={{ background: 'rgba(180,83,9,0.06)', border: '1px solid rgba(180,83,9,0.30)', color: '#92400E' }}
+          role="alert"
+        >
+          <p className="font-semibold">Before you widen this channel</p>
+          <p className="mt-0.5 leading-relaxed">{broadenPrompt.message}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void updateChannel(
+                broadenPrompt.channelId,
+                { ...broadenPrompt.patch, confirm_broadening: true },
+              )}
+              className="rounded-full bg-amber-700 px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90"
+            >
+              Yes, widen it
+            </button>
+            <button
+              type="button"
+              onClick={() => setBroadenPrompt(null)}
+              className="rounded-full px-4 py-1.5 text-[12.5px] font-medium text-amber-900 underline underline-offset-2"
+            >
+              Keep it as it is
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Add Channel — primary action, matches other Creator Studio CTAs.
           Opens the inline create form below when clicked. */}
       {!createOpen ? (
@@ -304,6 +352,9 @@ export default function ManageChannelsClient({
             channels={system}
             spaceSlug={spaceSlug}
             members={memberOptions}
+            pathways={pathways}
+            events={events}
+            series={series}
             editingId={editingId}
             setEditingId={setEditingId}
             updateChannel={updateChannel}
@@ -324,6 +375,9 @@ export default function ManageChannelsClient({
               channels={list}
               spaceSlug={spaceSlug}
               members={memberOptions}
+              pathways={pathways}
+              events={events}
+              series={series}
               editingId={editingId}
               setEditingId={setEditingId}
               updateChannel={updateChannel}
@@ -341,6 +395,9 @@ export default function ManageChannelsClient({
             channels={archived}
             spaceSlug={spaceSlug}
             members={memberOptions}
+            pathways={pathways}
+            events={events}
+            series={series}
             editingId={editingId}
             setEditingId={setEditingId}
             updateChannel={updateChannel}
@@ -367,6 +424,7 @@ export default function ManageChannelsClient({
 
 function ChannelGroup({
   heading, channels, spaceSlug, members,
+  pathways, events, series,
   editingId, setEditingId, updateChannel,
   archiveOrRestore, deleteChannel, refreshMembers, busy,
 }: {
@@ -374,6 +432,9 @@ function ChannelGroup({
   channels: ChannelManageDetail[]
   spaceSlug: string
   members: MemberProfile[]
+  pathways: CreatorPathway[]
+  events: CreatorEvent[]
+  series: CreatorGatheringSeries[]
   editingId: string | null
   setEditingId: (id: string | null) => void
   updateChannel: (id: string, patch: Record<string, unknown>) => Promise<void>
@@ -399,6 +460,9 @@ function ChannelGroup({
             spaceSlug={spaceSlug}
             channel={c}
             members={members}
+            pathways={pathways}
+            events={events}
+            series={series}
             isEditing={editingId === c.id}
             onToggleEdit={() => setEditingId(editingId === c.id ? null : c.id)}
             onSave={(patch) => updateChannel(c.id, patch)}
@@ -419,6 +483,9 @@ interface RowProps {
   spaceSlug: string
   channel: ChannelManageDetail
   members: MemberProfile[]
+  pathways: CreatorPathway[]
+  events: CreatorEvent[]
+  series: CreatorGatheringSeries[]
   isEditing: boolean
   onToggleEdit: () => void
   onSave: (patch: Record<string, unknown>) => Promise<void>
@@ -429,7 +496,7 @@ interface RowProps {
 }
 
 function ChannelRow({
-  spaceSlug, channel, members,
+  spaceSlug, channel, members, pathways, events, series,
   isEditing, onToggleEdit, onSave,
   onArchiveOrRestore, onDelete, onMembersChanged, busy,
 }: RowProps) {
@@ -441,6 +508,10 @@ function ChannelRow({
 
   const systemStartHere = channel.is_system && channel.channel_type === 'start_here'
   const systemGeneral = channel.is_system && channel.channel_type === 'general'
+  const isLinked = ['pathway', 'gathering', 'series'].includes(channel.channel_type)
+  const [links, setLinks] = useState<ExperienceRef[]>(
+    () => (channel.linked_experiences ?? []).map((l) => ({ type: l.type, id: l.id })),
+  )
 
   async function save() {
     if (systemGeneral) {
@@ -456,6 +527,10 @@ function ChannelRow({
       description: description.trim() || null,
       member_posting_allowed: memberPosting,
       polls_allowed: pollsAllowed,
+      // Only sent for linked channels. Omitting the key is what tells
+      // the backend to leave the links alone, so an edit to an open
+      // channel's name cannot unlink anything.
+      ...(isLinked ? { linked_experiences: links } : {}),
     })
   }
 
@@ -501,7 +576,7 @@ function ChannelRow({
           <LinkedExperienceSummary channel={channel} />
           <p className="mt-1 text-[11.5px] text-slate-500">
             {channel.post_count} conversation{channel.post_count === 1 ? '' : 's'}
-            {channel.channel_type === 'private' && ` · ${channel.private_member_count} member${channel.private_member_count === 1 ? '' : 's'}`}
+            {(channel.channel_type === 'private' || isLinked) && ` · ${channel.private_member_count} member${channel.private_member_count === 1 ? '' : 's'}`}
           </p>
         </div>
 
@@ -519,7 +594,7 @@ function ChannelRow({
               {isEditing ? 'Close' : 'Edit'}
             </button>
           )}
-          {channel.channel_type === 'private' && !channel.is_archived && (
+          {(channel.channel_type === 'private' || isLinked) && !channel.is_archived && (
             <button
               type="button"
               onClick={() => setMembersOpen((v) => !v)}
@@ -605,6 +680,23 @@ function ChannelRow({
             </div>
           )}
 
+          {isLinked && !systemGeneral && (
+            <div className="mt-4 border-t pt-4" style={{ borderColor: 'rgba(12,24,38,0.06)' }}>
+              <ExperienceMultiSelect
+                selected={links}
+                onChange={setLinks}
+                pathways={pathways}
+                events={events}
+                series={series}
+              />
+              <p className="mt-2 text-[11.5px] leading-relaxed text-slate-500">
+                Unlinking an experience does not remove anyone from the
+                channel — people who joined through it stay, and you can
+                remove them yourself if you want to.
+              </p>
+            </div>
+          )}
+
           {systemGeneral && (
             <p className="mt-3 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
               Common Room is a system Channel. Only its name and description can be changed.
@@ -625,7 +717,7 @@ function ChannelRow({
         </div>
       )}
 
-      {membersOpen && channel.channel_type === 'private' && (
+      {membersOpen && (channel.channel_type === 'private' || isLinked) && (
         <PrivateMembersPanel
           spaceSlug={spaceSlug}
           channelId={channel.id}
