@@ -301,33 +301,75 @@ class TestPositivePathwayChannelAccess:
             db, user=payer, channel=channel, space=space, expected=True,
         )
 
-    def test_free_pathway_grants_channel_to_any_active_member(
+    def test_browsing_a_free_pathway_does_not_grant_its_channel(
         self, db, make_space, make_user,
     ):
+        """Revised rule: being able to view an experience is not
+        joining it.
+
+        This test previously asserted the opposite — that a free
+        Pathway alone was the access source — which meant every member
+        of the Collective was in the channel of every free Pathway,
+        including ones they had never opened. An experience-linked
+        channel is for the people who took the experience up.
+        """
         space = make_space()
-        payer = make_user()
-        _member(db, payer, space)
+        browser = make_user()
+        _member(db, browser, space)
         pathway = _make_pathway(db, space, access_type="free")
         channel = _make_pathway_channel(db, space, pathway)
-        # No entitlement, no enrollment. Free pathway alone is the source.
+        # No entitlement, no enrollment — they have only looked.
         db.commit()
 
         _assert_view_and_autocomplete_agree(
-            db, user=payer, channel=channel, space=space, expected=True,
+            db, user=browser, channel=channel, space=space, expected=False,
         )
 
-    def test_included_pathway_grants_channel_to_any_active_member(
+    def test_taking_up_a_free_pathway_does_grant_its_channel(
         self, db, make_space, make_user,
     ):
+        """And the other half of the same rule.
+
+        A free Pathway never produces an entitlement — there is no
+        join endpoint, and nothing is written when somebody starts one
+        — so the Enrollment that ``complete_step`` creates on the first
+        completed step is the only record of having joined, and is
+        what admits them.
+        """
         space = make_space()
-        payer = make_user()
-        _member(db, payer, space)
+        learner = make_user()
+        _member(db, learner, space)
+        pathway = _make_pathway(db, space, access_type="free")
+        channel = _make_pathway_channel(db, space, pathway)
+        _make_enrollment(db, learner, pathway)
+        db.commit()
+
+        _assert_view_and_autocomplete_agree(
+            db, user=learner, channel=channel, space=space, expected=True,
+        )
+
+    def test_an_included_pathway_behaves_like_a_free_one(
+        self, db, make_space, make_user,
+    ):
+        """``included`` is reachable by virtue of membership and
+        produces no acquisition record either, so the same rule
+        applies: membership is not joining.
+        """
+        space = make_space()
+        browser = make_user()
+        _member(db, browser, space)
         pathway = _make_pathway(db, space, access_type="included")
         channel = _make_pathway_channel(db, space, pathway)
         db.commit()
 
         _assert_view_and_autocomplete_agree(
-            db, user=payer, channel=channel, space=space, expected=True,
+            db, user=browser, channel=channel, space=space, expected=False,
+        )
+
+        _make_enrollment(db, browser, pathway)
+        db.commit()
+        _assert_view_and_autocomplete_agree(
+            db, user=browser, channel=channel, space=space, expected=True,
         )
 
     def test_included_with_offer_grants_channel_via_access_pass(
@@ -634,17 +676,28 @@ class TestAutocompleteParityAcrossCases:
     def test_autocomplete_set_matches_can_view_for_free_pathway(
         self, db, make_space, make_user,
     ):
+        """Parity is the point, and it has to hold in both directions.
+
+        A member who has only browsed is mentionable in neither; one
+        who has taken the Pathway up is mentionable in both. Mentioning
+        somebody who cannot read the post is the same exposure in a
+        smaller window.
+        """
         space = make_space()
-        member = make_user()
+        learner = make_user()
+        browser = make_user()
         non_member = make_user()
-        _member(db, member, space)
+        _member(db, learner, space)
+        _member(db, browser, space)
         # non_member deliberately absent from Space.
         pathway = _make_pathway(db, space, access_type="free")
         channel = _make_pathway_channel(db, space, pathway)
+        _make_enrollment(db, learner, pathway)
         db.commit()
 
         ids = accessible_user_ids_for_channel(channel, space, db)
-        assert member.id in ids
+        assert learner.id in ids
+        assert browser.id not in ids
         assert non_member.id not in ids
 
     def test_autocomplete_excludes_revoked_even_with_enrollment(
@@ -696,6 +749,10 @@ class TestLinkedTitleEnrichment:
             db, space, title="The EMBODY Practice", access_type="free",
         )
         _make_pathway_channel(db, space, pathway)
+        # Enrolled, so the channel is theirs to see at all: a free
+        # Pathway no longer admits every member on membership alone.
+        # This test is about the title enrichment, not the gate.
+        _make_enrollment(db, payer, pathway)
         db.commit()
 
         rows = list_member_channels(

@@ -3,6 +3,13 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import {
+  arrangementOf,
+  broadensAccess,
+  buildChannelEditPatch,
+  type Arrangement,
+  type ExperienceRef,
+} from '@/lib/channelEditing'
 import { Button } from '@/components/platform'
 import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 import type { ChannelManageDetail } from '@/lib/serverApi'
@@ -46,15 +53,8 @@ interface Props {
 
 type ChannelType = 'open' | 'private' | 'pathway' | 'gathering' | 'series'
 
-/** What the creator picks. Three arrangements, not five types: the
- *  old list made "which experience" part of the channel's identity,
- *  which is why a channel could only ever name one. */
-type Arrangement = 'open' | 'private' | 'linked'
-
-export interface ExperienceRef {
-  type: 'pathway' | 'gathering' | 'series'
-  id: string
-}
+/** `Arrangement` and `ExperienceRef` come from `lib/channelEditing`,
+ *  alongside the patch-building logic they belong to. */
 
 interface CreateForm {
   name: string
@@ -512,6 +512,14 @@ function ChannelRow({
   const [links, setLinks] = useState<ExperienceRef[]>(
     () => (channel.linked_experiences ?? []).map((l) => ({ type: l.type, id: l.id })),
   )
+  // The arrangement is what the creator reasons about; the stored
+  // channel_type keeps the pathway/gathering/series vocabulary for
+  // icons and grouping. A linked channel of any kind reads back as
+  // "linked".
+  const currentArrangement = arrangementOf(channel.channel_type)
+  const [arrangement, setArrangement] = useState<Arrangement>(currentArrangement)
+  const arrangementChanged = arrangement !== currentArrangement
+  const willBroaden = broadensAccess(currentArrangement, arrangement)
 
   async function save() {
     if (systemGeneral) {
@@ -522,16 +530,18 @@ function ChannelRow({
       })
       return
     }
-    await onSave({
-      name: name.trim(),
-      description: description.trim() || null,
-      member_posting_allowed: memberPosting,
-      polls_allowed: pollsAllowed,
-      // Only sent for linked channels. Omitting the key is what tells
-      // the backend to leave the links alone, so an edit to an open
-      // channel's name cannot unlink anything.
-      ...(isLinked ? { linked_experiences: links } : {}),
-    })
+    // Built by the shared helper, which is unit-tested: the mistakes
+    // here are invisible ones, like sending `linked_experiences` from
+    // an open channel's rename and unlinking everything.
+    await onSave(buildChannelEditPatch({
+      name,
+      description,
+      memberPostingAllowed: memberPosting,
+      pollsAllowed: pollsAllowed,
+      arrangement,
+      currentChannelType: channel.channel_type,
+      links,
+    }))
   }
 
   return (
@@ -680,20 +690,69 @@ function ChannelRow({
             </div>
           )}
 
-          {isLinked && !systemGeneral && (
+          {!systemGeneral && (
             <div className="mt-4 border-t pt-4" style={{ borderColor: 'rgba(12,24,38,0.06)' }}>
-              <ExperienceMultiSelect
-                selected={links}
-                onChange={setLinks}
-                pathways={pathways}
-                events={events}
-                series={series}
-              />
-              <p className="mt-2 text-[11.5px] leading-relaxed text-slate-500">
-                Unlinking an experience does not remove anyone from the
-                channel — people who joined through it stay, and you can
-                remove them yourself if you want to.
-              </p>
+              <label className="text-[12px] text-black">
+                <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">
+                  Who can take part
+                </span>
+                <select
+                  value={arrangement}
+                  onChange={(e) => setArrangement(e.target.value as Arrangement)}
+                  className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none md:max-w-md"
+                >
+                  <option value="open">💬 Open to Collective members</option>
+                  <option value="private">🔒 Private — selected members</option>
+                  <option value="linked">
+                    🔗 Linked experiences — people who join any of them
+                  </option>
+                </select>
+              </label>
+
+              {willBroaden && (
+                <div
+                  className="mt-3 rounded-lg px-3 py-2 text-[12px] leading-relaxed"
+                  style={{
+                    background: 'rgba(180,83,9,0.06)',
+                    border: '1px solid rgba(180,83,9,0.28)',
+                    color: '#92400E',
+                  }}
+                >
+                  <strong>Every eligible Collective member</strong> will be
+                  able to open this channel — including the conversations
+                  already in it. Nothing is deleted, and nobody is removed,
+                  but what has been said here so far becomes readable by
+                  people who could not read it before. You will be asked to
+                  confirm when you save.
+                </div>
+              )}
+
+              {arrangement === 'private' && (
+                <p className="mt-2 text-[11.5px] leading-relaxed text-slate-500">
+                  Only the people you choose can open this channel.{' '}
+                  {arrangementChanged
+                    ? 'Save this change, then use Members to choose them.'
+                    : 'Use Members above to add or remove them.'}
+                </p>
+              )}
+
+              {arrangement === 'linked' && (
+                <div className="mt-4">
+                  <ExperienceMultiSelect
+                    selected={links}
+                    onChange={setLinks}
+                    pathways={pathways}
+                    events={events}
+                    series={series}
+                  />
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-slate-500">
+                    Unlinking an experience does not remove anyone from the
+                    channel — people who joined through it stay, and you can
+                    remove them yourself if you want to. People who have only
+                    looked at an experience without joining it are not added.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

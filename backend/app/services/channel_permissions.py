@@ -78,6 +78,7 @@ from app.models.platform import (
     ChannelMembership,
     ConversationChannel,
     EntitlementStatus,
+    Enrollment,
     Event,
     EventBooking,
     EventSeries,
@@ -304,6 +305,23 @@ def _qualifies_legacy(
     return False
 
 
+def _legacy_link_shim(channel: ConversationChannel):
+    """A stand-in link row built from the pre-177 single columns."""
+    from app.models.platform import ChannelExperienceLink
+
+    for attr, field in (
+        ("pathway_id", "pathway_id"),
+        ("gathering_id", "event_id"),
+        ("series_id", "series_id"),
+    ):
+        value = getattr(channel, attr, None)
+        if value:
+            return ChannelExperienceLink(
+                id="legacy", channel_id=channel.id, **{field: value},
+            )
+    return None
+
+
 def acquisition_for_linked_channel(
     user: User, channel: ConversationChannel, space: Space, db: Session,
 ) -> tuple[str, str] | None:
@@ -332,13 +350,22 @@ def acquisition_for_linked_channel(
     """
     from app.models.access_pass import AccessPass, AccessPassStatus
     from app.models.platform import BookingStatus, ChannelExperienceLink
-    from app.services.pathway_access import retains_acquired_access
+    from app.services.pathway_access import (
+        WITHHELD_STATUSES,
+        retains_acquired_access,
+    )
 
     links = (
         db.query(ChannelExperienceLink)
         .filter(ChannelExperienceLink.channel_id == channel.id)
         .all()
     )
+    if not links:
+        # A channel whose linked experience has since been deleted, or
+        # one written before migration 177. Fall back to the legacy
+        # columns so its members are still recognised.
+        links = [_legacy_link_shim(channel)]
+        links = [link for link in links if link is not None]
     now = datetime.utcnow()
     for link in links:
         if link.event_id is not None:
@@ -354,15 +381,73 @@ def acquisition_for_linked_channel(
             if row is not None:
                 return ("gathering", link.event_id)
         elif link.pathway_id is not None:
-            # The platform's own "did they acquire it" predicate:
-            # an active unexpired entitlement, or a pass on an Option
-            # that includes it. Revocation- and expiry-aware, and it
-            # deliberately does not count membership.
+            # A withheld Pathway admits nobody new, whatever they
+            # hold. ``draft`` was never offered and ``coming_soon`` is
+            # not open yet, and the canonical rule denies non-
+            # caretakers regardless of entitlement. Anyone who already
+            # joined keeps their seat through their membership row,
+            # which ``can_access_linked_channel`` reads first —
+            # reverting a Pathway to draft does not evict people.
+            #
+            # ``archived`` is deliberately NOT here: acquired access
+            # survives archiving, which ``retains_acquired_access``
+            # below is exactly the check for.
+            pathway_status = db.query(Pathway.status).filter(
+                Pathway.id == link.pathway_id,
+            ).scalar()
+            pathway_status = getattr(pathway_status, "value", pathway_status)
+            if pathway_status in WITHHELD_STATUSES:
+                continue
+
+            # Two signals, because the platform records a paid join and
+            # a free join in different places.
+            #
+            # 1. An acquisition — active unexpired entitlement, or a
+            #    pass on an Option including it. Revocation- and
+            #    expiry-aware, and it deliberately does not count
+            #    membership. Written by purchase fulfilment and by
+            #    creator/admin grants; NEVER written for a free
+            #    Pathway.
             if retains_acquired_access(
                 db, user_id=user.id, space_id=space.id,
                 pathway_id=link.pathway_id,
             ):
                 return ("pathway", link.pathway_id)
+            # 2. An Enrollment, but ONLY for the two access types that
+            #    can never produce an acquisition record.
+            #
+            #    ``free`` and ``included`` Pathways are reachable by
+            #    virtue of membership, and nothing is ever written when
+            #    somebody takes one up — there is no join endpoint, and
+            #    no PathwayEntitlement is created. The one trace they
+            #    leave is an Enrollment, which ``complete_step`` writes
+            #    lazily the first time they mark a step done. That is
+            #    the only line the data supports between browsing a
+            #    free Pathway and doing it.
+            #
+            #    For ``one_time``, ``subscription`` and
+            #    ``included_with_offer`` the acquisition record above
+            #    is authoritative and an Enrollment must NOT stand in
+            #    for it: a progress row with no live entitlement is
+            #    precisely the member whose access was revoked or has
+            #    expired. Letting it count would undo a revocation —
+            #    see test_enrollment_only_member_cannot_see_paid_
+            #    pathway_channel and its revocation sibling, which pin
+            #    that rule.
+            pathway_row = db.get(Pathway, link.pathway_id)
+            access_type = getattr(pathway_row, "access_type", None)
+            access_type = getattr(access_type, "value", access_type)
+            if access_type in ("free", "included"):
+                row = (
+                    db.query(Enrollment.id)
+                    .filter(
+                        Enrollment.user_id == user.id,
+                        Enrollment.pathway_id == link.pathway_id,
+                    )
+                    .first()
+                )
+                if row is not None:
+                    return ("pathway", link.pathway_id)
         elif link.series_id is not None:
             row = (
                 db.query(AccessPass.id)
@@ -403,7 +488,14 @@ def can_access_linked_channel(
         if row.status == "removed":
             return False
         return True
-    return qualifies_through_any_linked_experience(user, channel, space, db)
+    # Admission requires having JOINED one of the linked experiences,
+    # not merely being able to open it.
+    #
+    # This used to ask ``qualifies_through_any_linked_experience``,
+    # which is satisfied for every member of the Collective whenever a
+    # linked Pathway is free — so browsing a free Pathway opened its
+    # channel. Being able to view an experience is not joining it.
+    return acquisition_for_linked_channel(user, channel, space, db) is not None
 
 
 def _has_pathway_channel_access(
@@ -673,6 +765,16 @@ def accessible_user_ids_for_channel(
     if channel.channel_type not in LINKED_CHANNEL_TYPES:
         return audience
 
+    # For linked channels the qualification set is the pre-correction
+    # notion — "may open it" — which includes every member whenever a
+    # linked Pathway is free. Mentioning somebody who cannot read the
+    # post is the same leak in a smaller window, so it is narrowed to
+    # the people who actually joined.
+    audience = {
+        uid for uid in audience
+        if _joined_by_user_id(uid, channel, space, db)
+    }
+
     rows = (
         db.query(ChannelMembership.user_id, ChannelMembership.status)
         .filter(ChannelMembership.channel_id == channel.id)
@@ -684,6 +786,22 @@ def accessible_user_ids_for_channel(
     # unioned back because they reach every channel in their Space
     # regardless of membership.
     return ((audience | retained) - removed) | _caretaker_ids(space, db)
+
+
+def _joined_by_user_id(
+    user_id: str, channel: ConversationChannel, space: Space, db: Session,
+) -> bool:
+    """``acquisition_for_linked_channel`` by id rather than object.
+
+    The audience builder works in id sets; loading each User to reuse
+    the object-shaped predicate keeps one definition of "joined"
+    rather than a second set-shaped copy of it, which is how the
+    member-facing list and this one drifted apart before.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        return False
+    return acquisition_for_linked_channel(user, channel, space, db) is not None
 
 
 def _caretaker_ids(space: Space, db: Session) -> set[str]:

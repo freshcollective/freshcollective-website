@@ -71,6 +71,13 @@ def main() -> int:
         help="limit to one Collective, by slug",
     )
     parser.add_argument(
+        "--impact", action="store_true",
+        help="report who could open each linked channel under the old "
+             "viewability rule but is not admitted under the current "
+             "'must have joined' rule, and holds no membership row. "
+             "Read-only; writes nothing even with --apply.",
+    )
+    parser.add_argument(
         "--explain", action="store_true",
         help="list every considered member and why they were included "
              "or skipped",
@@ -128,6 +135,76 @@ def main() -> int:
                 )
         return out
 
+    def _report_impact(session, channels) -> None:
+        """Who loses access when "may view" stops meaning "joined".
+
+        Compares the two predicates directly rather than estimating.
+        The old one is still in the codebase — it is what the mention
+        audience was built from — so the affected set is computable
+        exactly instead of guessed at.
+
+        Anyone with a membership row is unaffected by construction:
+        ``can_access_linked_channel`` reads the row before it asks any
+        question about experiences. That includes the EMBODY
+        memberships.
+        """
+        from app.models.platform import (
+            ChannelMembership, Space, SpaceMembership, SpaceMembershipStatus,
+        )
+        from app.models.user import User
+        from app.services import channel_permissions as perms
+
+        print("\n  IMPACT REPORT — read-only, writes nothing\n")
+        total_losing = 0
+        for channel in channels:
+            space = session.get(Space, channel.space_id)
+            if space is None:
+                continue
+            held = {
+                r.user_id for r in session.query(ChannelMembership.user_id)
+                .filter(ChannelMembership.channel_id == channel.id)
+            }
+            members = (
+                session.query(User)
+                .join(SpaceMembership, SpaceMembership.user_id == User.id)
+                .filter(
+                    SpaceMembership.space_id == space.id,
+                    SpaceMembership.status == SpaceMembershipStatus.active,
+                )
+                .all()
+            )
+            losing = []
+            for user in members:
+                if user.id in held:
+                    continue
+                if perms.is_caretaker_here(user, space, session):
+                    continue
+                could = perms.qualifies_through_any_linked_experience(
+                    user, channel, space, session,
+                )
+                joined = perms.acquisition_for_linked_channel(
+                    user, channel, space, session,
+                ) is not None
+                if could and not joined:
+                    losing.append(user.email)
+            if losing:
+                total_losing += len(losing)
+                print(f"    {space.slug}/{channel.slug:28} "
+                      f"{len(losing)} would lose access")
+                for ref in _describe_links(session, channel.id):
+                    print(f"        link: {ref}")
+                for email in losing[:15]:
+                    print(f"        - {email}")
+                if len(losing) > 15:
+                    print(f"        … and {len(losing) - 15} more")
+        if total_losing == 0:
+            print("    nobody loses access.")
+        else:
+            print(f"\n  {total_losing} member-channel pair(s) affected.")
+            print("  Each is somebody who could open the channel because a")
+            print("  linked experience was viewable to them, and who never")
+            print("  joined it. Nobody with a membership row is listed.")
+
     db = SessionLocal()
     try:
         q = (
@@ -146,6 +223,11 @@ def main() -> int:
         channels = q.order_by(ConversationChannel.space_id).all()
         if not channels:
             print("  no linked-experience channels found")
+            return 0
+
+        if args.impact:
+            _report_impact(db, channels)
+            db.rollback()
             return 0
 
         mode = "APPLYING" if args.apply else "DRY RUN — nothing will be written"

@@ -236,13 +236,37 @@ class TestOpennessIsNotJoining:
         for m in members:
             assert _row(db, ch, m) is None
 
-    def test_but_they_can_still_open_it(self, db, space, setup):
+    def test_and_they_cannot_open_it_either(self, db, space, setup):
+        """Revised with the rule: openness is not joining.
+
+        When this file was written the runtime gate still admitted
+        anyone who could *view* a linked experience, so excluding them
+        from the backfill was purely about not writing a permanent
+        row. The rule has since been corrected at the gate too —
+        browsing a free Pathway no longer opens its channel — so the
+        two now agree, which is the point.
+        """
         ch, _, members = setup
         for m in members:
-            assert perms.can_access_linked_channel(m, ch, space, db) is True, (
-                "they keep the access they have; only the permanent "
-                "row is withheld"
-            )
+            assert perms.can_access_linked_channel(m, ch, space, db) is False
+
+    def test_until_they_actually_take_it_up(
+        self, db, space, setup, make_user, join,
+    ):
+        """An Enrollment is the free Pathway's only join record."""
+        from app.models.platform import Enrollment
+
+        ch, pw, members = setup
+        learner = members[0]
+        db.add(Enrollment(
+            id=_uid("en"), user_id=learner.id, pathway_id=pw.id,
+            status="active",
+        ))
+        db.commit()
+        assert perms.can_access_linked_channel(learner, ch, space, db) is True
+        assert perms.can_access_linked_channel(
+            members[1], ch, space, db,
+        ) is False
 
     def test_an_entitlement_holder_IS_backfilled(
         self, db, space, setup, make_user, join,
