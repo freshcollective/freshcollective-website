@@ -78,6 +78,7 @@ def compute_series_access(
     db: Session,
     *,
     now: datetime | None = None,
+    as_member: bool = False,
 ) -> bool:
     """Return True if ``user`` currently has access to ``series``.
 
@@ -88,25 +89,31 @@ def compute_series_access(
     ``now`` is optional; defaults to ``datetime.utcnow()``. Explicit
     injection is useful for tests that need to pin the moment against
     a specific pass window.
+
+    ``as_member=True`` evaluates the member rules only, skipping the
+    platform-admin, ownership and caretaker short-circuits. The
+    Conversations channel gate passes it, having already decided those
+    cases itself — see ``channel_permissions.is_caretaker_here``.
     """
     if user is None:
         return False
-    if user.role == "admin":
-        return True
-    if space.creator_id == user.id:
-        return True
-    caretaker_row = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.status == SpaceMembershipStatus.active,
-            SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+    if not as_member:
+        if user.role == "admin":
+            return True
+        if space.creator_id == user.id:
+            return True
+        caretaker_row = (
+            db.query(SpaceMembership.role)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+                SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+            )
+            .first()
         )
-        .first()
-    )
-    if caretaker_row:
-        return True
+        if caretaker_row:
+            return True
 
     now = now or datetime.utcnow()
     pass_row = (

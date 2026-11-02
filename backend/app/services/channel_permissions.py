@@ -132,6 +132,39 @@ def is_caretaker(user: User | None, space: Space, db: Session) -> bool:
     return has_space_caretaker_membership(user.id, space.id, db)
 
 
+def is_caretaker_here(user: User | None, space: Space, db: Session) -> bool:
+    """Caretaker *of this Collective* — ownership or a caretaker role in
+    it. Deliberately NOT the global platform-admin role.
+
+    This is the predicate the member-facing surfaces use: viewing a
+    channel, reading its feed, posting, commenting, reacting.
+
+    Why it exists
+    -------------
+    ``is_caretaker`` answers True for ``User.role == "admin"`` anywhere
+    on the platform, and ``can_view_channel`` consulted it before it
+    looked at the channel type. So the platform administrator — who is
+    also an ordinary member of other people's Collectives — could see
+    and post in a channel linked only to a draft Pathway they had never
+    enrolled in, and the draft check was never reached. A creator's
+    explicit removal did not stop them either.
+
+    Holding a global role is not participation in somebody else's
+    community. Administrative reach is still available where it is
+    deliberate and legible — archiving, deleting, managing members,
+    moderating, and the ``/api/admin`` surface, all of which keep
+    ``is_caretaker``.
+
+    Owners and creator/moderator members are untouched: they keep every
+    channel in their own Collective.
+    """
+    if user is None:
+        return False
+    if is_space_owner(user, space):
+        return True
+    return has_space_caretaker_membership(user.id, space.id, db)
+
+
 def has_space_caretaker_membership(user_id: str, space_id: str, db: Session) -> bool:
     """Public — active SpaceMembership with role in {creator, moderator}.
     Exposed so peer modules (event_permissions, community moderation,
@@ -169,6 +202,31 @@ def is_active_space_member(user_id: str, space_id: str, db: Session) -> bool:
 
 #: Channel types whose audience comes from linked experiences.
 LINKED_CHANNEL_TYPES: tuple[str, ...] = ("pathway", "gathering", "series")
+
+#: Types whose audience is already "every active member of the
+#: Collective". Nothing is withheld in them, so a platform admin
+#: reaching them withholds nothing either — and Creator Studio,
+#: Community Care moderation and support all read them for Collectives
+#: the admin is not a member of.
+UNRESTRICTED_CHANNEL_TYPES: tuple[str, ...] = ("start_here", "general", "open")
+
+
+def platform_admin_may_inspect(
+    user: User | None, channel: ConversationChannel,
+) -> bool:
+    """Whether the global admin role alone opens this channel.
+
+    It does for the unrestricted types and nowhere else. ``private``
+    and the linked types are the ones whose whole purpose is that not
+    everyone is in them, so the global role stops at their door and the
+    administrator is treated as whatever they are in that Collective —
+    which, in somebody else's community, is an ordinary member.
+    """
+    return (
+        user is not None
+        and user.role == "admin"
+        and channel.channel_type in UNRESTRICTED_CHANNEL_TYPES
+    )
 
 
 def _membership_row(user_id: str, channel_id: str, db: Session):
@@ -334,6 +392,12 @@ def can_access_linked_channel(
     a removal could never be expressed at all for somebody who still
     qualifies.
     """
+    # Caretakers of this Collective first, so the helper gives the same
+    # answer as ``can_view_channel`` when called on its own. The
+    # qualification path below runs with ``as_member=True`` and would
+    # otherwise refuse an owner.
+    if is_caretaker_here(user, space, db):
+        return True
     row = _membership_row(user.id, channel.id, db)
     if row is not None:
         if row.status == "removed":
@@ -356,7 +420,10 @@ def _has_pathway_channel_access(
     pathway = db.query(Pathway).filter(Pathway.id == pathway_id).first()
     if pathway is None:
         return False
-    return compute_pathway_access(user, pathway, space, db)
+    # ``as_member`` so a global admin role cannot answer this
+    # question: ownership and caretaker membership were already
+    # settled by ``is_caretaker_here`` before we got here.
+    return compute_pathway_access(user, pathway, space, db, as_member=True)
 
 
 def _has_series_channel_access(
@@ -375,7 +442,7 @@ def _has_series_channel_access(
     series = db.query(EventSeries).filter(EventSeries.id == series_id).first()
     if series is None:
         return False
-    return compute_series_access(user, series, space, db)
+    return compute_series_access(user, series, space, db, as_member=True)
 
 
 def _is_confirmed_gathering_attendee(user_id: str, gathering_id: str, db: Session) -> bool:
@@ -413,7 +480,13 @@ def can_view_channel(
     """
     if user is None:
         return False
-    if is_caretaker(user, space, db):
+    # Caretakers *of this Collective*, not holders of a global role.
+    if is_caretaker_here(user, space, db):
+        return True
+    # The global role still opens the channels that are open to
+    # everyone anyway — Creator Studio and Community Care read these
+    # for Collectives the admin has no membership in.
+    if platform_admin_may_inspect(user, channel):
         return True
 
     # Ordinary users must at least be active in the Space; a suspended
@@ -443,7 +516,12 @@ def can_post(
         return False
     if channel.is_archived:
         return False
-    if is_caretaker(user, space, db):
+    # Narrow predicate again: a global admin must not bypass a
+    # creator's participation settings in a restricted channel of
+    # somebody else's Collective.
+    if is_caretaker_here(user, space, db):
+        return True
+    if platform_admin_may_inspect(user, channel):
         return True
     return bool(channel.member_posting_allowed)
 
@@ -458,7 +536,12 @@ def can_comment(
         return False
     if channel.is_archived:
         return False
-    if is_caretaker(user, space, db):
+    # Narrow predicate again: a global admin must not bypass a
+    # creator's participation settings in a restricted channel of
+    # somebody else's Collective.
+    if is_caretaker_here(user, space, db):
+        return True
+    if platform_admin_may_inspect(user, channel):
         return True
     return bool(channel.comments_allowed)
 

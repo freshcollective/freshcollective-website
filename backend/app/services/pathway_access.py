@@ -399,8 +399,22 @@ def compute_pathway_access(
     pathway: Pathway,
     space: Space,
     db: Session,
+    *,
+    as_member: bool = False,
 ) -> bool:
     """Return True if ``user`` currently has access to ``pathway``.
+
+    ``as_member=True`` evaluates the member rules only, skipping the
+    three privileged short-circuits below (platform admin, Collective
+    ownership, caretaker membership). Callers that have *already*
+    decided the privileged cases for themselves pass it, so a global
+    role cannot leak back in as a second answer.
+
+    The Conversations channel gate is the caller that needs this: it
+    grants owners and caretaker members directly, and must then ask
+    "would an ordinary member reach this?" — because a platform
+    administrator participating in somebody else's Collective is an
+    ordinary member there.
 
     Accepts ``None`` for unauthenticated visitors — they never have
     access to paid or included Pathways.
@@ -426,22 +440,23 @@ def compute_pathway_access(
         if p_status in WITHHELD_STATUSES or p_status == RETIRED_STATUS:
             return False
         return access_type == "free"
-    if user.role == "admin":
-        return True
-    if space.creator_id == user.id:
-        return True
-    space_role = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.role.in_(["creator", "moderator"]),
-            SpaceMembership.status == "active",
+    if not as_member:
+        if user.role == "admin":
+            return True
+        if space.creator_id == user.id:
+            return True
+        space_role = (
+            db.query(SpaceMembership.role)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.role.in_(["creator", "moderator"]),
+                SpaceMembership.status == "active",
+            )
+            .first()
         )
-        .first()
-    )
-    if space_role:
-        return True
+        if space_role:
+            return True
     p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
     access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
     if p_status in WITHHELD_STATUSES:
