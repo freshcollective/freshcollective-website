@@ -997,7 +997,8 @@ class EventResponse(BaseModel):
     id: str
     title: str
     description: str | None
-    starts_at: datetime
+    #: None while a duplicated Gathering is still a dateless draft.
+    starts_at: datetime | None
     ends_at: datetime | None
     location_type: str
     location_url: str | None

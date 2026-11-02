@@ -4827,6 +4827,129 @@ def create_event(
     return _event_to_dict(event, 0)
 
 
+@router.post(
+    "/spaces/{slug}/events/{event_id}/duplicate",
+    response_model=EventResponse,
+    status_code=201,
+)
+def duplicate_event(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Copy a standalone Gathering's configuration into a new draft.
+
+    For running the same session again at a different time. Everything
+    that describes *what the Gathering is* is carried over; everything
+    that records *what happened at this one* is not.
+
+    **The dates are deliberately not copied.** That is the point of
+    the action — a duplicate with the original's time is just a
+    conflicting double booking — so the new row is dateless and
+    ``publish`` refuses it until a creator sets both. Migration 175
+    made ``starts_at`` nullable for exactly this.
+
+    **Nothing instance-specific comes with it.** No bookings, no
+    AccessPasses, no payments or grants, no conversation channel or
+    its membership, no attendance marks, no notifications. They are
+    not filtered out of a copy — they are simply never read: this
+    builds a new ``Event`` field by field rather than cloning a row,
+    so a column added later is absent until somebody decides it
+    should be carried, which is the safe direction for that mistake.
+
+    **A Series occurrence cannot be duplicated**, and the refusal is
+    here rather than only in the interface. An occurrence takes its
+    meaning from the series — its label, its index, the pass that
+    admits a member to all of them — and a copy would either carry a
+    membership it has no claim to or be a stray with a series name.
+    Changing a series is a series-level operation.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
+
+    original = (
+        db.query(Event)
+        .filter(Event.id == event_id, Event.space_id == space.id)
+        .first()
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail="Gathering not found.")
+
+    # Both kinds of series membership refuse. ``series_id`` is semantic
+    # membership of an EventSeries; ``recurrence_series_id`` tags rows
+    # created together by a bulk recurrence. Either makes this
+    # occurrence part of something larger.
+    if original.series_id or original.recurrence_series_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This Gathering belongs to a series, so it cannot be "
+                "duplicated on its own. Add a session to the series "
+                "instead."
+            ),
+        )
+
+    duplicate = Event(
+        id=str(uuid4()),
+        space_id=space.id,
+        # The creator doing the duplicating owns the new draft, which
+        # may not be whoever created the original.
+        created_by_id=current_user.id,
+        title=original.title,
+        description=original.description,
+        # Dateless by design. ``ends_at`` and ``booking_closes_at`` go
+        # with them: a closing time relative to dates that no longer
+        # exist is worse than none.
+        starts_at=None,
+        ends_at=None,
+        booking_closes_at=None,
+        location_type=original.location_type,
+        location_url=original.location_url,
+        # Not copied: a recording belongs to the session that was
+        # recorded, not to the next one.
+        recording_url=None,
+        # A new draft is never live, whatever the original was.
+        is_published=False,
+        status="draft",
+        is_public=original.is_public,
+        requires_booking=original.requires_booking,
+        capacity=original.capacity,
+        booking_note=original.booking_note,
+        thumbnail_url=original.thumbnail_url,
+        gathering_type=original.gathering_type,
+        attendance_format=original.attendance_format,
+        venue_name=original.venue_name,
+        venue_address=original.venue_address,
+        venue_locality=original.venue_locality,
+        access_instructions=original.access_instructions,
+        booking_access_type=original.booking_access_type,
+        booking_required_pathway_id=original.booking_required_pathway_id,
+        ticket_price_cents=original.ticket_price_cents,
+        ticket_currency=original.ticket_currency,
+        # Standalone, and stays standalone. Guarded above, restated
+        # here so the row is right even if that guard is ever relaxed.
+        series_id=None,
+        recurrence_series_id=None,
+        recurrence_label=None,
+        recurrence_index=None,
+        recurrence_total=None,
+        # Attendance belongs to the session that happened.
+        attendance_completed_at=None,
+        attendance_completed_by=None,
+    )
+    db.add(duplicate)
+    db.flush()
+
+    # No ``record_gathering_published`` and no channel. A draft has
+    # been published to nobody, and a conversation channel is created
+    # when the creator chooses one for the new Gathering.
+
+    db.commit()
+    db.refresh(duplicate)
+    return _event_to_dict(duplicate, 0)
+
+
 @router.post("/spaces/{slug}/events/bulk", response_model=BulkEventCreateResponse, status_code=201)
 def bulk_create_events(
     slug: str,
@@ -5068,6 +5191,24 @@ def update_event(
     # the series id in the same call. It rejects any combination
     # that would leave the row with an unresolvable Series-pass gate.
     _enforce_series_pass_invariant(event.booking_access_type, event.series_id)
+
+    # A dateless draft — the state a duplicate starts in — may be
+    # edited freely but never published. Checked on the resulting
+    # state so a single PATCH that sets the dates *and* publishes is
+    # allowed, which is what a creator finishing a duplicate does.
+    #
+    # This is the second of two independent guards. The first is that
+    # every member-facing query either compares ``starts_at`` against
+    # a time, which is never true for NULL, or filters
+    # ``is_published``. A NULL reaches a member only if both fail.
+    if event.is_published and event.starts_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Set a start date and time before publishing this "
+                "Gathering."
+            ),
+        )
 
     # After applying updates, validate the ticket configuration against
     # the RESULTING state (post-update). This is what the CHECK constraint
@@ -10257,7 +10398,7 @@ def book_recurring_sessions(
 
         if event.status == "cancelled":
             skipped_list.append({"event_id": event_id, "event_title": event.title,
-                                  "starts_at": event.starts_at.isoformat(),
+                                  "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                                   "status": "skipped", "reason": "Event is cancelled."})
             continue
 
@@ -10268,7 +10409,7 @@ def book_recurring_sessions(
         )
         if existing and existing.status == "confirmed":
             skipped_list.append({"event_id": event_id, "event_title": event.title,
-                                  "starts_at": event.starts_at.isoformat(),
+                                  "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                                   "status": "skipped", "reason": "Already booked."})
             continue
 
@@ -10280,7 +10421,7 @@ def book_recurring_sessions(
             ) or 0
             if confirmed_count >= event.capacity:
                 skipped_list.append({"event_id": event_id, "event_title": event.title,
-                                      "starts_at": event.starts_at.isoformat(),
+                                      "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                                       "status": "skipped", "reason": "Session is at full capacity."})
                 continue
 
@@ -10289,7 +10430,7 @@ def book_recurring_sessions(
 
             if ap.total_credits is not None and ap.used_credits >= ap.total_credits:
                 skipped_list.append({"event_id": event_id, "event_title": event.title,
-                                      "starts_at": event.starts_at.isoformat(),
+                                      "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                                       "status": "skipped", "reason": "No remaining sessions on pass."})
                 continue
 
@@ -10312,7 +10453,7 @@ def book_recurring_sessions(
                 ) or 0
                 if weekly_used >= ap.credits_per_week:
                     skipped_list.append({"event_id": event_id, "event_title": event.title,
-                                          "starts_at": event.starts_at.isoformat(),
+                                          "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                                           "status": "skipped",
                                           "reason": f"Weekly limit of {ap.credits_per_week} session(s) reached for this week."})
                     continue
@@ -10350,7 +10491,7 @@ def book_recurring_sessions(
             db.refresh(booking)
 
         booked_list.append({"event_id": event_id, "event_title": event.title,
-                             "starts_at": event.starts_at.isoformat(),
+                             "starts_at": event.starts_at.isoformat() if event.starts_at else "",
                              "booking_id": booking.id, "status": "booked"})
 
     pass_summary: dict | None = None

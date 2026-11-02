@@ -1249,7 +1249,13 @@ class Event(Base):
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    # Nullable so a duplicated Gathering can exist as a draft before
+    # its dates are chosen — see migration 175. A dateless draft is
+    # invisible to every member-facing query by construction (each
+    # one either compares this column against a time, which is never
+    # true for NULL, or filters ``is_published``), and ``publish``
+    # refuses a Gathering without both dates.
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     location_type: Mapped[EventLocationType] = mapped_column(
         SAEnum(EventLocationType, name="event_location_type_enum", create_type=True),

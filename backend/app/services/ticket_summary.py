@@ -66,9 +66,14 @@ def _derive_status(
     if event.status == "cancelled":
         return "cancelled"
 
-    end_marker = event.ends_at or (event.starts_at + timedelta(hours=1))
-    if end_marker <= now:
-        return "ended"
+    # A Gathering with no start date has not ended and cannot have.
+    # Reaching for the usual end marker here is arithmetic on nothing
+    # — which is exactly how this read before duplicates introduced
+    # the dateless draft (migration 175).
+    if event.starts_at is not None:
+        end_marker = event.ends_at or (event.starts_at + timedelta(hours=1))
+        if end_marker <= now:
+            return "ended"
 
     if event.booking_closes_at and event.booking_closes_at <= now:
         return "closed"
