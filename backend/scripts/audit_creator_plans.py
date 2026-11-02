@@ -4,6 +4,28 @@
 Read-only. Writes nothing, changes nothing, and is safe to run
 against production.
 
+Where to run it
+---------------
+From the **fc-api Render Shell**, where ``DATABASE_URL`` already
+points at production::
+
+    python scripts/audit_creator_plans.py
+
+The working directory there is ``backend`` — ``rootDir: backend`` in
+render.yaml — which is also why this file lives in ``backend/scripts``
+rather than at the repository root. The root is not part of that
+service's deployed tree, so a script placed there is simply absent on
+the instance; every cron in render.yaml addresses its script the same
+way, as ``scripts/<name>.py`` relative to this directory.
+
+Locally, pass ``DATABASE_URL`` explicitly.
+
+Not to be confused with ``audit_creator_plans_prod.py`` beside it,
+which is run *from a developer machine* with ``PROD_DATABASE_URL``
+and answers a narrower pair of questions: which plan rows exist, and
+whether any creator holds two active subscriptions. This one is about
+eligibility, waivers and fee integrity.
+
 Why a script rather than an answer
 ----------------------------------
 The guard's effect depends entirely on live data — which creators
@@ -39,9 +61,15 @@ import os
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "backend"))
-os.chdir(REPO / "backend")
+# ``backend/`` — this file's grandparent. The fc-api service builds
+# with ``rootDir: backend``, so the repository root is not part of its
+# deployed tree and a script living there is simply absent on the
+# instance. Every operational script lives here for that reason, and
+# every cron in render.yaml addresses them as ``scripts/<name>.py``
+# relative to this directory.
+BACKEND = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND))
+os.chdir(BACKEND)
 
 import app.main  # noqa: E402,F401 — loads the full model graph
 
