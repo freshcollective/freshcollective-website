@@ -840,6 +840,10 @@ def create_community_post(
         # (the legacy trigger no-ops when the topic is live).
         from app.comms import Source, emit as comms_emit
         from app.comms.rollout import schedule_routing_if_needed
+        from app.core.public_url import public_app_url as _public_app_url
+        from app.services.channel_permissions import (
+            is_caretaker_here as _is_caretaker_here,
+        )
         _comms_event = comms_emit(
             db,
             event_type="community.post.published",
@@ -856,8 +860,32 @@ def create_community_post(
                 # who cannot open the post — with an excerpt of it in
                 # the email.
                 "channel_id": post.channel_id,
+                "channel_name": getattr(target_channel, "name", None),
             },
-            payload={"post_id": post.id, "excerpt": (body.body or "")[:280]},
+            payload={
+                "post_id": post.id,
+                "excerpt": (body.body or "")[:280],
+                "author_name": getattr(current_user, "name", None)
+                               or "Someone",
+                # The direct link to this conversation. It still
+                # enforces channel permissions when opened —
+                # ``get_community_post`` gates on
+                # ``can_view_channel`` — so the URL is safe to mail to
+                # somebody whose access later changes.
+                "view_url": _public_app_url(
+                    f"/spaces/{space.slug}/community/{post.id}"
+                ),
+                # Whether this reads as a creator announcement.
+                #
+                # ``is_caretaker_here`` and not ``is_caretaker``: a
+                # platform administrator posting in somebody else's
+                # Collective is an ordinary member there, and framing
+                # their post as "the creator has shared something"
+                # would be false.
+                "is_creator_post": _is_caretaker_here(
+                    current_user, space, db,
+                ),
+            },
         )
         db.commit()
         schedule_routing_if_needed(

@@ -761,47 +761,44 @@ def accessible_user_ids_for_channel(
     must still be mentionable, and a member the creator removed must
     not be — even while they still qualify.
     """
-    audience = _qualification_audience(channel, space, db)
     if channel.channel_type not in LINKED_CHANNEL_TYPES:
-        return audience
+        return _qualification_audience(channel, space, db)
 
-    # For linked channels the qualification set is the pre-correction
-    # notion — "may open it" — which includes every member whenever a
-    # linked Pathway is free. Mentioning somebody who cannot read the
-    # post is the same leak in a smaller window, so it is narrowed to
-    # the people who actually joined.
+    # Linked channels ask the real gate, once per active member,
+    # rather than assembling a second set-shaped answer.
+    #
+    # Every set-shaped version of this drifted. The first was keyed on
+    # the legacy single columns, so a channel linked to three
+    # Gatherings only ever considered one of them; narrowing that set
+    # afterwards inherited the same blind spot and returned nobody for
+    # a channel whose legacy column was empty. ``can_access_linked_
+    # channel`` already encodes membership, tombstones, acquisition and
+    # caretaker status in the right order, so this cannot disagree
+    # with what the member actually experiences.
+    members = (
+        db.query(User)
+        .join(SpaceMembership, SpaceMembership.user_id == User.id)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .all()
+    )
     audience = {
-        uid for uid in audience
-        if _joined_by_user_id(uid, channel, space, db)
+        user.id for user in members
+        if can_access_linked_channel(user, channel, space, db)
     }
-
+    # Retained members who have since left the Collective are not in
+    # the loop above; their row still says they belong here, and a
+    # removal still outranks it.
     rows = (
         db.query(ChannelMembership.user_id, ChannelMembership.status)
         .filter(ChannelMembership.channel_id == channel.id)
         .all()
     )
-    retained = {r.user_id for r in rows if r.status == "active"}
-    removed = {r.user_id for r in rows if r.status == "removed"}
-    # Removal wins, matching the view-side ordering. Caretakers are
-    # unioned back because they reach every channel in their Space
-    # regardless of membership.
-    return ((audience | retained) - removed) | _caretaker_ids(space, db)
-
-
-def _joined_by_user_id(
-    user_id: str, channel: ConversationChannel, space: Space, db: Session,
-) -> bool:
-    """``acquisition_for_linked_channel`` by id rather than object.
-
-    The audience builder works in id sets; loading each User to reuse
-    the object-shaped predicate keeps one definition of "joined"
-    rather than a second set-shaped copy of it, which is how the
-    member-facing list and this one drifted apart before.
-    """
-    user = db.get(User, user_id)
-    if user is None:
-        return False
-    return acquisition_for_linked_channel(user, channel, space, db) is not None
+    audience |= {r.user_id for r in rows if r.status == "active"}
+    audience -= {r.user_id for r in rows if r.status == "removed"}
+    return audience | _caretaker_ids(space, db)
 
 
 def _caretaker_ids(space: Space, db: Session) -> set[str]:

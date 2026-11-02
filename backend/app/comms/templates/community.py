@@ -49,24 +49,46 @@ class NewPostEmailTemplate:
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
-        collective = recipient.template_context.get("collective_name") or "your collective"
-        excerpt = (recipient.template_context.get("excerpt") or "").strip()
-        r = resolver_for(db, self.key, recipient.template_context)
+        ctx = dict(recipient.template_context)
+        excerpt = (ctx.get("excerpt") or "").strip()
+        view_url = ctx.get("view_url") or ""
+
+        # A post by somebody who is not a caretaker of this Collective
+        # is not a creator announcement, so it is not framed as one.
+        # ``is_creator_post`` is decided at the emit site with
+        # ``is_caretaker_here``, which is why a platform administrator
+        # posting in somebody else's Collective reads as a member.
+        if not ctx.get("is_creator_post"):
+            ctx["author_name"] = ctx.get("author_name") or "Someone"
+        # Channel name is used in the default copy, so it must never
+        # render as an empty gap in a sentence.
+        if not ctx.get("channel_name"):
+            ctx["channel_name"] = "the conversation"
+
+        r = resolver_for(db, self.key, ctx)
         subject = r.text("subject")
         opening = r.text("body.opening")
         closing = r.text("body.closing")
-        body_text = (
-            f"{opening}\n\n"
-            + (excerpt + "\n\n" if excerpt else "")
-            + closing
-        )
-        # No CTA: this event's template_context carries no post URL.
-        # An empty excerpt is dropped by the shell.
+        cta = r.text("cta_label")
+
+        text_parts = [opening]
+        if excerpt:
+            text_parts.append(excerpt)
+        text_parts.append(closing)
+        if view_url:
+            text_parts.append(view_url)
+        body_text = "\n\n".join(text_parts)
+
+        # An empty excerpt is dropped by the shell. The action is
+        # omitted rather than rendered as a dead button when no URL
+        # reached us — which is what the old template had to do for
+        # every send, because nothing put one in the payload.
         body_html = render_email_shell(
             db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, excerpt, closing],
+            action=(cta, view_url) if view_url else None,
         )
         return RenderedPayload(
             to="",

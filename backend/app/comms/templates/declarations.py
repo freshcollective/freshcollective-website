@@ -101,6 +101,14 @@ F_MEMBER_FIRST_NAME = MergeField(
     "not set one, so a greeting never addresses an empty space.",
 )
 
+F_POST_AUTHOR = MergeField(
+    "author_name", "author_name", "Kelly",
+    "Who published the post.",
+)
+F_CHANNEL = MergeField(
+    "channel_name", "channel_name", "Women's Circle",
+    "The Conversations channel the post is in.",
+)
 F_CREATOR_NAME = MergeField(
     "creator_name", "creator_name", "Sarah",
     "Who runs this Collective. Empty when the Collective is "
@@ -570,25 +578,36 @@ declare(TemplateDeclaration(
     event_type="community.post.published",
     display_name="New conversation",
     category=CATEGORY_COMMUNITY_LABEL,
-    audience="Every active member of the Collective",
+    # Corrected: recipients are the channel's audience, not the
+    # Collective's. A post in a private or linked channel used to
+    # notify everybody, which was a privacy defect.
+    audience="Everyone who can open the channel the post is in",
     classification=EDITABLE,
-    merge_fields=(F_COLLECTIVE, F_EXCERPT),
+    merge_fields=(F_COLLECTIVE, F_EXCERPT, F_POST_AUTHOR, F_CHANNEL),
     slots=(
         EditableSlot("subject", "Subject",
-                     "New conversation in {{collective_name}}",
+                     "{{author_name}} shared something new in "
+                     "{{channel_name}}",
                      multiline=False, max_length=120,
-                     required_fields=("collective_name",)),
+                     required_fields=("author_name", "channel_name")),
         EditableSlot("heading", "Heading",
-                     "New conversation in {{collective_name}}",
-                     multiline=False, required_fields=("collective_name",)),
+                     "New in {{channel_name}}",
+                     multiline=False, required_fields=("channel_name",)),
         EditableSlot("body.opening", "Opening",
-                     "Someone started a new conversation in "
-                     "{{collective_name}}.",
-                     required_fields=("collective_name",)),
+                     "{{author_name}} has shared something new in "
+                     "{{channel_name}}, in {{collective_name}}.",
+                     required_fields=("author_name", "channel_name",
+                                      "collective_name")),
         EditableSlot("body.closing", "Closing",
-                     "Open Fresh Collective to read and reply."),
+                     "Open the conversation to read and reply."),
+        EditableSlot("cta_label", "Button label", "View Conversation",
+                     multiline=False, max_length=40),
     ),
-    locked_notes=("The extract of the post is generated.",),
+    locked_notes=(
+        "The extract of the post is generated.",
+        "The button links to that conversation, and still checks "
+        "channel permissions when opened.",
+    ),
 ))
 
 declare(TemplateDeclaration(

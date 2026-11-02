@@ -60,6 +60,7 @@ class NewPostResolver:
             ):
                 allowed = accessible_user_ids_for_channel(channel, space, db)
 
+        payload = event.payload or {}
         out: list[ResolvedRecipient] = []
         for row in rows:
             if author_id and row.user_id == author_id:
@@ -74,8 +75,19 @@ class NewPostResolver:
                     template_context={
                         "collective_name": display_name,
                         "space_id": space_id,
-                        "post_id": (event.payload or {}).get("post_id"),
-                        "excerpt": (event.payload or {}).get("excerpt"),
+                        "post_id": payload.get("post_id"),
+                        "excerpt": payload.get("excerpt"),
+                        # Added so the email can say who posted, where,
+                        # and offer a way back in. Without these it had
+                        # no CTA at all — the template said so.
+                        "author_name": payload.get("author_name") or "Someone",
+                        "channel_name": (
+                            (event.context or {}).get("channel_name") or ""
+                        ),
+                        "view_url": payload.get("view_url") or "",
+                        "is_creator_post": bool(
+                            payload.get("is_creator_post")
+                        ),
                     },
                 )
             )

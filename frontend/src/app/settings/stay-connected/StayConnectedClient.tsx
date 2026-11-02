@@ -96,7 +96,8 @@ const SECTIONS: Section[] = [
       {
         key: 'new_post_email',
         label: 'New conversations',
-        description: 'Hear when someone starts a new conversation.',
+        description:
+          'Hear when a creator or member posts in a channel you belong to.',
       },
       {
         key: 'comment_reply_email',
