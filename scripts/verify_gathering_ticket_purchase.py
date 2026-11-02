@@ -14,8 +14,11 @@ So this script does the two halves a human cannot usefully do by
 hand, and leaves the one bit only a human can do in the middle.
 
     python scripts/verify_gathering_ticket_purchase.py setup
-      → seeds a paid Gathering, opens a real test-mode Checkout
-        Session, prints the URL to pay at
+      → seeds a paid Gathering and an isolated buyer
+
+    python scripts/verify_gathering_ticket_purchase.py url
+      → signs that buyer in against the local API, calls the real
+        checkout endpoint, prints the Stripe URL to pay at
 
     (pay it in a browser with card 4242 4242 4242 4242,
      any future expiry, any CVC)
@@ -156,10 +159,71 @@ def setup() -> None:
     print(f"  Seeded  : {event.title} — ${TICKET_CENTS / 100:.2f} {CURRENCY}")
     print(f"  Buyer   : {buyer.email} / {password}")
     print(f"  Checkout: POST /api/spaces/{space.slug}/events/{event.id}/checkout")
-    print("\n  Now sign in as that buyer and open the Gathering, or call the")
-    print("  endpoint with their session cookie, to get the Stripe URL.")
-    print("  Pay with 4242 4242 4242 4242, any future expiry, any CVC.")
-    print(f"\n  Then: python {Path(__file__).name} check")
+    print(f"\n  Next: python {Path(__file__).name} url")
+
+
+def url() -> None:
+    """Sign the seeded buyer in and ask the real endpoint for a Session.
+
+    Going through HTTP rather than calling the service in-process is
+    deliberate: the auth dependency, the route's trust boundary and the
+    fee resolution are part of what is being verified, and calling
+    past them would leave exactly the layers a purchase depends on
+    untested. The buyer is the throwaway ``example.invalid`` account
+    ``setup`` just created, with the password it generated — not a real
+    member's.
+    """
+    import httpx
+
+    if not STATE.exists():
+        _fail("no setup state found — run `setup` first.")
+    s = json.loads(STATE.read_text())
+
+    base = os.environ.get("FC_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    host = base.split("//", 1)[-1].split("/")[0].split(":")[0]
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        _fail(
+            f"FC_API_BASE points at {host!r}. This script drives a real "
+            "Checkout Session and must only ever talk to a local API "
+            "running test keys."
+        )
+
+    with httpx.Client(base_url=base, timeout=30.0, follow_redirects=False) as c:
+        r = c.post(
+            "/api/auth/login",
+            json={"email": s["buyer_email"], "password": s["password"]},
+        )
+        if r.status_code != 200:
+            _fail(f"login failed ({r.status_code}): {r.text[:200]}")
+
+        r = c.post(
+            f"/api/spaces/{s['slug']}/events/{s['event_id']}/checkout",
+            json={
+                "success_url": f"{base}/verify-success",
+                "cancel_url": f"{base}/verify-cancel",
+            },
+        )
+
+    if r.status_code != 200:
+        # The two refusals worth naming, because both are configuration
+        # rather than breakage and the message alone reads like a bug.
+        body = r.text[:300]
+        if "ticket_sales_disabled" in body or "disabled" in body:
+            print(f"\n  REFUSED ({r.status_code}): {body}\n")
+            print("  The API process needs STANDALONE_GATHERING_SALES_ENABLED=true.")
+            print("  Restart it with that set and run this again.")
+            raise SystemExit(2)
+        _fail(f"checkout failed ({r.status_code}): {body}")
+
+    data = r.json()
+    if not data["checkout_url"].startswith("https://checkout.stripe.com"):
+        _fail(f"unexpected checkout URL: {data['checkout_url'][:60]}")
+
+    print(f"  Transaction : {data['transaction_id']}")
+    print(f"  Reused hold : {data['reused']}")
+    print("\n  Pay here, with 4242 4242 4242 4242, any future expiry, any CVC:\n")
+    print(f"    {data['checkout_url']}\n")
+    print(f"  Then: python {Path(__file__).name} check")
 
 
 def check() -> None:
@@ -303,6 +367,6 @@ def teardown() -> None:
 
 if __name__ == "__main__":
     action = sys.argv[1] if len(sys.argv) > 1 else "setup"
-    {"setup": setup, "check": check, "teardown": teardown}.get(
+    {"setup": setup, "url": url, "check": check, "teardown": teardown}.get(
         action, lambda: _fail(f"unknown action {action!r}")
     )()
