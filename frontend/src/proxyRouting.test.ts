@@ -92,7 +92,9 @@ describe('isProtectedRoute', () => {
       '/spaces/foo/pathways/bar',
       '/spaces/foo/pathways/bar/steps/1',
       '/spaces/foo/events',
-      '/spaces/foo/community',
+      // '/spaces/foo/community' moved to the protected list below —
+      // Conversations is members-only for every Collective, so the
+      // URL's shape is the whole answer, like /messages.
       '/spaces/foo/members',
       '/spaces/foo/offerings',
       '/spaces/foo/about',
@@ -118,12 +120,57 @@ describe('isProtectedRoute', () => {
     }
   })
 
+  test('…and conversations, for the same reason', () => {
+    // The View Conversation button in a creator-post notification
+    // email opened "page not found" for a signed-out recipient: the
+    // [slug] layout resolves the Collective, gets nothing for a
+    // non-public one viewed anonymously, and 404s before the page can
+    // redirect anybody to login.
+    for (const path of [
+      '/spaces/foo/community',
+      '/spaces/foo/community/',
+      '/spaces/foo/community/cp_123',
+    ]) {
+      assert.equal(isProtectedRoute(path), true, path)
+    }
+  })
+
+  test('a signed-out visitor learns nothing from the status code', () => {
+    // Before this, a page-level redirect answered 307 on a public
+    // Collective and 404 on a private one, which told an anonymous
+    // visitor which was which. Both are now the same redirect.
+    const publicish = decide('/spaces/nourish-connect-thrive/community/cp_1', false)
+    const privateish = decide('/spaces/moonlit-circle/community/cp_1', false)
+    assert.equal(publicish.action, 'redirect')
+    assert.equal(privateish.action, 'redirect')
+    assert.equal(publicish.to, privateish.to)
+  })
+
+  test('an authenticated visitor is untouched', () => {
+    // Authorisation is the API's and the page's job; the proxy only
+    // handles the absent session. A signed-in non-member must still
+    // reach the same notFound() as before.
+    const signedIn = decide('/spaces/foo/community/cp_1', true)
+    assert.notEqual(signedIn.action, 'redirect')
+  })
+
+  test('the login return carries the whole conversation path', () => {
+    const d = decide('/spaces/foo/community/cp_123', false)
+    assert.equal(d.action, 'redirect')
+    assert.equal(d.to, '/login')
+    assert.equal(d.next, '/spaces/foo/community/cp_123')
+  })
+
   test('the guard stops at the segment boundary', () => {
-    // A route merely beginning with the same letters is not messages.
+    // A route merely beginning with the same letters is not messages
+    // or community.
     for (const path of [
       '/spaces/foo/messagesfoo',
       '/spaces/foo/messaging',
       '/spaces/messages',
+      '/spaces/foo/communityfoo',
+      '/spaces/foo/communal',
+      '/spaces/community',
     ]) {
       assert.equal(isProtectedRoute(path), false, path)
     }
@@ -397,7 +444,10 @@ describe('a message link reaches the conversation, signed in or not', () => {
       '/spaces/moonlit-circle/pathways/p/steps/1',
       '/spaces/moonlit-circle/events',
       '/spaces/moonlit-circle/events/e1',
-      '/spaces/moonlit-circle/community',
+      // '/spaces/moonlit-circle/community' is now protected too, for
+      // the reason the messages rule gives: the View Conversation
+      // button in a notification email 404'd for a signed-out
+      // recipient. It has its own coverage above.
       '/spaces/moonlit-circle/members',
       '/spaces/moonlit-circle/offerings',
       '/spaces/moonlit-circle/gathering-series/s1',

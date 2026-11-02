@@ -110,7 +110,7 @@ describe('the proxy no longer competes', () => {
     // area whose access *does* depend on the Collective is still left
     // entirely to the server.
     for (const area of [
-      'about', 'home', 'pathways', 'events', 'community',
+      'about', 'home', 'pathways', 'events',
       'members', 'offerings', 'gathering-series',
     ]) {
       const path = `/spaces/any-collective/${area}`
@@ -118,9 +118,48 @@ describe('the proxy no longer competes', () => {
     }
   })
 
-  test('messages is the only Collective route the proxy gates', () => {
-    assert.equal(isProtectedRoute('/spaces/any-collective/messages'), true)
-    assert.equal(isProtectedRoute('/spaces/any-collective/messages/mt_1'), true)
+  test('the proxy gates messages and conversations, and nothing else', () => {
+    for (const path of [
+      '/spaces/any-collective/messages',
+      '/spaces/any-collective/messages/mt_1',
+      '/spaces/any-collective/community',
+      '/spaces/any-collective/community/cp_1',
+    ]) {
+      assert.equal(isProtectedRoute(path), true, path)
+    }
+  })
+
+  test('both gated areas are closed to anonymous visitors by policy', () => {
+    // The real criterion, and the reason `community` moved out of the
+    // list above.
+    //
+    // It is not "fixed vs configurable" — conversations IS
+    // configurable. It is whether a *signed-out* visitor could ever be
+    // allowed in. ``AREA_ALLOWED`` offers conversations only
+    // POLICY_MEMBERS and POLICY_ACTIVE_ACCESS, so no creator can open
+    // it to anonymous visitors, and requiring a session decides
+    // nothing that depends on the Collective. Authorisation is still
+    // entirely the server's.
+    //
+    // Read from the backend so the justification is enforced: if
+    // conversations ever becomes publicly configurable, this fails and
+    // the proxy rule has to be revisited rather than quietly
+    // outliving its reason.
+    const policies = readFileSync(
+      join(SRC, '..', '..', 'backend', 'app', 'spaces', 'area_policies.py'),
+      'utf8',
+    )
+    const allowed = policies.slice(policies.indexOf('AREA_ALLOWED'))
+    for (const area of ['AREA_MESSAGES', 'AREA_CONVERSATIONS']) {
+      const line = allowed
+        .split('\n')
+        .find((l) => l.trimStart().startsWith(area + ':'))
+      assert.ok(line, `${area} missing from AREA_ALLOWED`)
+      assert.ok(
+        !line!.includes('POLICY_PUBLIC'),
+        `${area} can be made public — the proxy must not gate it on URL shape`,
+      )
+    }
   })
 
   test('but unconditionally private roots keep their guard', () => {

@@ -71,8 +71,31 @@
  */
 const SPACE_MESSAGES_URL = /^\/spaces\/[^/?#]+\/messages(?:\/|$)/
 
+/**
+ * Conversations, for the same reason and with the same history.
+ *
+ * The note above was written about direct messages, and every word of
+ * it applied to Conversations too — it just had not happened yet. A
+ * creator-post notification email's **View Conversation** button
+ * opened "page not found" for a recipient who was signed out, because
+ * ``spaces/[slug]/layout.tsx`` resolves the Collective first, gets
+ * nothing for a non-public one viewed anonymously, and calls
+ * ``notFound()`` before the page can offer anybody the door.
+ *
+ * It also closes the same disclosure: a page-level redirect alone
+ * answered 307 on a public Collective's conversation URL and 404 on a
+ * private one, which tells an anonymous visitor which is which.
+ *
+ * Conversations is a members-only area for every Collective, so the
+ * URL's shape genuinely is the whole answer and this belongs here
+ * rather than with the areas only the API can rule on. Authenticated
+ * visitors are untouched: a signed-in non-member reaches the same
+ * ``notFound()`` as before.
+ */
+const SPACE_COMMUNITY_URL = /^\/spaces\/[^/?#]+\/community(?:\/|$)/
+
 function isSpacesRouteProtected(pathname: string): boolean {
-  return SPACE_MESSAGES_URL.test(pathname)
+  return SPACE_MESSAGES_URL.test(pathname) || SPACE_COMMUNITY_URL.test(pathname)
 }
 
 /**
