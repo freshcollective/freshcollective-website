@@ -246,6 +246,83 @@ def _qualifies_legacy(
     return False
 
 
+def acquisition_for_linked_channel(
+    user: User, channel: ConversationChannel, space: Space, db: Session,
+) -> tuple[str, str] | None:
+    """What this user personally DID to belong here, if anything.
+
+    Returns ``(kind, experience_id)`` for the first linked experience
+    the user holds a participation record for, or None.
+
+    This is deliberately narrower than
+    ``qualifies_through_any_linked_experience``, and the difference is
+    the whole point. That predicate answers "may they open this
+    channel right now", which is correctly satisfied by being a
+    caretaker, or by the Pathway simply being free to all members.
+    This one answers "did they join" — a confirmed booking, an
+    acquired Pathway, a Series pass.
+
+    Materialising membership is permanent, so it must only record the
+    second. A caretaker's reach comes from their role and should
+    disappear with it, not harden into a membership row. A free
+    Pathway's audience is "every member", which is not a list of people
+    who joined anything, and would outlive the Pathway being free.
+
+    Nobody loses access by being excluded here: the admission clause
+    in ``can_access_linked_channel`` still lets them in for as long as
+    they genuinely qualify.
+    """
+    from app.models.access_pass import AccessPass, AccessPassStatus
+    from app.models.platform import BookingStatus, ChannelExperienceLink
+    from app.services.pathway_access import retains_acquired_access
+
+    links = (
+        db.query(ChannelExperienceLink)
+        .filter(ChannelExperienceLink.channel_id == channel.id)
+        .all()
+    )
+    now = datetime.utcnow()
+    for link in links:
+        if link.event_id is not None:
+            row = (
+                db.query(EventBooking.id)
+                .filter(
+                    EventBooking.user_id == user.id,
+                    EventBooking.event_id == link.event_id,
+                    EventBooking.status == BookingStatus.confirmed,
+                )
+                .first()
+            )
+            if row is not None:
+                return ("gathering", link.event_id)
+        elif link.pathway_id is not None:
+            # The platform's own "did they acquire it" predicate:
+            # an active unexpired entitlement, or a pass on an Option
+            # that includes it. Revocation- and expiry-aware, and it
+            # deliberately does not count membership.
+            if retains_acquired_access(
+                db, user_id=user.id, space_id=space.id,
+                pathway_id=link.pathway_id,
+            ):
+                return ("pathway", link.pathway_id)
+        elif link.series_id is not None:
+            row = (
+                db.query(AccessPass.id)
+                .filter(
+                    AccessPass.user_id == user.id,
+                    AccessPass.space_id == space.id,
+                    AccessPass.eligible_series_id == link.series_id,
+                    AccessPass.status == AccessPassStatus.active,
+                    (AccessPass.valid_until.is_(None)
+                     | (AccessPass.valid_until > now)),
+                )
+                .first()
+            )
+            if row is not None:
+                return ("series", link.series_id)
+    return None
+
+
 def can_access_linked_channel(
     user: User, channel: ConversationChannel, space: Space, db: Session,
 ) -> bool:

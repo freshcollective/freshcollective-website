@@ -70,6 +70,11 @@ def main() -> int:
         "--space", default=None,
         help="limit to one Collective, by slug",
     )
+    parser.add_argument(
+        "--explain", action="store_true",
+        help="list every considered member and why they were included "
+             "or skipped",
+    )
     args = parser.parse_args()
 
     import app.main  # noqa: F401 — registers the whole mapper graph;
@@ -83,6 +88,45 @@ def main() -> int:
     )
     from app.services import channel_membership as chm
     from app.services.channel_types import LINKED_TYPES
+
+    def _describe_links(session, channel_id: str) -> list[str]:
+        """Name each linked experience and its status.
+
+        The status matters for reading the proposal: a ``draft``
+        Pathway admits nobody but a caretaker, so a channel linked only
+        to one should contribute zero additions.
+        """
+        from app.models.platform import Event, EventSeries, Pathway
+
+        out: list[str] = []
+        rows = (
+            session.query(ChannelExperienceLink)
+            .filter(ChannelExperienceLink.channel_id == channel_id)
+            .all()
+        )
+        for row in rows:
+            if row.pathway_id:
+                pw = session.get(Pathway, row.pathway_id)
+                status = getattr(pw, "status", None)
+                access = getattr(pw, "access_type", None)
+                out.append(
+                    f"pathway  {getattr(pw, 'title', row.pathway_id)!r} "
+                    f"status={getattr(status, 'value', status)} "
+                    f"access={getattr(access, 'value', access)}"
+                )
+            elif row.event_id:
+                ev = session.get(Event, row.event_id)
+                out.append(
+                    f"gathering {getattr(ev, 'title', row.event_id)!r} "
+                    f"published={getattr(ev, 'is_published', '?')}"
+                )
+            elif row.series_id:
+                sr = session.get(EventSeries, row.series_id)
+                out.append(
+                    f"series   {getattr(sr, 'title', row.series_id)!r} "
+                    f"status={getattr(sr, 'status', '?')}"
+                )
+        return out
 
     db = SessionLocal()
     try:
@@ -106,10 +150,23 @@ def main() -> int:
 
         mode = "APPLYING" if args.apply else "DRY RUN — nothing will be written"
         print(f"\n  {mode}")
-        print(f"  {len(channels)} linked-experience channel(s)\n")
+        print(f"  {len(channels)} linked-experience channel(s) across "
+              f"{len({c.space_id for c in channels})} Collective(s)")
+        archived = sum(1 for c in channels if c.is_archived)
+        hidden = sum(1 for c in channels if not c.show_in_navigation)
+        if archived or hidden:
+            # The count here is every linked channel in the database.
+            # A Channels page shows one Collective, and the member-side
+            # navigation hides channels a creator unticked — so "the
+            # script says 10 and I can see 8" usually means these.
+            print(f"  of which {archived} archived and {hidden} hidden "
+                  f"from navigation")
+        print()
 
         totals = {"added": 0, "already_member": 0,
-                  "blocked_by_creator_removal": 0, "readmitted": 0}
+                  "blocked_by_creator_removal": 0, "readmitted": 0,
+                  "considered": 0, "skipped_caretaker": 0,
+                  "skipped_no_acquisition": 0}
         unlinked: list[str] = []
 
         for channel in channels:
@@ -129,16 +186,36 @@ def main() -> int:
                 unlinked.append(f"{space.slug}/{channel.slug}")
                 continue
 
-            counts = chm.backfill_channel(db, channel=channel, space=space)
+            explain: list[dict] | None = [] if args.explain else None
+            counts = chm.backfill_channel(
+                db, channel=channel, space=space, explain=explain,
+            )
             for key in totals:
                 totals[key] += counts.get(key, 0)
-            if counts.get("added") or counts.get("readmitted"):
+
+            interesting = (
+                counts.get("added") or counts.get("readmitted") or args.explain
+            )
+            if interesting:
+                flags = []
+                if channel.is_archived:
+                    flags.append("archived")
+                if not channel.show_in_navigation:
+                    flags.append("hidden")
+                suffix = f"  [{', '.join(flags)}]" if flags else ""
                 print(
                     f"    {space.slug}/{channel.slug:28} "
+                    f"type={channel.channel_type:9} "
                     f"+{counts.get('added', 0)} added, "
                     f"{counts.get('already_member', 0)} already in, "
-                    f"{link_count} link(s)"
+                    f"{link_count} link(s){suffix}"
                 )
+                for ref in _describe_links(db, channel.id):
+                    print(f"        link: {ref}")
+            if explain:
+                for row in explain:
+                    mark = "+" if row["outcome"] in ("added", "readmitted") else "-"
+                    print(f"        {mark} {row['email']:42} {row['reason']}")
 
         if args.apply:
             db.commit()
@@ -147,12 +224,22 @@ def main() -> int:
             db.rollback()
             print("\n  rolled back — re-run with --apply to write")
 
-        print(f"\n  added                      {totals['added']}")
+        print(f"\n  considered                 {totals.get('considered', 0)}")
+        print(f"  added                      {totals['added']}")
         print(f"  already a member           {totals['already_member']}")
         print(f"  re-admitted after revoke   {totals['readmitted']}")
         print(
             f"  left out by creator removal {totals['blocked_by_creator_removal']}"
             "   <- intentional"
+        )
+        print(
+            f"  skipped, caretaker         {totals.get('skipped_caretaker', 0)}"
+            "   <- reach every channel by role"
+        )
+        print(
+            f"  skipped, never joined      "
+            f"{totals.get('skipped_no_acquisition', 0)}"
+            "   <- keep access, no permanent row"
         )
         if unlinked:
             print(

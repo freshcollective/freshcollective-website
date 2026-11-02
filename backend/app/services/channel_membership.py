@@ -297,28 +297,52 @@ def revoke_for_experience(
 
 def backfill_channel(
     db: Session, *, channel: ConversationChannel, space: Space,
+    explain: list[dict] | None = None,
 ) -> dict[str, int]:
-    """Admit everybody who already qualifies for this channel.
+    """Admit everybody who personally joined one of the linked
+    experiences.
 
     Run when an experience is newly linked, so the people who bought
     November's circle months ago are in the channel the moment it names
     that Gathering — and when materialising a channel that predates
     this model.
 
-    Uses the real access functions via the permission service rather
-    than a reimplementation in SQL. Getting
-    ``compute_pathway_access`` subtly wrong here would silently admit
-    or exclude real members.
+    What it records, and what it deliberately does not
+    --------------------------------------------------
+    It uses ``acquisition_for_linked_channel`` — "did they join" — not
+    ``qualifies_through_any_linked_experience`` — "may they open it
+    now". The second is correctly true for a caretaker, and for every
+    member of the Collective when a linked Pathway is free to all. Both
+    are legitimate *access*, and neither is a person who joined
+    anything.
 
-    Creator removals are respected: ``admit`` refuses them, so a
+    Materialising is permanent, so recording those would:
+
+      * harden a caretaker's role into a membership that outlives the
+        role, and
+      * give every member a permanent place in a channel because a
+        Pathway was free at the time, which would outlive the Pathway
+        being free.
+
+    Nobody loses access by being left out: the admission clause in
+    ``can_access_linked_channel`` still admits them for as long as they
+    genuinely qualify. This only decides who gets a row that persists
+    *after* that stops being true.
+
+    Creator removals are respected — ``admit`` refuses them — so a
     backfill cannot undo a decision.
+
+    ``explain``, when given, is appended one dict per considered
+    member, which is what lets an operator check the proposal before
+    committing it.
     """
     from app.models.platform import SpaceMembership, SpaceMembershipStatus
     from app.models.user import User
     from app.services import channel_permissions as perms
 
     counts = {"added": 0, "already_member": 0, "blocked_by_creator_removal": 0,
-              "readmitted": 0, "considered": 0}
+              "readmitted": 0, "considered": 0,
+              "skipped_caretaker": 0, "skipped_no_acquisition": 0}
 
     members = (
         db.query(User)
@@ -331,13 +355,51 @@ def backfill_channel(
     )
     for user in members:
         counts["considered"] += 1
-        if not perms.qualifies_through_any_linked_experience(
-            user, channel, space, db,
-        ):
+
+        # Caretakers reach every channel in their Collective by role.
+        # Recording that as membership would survive them ceasing to
+        # be a caretaker.
+        if perms.is_caretaker(user, space, db):
+            counts["skipped_caretaker"] += 1
+            if explain is not None:
+                explain.append({
+                    "user_id": user.id, "email": user.email,
+                    "outcome": "skipped", "reason": "caretaker (access by role)",
+                })
             continue
+
+        acquisition = perms.acquisition_for_linked_channel(
+            user, channel, space, db,
+        )
+        if acquisition is None:
+            counts["skipped_no_acquisition"] += 1
+            if explain is not None:
+                # Distinguish "can open it today" from "joined it",
+                # because that gap is the whole reason this is the
+                # predicate and the other one is not.
+                may_open = perms.qualifies_through_any_linked_experience(
+                    user, channel, space, db,
+                )
+                explain.append({
+                    "user_id": user.id, "email": user.email,
+                    "outcome": "skipped",
+                    "reason": (
+                        "eligible today but never joined — keeps access, "
+                        "no permanent row"
+                        if may_open else "not eligible"
+                    ),
+                })
+            continue
+
         outcome = admit(
             db, channel_id=channel.id, user_id=user.id,
             source=SOURCE_EXPERIENCE,
         )
         counts[outcome] = counts.get(outcome, 0) + 1
+        if explain is not None:
+            explain.append({
+                "user_id": user.id, "email": user.email,
+                "outcome": outcome,
+                "reason": f"joined via {acquisition[0]} {acquisition[1]}",
+            })
     return counts
