@@ -129,6 +129,9 @@ def main() -> None:
         print("  (none)")
 
     at_risk: list[tuple[User, int, int]] = []
+    not_commercial: list[tuple[User, str, int]] = []
+    expiring: list = []
+    caps = {c.slug: c for c in ALL_PLANS}
     for u in owners:
         sub = (
             db.query(CreatorSubscription)
@@ -152,6 +155,10 @@ def main() -> None:
             .scalar() or 0
         ) if space_ids else 0
 
+        cap = caps.get(
+            db.get(CreatorPlan, sub.creator_plan_id).slug
+            if sub and db.get(CreatorPlan, sub.creator_plan_id) else None
+        )
         if sub is None:
             verdict = "WOULD BE REFUSED — selling at 0% today"
             at_risk.append((u, len(spaces), taken))
@@ -159,25 +166,134 @@ def main() -> None:
             plan = db.get(CreatorPlan, sub.creator_plan_id)
             bps = plan.transaction_fee_basis_points if plan else None
             rate = "n/a" if bps is None else f"{bps / 100:g}%"
-            verdict = f"covered — {plan.slug if plan else '?'} at {rate}"
+            if cap is not None and not cap.paid_offers_enabled:
+                verdict = (
+                    f"REFUSED — {plan.slug} does not permit paid offers"
+                )
+                not_commercial.append((u, plan.slug, taken))
+            else:
+                verdict = f"covered — {plan.slug if plan else '?'} at {rate}"
 
         print(f"\n  {u.email}  ({u.role})")
         print(f"     Collectives      : {len(spaces)} — "
               f"{', '.join(s.slug for s in spaces) or '(none)'}")
         print(f"     succeeded sales  : {taken}")
-        print(f"     subscription     : "
-              f"{sub.status.value if sub else 'NONE'}")
+        if sub is None:
+            print("     subscription     : NONE")
+        else:
+            # A waiver is a manual grant on the creator's real plan: the
+            # monthly charge is forgiven, the plan and its transaction
+            # fee are not. Printing source and dates together is what
+            # makes that visible rather than inferred.
+            print(f"     subscription     : {sub.status.value} "
+                  f"({sub.source}"
+                  f"{', ' + sub.grant_reason if sub.grant_reason else ''})")
+            if sub.ends_at:
+                print(f"     grant/waiver ends: {sub.ends_at:%Y-%m-%d}")
+                # A comp grant with an end date falls back seven days
+                # after it unless a paid row is already waiting. That
+                # is the difference between "billing resumes" and
+                # "selling stops".
+                elected = (
+                    db.query(CreatorSubscription)
+                    .filter(
+                        CreatorSubscription.user_id == u.id,
+                        CreatorSubscription.source == "stripe_paid",
+                        CreatorSubscription.status.in_(COVERED),
+                    )
+                    .first()
+                )
+                print(f"     paid row waiting : "
+                      f"{'yes — billing resumes' if elected else 'NO — selling stops at expiry'}")
+                if not elected:
+                    expiring.append((u, sub.ends_at))
         print(f"     if guard enabled : {verdict}")
 
+    # ---- Founding Creator exclusivity --------------------------------
+    print("\nFOUNDING CREATOR — must be exactly one holder")
+    fc_row = rows.get("founding-creator")
+    if fc_row is None:
+        print("    no founding-creator plan row — see above")
+    else:
+        holders = (
+            db.query(CreatorSubscription, User)
+            .join(User, User.id == CreatorSubscription.user_id)
+            .filter(CreatorSubscription.creator_plan_id == fc_row.id)
+            .all()
+        )
+        live = [(sub, u) for sub, u in holders if sub.status in COVERED]
+        for sub, u in holders:
+            state = "LIVE" if sub.status in COVERED else sub.status.value
+            print(f"    {u.email:42} {state:10} {sub.source}")
+        if len(live) > 1:
+            print("    DISCREPANCY: more than one live holder. This plan is")
+            print("    the founder's exclusive arrangement.")
+        elif not live:
+            print("    DISCREPANCY: nobody currently holds it.")
+        cap = caps.get("founding-creator")
+        if cap is not None:
+            ok = not cap.is_purchasable and not cap.is_self_service
+            print(f"    not purchasable / not self-service: {ok}")
+
+    # ---- Historical fee integrity ------------------------------------
+    #
+    # Every transaction snapshots the rate it was charged at. A row
+    # whose rate does not match any configured plan rate was charged
+    # under a fallback or an older configuration — reported, never
+    # adjusted: a historical transaction is a record of what happened.
+    print("\nHISTORICAL TRANSACTIONS BY FEE RATE")
+    known = {
+        r.transaction_fee_basis_points for r in rows.values()
+        if r.transaction_fee_basis_points is not None
+    }
+    seen = (
+        db.query(
+            PaymentTransaction.platform_fee_basis_points,
+            func.count(PaymentTransaction.id),
+        )
+        .filter(PaymentTransaction.status == "succeeded")
+        .group_by(PaymentTransaction.platform_fee_basis_points)
+        .order_by(PaymentTransaction.platform_fee_basis_points)
+        .all()
+    )
+    if not seen:
+        print("    (no succeeded transactions)")
+    for bps, n in seen:
+        if bps is None:
+            note = "no rate recorded"
+        elif bps == 0:
+            note = ("0% — expected only for the founder or a "
+                    "platform-owned Collective")
+        elif bps in known:
+            note = "matches a configured plan"
+        else:
+            note = "DOES NOT MATCH ANY CONFIGURED PLAN"
+        rate = "n/a" if bps is None else f"{bps / 100:g}%"
+        print(f"    {rate:>6}  {n:5} transaction(s)  — {note}")
+
     print("\nSUMMARY")
-    if not at_risk:
-        print("  Every Collective owner holds a covered subscription.")
+    refused = len(at_risk) + len(not_commercial)
+    if refused == 0:
+        print("  Every Collective owner holds an eligible commercial plan.")
         print("  Enabling CREATOR_PLAN_GUARD_ENABLED would refuse nobody.")
     else:
-        print(f"  {len(at_risk)} owner(s) would be refused at checkout:")
+        print(f"  {refused} owner(s) would be refused at paid checkout.")
+    if at_risk:
+        print(f"\n  {len(at_risk)} with no subscription at all "
+              "(selling at 0% today):")
         for u, n_spaces, taken in at_risk:
             trading = "HAS TAKEN MONEY" if taken else "no sales yet"
             print(f"     {u.email} — {n_spaces} Collective(s), {trading}")
+    if not_commercial:
+        print(f"  {len(not_commercial)} owner(s) are on a non-commercial plan:")
+        for u, slug, taken in not_commercial:
+            print(f"     {u.email} — {slug}, "
+                  f"{'HAS TAKEN MONEY' if taken else 'no sales'}")
+    if expiring:
+        print(f"  {len(expiring)} grant(s) end with no paid row waiting:")
+        for u, ends in expiring:
+            print(f"     {u.email} — ends {ends:%Y-%m-%d}, selling stops 7 days later")
+    if at_risk:
         print("\n  Give each an explicit CreatorSubscription before")
         print("  enabling the guard. Founding Creator is $0/month and 0%,")
         print("  so assigning it changes nobody's economics — it only")
