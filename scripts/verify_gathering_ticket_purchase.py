@@ -67,6 +67,22 @@ def _fail(msg: str) -> None:
     raise SystemExit(2)
 
 
+def _stripe_key_in_use() -> str:
+    """The key the application will actually send to Stripe.
+
+    Reading ``os.environ`` alone was wrong: the key normally lives in
+    ``backend/.env``, so the guard saw an empty string and refused a
+    perfectly safe test setup. It failed safe, but it also meant the
+    check was never really looking at the key being used — and a guard
+    that inspects something other than the value in play is not a
+    guard. ``settings`` resolves .env and the environment by the same
+    precedence the app does.
+    """
+    from app.core.config import settings
+
+    return os.environ.get("STRIPE_SECRET_KEY") or settings.stripe_secret_key or ""
+
+
 def _guard_test_only(db_url: str, stripe_key: str) -> None:
     """Two refusals, because either mistake is expensive."""
     if not stripe_key.startswith("sk_test_"):
@@ -101,11 +117,15 @@ def setup() -> None:
         SpaceMembershipStatus,
         SpaceRole,
     )
+    from app.models.creator_billing import (
+        CreatorPlan,
+        CreatorSubscription,
+        CreatorSubscriptionStatus,
+    )
     from app.models.user import User, UserRole
 
     db, url = _session()
-    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
-    _guard_test_only(url, stripe_key)
+    _guard_test_only(url, _stripe_key_in_use())
 
     tag = uuid.uuid4().hex[:8]
     uid = lambda p: f"{p}_{uuid.uuid4().hex[:12]}"  # noqa: E731
@@ -136,6 +156,29 @@ def setup() -> None:
         role=SpaceRole.learner, status=SpaceMembershipStatus.active,
         joined_at=now,
     ))
+    # A real CreatorSubscription, because without one the fee resolver
+    # falls back to 0 bps and the fee assertion would pass by proving
+    # nothing. Production runs CREATOR_PLAN_GUARD_ENABLED=true, where
+    # that fallback does not exist at all — a creator with no plan is
+    # refused — so a run without a subscription is not the production
+    # path. `stripe_paid` on the Creator plan mirrors the live shape.
+    plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.slug == "creator", CreatorPlan.is_active.is_(True))
+        .first()
+    )
+    if plan is None:
+        _fail(
+            "no active 'creator' plan in this database. The fee path "
+            "cannot be verified without one."
+        )
+    db.add(CreatorSubscription(
+        id=uid("cs"), user_id=creator.id, creator_plan_id=plan.id,
+        status=CreatorSubscriptionStatus.active, source="stripe_paid",
+        starts_at=now,
+    ))
+    db.flush()
+
     event = Event(
         id=uid("e"), space_id=space.id, created_by_id=creator.id,
         title="Verification Womens Circle",
@@ -154,9 +197,15 @@ def setup() -> None:
         "space_id": space.id, "slug": space.slug, "event_id": event.id,
         "buyer_id": buyer.id, "buyer_email": buyer.email,
         "creator_id": creator.id, "password": password,
+        "plan_slug": plan.slug,
+        "expected_fee_bps": plan.transaction_fee_basis_points,
     }))
 
+    expected_fee = TICKET_CENTS * plan.transaction_fee_basis_points // 10_000
     print(f"  Seeded  : {event.title} — ${TICKET_CENTS / 100:.2f} {CURRENCY}")
+    print(f"  Plan    : {plan.slug} — {plan.transaction_fee_basis_points} bps")
+    print(f"  Expect  : fee {expected_fee}c, creator net "
+          f"{TICKET_CENTS - expected_fee}c (Stripe's fee absorbed by FC)")
     print(f"  Buyer   : {buyer.email} / {password}")
     print(f"  Checkout: POST /api/spaces/{space.slug}/events/{event.id}/checkout")
     print(f"\n  Next: python {Path(__file__).name} url")
@@ -273,11 +322,22 @@ def check() -> None:
             t.gross_amount_cents == TICKET_CENTS,
             f"{t.gross_amount_cents} {t.currency}",
         ))
+        # Two separate claims. That the stored rate is the plan's rate,
+        # and that the money follows from it — the first would be
+        # vacuous alone (0 == 0 under a fee fallback), the second
+        # vacuous alone (any rate is self-consistent).
+        want_bps = s.get("expected_fee_bps")
+        results.append(line(
+            "fee rate is the plan's configured rate",
+            want_bps is not None and t.platform_fee_basis_points == want_bps,
+            f"{t.platform_fee_basis_points}bps, expected {want_bps}bps "
+            f"({s.get('plan_slug')})",
+        ))
         expected_fee = t.gross_amount_cents * t.platform_fee_basis_points // 10_000
         results.append(line(
-            "platform fee matches the plan rate",
+            "fee cents follow from that rate",
             t.platform_fee_cents == expected_fee,
-            f"{t.platform_fee_cents}c at {t.platform_fee_basis_points}bps",
+            f"{t.platform_fee_cents}c of {t.gross_amount_cents}c",
         ))
         results.append(line(
             "creator net is gross less the fee only",
@@ -330,7 +390,7 @@ def teardown() -> None:
         return
     s = json.loads(STATE.read_text())
     db, url = _session()
-    _guard_test_only(url, os.environ.get("STRIPE_SECRET_KEY", "sk_test_x"))
+    _guard_test_only(url, _stripe_key_in_use())
 
     users = [s["buyer_id"], s["creator_id"]]
     # Event rows first: they reference the user and space through SET
@@ -353,6 +413,8 @@ def teardown() -> None:
         ("delete from space_memberships where space_id = :s",
          {"s": s["space_id"]}),
         ("delete from spaces where id = :s", {"s": s["space_id"]}),
+        ("delete from creator_subscriptions where user_id = any(:u)",
+         {"u": users}),
         ("delete from users where id = any(:u)", {"u": users}),
     ]
     for sql, params in stmts:
