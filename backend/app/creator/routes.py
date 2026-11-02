@@ -3564,15 +3564,13 @@ def create_pathway(
     db.add(pathway)
     db.flush()
 
-    if body.create_channel:
-        from app.community.channels import ensure_pathway_channel
-        ensure_pathway_channel(
-            space_id=space.id,
-            pathway_id=pathway.id,
-            pathway_title=pathway.title,
-            db=db,
-            created_by=current_user.id,
-        )
+    # Channels are no longer created from here. Conversations are
+    # managed in one place — Creator Studio → Conversations → Channels
+    # — because a channel created alongside a Pathway could never
+    # afterwards be renamed, re-scoped, or linked to a second Pathway.
+    # ``body.create_channel`` is still accepted so an older client does
+    # not 422, and deliberately ignored. Existing channels are
+    # untouched; nothing is deleted or unlinked by this.
 
     # A Pathway created straight into ``active`` is available to members
     # from birth, so this is its first-availability moment. Created as a
@@ -4811,15 +4809,10 @@ def create_event(
     db.add(event)
     db.flush()
 
-    if body.create_channel:
-        from app.community.channels import ensure_gathering_channel
-        ensure_gathering_channel(
-            space_id=space.id,
-            gathering_id=event.id,
-            gathering_title=event.title,
-            db=db,
-            created_by=current_user.id,
-        )
+    # As with Pathways: no channel is created here any more. See the
+    # note in the Pathway create handler. A creator publishes the
+    # Gathering, then links it to a channel in Conversations — which is
+    # also what lets three monthly circles share one.
 
     # Silent for a Series occurrence — the Series is the offering, and
     # counting both would make one term look like twenty Gatherings.

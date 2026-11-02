@@ -278,6 +278,30 @@ def trigger_new_post(post_id: str, space_id: str, author_id: str) -> None:
             .all()
         )
 
+        # ...then narrow to the people who can actually open it. This
+        # loop used to notify the whole Collective whatever channel the
+        # post was in, so a private conversation announced itself to
+        # everybody. The channel name was already in the title, which
+        # made the leak more specific, not less.
+        allowed_ids: set[str] | None = None
+        if post.channel_id and space is not None:
+            from app.models.platform import ConversationChannel
+            from app.services.channel_permissions import (
+                accessible_user_ids_for_channel,
+            )
+
+            channel = db.get(ConversationChannel, post.channel_id)
+            if channel is not None and channel.channel_type not in (
+                "start_here", "general", "open",
+            ):
+                allowed_ids = accessible_user_ids_for_channel(
+                    channel, space, db,
+                )
+        if allowed_ids is not None:
+            memberships = [
+                m for m in memberships if m.user_id in allowed_ids
+            ]
+
         for membership in memberships:
             try:
                 notif = create_notification(

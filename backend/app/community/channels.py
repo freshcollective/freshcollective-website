@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.models.platform import (
+    ChannelExperienceLink,
     ChannelMembership,
     CommunityPost,
     ConversationChannel,
@@ -48,8 +49,10 @@ from app.services.channel_permissions import (
 from app.services.channel_types import (
     CREATOR_ASSIGNABLE_TYPES,
     GROUP_LABEL_BY_TYPE,
+    LINKED_TYPES,
     icon_for,
 )
+from app.services import channel_membership as _chm
 from app.spaces import area_access, area_policies
 
 
@@ -91,6 +94,12 @@ class ChannelSummary(BaseModel):
     gathering_archived: bool = False
     series_title: str | None = None
     series_archived: bool = False
+    #: Every linked experience, with its title resolved server-side so
+    #: the Creator Studio card and member selector can render a
+    #: readable summary without a sibling fetch. The three singular
+    #: fields above remain for older clients and name only the first of
+    #: each kind.
+    linked_experiences: list[LinkedExperienceOut] = Field(default_factory=list)
     unread_count: int = 0  # reserved for future; always 0 today
 
 
@@ -125,6 +134,10 @@ class ChannelCreateRequest(BaseModel):
     scheduling_allowed: bool = True
     show_in_navigation: bool = True
     initial_member_user_ids: list[str] = Field(default_factory=list)
+    #: Any combination of Pathways, Gatherings and Series. Supersedes
+    #: the three singular fields above, which are still accepted so an
+    #: older client keeps working.
+    linked_experiences: list[ExperienceRef] = Field(default_factory=list)
 
 
 class ChannelUpdateRequest(BaseModel):
@@ -136,6 +149,28 @@ class ChannelUpdateRequest(BaseModel):
     polls_allowed: bool | None = None
     scheduling_allowed: bool | None = None
     show_in_navigation: bool | None = None
+    #: The access arrangement. Previously unchangeable after creation,
+    #: which is why a channel born from a Pathway could never become an
+    #: ordinary open one.
+    channel_type: str | None = None
+    #: The complete set of links. None means "not supplied, leave
+    #: alone" — an edit to the name must not silently unlink
+    #: everything.
+    linked_experiences: list[ExperienceRef] | None = None
+    #: Required when the change lets more people read conversations
+    #: that already exist. See ``_broadens_access``.
+    confirm_broadening: bool = False
+
+
+class ExperienceRef(BaseModel):
+    """One experience a channel links to."""
+    type: str  # pathway | gathering | series
+    id: str
+
+
+class LinkedExperienceOut(ExperienceRef):
+    title: str | None = None
+    is_archived: bool = False
 
 
 class ChannelMemberAdd(BaseModel):
@@ -357,12 +392,153 @@ def ensure_gathering_channel(
     return channel
 
 
+#: Which arrangements can read which history. Ordered loosest first,
+#: so a move up this list is a broadening.
+_AUDIENCE_BREADTH = {"private": 0, "pathway": 1, "gathering": 1, "series": 1,
+                     "open": 2, "general": 2, "start_here": 2}
+
+
+def _broadens_access(old_type: str, new_type: str) -> bool:
+    """Would this change let more people read what is already posted?
+
+    Private → open is the obvious one. Linked → open is the same
+    problem at a smaller scale: a conversation held among the people
+    who bought something becomes readable by the whole Collective.
+
+    Narrowing needs no confirmation — nobody is newly exposed — and
+    neither does a sideways move between linked types.
+    """
+    return _AUDIENCE_BREADTH.get(new_type, 2) > _AUDIENCE_BREADTH.get(old_type, 0)
+
+
+def _validate_experience_refs(
+    refs: list[ExperienceRef], space: Space, db: Session,
+) -> list[ExperienceRef]:
+    """Every reference must name something in THIS Collective.
+
+    The previous code carried a comment promising exactly this and
+    then only checked the Series branch, so a caretaker of Collective A
+    could link a channel to Collective B's Pathway or Gathering. The
+    check now covers all three, which is the point of doing it in one
+    place.
+
+    Drafts are allowed deliberately: a creator sets up the channel
+    before announcing the Pathway, and an unpublished experience admits
+    nobody until it has enrolments, so linking one grants no access.
+    """
+    from app.models.platform import Event, EventSeries, Pathway
+
+    seen: set[tuple[str, str]] = set()
+    out: list[ExperienceRef] = []
+    for ref in refs:
+        key = (ref.type, ref.id)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if ref.type == "pathway":
+            model, column = Pathway, Pathway.space_id
+        elif ref.type == "gathering":
+            model, column = Event, Event.space_id
+        elif ref.type == "series":
+            model, column = EventSeries, EventSeries.space_id
+        else:
+            raise HTTPException(
+                400,
+                detail=f"Unknown experience type {ref.type!r}.",
+            )
+        exists = (
+            db.query(model.id)
+            .filter(model.id == ref.id, column == space.id)
+            .first()
+        )
+        if exists is None:
+            raise HTTPException(
+                400,
+                detail=(
+                    f"That {ref.type} is not in this Collective."
+                ),
+            )
+        out.append(ref)
+    return out
+
+
+def _links_for(channel_ids: list[str], db: Session) -> dict[str, list[ExperienceRef]]:
+    """``{channel_id: [refs]}`` in one query, for list endpoints."""
+    if not channel_ids:
+        return {}
+    out: dict[str, list[ExperienceRef]] = {}
+    rows = (
+        db.query(ChannelExperienceLink)
+        .filter(ChannelExperienceLink.channel_id.in_(channel_ids))
+        .all()
+    )
+    for row in rows:
+        out.setdefault(row.channel_id, []).append(
+            ExperienceRef(type=row.experience_type, id=row.experience_id),
+        )
+    return out
+
+
+def _replace_links(
+    channel: ConversationChannel,
+    refs: list[ExperienceRef],
+    db: Session,
+    *,
+    created_by: str | None,
+) -> list[ExperienceRef]:
+    """Make the channel's links exactly ``refs``. Returns the new ones.
+
+    Removing a link removes nobody from the channel — that is the §5
+    rule, and it is why this returns only the additions: they are the
+    ones that need a backfill.
+    """
+    import uuid as _uuid
+
+    current = {
+        (row.experience_type, row.experience_id): row
+        for row in db.query(ChannelExperienceLink).filter(
+            ChannelExperienceLink.channel_id == channel.id,
+        )
+    }
+    wanted = {(r.type, r.id) for r in refs}
+
+    for key, row in current.items():
+        if key not in wanted:
+            db.delete(row)
+
+    added: list[ExperienceRef] = []
+    for ref in refs:
+        if (ref.type, ref.id) in current:
+            continue
+        db.add(ChannelExperienceLink(
+            id=f"cel_{_uuid.uuid4().hex[:16]}",
+            channel_id=channel.id,
+            pathway_id=ref.id if ref.type == "pathway" else None,
+            event_id=ref.id if ref.type == "gathering" else None,
+            series_id=ref.id if ref.type == "series" else None,
+            created_by=created_by,
+        ))
+        added.append(ref)
+    db.flush()
+
+    # Keep the legacy singular columns in step so anything still
+    # reading them, including the permission service's safety net,
+    # sees a consistent picture.
+    first = {t: i for t, i in reversed([(r.type, r.id) for r in refs])}
+    channel.pathway_id = first.get("pathway")
+    channel.gathering_id = first.get("gathering")
+    channel.series_id = first.get("series")
+    return added
+
+
 def _summary_from(
     channel: ConversationChannel,
     *,
     pathway_titles: dict[str, tuple[str, bool]] | None = None,
     gathering_titles: dict[str, tuple[str, bool]] | None = None,
     series_titles: dict[str, tuple[str, bool]] | None = None,
+    links: list[ExperienceRef] | None = None,
 ) -> ChannelSummary:
     """Serialise a channel row for the wire.
 
@@ -390,6 +566,20 @@ def _summary_from(
         entry = series_titles.get(channel.series_id)
         if entry is not None:
             sr_title, sr_archived = entry
+    title_maps = {
+        "pathway": pathway_titles or {},
+        "gathering": gathering_titles or {},
+        "series": series_titles or {},
+    }
+    linked: list[LinkedExperienceOut] = []
+    for ref in (links or []):
+        entry = title_maps[ref.type].get(ref.id)
+        linked.append(LinkedExperienceOut(
+            type=ref.type, id=ref.id,
+            title=entry[0] if entry else None,
+            is_archived=entry[1] if entry else False,
+        ))
+
     return ChannelSummary(
         id=channel.id,
         slug=channel.slug,
@@ -415,11 +605,13 @@ def _summary_from(
         gathering_archived=gt_archived,
         series_title=sr_title,
         series_archived=sr_archived,
+        linked_experiences=linked,
     )
 
 
 def _resolve_link_titles(
     channels: list[ConversationChannel], db: Session,
+    links: dict[str, list[ExperienceRef]] | None = None,
 ) -> tuple[
     dict[str, tuple[str, bool]],
     dict[str, tuple[str, bool]],
@@ -431,6 +623,17 @@ def _resolve_link_titles(
     pw_ids = {c.pathway_id for c in channels if c.pathway_id}
     gt_ids = {c.gathering_id for c in channels if c.gathering_id}
     sr_ids = {c.series_id for c in channels if c.series_id}
+    # A channel linked to several Gatherings names only the first in
+    # its legacy column, so the link rows are the real id set. Without
+    # this the second and later experiences render with a null title.
+    for refs in (links or {}).values():
+        for ref in refs:
+            if ref.type == "pathway":
+                pw_ids.add(ref.id)
+            elif ref.type == "gathering":
+                gt_ids.add(ref.id)
+            else:
+                sr_ids.add(ref.id)
     pathway_titles: dict[str, tuple[str, bool]] = {}
     if pw_ids:
         for row in (
@@ -469,6 +672,7 @@ def _detail_from(
     channel: ConversationChannel,
     db: Session,
     *,
+    links: list[ExperienceRef] | None = None,
     pathway_titles: dict[str, tuple[str, bool]] | None = None,
     gathering_titles: dict[str, tuple[str, bool]] | None = None,
     series_titles: dict[str, tuple[str, bool]] | None = None,
@@ -480,7 +684,12 @@ def _detail_from(
     ) or 0
     private_members = (
         db.query(func.count(ChannelMembership.id))
-        .filter(ChannelMembership.channel_id == channel.id)
+        .filter(
+            ChannelMembership.channel_id == channel.id,
+            # Tombstones must not inflate the member count a creator
+            # reads on the card.
+            ChannelMembership.status == "active",
+        )
         .scalar()
     ) or 0
     base = _summary_from(
@@ -488,6 +697,7 @@ def _detail_from(
         pathway_titles=pathway_titles,
         gathering_titles=gathering_titles,
         series_titles=series_titles,
+        links=links,
     ).model_dump()
     return ChannelManageDetail(
         **base,
@@ -529,13 +739,17 @@ def list_member_channels(
     # Caretakers still see everything.
     if not is_caretaker(current_user, space, db):
         channels = [c for c in channels if c.show_in_navigation]
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles(channels, db)
+    link_map = _links_for([c.id for c in channels], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        channels, db, link_map,
+    )
     return [
         _summary_from(
             c,
             pathway_titles=pw_titles,
             gathering_titles=gt_titles,
             series_titles=sr_titles,
+            links=link_map.get(c.id, []),
         )
         for c in channels
     ]
@@ -570,7 +784,10 @@ def list_creator_channels(
         )
         .all()
     )
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles(channels, db)
+    link_map = _links_for([c.id for c in channels], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        channels, db, link_map,
+    )
     return [
         _detail_from(
             c,
@@ -578,6 +795,7 @@ def list_creator_channels(
             pathway_titles=pw_titles,
             gathering_titles=gt_titles,
             series_titles=sr_titles,
+            links=link_map.get(c.id, []),
         )
         for c in channels
     ]
@@ -597,29 +815,31 @@ def create_channel(
             400,
             detail="channel_type must be one of: " + ", ".join(CREATOR_ASSIGNABLE_TYPES),
         )
-    if body.channel_type == "pathway" and not body.pathway_id:
-        raise HTTPException(400, detail="Pathway Channels require pathway_id.")
-    if body.channel_type == "gathering" and not body.gathering_id:
-        raise HTTPException(400, detail="Gathering Channels require gathering_id.")
-    if body.channel_type == "series" and not body.series_id:
-        raise HTTPException(400, detail="Series Channels require series_id.")
+    # Collect the links from either shape: the new list, or the three
+    # singular fields an older client still sends.
+    refs: list[ExperienceRef] = list(body.linked_experiences)
+    if not refs:
+        for kind, value in (
+            ("pathway", body.pathway_id),
+            ("gathering", body.gathering_id),
+            ("series", body.series_id),
+        ):
+            if value:
+                refs.append(ExperienceRef(type=kind, id=value))
 
-    # Enforce that the linked entity belongs to this same Space —
-    # a caretaker of Collective A must not be able to link a Channel
-    # here to a Pathway/Gathering/Series that lives in Collective B.
-    if body.channel_type == "series":
-        series_row = (
-            db.query(EventSeries.id)
-            .filter(
-                EventSeries.id == body.series_id,
-                EventSeries.space_id == space.id,
-            )
-            .first()
+    if body.channel_type in LINKED_TYPES and not refs:
+        raise HTTPException(
+            400,
+            detail=(
+                "A linked-experience Channel needs at least one "
+                "Pathway, Gathering or Series."
+            ),
         )
-        if series_row is None:
-            raise HTTPException(
-                400, detail="Series not found in this Collective.",
-            )
+    # One validation for all three types. This previously checked only
+    # the Series branch despite a comment claiming otherwise, so a
+    # caretaker of Collective A could link to Collective B's Pathway or
+    # Gathering.
+    refs = _validate_experience_refs(refs, space, db)
 
     existing = {c[0] for c in db.query(ConversationChannel.slug).filter(
         ConversationChannel.space_id == space.id
@@ -646,29 +866,42 @@ def create_channel(
         comments_allowed=body.comments_allowed,
         polls_allowed=body.polls_allowed,
         scheduling_allowed=body.scheduling_allowed,
-        pathway_id=body.pathway_id if body.channel_type == "pathway" else None,
-        gathering_id=body.gathering_id if body.channel_type == "gathering" else None,
-        series_id=body.series_id if body.channel_type == "series" else None,
         created_by=current_user.id,
     )
     db.add(channel)
     db.flush()
-    if body.channel_type == "private" and body.initial_member_user_ids:
-        for uid in dict.fromkeys(body.initial_member_user_ids):  # dedupe
-            db.add(ChannelMembership(
-                id=str(uuid.uuid4()),
-                channel_id=channel.id,
-                user_id=uid,
-                source="manual",
-            ))
+
+    if refs:
+        # Writes the link rows and keeps the three legacy columns in
+        # step, so the permission service's fallback agrees with them.
+        _replace_links(channel, refs, db, created_by=current_user.id)
+        # Everyone who already qualifies joins now. A creator linking
+        # November's circle to a new channel expects November's
+        # attendees to be in it, not just whoever buys next.
+        _chm.backfill_channel(db, channel=channel, space=space)
+
+    if body.initial_member_user_ids:
+        # Not restricted to private channels any more: a creator
+        # seeding a linked channel with a few people is the same
+        # action, and `admit` is idempotent so an initial member who
+        # also qualifies does not get two rows.
+        for uid in dict.fromkeys(body.initial_member_user_ids):
+            _chm.admit(
+                db, channel_id=channel.id, user_id=uid,
+                source=_chm.SOURCE_MANUAL,
+            )
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    link_map = _links_for([channel.id], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        [channel], db, link_map,
+    )
     return _detail_from(
         channel, db,
         pathway_titles=pw_titles,
         gathering_titles=gt_titles,
         series_titles=sr_titles,
+        links=link_map.get(channel.id, []),
     )
 
 
@@ -704,14 +937,70 @@ def update_channel(
             # Only name and description are editable on Common Room.
             continue
         setattr(channel, field, v)
+
+    # ---- Access arrangement -------------------------------------
+    if body.channel_type is not None and not system_general:
+        if body.channel_type not in CREATOR_ASSIGNABLE_TYPES:
+            raise HTTPException(
+                400,
+                detail="channel_type must be one of: "
+                       + ", ".join(CREATOR_ASSIGNABLE_TYPES),
+            )
+        if body.channel_type != channel.channel_type:
+            if _broadens_access(channel.channel_type, body.channel_type) \
+                    and not body.confirm_broadening:
+                # 409 rather than 400: the request is well-formed and
+                # permitted, it just has a consequence the creator has
+                # not acknowledged. Silently widening who can read an
+                # existing private conversation is the one outcome this
+                # endpoint must never produce on its own.
+                raise HTTPException(
+                    409,
+                    detail={
+                        "code": "would_broaden_access",
+                        "message": (
+                            "This change would let more people read "
+                            "conversations that already exist in this "
+                            "channel. Confirm to continue."
+                        ),
+                        "from": channel.channel_type,
+                        "to": body.channel_type,
+                    },
+                )
+            channel.channel_type = body.channel_type
+
+    # ---- Linked experiences --------------------------------------
+    # None means "not supplied". An edit to the name must not unlink
+    # everything, which an empty-list default would have done.
+    if body.linked_experiences is not None and not system_general:
+        refs = _validate_experience_refs(body.linked_experiences, space, db)
+        if channel.channel_type in LINKED_TYPES and not refs:
+            raise HTTPException(
+                400,
+                detail=(
+                    "A linked-experience Channel needs at least one "
+                    "Pathway, Gathering or Series."
+                ),
+            )
+        added = _replace_links(
+            channel, refs, db, created_by=current_user.id,
+        )
+        if added:
+            # Only the additions need a backfill. Removing a link
+            # removes nobody — see the §5 rule in channel_membership.
+            _chm.backfill_channel(db, channel=channel, space=space)
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    link_map = _links_for([channel.id], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        [channel], db, link_map,
+    )
     return _detail_from(
         channel, db,
         pathway_titles=pw_titles,
         gathering_titles=gt_titles,
         series_titles=sr_titles,
+        links=link_map.get(channel.id, []),
     )
 
 
@@ -731,12 +1020,16 @@ def archive_channel(
     channel.archived_by = current_user.id
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    link_map = _links_for([channel.id], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        [channel], db, link_map,
+    )
     return _detail_from(
         channel, db,
         pathway_titles=pw_titles,
         gathering_titles=gt_titles,
         series_titles=sr_titles,
+        links=link_map.get(channel.id, []),
     )
 
 
@@ -755,12 +1048,16 @@ def restore_channel(
     channel.archived_by = None
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    link_map = _links_for([channel.id], db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(
+        [channel], db, link_map,
+    )
     return _detail_from(
         channel, db,
         pathway_titles=pw_titles,
         gathering_titles=gt_titles,
         series_titles=sr_titles,
+        links=link_map.get(channel.id, []),
     )
 
 
@@ -820,7 +1117,11 @@ def list_channel_members(
     rows = (
         db.query(ChannelMembership, User)
         .join(User, User.id == ChannelMembership.user_id)
-        .filter(ChannelMembership.channel_id == channel.id)
+        .filter(
+            ChannelMembership.channel_id == channel.id,
+            # Tombstones are bookkeeping, not people in the room.
+            ChannelMembership.status == "active",
+        )
         .order_by(User.name)
         .all()
     )
@@ -848,10 +1149,18 @@ def add_channel_members(
     channel = _get_channel_or_404(space.id, channel_id, db)
     if not can_manage_members(current_user, channel, space, db):
         raise HTTPException(403, detail="Caretakers only.")
-    # Only meaningful for private channels; open/pathway derive access
-    # from their own sources so silently no-op the add.
-    if channel.channel_type != "private":
-        raise HTTPException(400, detail="Only private Channels have manual membership.")
+    # Private AND linked channels both have real membership now, so a
+    # creator can add somebody to a Gathering channel who never bought
+    # a ticket — which is the point of "creators decide who belongs".
+    # Open channels still derive their audience from the Collective.
+    if channel.channel_type not in ("private", *LINKED_TYPES):
+        raise HTTPException(
+            400,
+            detail=(
+                "Open Channels include every Collective member, so they "
+                "have no separate membership list."
+            ),
+        )
     # Only add users who are active Space members.
     active = {
         r.user_id for r in db.query(SpaceMembership.user_id).filter(
@@ -863,17 +1172,14 @@ def add_channel_members(
     for uid in dict.fromkeys(body.user_ids):
         if uid not in active:
             continue
-        row = ChannelMembership(
-            id=str(uuid.uuid4()),
-            channel_id=channel.id,
-            user_id=uid,
-            source="manual",
+        # ``manual`` source, which matters twice: it lifts a previous
+        # creator removal (nothing else may), and it protects them from
+        # being swept out again if their experience access is revoked.
+        _chm.admit(
+            db, channel_id=channel.id, user_id=uid,
+            source=_chm.SOURCE_MANUAL,
         )
-        db.add(row)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()  # already a member
+    db.commit()
     return list_channel_members(slug, channel_id, db, current_user)
 
 
@@ -889,12 +1195,20 @@ def remove_channel_member(
     channel = _get_channel_or_404(space.id, channel_id, db)
     if not can_manage_members(current_user, channel, space, db):
         raise HTTPException(403, detail="Caretakers only.")
-    (
-        db.query(ChannelMembership)
-        .filter(
-            ChannelMembership.channel_id == channel.id,
-            ChannelMembership.user_id == user_id,
-        )
-        .delete(synchronize_session=False)
+    # A tombstone, not a DELETE. The row's absence is what an
+    # automatic admission would read as "never joined, and qualifies,
+    # so add them" — so deleting it would mean the member's next
+    # purchase quietly undid this decision.
+    #
+    # It takes nothing else away: no booking is cancelled, no Pathway
+    # access revoked, no payment touched, no Collective membership
+    # changed, and their existing posts and replies stay where they
+    # are.
+    _chm.remove(
+        db,
+        channel_id=channel.id,
+        user_id=user_id,
+        reason=_chm.REASON_CREATOR,
+        actor_user_id=current_user.id,
     )
     db.commit()

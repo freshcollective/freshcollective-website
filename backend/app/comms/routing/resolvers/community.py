@@ -41,9 +41,30 @@ class NewPostResolver:
             )
         ).scalars().all()
 
+        # Scope to the channel's audience. "Every active member" is
+        # right for the Common Room and wrong for everything else: a
+        # post in a private or linked channel was reaching the whole
+        # Collective, excerpt included, because this resolver never
+        # looked at which channel the post was in.
+        allowed: set[str] | None = None
+        channel_id = (event.context or {}).get("channel_id")
+        if channel_id and space is not None:
+            from app.models.platform import ConversationChannel
+            from app.services.channel_permissions import (
+                accessible_user_ids_for_channel,
+            )
+
+            channel = db.get(ConversationChannel, channel_id)
+            if channel is not None and channel.channel_type not in (
+                "start_here", "general", "open",
+            ):
+                allowed = accessible_user_ids_for_channel(channel, space, db)
+
         out: list[ResolvedRecipient] = []
         for row in rows:
             if author_id and row.user_id == author_id:
+                continue
+            if allowed is not None and row.user_id not in allowed:
                 continue
             out.append(
                 ResolvedRecipient(

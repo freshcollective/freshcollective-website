@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorPathway } from '@/types/platform'
@@ -217,7 +218,6 @@ export default function EventForm({
   const [submitMode, setSubmitMode] = useState<'draft' | 'publish' | null>(null)
 
   // Conversation channel — new events only.
-  const [createChannel, setCreateChannel] = useState(true)
 
   // Intelligent booking rules — some access types mandate booking, and
   // any capacity value only makes sense with booking on. We flip
@@ -408,7 +408,7 @@ export default function EventForm({
         const method = isEdit ? 'PATCH' : 'POST'
         const payload = isEdit
           ? basePayload
-          : { ...basePayload, create_channel: createChannel }
+          : basePayload
         const res = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
@@ -1150,30 +1150,26 @@ export default function EventForm({
       </Section>
 
       {/* ─────────── CONVERSATIONS ─────────── */}
-      {!isEdit && !isRecurring && (
+      {!isRecurring && (
         <Section title="CONVERSATIONS">
           <div
             className="rounded-xl px-4 py-3"
             style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
           >
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={createChannel}
-                onChange={(e) => setCreateChannel(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-teal-500"
-              />
-              <div>
-                <p className="text-[13.5px] font-semibold text-navy-900">
-                  📅 Create Gathering Channel
-                </p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-black">
-                  Adds a Conversations channel for this Gathering. Registered
-                  attendees are joined automatically; conversations naturally
-                  continue before, during, and after.
-                </p>
-              </div>
-            </label>
+            <p className="text-[13.5px] font-semibold text-navy-900">
+              Want to connect this experience to a conversation?
+            </p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+              Manage your channels in Conversations. One channel can be linked
+              to several Gatherings, so a monthly circle can keep one ongoing
+              conversation instead of a new one each month.
+            </p>
+            <Link
+              href="/creator-studio/community/channels"
+              className="mt-2 inline-block text-[12.5px] font-semibold text-teal-700 underline decoration-teal-300 underline-offset-2 hover:text-teal-800"
+            >
+              Manage Channels
+            </Link>
           </div>
         </Section>
       )}

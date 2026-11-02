@@ -541,6 +541,10 @@ class PathwayCreateRequest(BaseModel):
     # When True (default), a 🛤 pathway-typed Conversation Channel is
     # created alongside the Pathway. Members are auto-joined by their
     # active Enrollment through the permissions layer.
+    #: Deprecated and ignored. Conversations channels are created and
+    #: managed only in Creator Studio → Conversations → Channels. Still
+    #: accepted so an older client does not 422; see the note in the
+    #: create handler.
     create_channel: bool = True
 
     @field_validator("title")
@@ -882,6 +886,10 @@ class EventCreateRequest(BaseModel):
     # by their EventBooking through the permissions layer. For bulk
     # (recurring) creation this flag is ignored — the series shares
     # a single channel via the series-level flag if we add one later.
+    #: Deprecated and ignored. Conversations channels are created and
+    #: managed only in Creator Studio → Conversations → Channels. Still
+    #: accepted so an older client does not 422; see the note in the
+    #: create handler.
     create_channel: bool = True
     # Optional semantic Gathering Series membership. Distinct from
     # the low-level ``recurrence_series_id`` bulk-create tag: an

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 
@@ -161,7 +162,6 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
   const [priceError, setPriceError]     = useState<string | null>(null)
-  const [createChannel, setCreateChannel] = useState(true)
 
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
 
@@ -207,7 +207,6 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
           price_cents: priceCents,
           currency: isPaid ? currency : null,
           billing_interval: accessType === 'subscription' ? 'month' : null,
-          create_channel: createChannel,
         }),
       })
 
@@ -293,28 +292,25 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
         </select>
       </div>
 
-      {/* Conversation channel */}
+      {/* Conversations — managed in one place now. */}
       <div
         className="rounded-xl px-4 py-3"
         style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
       >
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={createChannel}
-            onChange={(e) => setCreateChannel(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-teal-500"
-          />
-          <div>
-            <p className="text-[13.5px] font-semibold text-navy-900">
-              🛤 Create pathway channel
-            </p>
-            <p className="mt-0.5 text-[12px] leading-relaxed text-black">
-              Adds a Conversations channel just for members completing this
-              pathway. Enrollees are joined automatically.
-            </p>
-          </div>
-        </label>
+        <p className="text-[13.5px] font-semibold text-navy-900">
+          Want to connect this experience to a conversation?
+        </p>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+          Manage your channels in Conversations. One channel can be linked to
+          several Pathways, Gatherings and Series, so an ongoing conversation
+          can carry across them.
+        </p>
+        <Link
+          href="/creator-studio/community/channels"
+          className="mt-2 inline-block text-[12.5px] font-semibold text-teal-700 underline decoration-teal-300 underline-offset-2 hover:text-teal-800"
+        >
+          Manage Channels
+        </Link>
       </div>
 
       {/* Access and pricing */}

@@ -847,7 +847,16 @@ def create_community_post(
             source_id=current_user.id,
             actor_user_id=current_user.id,
             subject_type="post", subject_id=post.id,
-            context={"space_id": space.id, "collective_name": space.name},
+            context={
+                "space_id": space.id,
+                "collective_name": space.name,
+                # The channel decides the audience. Without it the
+                # resolver fans out to every active Collective member,
+                # which for a private channel means notifying people
+                # who cannot open the post — with an excerpt of it in
+                # the email.
+                "channel_id": post.channel_id,
+            },
             payload={"post_id": post.id, "excerpt": (body.body or "")[:280]},
         )
         db.commit()
