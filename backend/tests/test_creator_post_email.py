@@ -513,3 +513,144 @@ def _mk_event(db, space, creator, title):
     db.add(row)
     db.flush()
     return row
+
+
+class TestTheViewConversationLink:
+    """The URL the email carries must address a page that exists.
+
+    The View Conversation button opened a 404 in production. Asserting
+    the URL "looks right" would not have caught that, and did not —
+    so this crosses into the frontend tree and checks the Next route
+    file is really there.
+    """
+
+    @pytest.fixture
+    def published(self, db, space, channel, join, kelly, make_user, as_user):
+        ch = channel(kind="open", name="Announcements")
+        member = make_user()
+        join(space, member)
+        join(space, kelly, role=SpaceRole.creator)
+        db.commit()
+        post = _publish(as_user(kelly), space, ch)
+        return post, _event(db, post["id"]), ch
+
+    def test_the_path_is_the_canonical_conversation_path(
+        self, db, space, published,
+    ):
+        from urllib.parse import urlparse
+
+        post, event, _ = published
+        view_url = (event.payload or {}).get("view_url")
+        assert view_url, "the email carries no link at all"
+        path = urlparse(view_url).path
+        assert path == f"/spaces/{space.slug}/community/{post['id']}"
+
+    def test_it_uses_the_collective_slug_not_its_id(
+        self, db, space, published,
+    ):
+        post, event, _ = published
+        view_url = (event.payload or {}).get("view_url")
+        assert f"/spaces/{space.slug}/" in view_url
+        assert space.id not in view_url, (
+            "a Collective id in the path would not resolve"
+        )
+
+    def test_it_carries_no_channel_segment(self, db, space, published):
+        """The post page resolves its own channel. A channel segment
+        would be a second route structure."""
+        post, event, ch = published
+        view_url = (event.payload or {}).get("view_url")
+        assert f"/{ch.slug}/" not in view_url
+        assert "/channels/" not in view_url
+
+    def test_the_next_route_for_that_path_exists(self, db, space, published):
+        """The assertion that would have caught the 404 class of bug.
+
+        Reads the frontend tree, so moving or renaming the route fails
+        here rather than in somebody's inbox.
+        """
+        from pathlib import Path
+
+        post, event, _ = published
+        from urllib.parse import urlparse
+
+        path = urlparse((event.payload or {}).get("view_url")).path
+        segments = [s for s in path.split("/") if s]
+        assert segments[0] == "spaces" and segments[2] == "community", path
+
+        frontend = Path(__file__).resolve().parent.parent.parent / "frontend"
+        route = (
+            frontend / "src" / "app" / "spaces" / "[slug]"
+            / "community" / "[postId]" / "page.tsx"
+        )
+        assert route.exists(), f"no Next route for {path} — expected {route}"
+
+    def test_the_api_the_page_calls_answers_for_a_member(
+        self, db, space, published, join, make_user, as_user,
+    ):
+        """The page fetches this; a 404 here is a 404 in the browser."""
+        post, _, _ = published
+        member = make_user()
+        join(space, member)
+        db.commit()
+
+        r = as_user(member).get(
+            f"/api/spaces/{space.slug}/community/{post['id']}",
+        )
+        assert r.status_code == 200, r.text
+
+    def test_and_refuses_a_non_member(
+        self, db, space, published, make_user, as_user,
+    ):
+        """Unchanged by the link fix — the restriction is the point."""
+        post, _, _ = published
+        outsider = make_user()
+        db.commit()
+
+        r = as_user(outsider).get(
+            f"/api/spaces/{space.slug}/community/{post['id']}",
+        )
+        assert r.status_code == 404
+
+    def test_a_private_channel_link_still_refuses_a_non_member(
+        self, db, space, channel, join, kelly, make_user, as_user,
+    ):
+        ch = channel(kind="private", name="Inner Circle")
+        outsider = make_user()
+        join(space, outsider)
+        join(space, kelly, role=SpaceRole.creator)
+        db.commit()
+
+        post = _publish(as_user(kelly), space, ch)
+        event = _event(db, post["id"])
+        from urllib.parse import urlparse
+
+        path = urlparse((event.payload or {}).get("view_url")).path
+        assert path == f"/spaces/{space.slug}/community/{post['id']}"
+
+        r = as_user(outsider).get(
+            f"/api/spaces/{space.slug}/community/{post['id']}",
+        )
+        assert r.status_code == 404, (
+            "the link must not become a way in"
+        )
+
+    def test_a_linked_channel_link_is_the_same_shape(
+        self, db, space, channel, join, kelly, make_user, as_user,
+        make_event,
+    ):
+        ch = channel(kind="gathering", name="Women's Circle")
+        ev = make_event(space=space)
+        db.add(ChannelExperienceLink(
+            id=_uid("cel"), channel_id=ch.id, event_id=ev.id,
+        ))
+        db.flush()
+        join(space, kelly, role=SpaceRole.creator)
+        db.commit()
+
+        post = _publish(as_user(kelly), space, ch)
+        event = _event(db, post["id"])
+        from urllib.parse import urlparse
+
+        path = urlparse((event.payload or {}).get("view_url")).path
+        assert path == f"/spaces/{space.slug}/community/{post['id']}"

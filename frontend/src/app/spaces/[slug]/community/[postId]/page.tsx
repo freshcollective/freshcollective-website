@@ -1,7 +1,8 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getCommunityPost, getSpace, getSpaceMembers, getMe } from '@/lib/serverApi'
 import { requireArea } from '@/lib/areaAccess'
+import { conversationPath } from '@/lib/conversationLinks'
 import PostTypeTag from '@/components/community/PostTypeTag'
 import ReactionBar from '@/components/community/ReactionBar'
 import ModerationMenu from '@/components/community/ModerationMenu'
@@ -109,6 +110,25 @@ export default async function PostDetailPage({ params }: Props) {
     getSpace(slug),
   ])
 
+
+  // An unauthenticated visitor following a link here — from a
+  // notification email, or anywhere else — is asked to sign in and
+  // returned afterwards.
+  //
+  // Before `requireArea`, deliberately. Conversations is a
+  // members-only area, so a signed-out visitor's `area_access` never
+  // contains it and the guard below would 404 them before they were
+  // ever offered the door. That is what made the View Conversation
+  // button in creator-post emails open a 404.
+  //
+  // This discloses nothing: every signed-out visitor gets the same
+  // redirect for any post id, existing or not. Authorisation is
+  // unchanged — a signed-in member without access still falls through
+  // to `notFound()` below, which is what keeps a restricted
+  // conversation from confirming it exists.
+  if (!me) {
+    redirect(`/login?next=${encodeURIComponent(conversationPath(slug, postId))}`)
+  }
 
   // A child of the conversations area — never more reachable than the
   // doorway it sits behind.
