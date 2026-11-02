@@ -49,9 +49,13 @@ Design invariants (each enforced in code AND in tests):
   I7. Repeated webhook delivery is a no-op after the first successful
       fulfilment (idempotency via status='succeeded' short-circuit and
       UNIQUE constraints on the resulting rows).
-  I8. Live-mode guard: `standalone_gathering_sales_enabled` must be True.
-      If Stripe is in live mode, this flag is the only path in — no
-      accidental live-mode sales.
+  I8. Two-key live guard. `standalone_gathering_sales_enabled` must be
+      True for any sale at all. In Stripe **live** mode
+      `standalone_gathering_live_confirmed` must be True as well —
+      the second key is the operator saying the payout and
+      merchant-of-record arrangements for ticket money are settled.
+      Test mode needs only the first, so the flow can be exercised
+      end to end without that decision having been made.
 """
 
 from __future__ import annotations
@@ -190,9 +194,22 @@ def ensure_sales_enabled_or_raise() -> None:
             "environment. Set STANDALONE_GATHERING_SALES_ENABLED=true in "
             ".env to enable in Stripe test mode."
         )
-    # NOTE: Stage 5 will add the additional live-mode confirmation gate
-    # (`standalone_gathering_live_confirmed`). Until then, live keys are
-    # refused outright by the operator convention (dev/test uses sk_test_).
+    # Tier 2. This used to be a comment promising a later stage, which
+    # left live mode resting on the convention that production ran
+    # test keys — a convention nothing enforced and nothing would have
+    # noticed breaking. Turning the first flag on in an environment
+    # holding an sk_live_ key would have begun charging members for
+    # real.
+    if settings.stripe_mode == "live" and not (
+        settings.standalone_gathering_live_confirmed
+    ):
+        raise TicketSalesDisabled(
+            "Standalone Gathering ticket sales are enabled but not "
+            "confirmed for live payments on this environment. Set "
+            "STANDALONE_GATHERING_LIVE_CONFIRMED=true once the payout "
+            "and merchant-of-record arrangements for ticket money are "
+            "settled."
+        )
 
 
 # ---------------------------------------------------------------------------

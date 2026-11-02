@@ -125,6 +125,22 @@ class Settings(BaseSettings):
     # docs/dev-testing-safety.md and the Stage 1 audit for details.
     standalone_gathering_sales_enabled: bool = False
 
+    # The second key for live standalone Gathering ticket sales.
+    #
+    # ``standalone_gathering_sales_enabled`` alone is enough in Stripe
+    # test mode. In live mode it is not: this flag must *also* be set,
+    # and setting it is the operator stating that the payout and
+    # merchant-of-record arrangements for ticket money have been
+    # settled. Two keys because the consequence of being wrong is
+    # taking a member's money for a session nobody can be paid for,
+    # and because the first flag is the kind of thing somebody turns
+    # on to try something out.
+    #
+    # The guard that reads this previously existed only as a comment
+    # promising a later stage, which meant live mode rested on the
+    # convention that production used test keys. It no longer does.
+    standalone_gathering_live_confirmed: bool = False
+
     # FIP4A — public member checkout for finite payment plans
     # (``PaymentOptionSchedule.schedule_type='recurring_installments'``).
     # Hard-off by default. When True, member surfaces (Pathway detail

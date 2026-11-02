@@ -1011,8 +1011,20 @@ export default function EventForm({
             </div>
 
             {!salesEnabled && (
-              <p className="mt-3 text-[12px] italic" style={{ color: '#8A6A15' }}>
-                Ticket payments are currently available for testing only.
+              /*
+                Accurate rather than reassuring. The whole paid-ticket
+                flow is built and works end to end — checkout, capacity
+                holds, fulfilment, access, fees, confirmations — and is
+                switched off on this environment rather than unfinished.
+                Saying "testing only" invited the reading that the
+                feature was half-built; saying it is switched off says
+                what a creator can actually do about it, which is ask.
+              */
+              <p className="mt-3 text-[12px]" style={{ color: '#8A6A15' }}>
+                Ticket sales are switched off on this environment, so this
+                Gathering can be set up with a price but cannot be bought
+                yet. Ask Fresh Collective to enable them for your
+                Collective.
               </p>
             )}
           </div>

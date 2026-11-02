@@ -280,7 +280,7 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                   className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
                   style={{ background: 'rgba(212,176,72,0.14)', color: '#8A6A15' }}
                 >
-                  Testing only
+                  Sales off
                 </span>
               )}
             </div>

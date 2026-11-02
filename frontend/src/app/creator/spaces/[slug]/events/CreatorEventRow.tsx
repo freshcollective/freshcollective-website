@@ -129,7 +129,7 @@ export default function CreatorEventRow({ event, slug, timezone }: Props) {
               className="rounded-full px-2 py-0.5 text-[10px] font-medium"
               style={{ background: 'rgba(212,176,72,0.14)', color: '#8A6A15' }}
             >
-              Testing only
+              Sales off
             </span>
           )}
           {event.recurrence_series_id && (
