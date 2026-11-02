@@ -40,6 +40,17 @@ BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 os.chdir(BACKEND)
 
+# Importing ``app.main`` below initialises Sentry, so a crash in this
+# hand-run diagnostic arrives as an application error alert — which is
+# how a wrong attribute name in this file became Sentry FC-API-K, with
+# "0 users affected" because no request was involved.
+#
+# Cleared for this process only. It suppresses nothing in the
+# application: the API, the crons and every other entry point read the
+# real variable. A diagnostic's failure belongs on the terminal of the
+# person who ran it.
+os.environ["SENTRY_DSN"] = ""
+
 
 def _mask(address: str | None) -> str:
     if not address:
@@ -63,27 +74,11 @@ def main() -> int:
         return 2
 
     import app.main  # noqa: F401 — registers the mapper graph
-    from app.comms.delivery_guard import outbound_email_block
-    from app.comms.models import CommunicationEvent, CommunicationIntent
-    from app.comms.rollout import is_event_live, resolve_delivery_mode
-    from app.comms.routing.resolvers.community import NewPostResolver
-    from app.core.config import settings
     from app.db.session import SessionLocal
-    from app.models.platform import (
-        ChannelExperienceLink,
-        ChannelMembership,
-        CommunityPost,
-        ConversationChannel,
-        Space,
-        SpaceMembership,
-        SpaceMembershipStatus,
-    )
-    from app.models.user import User
-    from app.services import channel_permissions as perms
+    from app.models.platform import CommunityPost, Space
 
     db = SessionLocal()
     try:
-        # ---- 1. the post ------------------------------------------
         if args.post:
             post = db.get(CommunityPost, args.post)
         else:
@@ -105,226 +100,273 @@ def main() -> int:
         if post is None:
             print("  no published post found")
             return 2
-
-        space = db.get(Space, post.space_id)
-        channel = db.get(ConversationChannel, post.channel_id)
-        author = db.get(User, post.author_id)
-
-        print("\n  1. POST")
-        print(f"     id            {post.id}")
-        print(f"     collective    {space.slug if space else '?'}")
-        print(f"     channel       {getattr(channel, 'name', '?')} "
-              f"({getattr(channel, 'slug', '?')})")
-        print(f"     author        {_mask(getattr(author, 'email', None))}")
-        print(f"     published     {post.publication_status} "
-              f"at {post.published_at}")
-        print(f"     notifications_processed_at {post.notifications_processed_at}")
-
-        if channel is None:
-            print("\n     The post has no channel. Nothing to resolve.")
-            return 1
-
-        print("\n  2. CHANNEL ARRANGEMENT")
-        print(f"     channel_type  {channel.channel_type}")
-        print(f"     archived      {channel.is_archived}")
-        print(f"     in navigation {channel.show_in_navigation}")
-        links = (
-            db.query(ChannelExperienceLink)
-            .filter(ChannelExperienceLink.channel_id == channel.id)
-            .all()
-        )
-        print(f"     links         {len(links)}")
-        for link in links:
-            print(f"       - {link.experience_type} {link.experience_id}")
-        rows = (
-            db.query(ChannelMembership)
-            .filter(ChannelMembership.channel_id == channel.id)
-            .all()
-        )
-        active = [r for r in rows if r.status == "active"]
-        removed = [r for r in rows if r.status == "removed"]
-        print(f"     memberships   {len(active)} active, "
-              f"{len(removed)} removed")
-
-        # ---- 3. who qualifies, and why not --------------------------
-        print("\n  3. ELIGIBILITY, per active Collective member")
-        members = (
-            db.query(User)
-            .join(SpaceMembership, SpaceMembership.user_id == User.id)
-            .filter(
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.status == SpaceMembershipStatus.active,
-            )
-            .all()
-        )
-        if not members:
-            print("     none — the Collective has no active members")
-        for user in members:
-            can = perms.can_view_channel(user, channel, space, db)
-            why = ""
-            if user.id == post.author_id:
-                why = "author — never a recipient"
-            elif not can:
-                row = next((r for r in rows if r.user_id == user.id), None)
-                if row is not None and row.status == "removed":
-                    why = f"removed by {row.removed_reason}"
-                elif channel.channel_type in perms.LINKED_CHANNEL_TYPES:
-                    why = "has not joined any linked experience"
-                elif channel.channel_type == "private":
-                    why = "not added to this private channel"
-                else:
-                    why = "cannot view the channel"
-            print(f"     {'OK ' if can and user.id != post.author_id else '-- '}"
-                  f"{_mask(user.email):34} {why}")
-
-        # ---- 4. the event -------------------------------------------
-        print("\n  4. COMMUNICATION EVENT")
-        events = (
-            db.query(CommunicationEvent)
-            .filter(
-                CommunicationEvent.event_type == "community.post.published",
-                CommunicationEvent.subject_id == post.id,
-            )
-            .all()
-        )
-        print(f"     events written {len(events)}")
-        if not events:
-            print("     STOPPED HERE: no event. Either the post was")
-            print("     scheduled rather than published immediately, or")
-            print("     the emit site did not run.")
-        for ev in events:
-            print(f"       {ev.id}  occurred_at={ev.occurred_at}")
-            ctx = ev.context or {}
-            pl = ev.payload or {}
-            print(f"         context channel_id={ctx.get('channel_id')} "
-                  f"channel_name={ctx.get('channel_name')!r}")
-            print(f"         payload author={pl.get('author_name')!r} "
-                  f"is_creator_post={pl.get('is_creator_post')} "
-                  f"view_url={'yes' if pl.get('view_url') else 'MISSING'} "
-                  f"excerpt={'yes' if pl.get('excerpt') else 'no'}")
-
-        # ---- 5. routing configuration -------------------------------
-        print("\n  5. ROUTING CONFIGURATION")
-        print(f"     app_env             {settings.app_env}")
-        print(f"     comms_shadow        {settings.comms_shadow}")
-        print(f"     live topics         {settings.comms_live_topics}")
-        live = is_event_live("community.post.published")
-        mode = resolve_delivery_mode("community.post.published")
-        print(f"     event live?         {live}")
-        print(f"     delivery mode       {mode}")
-        if mode != "live":
-            print("     STOPPED HERE: shadow intents are never dispatched.")
-
-        # ---- 5b. preferences ----------------------------------------
-        #
-        # The decision pipeline consults the member's effective
-        # preference first and shortcuts to a *recorded* intent when it
-        # is silent — a row, but nothing sent. A category default of
-        # silent would do that for everybody at once, which is why the
-        # default is printed as well as the per-member answer.
-        from app.comms.categories import (
-            CATEGORY_COMMUNITY, CHANNEL_EMAIL_TRANSACTIONAL,
-        )
-        from app.comms.preferences import get_effective_preference
-
-        print("\n  5b. PREFERENCES for (community, email_transactional)")
-        from app.comms.models import CommunicationChannelDefault
-        default_row = (
-            db.query(CommunicationChannelDefault)
-            .filter(
-                CommunicationChannelDefault.category_key == CATEGORY_COMMUNITY,
-                CommunicationChannelDefault.channel
-                == CHANNEL_EMAIL_TRANSACTIONAL,
-            )
-            .first()
-        )
-        if default_row is None:
-            print("     category default  (no row — code fallback applies)")
-        else:
-            print(f"     category default  {default_row.default_priority} "
-                  f"locked={getattr(default_row, 'is_locked', '?')}")
-        for user in members:
-            if user.id == post.author_id:
-                continue
-            if not perms.can_view_channel(user, channel, space, db):
-                continue
-            priority, locked, origin = get_effective_preference(
-                db, user_id=user.id, category_key=CATEGORY_COMMUNITY,
-                channel=CHANNEL_EMAIL_TRANSACTIONAL,
-            )
-            consent = "n/a"
-            flag = "" if priority != "silent" else "  <- SILENT, nothing sends"
-            print(f"     {_mask(user.email):34} {priority:14} "
-                  f"origin={origin:9} consent={consent}{flag}")
-
-        # ---- 6. re-resolve ------------------------------------------
-        print("\n  6. RESOLVER, re-run against the stored event")
-        for ev in events:
-            resolved = NewPostResolver().resolve(db, ev)
-            print(f"     {ev.id} → {len(resolved)} recipient(s)")
-            for r in resolved:
-                u = db.get(User, r.user_id)
-                print(f"        {_mask(getattr(u, 'email', None))}")
-            if not resolved:
-                print("        STOPPED HERE: nobody resolved. See step 3.")
-
-        # ---- 7. intents ---------------------------------------------
-        print("\n  7. INTENTS")
-        intents = (
-            db.query(CommunicationIntent)
-            .filter(CommunicationIntent.event_id.in_([e.id for e in events]))
-            .all()
-        ) if events else []
-        print(f"     intents created {len(intents)}")
-        if events and not intents:
-            print("     STOPPED HERE: the event exists but produced no")
-            print("     intents. Preference, consent, suppression or a")
-            print("     missing template/provider mapping — the decision")
-            print("     pipeline records the reason on the intent it")
-            print("     would have made, so no row means it stopped")
-            print("     before creating one.")
-        for i in intents:
-            print(f"       {i.channel:22} state={i.state:12} "
-                  f"mode={i.delivery_mode:7} "
-                  f"to={_mask(i.recipient_address)}")
-            print(f"         template={i.template_key}")
-            print(f"         queued={i.queued_at} sent={i.sent_at} "
-                  f"terminal={i.terminal_at}")
-            if i.suppression_reason:
-                print(f"         suppression_reason={i.suppression_reason}")
-            if i.scheduled_for:
-                print(f"         scheduled_for={i.scheduled_for}  "
-                      "<- deferred (quiet hours or digest)")
-
-        # ---- 8. the outbound guard ----------------------------------
-        print("\n  8. OUTBOUND GUARD, evaluated per address")
-        print("     (this is the last gate before Resend)")
-        addresses = {
-            i.recipient_address for i in intents if i.recipient_address
-        }
-        if not addresses:
-            # Still useful: show what WOULD be blocked for the eligible
-            # members, which is the common cause with test accounts.
-            addresses = {
-                u.email for u in members
-                if u.id != post.author_id
-                and perms.can_view_channel(u, channel, space, db)
-            }
-            if addresses:
-                print("     no intents, so showing the eligible members:")
-        if not addresses:
-            print("     no addresses to check")
-        for addr in sorted(a for a in addresses if a):
-            block = outbound_email_block(addr)
-            verdict = "BLOCKED" if block else "would send"
-            reason = f"  {block}" if block else ""
-            print(f"     {verdict:10} {_mask(addr)}{reason}")
-
-        print("\n  Nothing was written. Rolling back.\n")
-        db.rollback()
-        return 0
+        return run_trace(db, post)
+    except Exception as exc:  # noqa: BLE001
+        # Handled, not propagated. An unhandled exception here
+        # reaches Sentry as an application error with nobody
+        # affected — which is exactly what FC-API-K was. The person
+        # who ran this needs the message and a non-zero exit, not an
+        # alert.
+        print(f"\n  the diagnostic failed: {type(exc).__name__}: {exc}")
+        print("  nothing was written.")
+        return 1
     finally:
+        db.rollback()
         db.close()
+
+
+def run_trace(db, post) -> int:
+    """Walk one post through the notification path.
+
+    Separated from ``main`` so it can be driven against a test
+    session. The previous version did all of this inside ``main``,
+    which is why a wrong attribute name shipped: nothing could
+    exercise it without a CLI and a database.
+    """
+    from app.comms.delivery_guard import outbound_email_block
+    from app.comms.models import CommunicationEvent, CommunicationIntent
+    from app.comms.rollout import is_event_live, resolve_delivery_mode
+    from app.comms.routing.resolvers.community import NewPostResolver
+    from app.core.config import settings
+    from app.models.platform import (
+        ChannelExperienceLink,
+        ChannelMembership,
+        ConversationChannel,
+        Space,
+        SpaceMembership,
+        SpaceMembershipStatus,
+    )
+    from app.models.user import User
+    from app.services import channel_permissions as perms
+
+    # ---- 1. the post ------------------------------------------
+    space = db.get(Space, post.space_id)
+    channel = db.get(ConversationChannel, post.channel_id)
+    author = db.get(User, post.author_id)
+
+    print("\n  1. POST")
+    print(f"     id            {post.id}")
+    print(f"     collective    {space.slug if space else '?'}")
+    print(f"     channel       {getattr(channel, 'name', '?')} "
+          f"({getattr(channel, 'slug', '?')})")
+    print(f"     author        {_mask(getattr(author, 'email', None))}")
+    print(f"     published     {post.publication_status} "
+          f"at {post.published_at}")
+    print(f"     notifications_processed_at {post.notifications_processed_at}")
+
+    if channel is None:
+        print("\n     The post has no channel. Nothing to resolve.")
+        return 1
+
+    print("\n  2. CHANNEL ARRANGEMENT")
+    print(f"     channel_type  {channel.channel_type}")
+    print(f"     archived      {channel.is_archived}")
+    print(f"     in navigation {channel.show_in_navigation}")
+    links = (
+        db.query(ChannelExperienceLink)
+        .filter(ChannelExperienceLink.channel_id == channel.id)
+        .all()
+    )
+    print(f"     links         {len(links)}")
+    for link in links:
+        print(f"       - {link.experience_type} {link.experience_id}")
+    rows = (
+        db.query(ChannelMembership)
+        .filter(ChannelMembership.channel_id == channel.id)
+        .all()
+    )
+    active = [r for r in rows if r.status == "active"]
+    removed = [r for r in rows if r.status == "removed"]
+    print(f"     memberships   {len(active)} active, "
+          f"{len(removed)} removed")
+
+    # ---- 3. who qualifies, and why not --------------------------
+    print("\n  3. ELIGIBILITY, per active Collective member")
+    members = (
+        db.query(User)
+        .join(SpaceMembership, SpaceMembership.user_id == User.id)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .all()
+    )
+    if not members:
+        print("     none — the Collective has no active members")
+    for user in members:
+        can = perms.can_view_channel(user, channel, space, db)
+        why = ""
+        if user.id == post.author_id:
+            why = "author — never a recipient"
+        elif not can:
+            row = next((r for r in rows if r.user_id == user.id), None)
+            if row is not None and row.status == "removed":
+                why = f"removed by {row.removed_reason}"
+            elif channel.channel_type in perms.LINKED_CHANNEL_TYPES:
+                why = "has not joined any linked experience"
+            elif channel.channel_type == "private":
+                why = "not added to this private channel"
+            else:
+                why = "cannot view the channel"
+        print(f"     {'OK ' if can and user.id != post.author_id else '-- '}"
+              f"{_mask(user.email):34} {why}")
+
+    # ---- 4. the event -------------------------------------------
+    print("\n  4. COMMUNICATION EVENT")
+    events = (
+        db.query(CommunicationEvent)
+        .filter(
+            CommunicationEvent.event_type == "community.post.published",
+            CommunicationEvent.subject_id == post.id,
+        )
+        .all()
+    )
+    print(f"     events written {len(events)}")
+    if not events:
+        print("     STOPPED HERE: no event. Either the post was")
+        print("     scheduled rather than published immediately, or")
+        print("     the emit site did not run.")
+    for ev in events:
+        print(f"       {ev.id}  occurred_at={ev.occurred_at}")
+        ctx = ev.context or {}
+        pl = ev.payload or {}
+        print(f"         context channel_id={ctx.get('channel_id')} "
+              f"channel_name={ctx.get('channel_name')!r}")
+        print(f"         payload author={pl.get('author_name')!r} "
+              f"is_creator_post={pl.get('is_creator_post')} "
+              f"view_url={'yes' if pl.get('view_url') else 'MISSING'} "
+              f"excerpt={'yes' if pl.get('excerpt') else 'no'}")
+
+    # ---- 5. routing configuration -------------------------------
+    print("\n  5. ROUTING CONFIGURATION")
+    print(f"     app_env             {settings.app_env}")
+    print(f"     comms_shadow        {settings.comms_shadow}")
+    print(f"     live topics         {settings.comms_live_topics}")
+    live = is_event_live("community.post.published")
+    mode = resolve_delivery_mode("community.post.published")
+    print(f"     event live?         {live}")
+    print(f"     delivery mode       {mode}")
+    if mode != "live":
+        print("     STOPPED HERE: shadow intents are never dispatched.")
+
+    # ---- 5b. preferences ----------------------------------------
+    #
+    # The decision pipeline consults the member's effective
+    # preference first and shortcuts to a *recorded* intent when it
+    # is silent — a row, but nothing sent. A category default of
+    # silent would do that for everybody at once, which is why the
+    # default is printed as well as the per-member answer.
+    from app.comms.categories import (
+        CATEGORY_COMMUNITY, CHANNEL_EMAIL_TRANSACTIONAL,
+    )
+    from app.comms.preferences import get_effective_preference
+
+    print("\n  5b. PREFERENCES for (community, email_transactional)")
+    from app.comms.models import CommunicationChannelDefault
+    default_row = (
+        db.query(CommunicationChannelDefault)
+        .filter(
+            CommunicationChannelDefault.category_key == CATEGORY_COMMUNITY,
+            CommunicationChannelDefault.channel
+            == CHANNEL_EMAIL_TRANSACTIONAL,
+        )
+        .first()
+    )
+    if default_row is None:
+        # ``get_effective_preference`` raises UnsupportedChannelError
+        # when the row is absent, so this is worth naming rather
+        # than printing as a blank.
+        print("     category default  MISSING ROW — preference lookup "
+              "will raise")
+    else:
+        # ``default_enabled`` is the column. An earlier version of
+        # this line read ``default_priority``, which does not
+        # exist — the model stores a boolean and
+        # ``get_effective_preference`` maps it to immediate/silent.
+        # That AttributeError is Sentry FC-API-K.
+        resolved = "immediate" if default_row.default_enabled else "silent"
+        print(f"     category default  default_enabled="
+              f"{default_row.default_enabled} → {resolved}  "
+              f"locked={default_row.is_locked}")
+    for user in members:
+        if user.id == post.author_id:
+            continue
+        if not perms.can_view_channel(user, channel, space, db):
+            continue
+        priority, locked, origin = get_effective_preference(
+            db, user_id=user.id, category_key=CATEGORY_COMMUNITY,
+            channel=CHANNEL_EMAIL_TRANSACTIONAL,
+        )
+        consent = "n/a"
+        flag = "" if priority != "silent" else "  <- SILENT, nothing sends"
+        print(f"     {_mask(user.email):34} {priority:14} "
+              f"origin={origin:9} consent={consent}{flag}")
+
+    # ---- 6. re-resolve ------------------------------------------
+    print("\n  6. RESOLVER, re-run against the stored event")
+    for ev in events:
+        resolved = NewPostResolver().resolve(db, ev)
+        print(f"     {ev.id} → {len(resolved)} recipient(s)")
+        for r in resolved:
+            u = db.get(User, r.user_id)
+            print(f"        {_mask(getattr(u, 'email', None))}")
+        if not resolved:
+            print("        STOPPED HERE: nobody resolved. See step 3.")
+
+    # ---- 7. intents ---------------------------------------------
+    print("\n  7. INTENTS")
+    intents = (
+        db.query(CommunicationIntent)
+        .filter(CommunicationIntent.event_id.in_([e.id for e in events]))
+        .all()
+    ) if events else []
+    print(f"     intents created {len(intents)}")
+    if events and not intents:
+        print("     STOPPED HERE: the event exists but produced no")
+        print("     intents. Preference, consent, suppression or a")
+        print("     missing template/provider mapping — the decision")
+        print("     pipeline records the reason on the intent it")
+        print("     would have made, so no row means it stopped")
+        print("     before creating one.")
+    for i in intents:
+        print(f"       {i.channel:22} state={i.state:12} "
+              f"mode={i.delivery_mode:7} "
+              f"to={_mask(i.recipient_address)}")
+        print(f"         template={i.template_key}")
+        print(f"         queued={i.queued_at} sent={i.sent_at} "
+              f"terminal={i.terminal_at}")
+        if i.suppression_reason:
+            print(f"         suppression_reason={i.suppression_reason}")
+        if i.scheduled_for:
+            print(f"         scheduled_for={i.scheduled_for}  "
+                  "<- deferred (quiet hours or digest)")
+
+    # ---- 8. the outbound guard ----------------------------------
+    print("\n  8. OUTBOUND GUARD, evaluated per address")
+    print("     (this is the last gate before Resend)")
+    addresses = {
+        i.recipient_address for i in intents if i.recipient_address
+    }
+    if not addresses:
+        # Still useful: show what WOULD be blocked for the eligible
+        # members, which is the common cause with test accounts.
+        addresses = {
+            u.email for u in members
+            if u.id != post.author_id
+            and perms.can_view_channel(u, channel, space, db)
+        }
+        if addresses:
+            print("     no intents, so showing the eligible members:")
+    if not addresses:
+        print("     no addresses to check")
+    for addr in sorted(a for a in addresses if a):
+        block = outbound_email_block(addr)
+        verdict = "BLOCKED" if block else "would send"
+        reason = f"  {block}" if block else ""
+        print(f"     {verdict:10} {_mask(addr)}{reason}")
+
+    print("\n  Nothing was written.\n")
+    return 0
 
 
 if __name__ == "__main__":
