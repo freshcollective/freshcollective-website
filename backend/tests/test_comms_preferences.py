@@ -90,9 +90,13 @@ class TestEffectivePreference:
         assert is_locked is False
         assert origin == "default"
 
-    def test_community_email_default_is_silent(self, db, make_user):
-        # From migration 097: community × email_transactional is
-        # default_enabled=False → silent.
+    def test_community_email_default_is_immediate(self, db, make_user):
+        # Migration 097 seeded community × email_transactional as
+        # default_enabled=False → silent. Migration 178 turned it on,
+        # because that default was why creator posts in Conversations
+        # produced an intent and no email: a disabled default resolves
+        # to silent, and a silent preference is recorded rather than
+        # queued. An explicit override still wins either way.
         u = make_user()
         priority, _, _ = get_effective_preference(
             db,
@@ -100,7 +104,7 @@ class TestEffectivePreference:
             category_key=CATEGORY_COMMUNITY,
             channel=Channel.EMAIL_TRANSACTIONAL,
         )
-        assert priority == Priority.SILENT
+        assert priority == Priority.IMMEDIATE
 
     def test_override_wins_over_default(self, db, make_user):
         u = make_user()
@@ -200,7 +204,10 @@ class TestSetPreference:
             category_key=CATEGORY_COMMUNITY,
             channel=Channel.EMAIL_TRANSACTIONAL,
         )
-        assert priority == Priority.SILENT
+        # The category default, which migration 178 turned on. The
+        # point of this test is that clearing restores the *default*,
+        # whatever it happens to be — not that the default is silent.
+        assert priority == Priority.IMMEDIATE
         assert origin == "default"
 
     def test_clear_returns_false_when_no_override(self, db, make_user):

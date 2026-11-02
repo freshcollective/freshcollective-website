@@ -828,7 +828,9 @@ class TestItsOwnPreferenceCategory:
             ("account", "immediate"),
             ("purchases", "immediate"),
             ("gatherings", "immediate"),
-            ("community", "silent"),
+            # On since migration 178; the assertion here is that it
+            # did not move because the welcome was switched off.
+            ("community", "immediate"),
         ):
             priority, _l, source = get_effective_preference(
                 db, user_id=member.id, category_key=other,
@@ -963,7 +965,15 @@ class TestTheDeliveryJourneyEndToEnd:
                 f"{ev} moved topic — community mail may have changed"
             )
 
-    def test_the_community_email_default_is_still_off(self, db, make_user):
+    def test_the_community_email_default_is_now_on(self, db, make_user):
+        """Reversed by migration 178, deliberately.
+
+        This asserted "community email must remain off by default",
+        which was the decision at the time and the reason creator
+        posts in Conversations produced an intent and no email. The
+        welcome email's own category is unaffected either way — that
+        is what the rest of this class checks.
+        """
         from app.comms.preferences import get_effective_preference
 
         member = make_user()
@@ -971,9 +981,7 @@ class TestTheDeliveryJourneyEndToEnd:
             db, user_id=member.id, category_key="community",
             channel="email_transactional",
         )
-        assert (priority, source) == ("silent", "default"), (
-            "community email must remain off by default"
-        )
+        assert (priority, source) == ("immediate", "default")
 
     def test_security_email_is_still_locked_at_the_event(self):
         """Opting out of welcome mail shares a category with password
