@@ -46,13 +46,21 @@ interface Props {
 
 type ChannelType = 'open' | 'private' | 'pathway' | 'gathering' | 'series'
 
+/** What the creator picks. Three arrangements, not five types: the
+ *  old list made "which experience" part of the channel's identity,
+ *  which is why a channel could only ever name one. */
+type Arrangement = 'open' | 'private' | 'linked'
+
+export interface ExperienceRef {
+  type: 'pathway' | 'gathering' | 'series'
+  id: string
+}
+
 interface CreateForm {
   name: string
-  channel_type: ChannelType
+  arrangement: Arrangement
   description: string
-  pathway_id: string
-  gathering_id: string
-  series_id: string
+  linked_experiences: ExperienceRef[]
   member_posting_allowed: boolean
   polls_allowed: boolean
   initial_member_user_ids: string[]
@@ -60,14 +68,21 @@ interface CreateForm {
 
 const EMPTY_CREATE: CreateForm = {
   name: '',
-  channel_type: 'open',
+  arrangement: 'open',
   description: '',
-  pathway_id: '',
-  gathering_id: '',
-  series_id: '',
+  linked_experiences: [],
   member_posting_allowed: true,
   polls_allowed: true,
   initial_member_user_ids: [],
+}
+
+/** The stored ``channel_type`` for a linked channel. The backend keeps
+ *  the pathway/gathering/series vocabulary for icons and grouping, so
+ *  a mixed channel takes the kind of its first experience — the
+ *  arrangement above is what the creator actually reasons about. */
+function storedType(form: CreateForm): ChannelType {
+  if (form.arrangement !== 'linked') return form.arrangement
+  return form.linked_experiences[0]?.type ?? 'gathering'
 }
 
 const GROUP_ORDER: string[] = ['SERIES', 'PATHWAYS', 'GATHERINGS', 'PRIVATE', 'OPEN DISCUSSIONS']
@@ -137,16 +152,8 @@ export default function ManageChannelsClient({
       setError('Please give the Channel a name.')
       return
     }
-    if (createForm.channel_type === 'pathway' && !createForm.pathway_id) {
-      setError('Choose which Pathway this Channel belongs to.')
-      return
-    }
-    if (createForm.channel_type === 'gathering' && !createForm.gathering_id) {
-      setError('Choose which Gathering this Channel belongs to.')
-      return
-    }
-    if (createForm.channel_type === 'series' && !createForm.series_id) {
-      setError('Choose which Gathering Series this Channel belongs to.')
+    if (createForm.arrangement === 'linked' && createForm.linked_experiences.length === 0) {
+      setError('Choose at least one Pathway, Gathering or Series to link.')
       return
     }
     setBusy(true)
@@ -158,14 +165,15 @@ export default function ManageChannelsClient({
         body: JSON.stringify({
           name: createForm.name.trim(),
           description: createForm.description.trim() || null,
-          channel_type: createForm.channel_type,
-          pathway_id: createForm.channel_type === 'pathway' ? createForm.pathway_id : null,
-          gathering_id: createForm.channel_type === 'gathering' ? createForm.gathering_id : null,
-          series_id: createForm.channel_type === 'series' ? createForm.series_id : null,
+          channel_type: storedType(createForm),
+          linked_experiences: createForm.arrangement === 'linked'
+            ? createForm.linked_experiences : [],
           member_posting_allowed: createForm.member_posting_allowed,
           polls_allowed: createForm.polls_allowed,
-          initial_member_user_ids: createForm.channel_type === 'private'
-            ? createForm.initial_member_user_ids : [],
+          // Seeding members is useful on a linked channel too, not
+          // only a private one.
+          initial_member_user_ids: createForm.arrangement === 'open'
+            ? [] : createForm.initial_member_user_ids,
         }),
       })
       if (!res.ok) {
@@ -490,24 +498,7 @@ function ChannelRow({
               {channel.description}
             </p>
           )}
-          {(channel.channel_type === 'pathway' && channel.pathway_title) && (
-            <p className="mt-1 text-[11.5px] text-slate-500">
-              Linked to · <span className="text-navy-800">{channel.pathway_title}</span>
-              {channel.pathway_archived && <span className="italic text-slate-400"> (archived)</span>}
-            </p>
-          )}
-          {(channel.channel_type === 'gathering' && channel.gathering_title) && (
-            <p className="mt-1 text-[11.5px] text-slate-500">
-              Linked to · <span className="text-navy-800">{channel.gathering_title}</span>
-              {channel.gathering_archived && <span className="italic text-slate-400"> (archived)</span>}
-            </p>
-          )}
-          {(channel.channel_type === 'series' && channel.series_title) && (
-            <p className="mt-1 text-[11.5px] text-slate-500">
-              Linked to · <span className="text-navy-800">{channel.series_title}</span>
-              {channel.series_archived && <span className="italic text-slate-400"> (archived)</span>}
-            </p>
-          )}
+          <LinkedExperienceSummary channel={channel} />
           <p className="mt-1 text-[11.5px] text-slate-500">
             {channel.post_count} conversation{channel.post_count === 1 ? '' : 's'}
             {channel.channel_type === 'private' && ` · ${channel.private_member_count} member${channel.private_member_count === 1 ? '' : 's'}`}
@@ -680,6 +671,186 @@ function TypeChip({ type }: { type: string }) {
 // Create form (extracted so the main file stays readable)
 // ---------------------------------------------------------------------------
 
+/** Grouped, searchable multi-select over the three experience kinds.
+ *
+ *  Grouped rather than one flat list because the kinds are not
+ *  interchangeable in a creator's head — "which Gatherings" and
+ *  "which Pathways" are separate questions — and searchable because a
+ *  Collective running monthly circles accumulates a lot of
+ *  near-identically named Gatherings. */
+function ExperienceMultiSelect({
+  selected, onChange, pathways, events, series,
+}: {
+  selected: ExperienceRef[]
+  onChange: (next: ExperienceRef[]) => void
+  pathways: CreatorPathway[]
+  events: CreatorEvent[]
+  series: CreatorGatheringSeries[]
+}) {
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
+
+  const groups: { label: string; kind: ExperienceRef['type']; items: { id: string; title: string }[] }[] = [
+    { label: 'Pathways', kind: 'pathway', items: pathways.map((p) => ({ id: p.id, title: p.title })) },
+    { label: 'Gatherings', kind: 'gathering', items: events.map((e) => ({ id: e.id, title: e.title })) },
+    { label: 'Gathering Series', kind: 'series', items: series.map((x) => ({ id: x.id, title: x.title })) },
+  ]
+
+  const isSelected = (kind: ExperienceRef['type'], id: string) =>
+    selected.some((r) => r.type === kind && r.id === id)
+
+  function toggle(kind: ExperienceRef['type'], id: string) {
+    if (isSelected(kind, id)) {
+      onChange(selected.filter((r) => !(r.type === kind && r.id === id)))
+    } else {
+      onChange([...selected, { type: kind, id }])
+    }
+  }
+
+  const titleFor = (ref: ExperienceRef) => {
+    const group = groups.find((g) => g.kind === ref.type)
+    return group?.items.find((i) => i.id === ref.id)?.title ?? ref.id
+  }
+
+  return (
+    <div>
+      <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-black">
+        Linked experiences
+      </p>
+      <p className="mb-2 text-[12px] leading-relaxed text-black">
+        Anyone who joins <strong>any one</strong> of these is added to the
+        channel, and stays in it afterwards. Link as many as you like — three
+        monthly circles can share one ongoing conversation.
+      </p>
+
+      {selected.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {selected.map((ref) => (
+            <span
+              key={`${ref.type}:${ref.id}`}
+              className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-[12px] text-teal-900"
+              style={{ border: '1px solid rgba(56,160,158,0.25)' }}
+            >
+              {titleFor(ref)}
+              <button
+                type="button"
+                onClick={() => toggle(ref.type, ref.id)}
+                aria-label={`Remove ${titleFor(ref)}`}
+                className="ml-0.5 rounded-full px-1 text-teal-700 hover:bg-teal-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-500"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search Pathways, Gatherings and Series…"
+        aria-label="Search experiences"
+        className="mb-2 w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 placeholder-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+      />
+
+      <div
+        className="max-h-60 overflow-y-auto rounded-lg px-3 py-2"
+        style={{ border: '1px solid rgba(12,24,38,0.10)' }}
+      >
+        {groups.every((g) => g.items.length === 0) && (
+          <p className="py-2 text-[12.5px] italic text-slate-500">
+            No Pathways, Gatherings or Series yet — create one first, then
+            link it here.
+          </p>
+        )}
+        {groups.map((group) => {
+          const visible = needle
+            ? group.items.filter((i) => i.title.toLowerCase().includes(needle))
+            : group.items
+          if (visible.length === 0) return null
+          return (
+            <div key={group.kind} className="mb-2 last:mb-0">
+              <p className="py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {group.label}
+              </p>
+              {visible.map((item) => (
+                <label
+                  key={item.id}
+                  className="flex cursor-pointer items-center gap-2 py-1 text-[13px] text-navy-900"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected(group.kind, item.id)}
+                    onChange={() => toggle(group.kind, item.id)}
+                    className="h-4 w-4 accent-teal-500"
+                  />
+                  <span className="truncate">{item.title}</span>
+                </label>
+              ))}
+            </div>
+          )
+        })}
+        {needle && groups.every((g) => (
+          g.items.filter((i) => i.title.toLowerCase().includes(needle)).length === 0
+        )) && (
+          <p className="py-2 text-[12.5px] italic text-slate-500">
+            Nothing matches “{query}”.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+/** A readable summary of what a channel is linked to.
+ *
+ *  Names up to two and counts the rest rather than listing twelve
+ *  Gatherings on a card — a creator scanning the page needs to
+ *  recognise the channel, not audit it. The full list is one click
+ *  away. */
+function LinkedExperienceSummary({ channel }: { channel: ChannelManageDetail }) {
+  const [expanded, setExpanded] = useState(false)
+  const links = channel.linked_experiences ?? []
+  if (links.length === 0) return null
+
+  const shown = expanded ? links : links.slice(0, 2)
+  const hidden = links.length - shown.length
+
+  return (
+    <div className="mt-1 text-[11.5px] text-slate-500">
+      Linked to ·{' '}
+      {shown.map((ref, i) => (
+        <span key={`${ref.type}:${ref.id}`}>
+          {i > 0 && ', '}
+          <span className="text-navy-800">{ref.title ?? 'Untitled'}</span>
+          {ref.is_archived && <span className="italic text-slate-400"> (archived)</span>}
+        </span>
+      ))}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="ml-1 underline decoration-slate-300 underline-offset-2 hover:text-navy-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-500"
+        >
+          and {hidden} more
+        </button>
+      )}
+      {expanded && links.length > 2 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="ml-1 underline decoration-slate-300 underline-offset-2 hover:text-navy-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-500"
+        >
+          show fewer
+        </button>
+      )}
+    </div>
+  )
+}
+
+
 function CreateChannelForm({
   form, onChange, eligiblePathways, eligibleEvents, eligibleSeries,
   memberOptions, busy, onCancel, onSubmit,
@@ -724,22 +895,23 @@ function CreateChannelForm({
         </label>
 
         <label className="text-[12px] text-black">
-          <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Type</span>
+          <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Who can take part</span>
           <select
-            value={form.channel_type}
-            onChange={(e) => onChange({ ...form, channel_type: e.target.value as ChannelType })}
+            value={form.arrangement}
+            onChange={(e) => onChange({ ...form, arrangement: e.target.value as Arrangement })}
             className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none"
           >
-            <option value="open">💬 Open discussion — everyone in the collective</option>
-            <option value="private">🔒 Private — chosen members only</option>
-            <option value="series" disabled={eligibleSeries.length === 0}>
-              🗓 Gathering Series — active Series pass holders
-            </option>
-            <option value="pathway" disabled={eligiblePathways.length === 0}>
-              🛤 Pathway — active enrollees only
-            </option>
-            <option value="gathering" disabled={eligibleEvents.length === 0}>
-              📅 Gathering — registered attendees only
+            <option value="open">💬 Open to Collective members</option>
+            <option value="private">🔒 Private — selected members</option>
+            <option
+              value="linked"
+              disabled={
+                eligiblePathways.length === 0
+                && eligibleEvents.length === 0
+                && eligibleSeries.length === 0
+              }
+            >
+              🔗 Linked experiences — people who join any of them
             </option>
           </select>
         </label>
@@ -755,56 +927,20 @@ function CreateChannelForm({
           />
         </label>
 
-        {form.channel_type === 'pathway' && (
-          <label className="text-[12px] text-black md:col-span-2">
-            <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Pathway</span>
-            <select
-              value={form.pathway_id}
-              onChange={(e) => onChange({ ...form, pathway_id: e.target.value })}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none"
-            >
-              <option value="">Choose a Pathway…</option>
-              {eligiblePathways.map((p) => (
-                <option key={p.id} value={p.id}>{p.title}</option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {form.channel_type === 'gathering' && (
-          <label className="text-[12px] text-black md:col-span-2">
-            <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Gathering</span>
-            <select
-              value={form.gathering_id}
-              onChange={(e) => onChange({ ...form, gathering_id: e.target.value })}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none"
-            >
-              <option value="">Choose a Gathering…</option>
-              {eligibleEvents.map((ev) => (
-                <option key={ev.id} value={ev.id}>{ev.title}</option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {form.channel_type === 'series' && (
-          <label className="text-[12px] text-black md:col-span-2">
-            <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Gathering Series</span>
-            <select
-              value={form.series_id}
-              onChange={(e) => onChange({ ...form, series_id: e.target.value })}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none"
-            >
-              <option value="">Choose a Gathering Series…</option>
-              {eligibleSeries.map((s) => (
-                <option key={s.id} value={s.id}>{s.title}</option>
-              ))}
-            </select>
-          </label>
+        {form.arrangement === 'linked' && (
+          <div className="md:col-span-2">
+            <ExperienceMultiSelect
+              selected={form.linked_experiences}
+              onChange={(next) => onChange({ ...form, linked_experiences: next })}
+              pathways={eligiblePathways}
+              events={eligibleEvents}
+              series={eligibleSeries}
+            />
+          </div>
         )}
       </div>
 
-      {form.channel_type === 'private' && (
+      {form.arrangement !== 'open' && (
         <div className="mt-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
             Initial members

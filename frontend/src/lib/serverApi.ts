@@ -69,6 +69,15 @@ export interface ChannelSummaryLite {
   gathering_archived: boolean
   series_title: string | null
   series_archived: boolean
+  /** Every linked experience, titles resolved server-side. The three
+   *  singular fields above name only the first of each kind and are
+   *  kept for older callers. */
+  linked_experiences?: {
+    type: 'pathway' | 'gathering' | 'series'
+    id: string
+    title: string | null
+    is_archived: boolean
+  }[]
 }
 
 export const getMemberChannels = cache(async (spaceSlug: string): Promise<ChannelSummaryLite[]> => {
