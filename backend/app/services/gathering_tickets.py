@@ -723,6 +723,26 @@ def fulfil_ticket_purchase(
     booking.status = BookingStatus.confirmed
     booking.hold_expires_at = None
 
+    # 5b. Conversations — join any channel this Gathering is linked to.
+    # Here rather than at hold creation, which is the §4 rule: starting
+    # Stripe Checkout admits nobody. A hold is ``pending_payment`` and
+    # only this flip means the money arrived.
+    #
+    # Idempotent, so repeated webhook delivery cannot produce a second
+    # membership, and it refuses anybody the creator has removed.
+    from app.services import channel_membership as _chm
+    _space_id = db.execute(
+        text("SELECT space_id FROM events WHERE id = :id"), {"id": event_id},
+    ).scalar()
+    if _space_id:
+        _chm.admit_for_experience(
+            db,
+            space_id=_space_id,
+            kind="gathering",
+            experience_id=event_id,
+            user_id=booking.user_id,
+        )
+
     # 6. AccessPass — the event-specific entitlement
     access_pass = (
         db.query(AccessPass)

@@ -1575,18 +1575,100 @@ class ConversationChannel(Base):
     posts: Mapped[list["CommunityPost"]] = relationship(
         "CommunityPost", back_populates="channel",
     )
+    experience_links: Mapped[list["ChannelExperienceLink"]] = relationship(
+        "ChannelExperienceLink", back_populates="channel",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         UniqueConstraint("space_id", "slug", name="uq_conversation_channels_space_slug"),
     )
 
 
-class ChannelMembership(Base):
-    """Presence of a row grants access to a private Channel.
+class ChannelExperienceLink(Base):
+    """One experience a Channel is linked to.
 
-    Not used for start_here / general / open / pathway / gathering
-    Channels — those derive access from Space membership, Pathway
-    Enrollment, or EventBooking through the permission service.
+    A Channel may link to any number of Pathways, Gatherings and
+    Series, in any combination — one ongoing "Women's Circle" channel
+    across November's, December's and January's Gatherings. Exactly one
+    of the three columns is set per row, enforced by a CHECK.
+
+    Deleting an experience cascades to the link and stops there. It
+    does not touch the Channel or anybody's membership of it: a link is
+    how people *arrive*, never what keeps them there.
+    """
+    __tablename__ = "channel_experience_links"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    channel_id: Mapped[str] = mapped_column(
+        String, ForeignKey("conversation_channels.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    pathway_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("pathways.id", ondelete="CASCADE"), nullable=True,
+    )
+    event_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("events.id", ondelete="CASCADE"), nullable=True,
+    )
+    series_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("event_series.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+
+    channel: Mapped["ConversationChannel"] = relationship(
+        "ConversationChannel", back_populates="experience_links",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN pathway_id IS NOT NULL THEN 1 ELSE 0 END"
+            " + CASE WHEN event_id IS NOT NULL THEN 1 ELSE 0 END"
+            " + CASE WHEN series_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_channel_experience_links_exactly_one",
+        ),
+    )
+
+    @property
+    def experience_type(self) -> str:
+        if self.pathway_id is not None:
+            return "pathway"
+        if self.event_id is not None:
+            return "gathering"
+        return "series"
+
+    @property
+    def experience_id(self) -> str:
+        return self.pathway_id or self.event_id or self.series_id  # type: ignore[return-value]
+
+
+class ChannelMembership(Base):
+    """Who belongs to a Channel, and how they came to.
+
+    For ``private`` channels this has always been the authority. It is
+    now the authority for linked-experience channels too, which is the
+    point of the feature: membership outlives the Gathering that
+    introduced somebody. A finished Gathering, a completed Pathway, an
+    expired Series, an unlinked experience — none of them remove a row.
+    Only a creator does, or an actual revocation of access.
+
+    ``status`` + ``removed_reason`` carry a distinction that matters:
+
+      * ``removed`` / ``creator`` — deliberate. A later purchase must
+        not silently re-admit them; the creator adds them back or they
+        stay out.
+      * ``removed`` / ``access_revoked`` — their access was taken away
+        (refund, removal for cause). A genuine new purchase may
+        re-admit them, because nobody decided they should be gone.
+
+    Collapsing those two into one state would either let a refund
+    permanently bar somebody who re-purchases, or let a re-purchase
+    overturn a creator's decision.
     """
     __tablename__ = "channel_memberships"
 
@@ -1605,6 +1687,22 @@ class ChannelMembership(Base):
     source: Mapped[str] = mapped_column(
         String(16), nullable=False, default="manual", server_default="manual",
     )
+    #: 'active' | 'removed'. A removed row is a tombstone, not a
+    #: deletion — it is what stops an automatic process putting
+    #: somebody back after a creator took them out.
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active",
+    )
+    #: 'creator' | 'access_revoked', and only when removed.
+    removed_reason: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    removed_by: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False,
     )
@@ -1615,6 +1713,16 @@ class ChannelMembership(Base):
 
     __table_args__ = (
         UniqueConstraint("channel_id", "user_id", name="uq_channel_memberships"),
+        CheckConstraint(
+            "status IN ('active', 'removed')",
+            name="ck_channel_memberships_status",
+        ),
+        CheckConstraint(
+            "(status = 'active' AND removed_reason IS NULL)"
+            " OR (status = 'removed'"
+            "     AND removed_reason IN ('creator', 'access_revoked'))",
+            name="ck_channel_memberships_removed_reason",
+        ),
     )
 
 

@@ -578,7 +578,13 @@ def _tables_referencing(target: str) -> set[str]:
     mapped metadata rather than hard-coded, so the schema is the source
     of truth for the census guards."""
     from app.db.base import Base
-    import app.models  # noqa: F401 — register every mapper
+    import app.main  # noqa: F401 — registers every mapper, not just the
+    #                 models package: ``users.home_place_id`` points at
+    #                 ``places``, which only the app's own import graph
+    #                 brings in. Without this, resolving that FK raises
+    #                 NoReferencedTableError whenever this file runs
+    #                 before whichever test imported the app.
+    import app.models  # noqa: F401
 
     out: set[str] = set()
     for name, table in Base.metadata.tables.items():
@@ -937,7 +943,15 @@ class TestPurchasedAccessSurvivesARefusedDelete:
         # carries its own URL in its payload, and ``space_resources``
         # is creator-only Library metadata — the member-facing
         # resources endpoint is retired.
-        severed = {"activities", "space_resources"}
+        # ``channel_experience_links`` is a Conversations channel's
+        # link to this Pathway. CASCADE drops the link and stops
+        # there: the channel and everybody in it survive, because
+        # membership is materialised and deliberately outlives the
+        # experience that introduced it. Deleting a Pathway must not
+        # evict its conversation.
+        severed = {
+            "activities", "space_resources", "channel_experience_links",
+        }
 
         assert blocks | owned_content | severed == _tables_referencing(
             "pathways",

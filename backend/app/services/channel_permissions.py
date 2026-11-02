@@ -19,23 +19,42 @@ By channel_type
     start_here — every active SpaceMembership user (system, 🌱 Start Here).
     general    — every active SpaceMembership user (system, 🏡 Common Room).
     open       — every active SpaceMembership user (creator-made).
-    private    — every user with a ChannelMembership row + caretakers.
-    pathway    — every user who currently has access to the linked
-                 Pathway under the canonical ``compute_pathway_access``
-                 rule (paid, plan-based, complimentary/manual grant,
-                 or a legitimate free/included path) + caretakers.
-                 Enrollment progress history is NOT an independent
-                 access source — revoke the grant, lose the Channel.
-    gathering  — every user with a confirmed EventBooking on the linked
-                 gathering + caretakers.
-    series     — every user who currently has access to the linked
-                 EventSeries under the canonical ``compute_series_access``
-                 rule (an active, not-yet-expired AccessPass whose
-                 ``eligible_series_id`` matches — covering pay-in-full,
-                 finite plan, and manual grants uniformly) + caretakers.
-                 A confirmed EventBooking on a single gathering inside
-                 the series is NOT a Series-access source. Revoke or
-                 expire the pass, lose the Channel.
+    private    — every user with an active ChannelMembership row
+                 + caretakers.
+    pathway / gathering / series — "linked-experience" channels. See
+                 below; the three types are now one rule.
+
+Linked-experience channels
+--------------------------
+A linked channel names any number of Pathways, Gatherings and Series
+through ``channel_experience_links``. Qualifying for **any one** of
+them admits you.
+
+Membership is **materialised and authoritative**, not recomputed. The
+order is:
+
+    1. a ``removed`` row  → denied, whatever else is true
+    2. an ``active`` row  → allowed
+    3. qualifies right now through any linked experience → allowed
+       (this is admission; a hook or the backfill writes the row)
+
+This is a deliberate reversal of the previous rule, which recomputed
+access on every check and whose docstring said so: "revoke the grant,
+lose the Channel". That was right when a channel *was* a Pathway's
+discussion. It is wrong for an ongoing community: Kelly's November
+circle finishes, and the member stays in the Women's Circle channel
+while December's attendees arrive alongside them.
+
+What the reversal does NOT do is grant anything but conversation.
+``ChannelMembership`` is read only here and by the activity feed —
+no entitlement or access path consults it — so a retained channel
+membership cannot become access to paid Pathway material, a Gathering
+ticket, or Series benefits.
+
+Step 3 only ever *adds*. Nothing in the read path removes a row, which
+is what makes membership outlive the experience. Removal happens in
+exactly two places: a creator acting deliberately, and an actual
+revocation of access (see ``channel_membership`` service).
 
 Archived Channels
     Still viewable to whoever could view them pre-archive. Not
@@ -148,16 +167,102 @@ def is_active_space_member(user_id: str, space_id: str, db: Session) -> bool:
     return row is not None
 
 
-def _is_private_channel_member(user_id: str, channel_id: str, db: Session) -> bool:
-    row = (
-        db.query(ChannelMembership.id)
+#: Channel types whose audience comes from linked experiences.
+LINKED_CHANNEL_TYPES: tuple[str, ...] = ("pathway", "gathering", "series")
+
+
+def _membership_row(user_id: str, channel_id: str, db: Session):
+    return (
+        db.query(ChannelMembership)
         .filter(
             ChannelMembership.user_id == user_id,
             ChannelMembership.channel_id == channel_id,
         )
         .first()
     )
-    return row is not None
+
+
+def _is_private_channel_member(user_id: str, channel_id: str, db: Session) -> bool:
+    """A removed row is not a member.
+
+    Private channels previously treated the mere presence of a row as
+    membership, which was fine when removal meant DELETE. Removal is
+    now a tombstone, so presence is no longer the question — status is.
+    """
+    row = _membership_row(user_id, channel_id, db)
+    return row is not None and row.status == "active"
+
+
+def qualifies_through_any_linked_experience(
+    user: User, channel: ConversationChannel, space: Space, db: Session,
+) -> bool:
+    """Does this user have access to at least ONE linked experience?
+
+    Any one is enough — that is the whole point of linking several.
+    Someone who bought November's circle qualifies for the channel that
+    also names December's, without having bought December.
+
+    This is the *admission* predicate. It is not what keeps anybody in
+    the channel; the materialised membership row does that.
+    """
+    from app.models.platform import ChannelExperienceLink
+
+    links = (
+        db.query(ChannelExperienceLink)
+        .filter(ChannelExperienceLink.channel_id == channel.id)
+        .all()
+    )
+    # Fall back to the legacy columns when no link rows exist. During
+    # rollout a channel is linked by migration 177, but a channel
+    # written by code that predates it would otherwise have no links
+    # at all and lock its members out.
+    if not links:
+        return _qualifies_legacy(user, channel, space, db)
+
+    for link in links:
+        if link.pathway_id is not None:
+            if _has_pathway_channel_access(user, link.pathway_id, space, db):
+                return True
+        elif link.event_id is not None:
+            if _is_confirmed_gathering_attendee(user.id, link.event_id, db):
+                return True
+        elif link.series_id is not None:
+            if _has_series_channel_access(user, link.series_id, space, db):
+                return True
+    return False
+
+
+def _qualifies_legacy(
+    user: User, channel: ConversationChannel, space: Space, db: Session,
+) -> bool:
+    """The pre-177 single-column rule, kept only as a safety net."""
+    ct = channel.channel_type
+    if ct == "pathway" and channel.pathway_id:
+        return _has_pathway_channel_access(user, channel.pathway_id, space, db)
+    if ct == "gathering" and channel.gathering_id:
+        return _is_confirmed_gathering_attendee(user.id, channel.gathering_id, db)
+    if ct == "series" and channel.series_id:
+        return _has_series_channel_access(user, channel.series_id, space, db)
+    return False
+
+
+def can_access_linked_channel(
+    user: User, channel: ConversationChannel, space: Space, db: Session,
+) -> bool:
+    """Membership first, qualification second — and removal beats both.
+
+    The ordering is the feature. Checking qualification first would
+    mean a creator's removal lasted until the member's next purchase
+    webhook; checking membership first without the tombstone would mean
+    a removal could never be expressed at all for somebody who still
+    qualifies.
+    """
+    row = _membership_row(user.id, channel.id, db)
+    if row is not None:
+        if row.status == "removed":
+            return False
+        return True
+    return qualifies_through_any_linked_experience(user, channel, space, db)
 
 
 def _has_pathway_channel_access(
@@ -246,18 +351,8 @@ def can_view_channel(
         return True
     if ct == "private":
         return _is_private_channel_member(user.id, channel.id, db)
-    if ct == "pathway":
-        return channel.pathway_id is not None and _has_pathway_channel_access(
-            user, channel.pathway_id, space, db,
-        )
-    if ct == "gathering":
-        return channel.gathering_id is not None and _is_confirmed_gathering_attendee(
-            user.id, channel.gathering_id, db,
-        )
-    if ct == "series":
-        return channel.series_id is not None and _has_series_channel_access(
-            user, channel.series_id, space, db,
-        )
+    if ct in LINKED_CHANNEL_TYPES:
+        return can_access_linked_channel(user, channel, space, db)
     return False
 
 
@@ -405,7 +500,59 @@ def accessible_user_ids_for_channel(
     db: Session,
 ) -> set[str]:
     """Users who can view this Channel. Used by the @mention
-    autocomplete endpoint to scope suggestions."""
+    autocomplete endpoint to scope suggestions.
+
+    For linked-experience channels this must agree with
+    ``can_access_linked_channel``, so the qualification-derived set
+    below is only half the answer: a member who was admitted months ago
+    and whose Gathering has since finished is still in the channel and
+    must still be mentionable, and a member the creator removed must
+    not be — even while they still qualify.
+    """
+    audience = _qualification_audience(channel, space, db)
+    if channel.channel_type not in LINKED_CHANNEL_TYPES:
+        return audience
+
+    rows = (
+        db.query(ChannelMembership.user_id, ChannelMembership.status)
+        .filter(ChannelMembership.channel_id == channel.id)
+        .all()
+    )
+    retained = {r.user_id for r in rows if r.status == "active"}
+    removed = {r.user_id for r in rows if r.status == "removed"}
+    # Removal wins, matching the view-side ordering. Caretakers are
+    # unioned back because they reach every channel in their Space
+    # regardless of membership.
+    return ((audience | retained) - removed) | _caretaker_ids(space, db)
+
+
+def _caretaker_ids(space: Space, db: Session) -> set[str]:
+    return {
+        row.user_id
+        for row in db.query(SpaceMembership.user_id)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+            SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+        )
+        .all()
+    }
+
+
+def _qualification_audience(
+    channel: ConversationChannel,
+    space: Space,
+    db: Session,
+) -> set[str]:
+    """Who qualifies today, by channel type.
+
+    Unchanged from the pre-177 rule and still keyed on the legacy
+    single experience columns. That is deliberate and safe: it only
+    ever *adds* to the audience the materialised rows already describe,
+    and admission writes a row the moment anybody qualifies, so a
+    multi-link channel's audience arrives through membership rather
+    than through this set.
+    """
     caretaker_ids = {
         row.user_id
         for row in db.query(SpaceMembership.user_id)
@@ -430,8 +577,11 @@ def accessible_user_ids_for_channel(
         }
         return base | caretaker_ids
     if ct == "private":
+        # ``status`` matters here too: removal is a tombstone now, so a
+        # removed member would otherwise stay mentionable.
         rows = db.query(ChannelMembership.user_id).filter(
-            ChannelMembership.channel_id == channel.id
+            ChannelMembership.channel_id == channel.id,
+            ChannelMembership.status == "active",
         ).all()
         return {r.user_id for r in rows} | caretaker_ids
     if ct == "pathway" and channel.pathway_id:

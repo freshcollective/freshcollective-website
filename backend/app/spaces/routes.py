@@ -2733,6 +2733,17 @@ def book_event(
     db.add(booking)
     if access_pass_to_charge:
         access_pass_to_charge.used_credits += 1
+    # Conversations — a free or included registration is a confirmed
+    # booking, so it admits exactly as a paid one does. Qualifying for
+    # one linked experience is enough.
+    from app.services import channel_membership as _chm
+    _chm.admit_for_experience(
+        db,
+        space_id=event.space_id,
+        kind="gathering",
+        experience_id=event.id,
+        user_id=current_user.id,
+    )
     db.commit()
     db.refresh(booking)
     background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
