@@ -57,6 +57,7 @@ from app.spaces import retained_reservations
 from app.spaces import area_policies
 from app.spaces.schemas import (
     PublicCollectiveAbout,
+    SitemapCollective,
     AccessRequestOut,
     CompleteStepRequest,
     CompleteStepResponse,
@@ -320,6 +321,8 @@ public_router = APIRouter(prefix="/api/public", tags=["public"])
 #: ``places.routes._collective_is_publicly_listable`` — a separate copy
 #: of the old rule — still excludes it from Discover Places. The only
 #: thing that changes is whether a ``PublicSpaceCard`` is built for it.
+from app.reporting.classification import DEMONSTRATION, TEST
+
 PUBLICLY_DISCOVERABLE_MANAGED_SLUGS: frozenset[str] = frozenset({
     "world-builders",
 })
@@ -365,6 +368,59 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
     """Return all public active spaces with aggregated counts — no auth required."""
     spaces = _public_space_query(db).order_by(Space.created_at).all()
     return hydrate_public_space_cards(spaces, db)
+
+
+@public_router.get("/sitemap/collectives", response_model=list[SitemapCollective])
+def list_sitemap_collectives(db: Session = Depends(get_db)) -> list[SitemapCollective]:
+    """Collectives whose About page may be indexed — no auth required.
+
+    Built on :func:`_public_space_query`, so public visibility is
+    decided in exactly one place and the sitemap cannot drift from
+    what Explore shows. Everything that query excludes — drafts,
+    archived, private, auto-managed Collectives outside the named
+    exception — is excluded here for free.
+
+    Two filters on top of it, both subtractive.
+
+    **Classification.** A Collective an operator has marked ``test``
+    or ``demonstration`` is left out: whatever its visibility says, a
+    fixture is not content to lead a search engine to. The inverse is
+    deliberately not done — a ``production`` classification is an
+    analytics fact and is never read as permission to index. The
+    classification itself is not returned; filtering happens here so
+    a public payload never has to carry it.
+
+    **Indexability.** ``is_public`` must be true, which is narrower
+    than discoverability. The named exception in
+    :data:`PUBLICLY_DISCOVERABLE_MANAGED_SLUGS` gives World Builders a
+    public card and a public About page while leaving ``is_public``
+    false — and the About page's own metadata
+    (``frontend/src/lib/collectiveSeo.ts``) reads exactly that field
+    to decide indexability, so it renders ``noindex, nofollow``.
+    Listing it here would invite a crawler to a page that tells it to
+    go away: a sitemap must not contradict the page it points at.
+
+    That coupling is deliberate but it is a coupling, so it is named.
+    If that ``noindex`` is ever judged wrong — the page is genuinely
+    public and arguably should be indexed — the fix belongs in
+    ``collectiveSeo``, and this filter should be revisited in the same
+    change rather than quietly diverging from it.
+    """
+    rows = (
+        _public_space_query(db)
+        .filter(
+            Space.is_public.is_(True),
+            or_(
+                Space.reporting_class.is_(None),
+                Space.reporting_class.notin_([TEST, DEMONSTRATION]),
+            ),
+        )
+        .order_by(Space.created_at)
+        .all()
+    )
+    return [
+        SitemapCollective(slug=s.slug, updated_at=s.updated_at) for s in rows
+    ]
 
 
 @public_router.get("/spaces/{slug}", response_model=PublicSpaceCard)

@@ -631,6 +631,25 @@ class PublicCollectiveAbout(BaseModel):
     creator_only: bool = False
 
 
+class SitemapCollective(BaseModel):
+    """One Collective's public About page, for the sitemap.
+
+    Deliberately two fields. A sitemap needs a URL and a date and
+    nothing else; a payload carrying the card's name, pricing and
+    counts would be a second public surface to keep in step with the
+    first. The reporting classification that filters this list is
+    **not** among them — it is an internal attribute and the
+    filtering happens server-side so a public payload never carries
+    it.
+    """
+
+    slug: str
+    #: ``spaces.updated_at`` — when the Collective row last changed.
+    #: A real recorded timestamp rather than "now", which would tell
+    #: a crawler every page changed on every fetch.
+    updated_at: datetime
+
+
 class PublicSpaceCard(BaseModel):
     id: str
     slug: str
