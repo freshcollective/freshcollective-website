@@ -40,6 +40,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    true as sa_true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -1274,6 +1275,14 @@ class Event(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Whether the *public* Gathering page prints how many places are
+    #: left. Presentation only — capacity is enforced and holds are
+    #: counted either way, and Creator Studio always shows the real
+    #: numbers. Availability status (including Sold out) stays visible
+    #: when this is False; only the count and the total are withheld.
+    show_remaining_publicly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_true(), default=True,
+    )
     booking_closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     booking_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Recurrence — individual events are generated from a series; grouped by series_id

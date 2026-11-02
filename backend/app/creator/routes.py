@@ -4669,6 +4669,10 @@ def _event_to_dict(
         "is_public": event.is_public,
         "requires_booking": event.requires_booking,
         "capacity": event.capacity,
+        # Creator-side, so never withheld — the editor reads its toggle
+        # state from here, and a field that writes without reading back
+        # shows the creator their setting silently reverting.
+        "show_remaining_publicly": event.show_remaining_publicly,
         "booking_closes_at": event.booking_closes_at,
         "booking_note": event.booking_note,
         "booked_count": booked_count,
@@ -4788,6 +4792,7 @@ def create_event(
         is_public=body.is_public,
         requires_booking=body.requires_booking,
         capacity=body.capacity,
+        show_remaining_publicly=body.show_remaining_publicly,
         booking_closes_at=body.booking_closes_at,
         booking_note=body.booking_note,
         thumbnail_url=body.thumbnail_url,
@@ -4915,6 +4920,7 @@ def duplicate_event(
         is_public=original.is_public,
         requires_booking=original.requires_booking,
         capacity=original.capacity,
+        show_remaining_publicly=original.show_remaining_publicly,
         booking_note=original.booking_note,
         thumbnail_url=original.thumbnail_url,
         gathering_type=original.gathering_type,
@@ -5081,6 +5087,7 @@ def bulk_create_events(
             is_public=body.is_public,
             requires_booking=body.requires_booking,
             capacity=body.capacity,
+            show_remaining_publicly=body.show_remaining_publicly,
             booking_closes_at=body.booking_closes_at,
             booking_note=body.booking_note,
             thumbnail_url=body.thumbnail_url,
@@ -5166,6 +5173,7 @@ def update_event(
 
     for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url",
                   "recording_url", "is_published", "is_public", "requires_booking", "capacity",
+                  "show_remaining_publicly",
                   "booking_closes_at", "booking_note", "thumbnail_url",
                   "gathering_type", "attendance_format",
                   "venue_name", "venue_address", "venue_locality", "access_instructions",

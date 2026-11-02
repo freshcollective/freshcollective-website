@@ -46,6 +46,8 @@ export interface SeriesScheduleGathering {
   capacity: number | null
   booked_count: number
   spots_remaining: number | null
+  show_remaining_publicly?: boolean
+  is_sold_out?: boolean
   booking_access_type: string
   my_booking_status: string | null
   is_past: boolean
@@ -66,7 +68,7 @@ function sessionState(
 ): SessionState {
   if (g.is_past) return 'past'
   if (g.my_booking_status === 'confirmed') return 'reserved'
-  if (g.capacity != null && g.spots_remaining === 0) return 'full'
+  if (g.is_sold_out ?? (g.capacity != null && g.spots_remaining === 0)) return 'full'
   if (g.booking_access_type === 'included_with_series' && !memberHasSeriesAccess) {
     return 'access-required'
   }
@@ -424,7 +426,9 @@ function ListRow({
         <p className="truncate text-[14px] font-medium text-navy-900">{g.title}</p>
         <p className="mt-0.5 text-[12px] text-slate-500">
           {formatDateTime(g.starts_at, timezone)} · {format}{locality}
-          {g.capacity != null && g.spots_remaining != null && (
+          {g.show_remaining_publicly !== false
+            && g.capacity != null
+            && g.spots_remaining != null && (
             <> · {g.booked_count}/{g.capacity} reserved</>
           )}
         </p>

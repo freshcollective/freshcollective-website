@@ -855,6 +855,10 @@ class EventCreateRequest(BaseModel):
     is_public: bool = False
     requires_booking: bool = False
     capacity: int | None = None
+    #: Presentation only — see ``Event.show_remaining_publicly``. Default
+    #: True so a client that omits the field keeps the behaviour every
+    #: existing Gathering has.
+    show_remaining_publicly: bool = True
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
@@ -932,6 +936,9 @@ class EventUpdateRequest(BaseModel):
     is_public: bool | None = None
     requires_booking: bool | None = None
     capacity: int | None = None
+    #: None = not supplied, leave as-is. A PATCH that omits this must
+    #: not silently re-reveal a count the creator hid.
+    show_remaining_publicly: bool | None = None
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
@@ -1007,6 +1014,7 @@ class EventResponse(BaseModel):
     is_public: bool = False
     requires_booking: bool = False
     capacity: int | None = None
+    show_remaining_publicly: bool = True
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     booked_count: int = 0

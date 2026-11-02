@@ -343,6 +343,16 @@ export interface EventSummary {
   capacity: number | null
   booked_count: number
   spots_remaining: number | null
+  /**
+   * Whether the creator publishes the count. When false, `capacity`,
+   * `booked_count` and `spots_remaining` all arrive empty — which is
+   * indistinguishable from "unlimited" on its own, so read this rather
+   * than inferring from the nulls. Optional because creator-side
+   * payloads of this shape predate it; treat undefined as true.
+   */
+  show_remaining_publicly?: boolean
+  /** Availability status that survives the numbers being withheld. */
+  is_sold_out?: boolean
   booking_closes_at: string | null
   booking_note: string | null
   my_booking_status: 'confirmed' | 'cancelled' | 'pending_payment' | null
@@ -952,6 +962,8 @@ export interface CreatorEvent {
   is_public: boolean
   requires_booking: boolean
   capacity: number | null
+  /** Creator-side mirror of the public display setting. */
+  show_remaining_publicly?: boolean
   booking_closes_at: string | null
   booking_note: string | null
   booked_count: number

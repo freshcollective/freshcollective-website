@@ -72,7 +72,13 @@ export default function EventCard({
 
   const isCancelled = event.status === 'cancelled'
   const isReserved  = event.my_booking_status === 'confirmed'
-  const isFull = event.spots_remaining !== null && event.spots_remaining === 0 && !isReserved
+  // Prefer the server's status flag: when the creator hides the count,
+  // `spots_remaining` is null and inferring fullness from it would
+  // report a sold-out Gathering as open.
+  const showsPlaces = event.show_remaining_publicly !== false
+  const isFull = !isReserved && (
+    event.is_sold_out ?? (event.spots_remaining !== null && event.spots_remaining === 0)
+  )
   const bookingClosed = !event.can_book && !isReserved && event.requires_booking && !isFull && !isMember
 
   // Countdown pill styling — "Live now" gets a soft pulse, otherwise
@@ -82,13 +88,20 @@ export default function EventCard({
 
   // Availability line is only meaningful for current Gatherings —
   // hide it in archive so past events don't advertise capacity.
+  // With the count hidden, availability is still stated — just without
+  // a number. Saying nothing at all would send a member to a checkout
+  // that cannot succeed.
   const placesLabel = archive
     ? null
-    : event.requires_booking && event.spots_remaining !== null
-      ? event.spots_remaining === 0
-        ? 'All places taken'
-        : `${event.spots_remaining} place${event.spots_remaining === 1 ? '' : 's'} remaining`
-      : null
+    : !event.requires_booking
+      ? null
+      : !showsPlaces
+        ? (isFull ? 'All places taken' : null)
+        : event.spots_remaining !== null
+          ? event.spots_remaining === 0
+            ? 'All places taken'
+            : `${event.spots_remaining} place${event.spots_remaining === 1 ? '' : 's'} remaining`
+          : null
 
   const seriesLabel = event.recurrence_index && event.recurrence_total
     ? `Gathering ${event.recurrence_index} of ${event.recurrence_total}`

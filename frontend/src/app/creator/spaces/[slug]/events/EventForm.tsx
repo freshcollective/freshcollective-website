@@ -165,6 +165,11 @@ export default function EventForm({
   // Booking
   const [requiresBooking, setRequiresBooking] = useState(event?.requires_booking ?? false)
   const [capacity, setCapacity] = useState<string>(event?.capacity != null ? String(event.capacity) : '')
+  // Default true: every Gathering that already exists shows its count,
+  // so an absent value must not read as "hide".
+  const [showRemainingPublicly, setShowRemainingPublicly] = useState(
+    event?.show_remaining_publicly ?? true,
+  )
   const [bookingClosesAt, setBookingClosesAt] = useState(
     event?.booking_closes_at ? toLocalDatetime(event.booking_closes_at) : ''
   )
@@ -343,6 +348,7 @@ export default function EventForm({
         is_public: isPublic,
         requires_booking: requiresBooking,
         capacity: capacity ? parseInt(capacity, 10) : null,
+        show_remaining_publicly: showRemainingPublicly,
         booking_closes_at: bookingClosesAt ? new Date(bookingClosesAt).toISOString() : null,
         booking_note: bookingNote || null,
         // Gatherings 2.0 vocabulary — see `lib/gatheringTypes.ts`.
@@ -1090,6 +1096,27 @@ export default function EventForm({
                     onChange={(e) => setBookingClosesAt(e.target.value)}
                     className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
                   />
+                </div>
+              </div>
+              <div className="flex items-start gap-3 border-t border-border pt-4">
+                <Toggle
+                  checked={showRemainingPublicly}
+                  onChange={setShowRemainingPublicly}
+                  disabled={capacityNum == null}
+                />
+                <div>
+                  <span className="text-sm font-medium text-navy-800">
+                    Show remaining places publicly
+                  </span>
+                  <p className="mt-0.5 text-xs text-black">
+                    {capacityNum == null
+                      ? 'Set a capacity to choose whether the count is shown.'
+                      : showRemainingPublicly
+                        ? 'Members see how many places are left.'
+                        : 'The count stays private. Capacity is still enforced, ' +
+                          'Sold out is still shown, and you always see the real ' +
+                          'numbers in Creator Studio.'}
+                  </p>
                 </div>
               </div>
               <div>

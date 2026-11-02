@@ -471,6 +471,15 @@ class EventSummary(BaseModel):
     capacity: int | None = None
     booked_count: int = 0
     spots_remaining: int | None = None
+    #: Whether the creator lets the public see the count. When False,
+    #: ``capacity`` and ``spots_remaining`` both arrive as None — which
+    #: on its own is indistinguishable from "unlimited", so clients must
+    #: read this flag rather than inferring from the nulls.
+    show_remaining_publicly: bool = True
+    #: Availability status that survives the numbers being withheld.
+    #: Hiding "Sold out" would send members to a checkout that cannot
+    #: succeed, so this is reported either way.
+    is_sold_out: bool = False
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     my_booking_status: str | None = None   # 'confirmed' | 'cancelled' | None

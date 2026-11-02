@@ -264,9 +264,15 @@ export default async function EventDetailPage({ params }: Props) {
   // Duration string once, so both the hero and the WHEN block can reuse it.
   const durationLabel = event.ends_at ? formatDuration(event.starts_at, event.ends_at) : null
 
-  const placesRemaining = event.spots_remaining
+  // `placesRemaining` is null both when capacity is unlimited and when
+  // the creator hides the count, so fullness comes from the server's
+  // status flag rather than from the absent number.
+  const showsPlaces = event.show_remaining_publicly !== false
+  const placesRemaining = showsPlaces ? event.spots_remaining : null
   const isReservedByMe = event.my_booking_status === 'confirmed'
-  const isFull = placesRemaining !== null && placesRemaining === 0 && !isReservedByMe
+  const isFull = !isReservedByMe && (
+    event.is_sold_out ?? (placesRemaining !== null && placesRemaining === 0)
+  )
 
   // Hero cover fallback: Gathering's own thumbnail → parent Series
   // cover → soft gradient. Series children in a bulk-created term

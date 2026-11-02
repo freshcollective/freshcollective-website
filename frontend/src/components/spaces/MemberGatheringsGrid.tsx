@@ -257,7 +257,7 @@ function StandaloneCard({
   if (event.my_booking_status === 'confirmed') {
     statusLabel = 'Reserved'
     statusUsesPalette = true
-  } else if (event.capacity != null && event.spots_remaining === 0) {
+  } else if (event.is_sold_out ?? (event.capacity != null && event.spots_remaining === 0)) {
     statusLabel = 'Full'
     statusUsesPalette = false
   } else if (isPaid) {

@@ -186,6 +186,12 @@ class SeriesGatheringSummary(BaseModel):
     capacity: int | None = None
     booked_count: int = 0
     spots_remaining: int | None = None
+    #: See ``Event.show_remaining_publicly``. When False the three
+    #: numbers above arrive empty and this is the only way to tell that
+    #: apart from unlimited capacity.
+    show_remaining_publicly: bool = True
+    #: Availability status that survives the numbers being withheld.
+    is_sold_out: bool = False
     my_booking_status: str | None = None    # 'confirmed' | 'cancelled' | None
     is_past: bool = False
 
@@ -610,14 +616,26 @@ def list_member_gathering_series(
 def _gathering_summary(
     ev: Event, user: User | None, db: Session, now: datetime,
 ) -> SeriesGatheringSummary:
-    booked = (
-        db.query(func.count(EventBooking.id))
-        .filter(
-            EventBooking.event_id == ev.id,
-            EventBooking.status == BookingStatus.confirmed,
-        )
-        .scalar()
-    ) or 0
+    from app.services import gathering_tickets as _gt
+    from app.services.gathering_types import normalise_access_type as _norm_access
+
+    # Paid Gatherings carry unresolved holds, and those occupy seats —
+    # nothing restricts ticket sales to standalone Gatherings, so a
+    # Gathering inside a Series can hold capacity too. Counting only
+    # `confirmed` here would advertise seats the allocation gate
+    # refuses, the same drift that was fixed on the Collective's
+    # Gatherings list. One predicate, one answer (invariant I2).
+    if _norm_access(getattr(ev, "booking_access_type", None)) == "paid_separately":
+        booked = _gt.capacity_used(db, ev.id)
+    else:
+        booked = (
+            db.query(func.count(EventBooking.id))
+            .filter(
+                EventBooking.event_id == ev.id,
+                EventBooking.status == BookingStatus.confirmed,
+            )
+            .scalar()
+        ) or 0
     my_status: str | None = None
     if user is not None:
         my = (
@@ -634,6 +652,16 @@ def _gathering_summary(
     spots_remaining = (
         max(0, (ev.capacity or 0) - booked) if ev.capacity is not None else None
     )
+    # Status first, from the true count; withholding happens after.
+    is_sold_out = bool(
+        ev.requires_booking
+        and ev.capacity is not None
+        and booked >= ev.capacity
+    )
+    show_remaining = bool(getattr(ev, "show_remaining_publicly", True))
+    public_capacity = ev.capacity if show_remaining else None
+    public_booked = booked if show_remaining else 0
+    public_spots = spots_remaining if show_remaining else None
     is_past = bool(ev.ends_at and ev.ends_at < now) or (
         not ev.ends_at and ev.starts_at < now
     )
@@ -652,9 +680,11 @@ def _gathering_summary(
             ev.booking_access_type.value if hasattr(ev.booking_access_type, "value")
             else str(getattr(ev, "booking_access_type", "included_with_collective"))
         ),
-        capacity=ev.capacity,
-        booked_count=booked,
-        spots_remaining=spots_remaining,
+        capacity=public_capacity,
+        booked_count=public_booked,
+        spots_remaining=public_spots,
+        show_remaining_publicly=show_remaining,
+        is_sold_out=is_sold_out,
         my_booking_status=my_status,
         is_past=is_past,
     )

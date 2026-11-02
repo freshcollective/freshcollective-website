@@ -2294,20 +2294,41 @@ def list_events(
     events_q = db.query(Event).filter(*base_visibility, *scope_filters)
     events = events_q.order_by(order_by).all()
 
-    # Bulk-fetch confirmed booking counts for all events in one query
+    # Bulk-fetch seats taken, in one query per rule.
+    #
+    # Paid Gatherings must include unresolved `pending_payment` holds,
+    # for the same reason the detail endpoint does: the number a member
+    # reads has to be the number the allocation gate will honour. This
+    # list counted `confirmed` only, so a Gathering with every seat
+    # inside Stripe Checkout advertised itself as untouched and the
+    # refusal arrived on click. Free/included Gatherings never generate
+    # holds, so their count is unchanged.
+    #
+    # The paid count comes from `_gt.capacity_used_bulk` rather than a
+    # second predicate written here — a local copy is what drifted.
+    from app.services.gathering_types import normalise_access_type as _norm_access
+
     event_ids = [e.id for e in events]
     booked_counts: dict[str, int] = {}
     if event_ids:
-        rows = (
-            db.query(EventBooking.event_id, func.count(EventBooking.id))
-            .filter(
-                EventBooking.event_id.in_(event_ids),
-                EventBooking.status == BookingStatus.confirmed,
+        paid_ids = [
+            e.id for e in events
+            if _norm_access(getattr(e, 'booking_access_type', None)) == 'paid_separately'
+        ]
+        free_ids = [eid for eid in event_ids if eid not in set(paid_ids)]
+        if free_ids:
+            rows = (
+                db.query(EventBooking.event_id, func.count(EventBooking.id))
+                .filter(
+                    EventBooking.event_id.in_(free_ids),
+                    EventBooking.status == BookingStatus.confirmed,
+                )
+                .group_by(EventBooking.event_id)
+                .all()
             )
-            .group_by(EventBooking.event_id)
-            .all()
-        )
-        booked_counts = dict(rows)
+            booked_counts = dict(rows)
+        if paid_ids:
+            booked_counts.update(_gt.capacity_used_bulk(db, paid_ids))
 
     # Fetch current user's bookings if logged in
     user_bookings: dict[str, str] = {}  # event_id -> status
@@ -2484,6 +2505,24 @@ def list_events(
             and is_member
             and my_status == "confirmed"
         )
+        # Withholding happens here, at the response boundary, and
+        # nowhere earlier: `can_book` and `is_full` above are derived
+        # from the true count, so hiding the number cannot make a full
+        # Gathering look bookable. `spots_remaining=None` already means
+        # "unlimited" to every client, so the hidden case needs its own
+        # signal rather than a reused null — hence
+        # `show_remaining_publicly` and `is_sold_out` travel with it.
+        public_spots = spots_remaining
+        public_capacity = e.capacity
+        public_booked = booked
+        if not getattr(e, 'show_remaining_publicly', True):
+            # All three, not just the remainder: `booked_count` and
+            # `capacity` reconstruct it between them, so withholding one
+            # number and shipping its two addends hides nothing.
+            public_spots = None
+            public_capacity = None
+            public_booked = 0
+
         result.append(EventSummary(
             id=e.id,
             title=e.title,
@@ -2492,9 +2531,11 @@ def list_events(
             ends_at=e.ends_at,
             location_type=e.location_type.value if hasattr(e.location_type, "value") else str(e.location_type),
             requires_booking=e.requires_booking,
-            capacity=e.capacity,
-            booked_count=booked,
-            spots_remaining=spots_remaining,
+            capacity=public_capacity,
+            booked_count=public_booked,
+            spots_remaining=public_spots,
+            show_remaining_publicly=bool(getattr(e, 'show_remaining_publicly', True)),
+            is_sold_out=is_full,
             booking_closes_at=e.booking_closes_at,
             booking_note=e.booking_note,
             my_booking_status=my_status,
@@ -3222,6 +3263,24 @@ def get_event(
         can_book = False
     can_cancel_booking = bool(not is_past and not is_cancelled and my_booking_status == "confirmed")
 
+    # Sold out is a status, not a number, and it stays visible even when
+    # the numbers do not: a member who cannot be told "Sold out" is a
+    # member sent to a checkout that must fail.
+    is_sold_out = bool(
+        event.requires_booking
+        and event.capacity is not None
+        and booked_count >= event.capacity
+    )
+    # Withheld at the boundary only. Everything above — can_book,
+    # is_sold_out — was derived from the true count, so hiding the
+    # display cannot make a full Gathering look open. All three numbers
+    # go together, because capacity and booked_count reconstruct the
+    # remainder between them.
+    show_remaining = bool(getattr(event, 'show_remaining_publicly', True))
+    public_capacity = event.capacity if show_remaining else None
+    public_booked = booked_count if show_remaining else 0
+    public_spots = spots_remaining if show_remaining else None
+
     # Sensitive detail visibility — confirmed attendees + caretakers
     # see meeting URL, full venue address, and arrival instructions.
     # Everyone else sees only the venue name as a rough locator.
@@ -3248,9 +3307,11 @@ def get_event(
         # Gatherings, preserved here.
         "recording_url": event.recording_url if (show_sensitive or is_member) else None,
         "requires_booking": event.requires_booking,
-        "capacity": event.capacity,
-        "booked_count": booked_count,
-        "spots_remaining": spots_remaining,
+        "capacity": public_capacity,
+        "booked_count": public_booked,
+        "spots_remaining": public_spots,
+        "show_remaining_publicly": show_remaining,
+        "is_sold_out": is_sold_out,
         "booking_closes_at": event.booking_closes_at,
         "booking_note": event.booking_note,
         "my_booking_status": my_booking_status,

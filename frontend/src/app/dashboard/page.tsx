@@ -1225,6 +1225,7 @@ function SidebarGatheringRow({ g }: { g: UpcomingEvent }) {
   const isPaid = g.event.booking_access_type === 'paid_separately'
   const canReserve = !isAttending && !isPaid && g.event.requires_booking && g.event.can_book
   const paidBuyable = !isAttending && isPaid && g.event.sales_enabled
+    && !(g.event.is_sold_out ?? false)
     && (g.event.spots_remaining === null || g.event.spots_remaining > 0)
   const actionLabel = isAttending
     ? "You're attending"

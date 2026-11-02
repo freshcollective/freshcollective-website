@@ -194,3 +194,130 @@ class TestTheOldRuleCannotComeBack:
         assert authoritative == 2
         assert summary.confirmed_booking_count + summary.active_hold_count == authoritative
         assert summary.remaining_capacity == event.capacity - authoritative
+
+
+class TestTheHttpSurfacesAgreeToo:
+    """The surface the member actually sees.
+
+    ``TestTheOldRuleCannotComeBack.test_every_capacity_surface_agrees``
+    compares ``capacity_used`` with ``ticket_summary`` and calls that
+    "member-facing availability" — but neither of those is what the
+    member reads. Both are service calls. The member reads
+    ``spots_remaining`` off two HTTP endpoints, and the list one was
+    still counting ``status = 'confirmed'`` only.
+
+    So a Gathering with every seat held and none yet paid advertised
+    itself as wide open, and the refusal arrived on click. These drive
+    the endpoints, because a test that drives the service cannot see
+    that.
+    """
+
+    @pytest.fixture
+    def viewer(self, db, make_user):
+        """A plain member. Gatherings default to members-only
+        (``AREA_DEFAULTS``), so an anonymous caller gets 404 and never
+        reaches the capacity arithmetic at all."""
+        return make_user()
+
+    @pytest.fixture
+    def client(self, db, viewer):
+        from fastapi.testclient import TestClient
+
+        from app.auth.dependencies import get_current_user, get_optional_user
+        from app.db.session import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_optional_user] = lambda: viewer
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+
+    def _join(self, db, space, user):
+        from app.models.platform import (
+            SpaceMembership,
+            SpaceMembershipStatus,
+            SpaceRole,
+        )
+
+        db.add(SpaceMembership(
+            id=f"sm_{user.id[-10:]}",
+            user_id=user.id,
+            space_id=space.id,
+            role=SpaceRole.learner,
+            status=SpaceMembershipStatus.active,
+            joined_at=datetime.utcnow(),
+        ))
+        db.flush()
+
+    @pytest.fixture
+    def held_event(self, db, make_event, make_user, make_pending_txn, viewer):
+        """Capacity 4: one confirmed, two unresolved holds → 1 left.
+
+        One hold is inside its window and one is past it, because the
+        rule must not distinguish them (invariant I2).
+        """
+        event = make_event(capacity=4)
+        self._join(db, event.space, viewer)
+        _add_confirmed(db, event.id, make_user().id)
+        for i in range(2):
+            txn, payer = make_pending_txn(space=event.space, event=event)
+            _add_hold(db, event.id, payer.id, minutes_ahead=-5 if i else 20,
+                      txn_id=txn.id)
+        db.commit()
+        return event
+
+    def _list_row(self, client, event):
+        rows = client.get(f"/api/spaces/{event.space.slug}/events").json()
+        assert isinstance(rows, list), rows
+        match = [r for r in rows if r["id"] == event.id]
+        assert match, f"gathering missing from the list: {rows}"
+        return match[0]
+
+    def test_the_list_endpoint_counts_holds(self, client, db, held_event):
+        authoritative = gt.capacity_used(db, held_event.id)
+        assert authoritative == 3, "fixture precondition"
+
+        row = self._list_row(client, held_event)
+        assert row["spots_remaining"] == held_event.capacity - authoritative, (
+            "the list advertised seats that the allocation gate will "
+            "refuse — one predicate, one answer (invariant I2)"
+        )
+
+    def test_the_detail_endpoint_counts_holds(self, client, db, held_event):
+        authoritative = gt.capacity_used(db, held_event.id)
+        body = client.get(
+            f"/api/spaces/{held_event.space.slug}/events/{held_event.id}"
+        ).json()
+        assert body["spots_remaining"] == held_event.capacity - authoritative
+
+    def test_list_and_detail_cannot_disagree(self, client, db, held_event):
+        """The two numbers the member can compare side by side."""
+        row = self._list_row(client, held_event)
+        detail = client.get(
+            f"/api/spaces/{held_event.space.slug}/events/{held_event.id}"
+        ).json()
+        assert row["spots_remaining"] == detail["spots_remaining"]
+
+    def test_fully_held_gathering_is_not_advertised_as_open(
+        self, client, db, make_event, make_pending_txn, viewer,
+    ):
+        """No confirmed bookings at all — every seat inside Checkout.
+
+        The confirmed-only count read this as completely empty, which is
+        the worst version of the bug: not an off-by-a-few, a full house
+        advertised as untouched.
+        """
+        event = make_event(capacity=2)
+        self._join(db, event.space, viewer)
+        for _ in range(2):
+            txn, payer = make_pending_txn(space=event.space, event=event)
+            _add_hold(db, event.id, payer.id, minutes_ahead=20, txn_id=txn.id)
+        db.commit()
+
+        row = self._list_row(client, event)
+        assert row["spots_remaining"] == 0
+        # `can_book` is the field the UI actually gates the button on,
+        # and it is derived from the same count — so a wrong count
+        # offers a button that cannot work.
+        assert row["can_book"] is False

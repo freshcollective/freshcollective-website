@@ -221,12 +221,46 @@ def ensure_sales_enabled_or_raise() -> None:
 #: see invariant I2. A ``pending_payment`` row stops consuming a seat only
 #: when something moves it to ``cancelled`` or ``confirmed``, and only
 #: positive knowledge does that.
-CAPACITY_USED_SQL = text("""
+#: The two occupying statuses, named once. Both SQL statements below are
+#: built from this, so the single-event and bulk answers cannot drift —
+#: which is exactly how the member-facing list came to count only
+#: ``confirmed`` while the allocation gate counted both.
+CAPACITY_OCCUPYING_STATUSES: tuple[str, ...] = ("confirmed", "pending_payment")
+
+_OCCUPYING_SQL_LIST = ", ".join(f"'{s}'" for s in CAPACITY_OCCUPYING_STATUSES)
+
+CAPACITY_USED_SQL = text(f"""
     SELECT COUNT(*)
     FROM event_bookings
     WHERE event_id = :event_id
-      AND status IN ('confirmed', 'pending_payment')
+      AND status IN ({_OCCUPYING_SQL_LIST})
 """)
+
+#: Bulk sibling for list endpoints. One grouped query for any number of
+#: Gatherings, because the alternative in a list view is an N+1 — and the
+#: alternative to *that*, as happened here, is a hand-rolled second
+#: predicate that forgets the holds.
+CAPACITY_USED_BULK_SQL = text(f"""
+    SELECT event_id, COUNT(*) AS used
+    FROM event_bookings
+    WHERE event_id = ANY(:event_ids)
+      AND status IN ({_OCCUPYING_SQL_LIST})
+    GROUP BY event_id
+""")
+
+
+def capacity_used_bulk(db: Session, event_ids: list[str]) -> dict[str, int]:
+    """``{event_id: seats_taken}`` for many Gatherings in one query.
+
+    Events with nothing booked are absent from the mapping rather than
+    present as 0 — callers already default a missing id to 0, and
+    returning a row per requested id would mean a second pass over the
+    list for no gain.
+    """
+    if not event_ids:
+        return {}
+    rows = db.execute(CAPACITY_USED_BULK_SQL, {"event_ids": event_ids})
+    return {row[0]: int(row[1]) for row in rows}
 
 
 def capacity_used(db: Session, event_id: str) -> int:
