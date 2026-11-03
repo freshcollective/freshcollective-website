@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.services.discount_pricing import MAX_PERCENT_BPS
 
@@ -844,6 +844,11 @@ class BulkEventCreateResponse(BaseModel):
     series_id: str
 
 
+#: Width of ``events.venue_locality`` (migration 114). Stated here so
+#: the schema bound, the editor's input cap and the column cannot drift.
+VENUE_LOCALITY_MAX = 160
+
+
 class EventCreateRequest(BaseModel):
     title: str
     description: str | None = None
@@ -876,7 +881,12 @@ class EventCreateRequest(BaseModel):
     attendance_format: str = "online"
     venue_name: str | None = None
     venue_address: str | None = None
-    venue_locality: str | None = None
+    #: Public location. Bounded to the column width so an over-long
+    #: value is a field-scoped 422 rather than a DataError surfacing
+    #: as a 500 — the editor caps its input at the same number.
+    venue_locality: str | None = Field(
+        default=None, max_length=VENUE_LOCALITY_MAX,
+    )
     access_instructions: str | None = None
     booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None
@@ -960,7 +970,10 @@ class EventUpdateRequest(BaseModel):
     attendance_format: str | None = None
     venue_name: str | None = None
     venue_address: str | None = None
-    venue_locality: str | None = None
+    #: See the note on ``EventCreateRequest``.
+    venue_locality: str | None = Field(
+        default=None, max_length=VENUE_LOCALITY_MAX,
+    )
     access_instructions: str | None = None
     booking_access_type: str | None = None
     booking_required_pathway_id: str | None = None

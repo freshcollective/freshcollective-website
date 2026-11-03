@@ -4690,6 +4690,15 @@ def _event_to_dict(
         "gathering_type": getattr(event, 'gathering_type', 'other') or 'other',
         "attendance_format": getattr(event, 'attendance_format', 'online') or 'online',
         "venue_name": getattr(event, 'venue_name', None),
+        # Public location. Creator-side, so never withheld — and
+        # omitting it here is what made a creator's edit look like it
+        # would not save: the editor fills its box from this payload,
+        # so the box loaded blank however much the row held, and a save
+        # that left it alone sent null. Same failure as the one the
+        # ``show_remaining_publicly`` note above describes, one field
+        # over: a field that writes without reading back shows the
+        # creator their own value reverting.
+        "venue_locality": getattr(event, 'venue_locality', None),
         "venue_address": getattr(event, 'venue_address', None),
         "access_instructions": getattr(event, 'access_instructions', None),
         "booking_access_type": access_type,
@@ -5188,12 +5197,26 @@ def update_event(
                   "show_remaining_publicly", "notify_members",
                   "booking_closes_at", "booking_note", "thumbnail_url",
                   "gathering_type", "attendance_format",
-                  "venue_name", "venue_address", "venue_locality", "access_instructions",
+                  "venue_name", "venue_address", "access_instructions",
                   "booking_access_type", "booking_required_pathway_id",
                   "ticket_price_cents", "ticket_currency"):
         val = getattr(body, field)
         if val is not None:
             setattr(event, field, val)
+
+    # ``venue_locality`` uses ``model_fields_set``, like ``series_id``
+    # below, so an explicit ``null`` empties the Public location while
+    # omission leaves it untouched.
+    #
+    # It is out of the loop above because the loop cannot tell those
+    # two apart. That is the right default for most fields — a partial
+    # PATCH must not blank a title — but it made this one a one-way
+    # door: a creator who cleared the box got the old value back, and
+    # for as long as the editor was never shown the stored value, every
+    # save of an untouched box sent null and was silently discarded.
+    if "venue_locality" in body.model_fields_set:
+        value = (body.venue_locality or "").strip()
+        event.venue_locality = value or None
 
     # ``series_id`` uses ``model_fields_set`` so an explicit ``null``
     # detaches the Event from its Series, while omission leaves the

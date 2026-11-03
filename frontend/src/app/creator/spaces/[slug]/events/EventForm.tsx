@@ -736,6 +736,11 @@ export default function EventForm({
                 value={venueLocality}
                 onChange={(e) => setVenueLocality(e.target.value)}
                 placeholder="e.g. South Croydon, Victoria"
+                /* Matches the column width and the schema bound
+                   (``VENUE_LOCALITY_MAX``). Without it a longer value
+                   reached Postgres and failed the save with nothing
+                   useful to show the creator. */
+                maxLength={160}
                 className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
               />
               <p className="mt-1 text-[12px] leading-relaxed text-black">
