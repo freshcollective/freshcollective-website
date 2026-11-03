@@ -4113,6 +4113,63 @@ def update_step(
     return step
 
 
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/duplicate",
+    response_model=StepResponse,
+    status_code=201,
+)
+def duplicate_pathway_step(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> PathwayStep:
+    """Copy a step's content into a new step immediately after it.
+
+    For a creator whose steps share a shape — introduction, content,
+    reflection, exercise, resources — so the scaffolding is built once.
+    What is copied, what is not, and why member activity cannot follow
+    are all in ``services/pathway_step_duplication``.
+
+    **Nothing is announced.** ``create_step`` queues ``trigger_new_step``
+    and records shared activity, because adding a step to a Pathway
+    members can open is news. A duplicate is not: it arrives carrying
+    somebody else's words and is about to be rewritten. Telling members
+    twice about one piece of content — once for the copy, once for
+    whatever it becomes — would be worse than telling them late, and the
+    step-added email is deliberately off anyway.
+
+    **Same Pathway only.** The duplicate keeps ``pathway_id``, and
+    copying into another Pathway is not this operation.
+
+    Concurrency: the Pathway row is locked for the duration, so two
+    duplications in the same Pathway serialise rather than computing
+    the same insert position and shifting each other's rows.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    # Serialise duplications within this Pathway. The shift below is
+    # ``position + 1 WHERE position > source``; two of those running
+    # against overlapping rows without a lock can both read the same
+    # source position and both insert at it.
+    db.query(Pathway).filter(Pathway.id == pathway.id).with_for_update().first()
+
+    source = _get_step(pathway, step_slug, db)
+
+    from app.services.pathway_step_duplication import (
+        copied_title,
+        duplicate_step,
+    )
+
+    new_slug = _step_slug(pathway, copied_title(source.title), None, db)
+    duplicate = duplicate_step(db, source, slug=new_slug)
+    db.commit()
+    db.refresh(duplicate)
+    return duplicate
+
+
 @router.delete("/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}", status_code=204)
 def delete_step(
     slug: str,

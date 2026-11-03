@@ -7,6 +7,12 @@ import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } f
 import ImagePickerField from '@/components/creator/ImagePickerField'
 import { apiUrl } from '@/lib/api'
 import {
+  STEP_DUPLICATE_LIVE_WARNING,
+  stepDuplicateEndpoint,
+  stepDuplicateErrorMessage,
+  stepDuplicateNeedsConfirmation,
+} from '@/lib/stepDuplication'
+import {
   isKnowledgeGuide,
   unitCountLabel,
   unitNoun,
@@ -143,7 +149,7 @@ function AddStepForm({
 // ---------------------------------------------------------------------------
 
 function StepRow({
-  step, num, sections, pathwaySlug, onSectionChange, onMoveUp, onMoveDown, isFirst, isLast, onDelete, deleting,
+  step, num, sections, pathwaySlug, onSectionChange, onMoveUp, onMoveDown, isFirst, isLast, onDelete, deleting, onDuplicate, duplicating,
 }: {
   step: CreatorStep
   num: number
@@ -156,6 +162,8 @@ function StepRow({
   isLast?: boolean
   onDelete?: () => void
   deleting?: boolean
+  onDuplicate?: () => void
+  duplicating?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -218,6 +226,17 @@ function StepRow({
       >
         Edit →
       </Link>
+      {onDuplicate && (
+        <button
+          type="button"
+          onClick={onDuplicate}
+          disabled={duplicating}
+          aria-busy={duplicating}
+          className="shrink-0 text-[12px] text-black transition-colors hover:text-teal-700 disabled:opacity-40"
+        >
+          {duplicating ? 'Duplicating…' : 'Duplicate step'}
+        </button>
+      )}
       {onDelete && (
         <button
           type="button"
@@ -264,7 +283,8 @@ function PathwayStructure({
   // addingToContext: null=closed, 'global'=unsectioned form, or a section id
   const [addingToContext, setAddingToContext] = useState<string | null>(null)
   const [deletingStepId, setDeletingStepId] = useState<string | null>(null)
-  const [stepDeleteError, setStepDeleteError] = useState<string | null>(null)
+  const [stepActionError, setStepActionError] = useState<string | null>(null)
+  const [duplicatingStepId, setDuplicatingStepId] = useState<string | null>(null)
 
   function stepsForSection(sectionId: string): CreatorStep[] {
     return steps
@@ -463,10 +483,51 @@ function PathwayStructure({
       .catch(() => { /* router.refresh() covers it */ })
   }
 
+  async function handleStepDuplicate(step: CreatorStep) {
+    if (duplicatingStepId) return
+    // A step has no draft state of its own, so a copy in a published
+    // Pathway is visible to members immediately — see
+    // ``lib/stepDuplication``. One sentence before, rather than a
+    // surprise after.
+    if (stepDuplicateNeedsConfirmation(pathway.status)
+        && !confirm(STEP_DUPLICATE_LIVE_WARNING)) {
+      return
+    }
+    setDuplicatingStepId(step.id)
+    setStepActionError(null)
+    try {
+      const res = await fetch(
+        apiUrl(stepDuplicateEndpoint(spaceSlug, pathway.slug, step.slug)),
+        { method: 'POST', credentials: 'include' },
+      )
+      if (!res.ok) {
+        let detail: unknown
+        try { detail = (await res.json())?.detail } catch { /* not JSON */ }
+        console.error(`[pathway-step/duplicate] ${res.status}`, detail)
+        setStepActionError(stepDuplicateErrorMessage(res.status, detail))
+        return
+      }
+      // Refetched rather than patched into place: the server shifted
+      // every step below the source, so local state would be wrong
+      // about their positions.
+      const fresh = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps`),
+        { credentials: 'include' },
+      )
+      if (fresh.ok) setSteps(await fresh.json())
+      startTransition(() => { router.refresh() })
+    } catch (err) {
+      console.error('[pathway-step/duplicate]', err)
+      setStepActionError(stepDuplicateErrorMessage(0, null))
+    } finally {
+      setDuplicatingStepId(null)
+    }
+  }
+
   async function handleStepDelete(step: CreatorStep) {
     if (!confirm('Are you sure you want to delete this step? This cannot be undone.')) return
     setDeletingStepId(step.id)
-    setStepDeleteError(null)
+    setStepActionError(null)
     try {
       const res = await fetch(
         apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`),
@@ -475,10 +536,10 @@ function PathwayStructure({
       if (res.ok) {
         setSteps(steps.filter((s) => s.id !== step.id))
       } else {
-        setStepDeleteError('Failed to delete step. Please try again.')
+        setStepActionError('Failed to delete step. Please try again.')
       }
     } catch {
-      setStepDeleteError('Failed to delete step. Please try again.')
+      setStepActionError('Failed to delete step. Please try again.')
     } finally {
       setDeletingStepId(null)
     }
@@ -558,9 +619,9 @@ function PathwayStructure({
       )}
 
       {/* ── Step delete error ── */}
-      {stepDeleteError && (
+      {stepActionError && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] text-red-700">
-          {stepDeleteError}
+          {stepActionError}
         </div>
       )}
 
@@ -731,6 +792,8 @@ function PathwayStructure({
                         isLast={stepIdx === sectionSteps.length - 1}
                         onDelete={() => handleStepDelete(step)}
                         deleting={deletingStepId === step.id}
+                        onDuplicate={() => handleStepDuplicate(step)}
+                        duplicating={duplicatingStepId === step.id}
                       />
                     ))}
                   </div>
@@ -804,6 +867,8 @@ function PathwayStructure({
                     isLast={stepIdx === unsectionedSteps.length - 1}
                     onDelete={() => handleStepDelete(step)}
                     deleting={deletingStepId === step.id}
+                    onDuplicate={() => handleStepDuplicate(step)}
+                    duplicating={duplicatingStepId === step.id}
                   />
                 ))}
               </div>
@@ -828,6 +893,8 @@ function PathwayStructure({
                 onMoveDown={() => handleFlatStepMove(step, 1)}
                 onDelete={() => handleStepDelete(step)}
                 deleting={deletingStepId === step.id}
+                onDuplicate={() => handleStepDuplicate(step)}
+                duplicating={duplicatingStepId === step.id}
                 isFirst={i === 0}
                 isLast={i === sortedFlatSteps.length - 1}
               />

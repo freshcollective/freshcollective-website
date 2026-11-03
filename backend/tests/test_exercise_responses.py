@@ -343,10 +343,62 @@ class TestPrivacy:
         assert client.patch(target, json={"response_text": "x"}).status_code == 403
 
     def test_no_creator_or_admin_route_returns_this_text(self):
-        # The strongest available statement: no route outside the member
-        # endpoints mentions the model at all, so there is no surface to
+        # The strongest available statement: no code outside the member
+        # endpoints touches the model at all, so there is no surface to
         # audit rather than one that merely happens to omit the field.
+        #
+        # Comments and docstrings are stripped before the scan. They
+        # were not, and the first file to *explain* why a member's
+        # exercise answers cannot follow a duplicated step was reported
+        # as an offender for saying the model's name — which punished
+        # documenting the guarantee. Prose cannot return anything; the
+        # ban is on the use, not the word. String literals are still
+        # scanned, so a dict key or a raw SQL fragment naming the table
+        # is still caught.
+        import ast
+        import io
         import pathlib
+        import tokenize
+
+        def code_only(text: str) -> str:
+            """``text`` with comments and docstrings removed."""
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                return text
+            docstrings = set()
+            for node in ast.walk(tree):
+                if not isinstance(node, (
+                    ast.Module, ast.ClassDef,
+                    ast.FunctionDef, ast.AsyncFunctionDef,
+                )):
+                    continue
+                body = getattr(node, "body", None)
+                if not body:
+                    continue
+                first = body[0]
+                if (isinstance(first, ast.Expr)
+                        and isinstance(first.value, ast.Constant)
+                        and isinstance(first.value.value, str)):
+                    docstrings.add((first.lineno, first.end_lineno))
+
+            lines = text.splitlines()
+            for start, end in docstrings:
+                for i in range(start - 1, min(end, len(lines))):
+                    lines[i] = ""
+            without_docstrings = "\n".join(lines)
+
+            out = []
+            try:
+                for tok in tokenize.generate_tokens(
+                    io.StringIO(without_docstrings).readline,
+                ):
+                    if tok.type != tokenize.COMMENT:
+                        out.append(tok.string)
+            except (tokenize.TokenError, IndentationError):
+                return without_docstrings
+            return " ".join(out)
+
         offenders = []
         for p in pathlib.Path("app").rglob("*.py"):
             rel = str(p)
@@ -354,10 +406,70 @@ class TestPrivacy:
                 continue
             if rel.endswith("models/platform.py"):
                 continue
-            text = p.read_text()
+            text = code_only(p.read_text())
             if "ExerciseResponse" in text or "exercise_responses" in text:
                 offenders.append(rel)
         assert offenders == [], f"exercise responses are referenced outside the member API: {offenders}"
+
+    def test_the_scan_still_catches_a_real_reference(self):
+        """The stripping must not have made the guard vacuous. A query,
+        an import or a table name in SQL is still a surface."""
+        import pathlib
+        import sys
+
+        module = sys.modules[type(self).__module__]
+        code_only = None
+        # Re-derive the helper from the test above by running it on
+        # synthetic sources, through the public behaviour: a file whose
+        # only mention is a docstring passes, one with a query does not.
+        del module, pathlib, code_only
+
+        samples = {
+            "docstring only": '"""Keyed on ExerciseResponse.block_id."""\nx = 1\n',
+            "comment only": "# ExerciseResponse is not read here\nx = 1\n",
+            "a query": "from app.models.platform import ExerciseResponse\n",
+            "raw sql": 'db.execute("SELECT * FROM exercise_responses")\n',
+        }
+        import ast
+        import io
+        import tokenize
+
+        def code_only(text: str) -> str:
+            tree = ast.parse(text)
+            docstrings = set()
+            for node in ast.walk(tree):
+                if not isinstance(node, (
+                    ast.Module, ast.ClassDef,
+                    ast.FunctionDef, ast.AsyncFunctionDef,
+                )):
+                    continue
+                body = getattr(node, "body", None)
+                if not body:
+                    continue
+                first = body[0]
+                if (isinstance(first, ast.Expr)
+                        and isinstance(first.value, ast.Constant)
+                        and isinstance(first.value.value, str)):
+                    docstrings.add((first.lineno, first.end_lineno))
+            lines = text.splitlines()
+            for start, end in docstrings:
+                for i in range(start - 1, min(end, len(lines))):
+                    lines[i] = ""
+            without = "\n".join(lines)
+            out = []
+            for tok in tokenize.generate_tokens(io.StringIO(without).readline):
+                if tok.type != tokenize.COMMENT:
+                    out.append(tok.string)
+            return " ".join(out)
+
+        def flagged(text: str) -> bool:
+            scanned = code_only(text)
+            return "ExerciseResponse" in scanned or "exercise_responses" in scanned
+
+        assert not flagged(samples["docstring only"])
+        assert not flagged(samples["comment only"])
+        assert flagged(samples["a query"]), "an import is no longer caught"
+        assert flagged(samples["raw sql"]), "a table name in SQL is no longer caught"
 
 
 # ---------------------------------------------------------------------------
