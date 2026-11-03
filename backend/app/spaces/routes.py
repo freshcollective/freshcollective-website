@@ -11,6 +11,7 @@ from app.core.config import settings
 
 from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.core.database import get_db
+from app.core.public_url import public_app_url
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
@@ -3649,9 +3650,22 @@ def download_ics(
         from datetime import timedelta
         ends = fmt_ics_dt(event.starts_at + timedelta(hours=1))
 
-    location = event.location_url or ""
+    # The public location, never the joining link.
+    #
+    # This field was ``event.location_url`` — the meeting link, which
+    # the detail endpoint gates on a confirmed booking and which this
+    # route handed to any member, and to any anonymous visitor to a
+    # public Gathering. The calendar entry gets what the public page
+    # gets: venue name and public address, composed by the one helper.
+    #
+    # The private address is not here either. Somebody who has booked
+    # has it on the Gathering page and in their confirmation; a
+    # calendar file is downloadable by people who have not.
+    location = venue_projection.public_location_summary(event)
     description = (event.description or "").replace("\n", "\\n")
-    event_url = f"https://fresh.community/spaces/{slug}/events/{event.id}"
+    # Was a hardcoded ``fresh.community``, which is not a Fresh
+    # Collective domain — every calendar entry carried a dead link.
+    event_url = public_app_url(f"/spaces/{slug}/events/{event.id}")
     uid = f"{event.id}@fresh.community"
 
     ics = "\r\n".join([

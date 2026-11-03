@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpace, getSpaceEvent, getSpaceEventAboutBlocks, getMe } from '@/lib/serverApi'
+import { composeGatheringLocation } from '@/lib/gatheringLocation'
 import { requireArea } from '@/lib/areaAccess'
 import { resolveMediaUrl } from '@/lib/api'
 import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
@@ -291,17 +292,26 @@ export default async function EventDetailPage({ params }: Props) {
     ?? resolveMediaUrl(event.series_cover_image_url ?? undefined)
     ?? null
 
-  // Where line — one sentence: "In person · South Croydon, VIC" /
-  // "Online" / "Hybrid · Yarra Hills". The locality is safe to
-  // expose to everyone (see backend ``_derive_venue_locality``);
-  // the street address stays behind the attendee gate below.
   const attendanceLabel =
     event.attendance_format === 'in_person' ? 'In person'
     : event.attendance_format === 'hybrid' ? 'Hybrid'
     : 'Online'
-  const whereSummary = event.venue_locality
-    ? `${attendanceLabel} \u00b7 ${event.venue_locality}`
-    : attendanceLabel
+
+  // The place, composed once — see `lib/gatheringLocation.ts` for the
+  // rules. `venue_address` is the private address and arrives as
+  // `null` unless this viewer is a confirmed attendee or a caretaker,
+  // so passing it straight in cannot widen anything: the composer
+  // prints only what the server chose to send.
+  //
+  // This replaces three consecutive lines — public address, venue
+  // name, private address — which repeated each other whenever a
+  // creator had put the venue into more than one field.
+  const location = composeGatheringLocation({
+    attendanceFormat: event.attendance_format,
+    venueName: event.venue_name,
+    publicAddress: event.venue_locality,
+    privateAddress: event.venue_address,
+  })
 
   // ── Palette resolution ─────────────────────────────────────
   // Collective palette drives the practical-details panel + the
@@ -492,29 +502,45 @@ export default async function EventDetailPage({ params }: Props) {
               <DetailRow icon={<IconClock />} label="Time" palette={detailPalette}>
                 {formatTime(event.starts_at)}{durationLabel && ` \u00b7 ${durationLabel}`}
               </DetailRow>
+              {/* A hybrid Gathering with a venue is a "Where", not a
+                  "Format" — it was reading as the latter, with a
+                  monitor icon, while naming a street. Keyed on whether
+                  there is a place rather than on the format, so an
+                  in-person Gathering with nothing filled in still
+                  reads sensibly. */}
               <DetailRow
-                icon={event.attendance_format === 'in_person' ? <IconMapPin /> : <IconMonitor />}
-                label={event.attendance_format === 'in_person' ? 'Where' : 'Format'}
+                icon={location.hasLocation ? <IconMapPin /> : <IconMonitor />}
+                label={location.hasLocation ? 'Where' : 'Format'}
                 palette={detailPalette}
               >
                 <div className="space-y-0.5">
-                  <p>{whereSummary}</p>
-                  {/* Venue name is member-safe (always exposed in
-                      the API) — treated as a secondary line for
-                      Creators who chose to name their venue. */}
-                  {event.attendance_format !== 'online' && event.venue_name && (
-                    <p className="text-[12.5px]" style={{ color: detailPalette.secondary }}>
-                      {event.venue_name}
-                    </p>
-                  )}
-                  {/* Full street address is attendee-gated on the
-                      server — surfaces here only for confirmed
-                      attendees + caretakers. */}
-                  {event.attendance_format !== 'online' && event.venue_address
-                    && event.venue_address !== event.venue_locality && (
-                    <p className="text-[12.5px]" style={{ color: detailPalette.secondary }}>
-                      {event.venue_address}
-                    </p>
+                  {location.hasLocation ? (
+                    <>
+                      {location.name && <p className="font-semibold">{location.name}</p>}
+                      {location.address && (
+                        <p
+                          className={location.name ? 'text-[12.5px]' : undefined}
+                          style={location.name ? { color: detailPalette.secondary } : undefined}
+                        >
+                          {location.address}
+                        </p>
+                      )}
+                      {/* Said out loud, so an attendee knows the
+                          address they are reading is not the one on
+                          the public page. */}
+                      {location.isPrivateAddress && (
+                        <p className="text-[11.5px] italic" style={{ color: detailPalette.secondary }}>
+                          Shared with confirmed attendees
+                        </p>
+                      )}
+                      {event.attendance_format === 'hybrid' && (
+                        <p className="text-[12.5px]" style={{ color: detailPalette.secondary }}>
+                          In person and online
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p>{attendanceLabel}</p>
                   )}
                   {event.attendance_format !== 'in_person' && event.location_url && (
                     <a

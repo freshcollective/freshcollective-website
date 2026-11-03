@@ -901,3 +901,213 @@ class TestTheDiagnosticIsSafeToRunInProduction:
         module.report(db, event)
         out = capsys.readouterr().out
         assert "fallback: venue_name" in out
+
+
+# ---------------------------------------------------------------------------
+# The agreed four-field structure, over HTTP
+# ---------------------------------------------------------------------------
+
+
+class TestTheAgreedStructure:
+    """Venue name / Public address / Private address / Arrival
+    instructions, with the two halves landing where they should for
+    each audience. The composition into display lines is the
+    frontend's — see ``lib/gatheringLocation.ts`` — but what each
+    viewer *receives* is decided here, and that is the half that
+    matters for disclosure."""
+
+    def _viewer(self, db, space, make_user, *, booked=False):
+        app.dependency_overrides.clear()
+        who = make_user()
+        _join(db, space, who)
+        if booked:
+            db.add(EventBooking(
+                id=_uid("bk"), event_id=self.event_id, user_id=who.id,
+                status=BookingStatus.confirmed, source="manual",
+            ))
+        db.commit()
+        return as_member(db, who)
+
+    def test_example_a_a_public_venue(
+        self, client, db, space, make_event, make_user,
+    ):
+        """Venue name + a full public address, no private address.
+        Everyone sees the same thing, attendees included."""
+        event = make_event(
+            space=space, is_published=True, is_public=True,
+            attendance_format="in_person",
+            venue_name="Arrabri Community House",
+            venue_locality="42 Allambanan Drive, Bayswater North VIC 3153",
+            venue_address=None,
+        )
+        db.commit()
+        self.event_id = event.id
+
+        public = self._viewer(db, space, make_user).get(
+            member_url(space, event.id)).json()
+        assert public["venue_name"] == "Arrabri Community House"
+        assert public["venue_locality"] == (
+            "42 Allambanan Drive, Bayswater North VIC 3153"
+        )
+        assert public["venue_address"] is None
+
+        attendee = self._viewer(db, space, make_user, booked=True).get(
+            member_url(space, event.id)).json()
+        assert attendee["venue_name"] == public["venue_name"]
+        assert attendee["venue_locality"] == public["venue_locality"]
+        assert attendee["venue_address"] is None, (
+            "an empty private address must stay empty, not be filled in "
+            "with the public one — the fallback is a display rule"
+        )
+        app.dependency_overrides.clear()
+
+    def test_example_b_a_private_venue(
+        self, client, db, space, make_event, make_user,
+    ):
+        event = make_event(
+            space=space, is_published=True, is_public=True,
+            attendance_format="in_person",
+            venue_name="Private residence",
+            venue_locality="South Croydon, Victoria",
+            venue_address="62 Longview Road, South Croydon",
+            access_instructions="You may park in the driveway or on the street.",
+        )
+        db.commit()
+        self.event_id = event.id
+
+        public = self._viewer(db, space, make_user).get(
+            member_url(space, event.id)).json()
+        assert public["venue_name"] == "Private residence"
+        assert public["venue_locality"] == "South Croydon, Victoria"
+        assert public["venue_address"] is None
+        assert public["access_instructions"] is None
+        assert "Longview" not in str(public)
+        assert "driveway" not in str(public)
+
+        attendee = self._viewer(db, space, make_user, booked=True).get(
+            member_url(space, event.id)).json()
+        assert attendee["venue_name"] == "Private residence"
+        assert attendee["venue_address"] == "62 Longview Road, South Croydon"
+        assert attendee["access_instructions"] == (
+            "You may park in the driveway or on the street."
+        )
+        app.dependency_overrides.clear()
+
+    def test_the_venue_name_is_no_longer_overwritten_by_the_address(
+        self, client, db, space, make_event, make_user,
+    ):
+        """The duplication, at its source. The detail endpoint replaced
+        ``venue_name`` with the public label, so a creator who had
+        filled in both got the same string in both keys — and the page
+        printed it twice."""
+        event = make_event(
+            space=space, is_published=True, is_public=True,
+            attendance_format="in_person",
+            venue_name="Arrabri Community House",
+            venue_locality="42 Allambanan Drive, Bayswater North",
+        )
+        db.commit()
+        self.event_id = event.id
+        body = self._viewer(db, space, make_user).get(
+            member_url(space, event.id)).json()
+        assert body["venue_name"] != body["venue_locality"]
+        assert body["venue_name"] == "Arrabri Community House"
+        app.dependency_overrides.clear()
+
+    def test_a_legacy_record_with_everything_in_the_venue_name(
+        self, client, db, space, make_event, make_user,
+    ):
+        """EMBODY's Term 4 shape. Nothing migrated, and it still says
+        exactly what it said."""
+        event = make_event(
+            space=space, is_published=True, is_public=True,
+            attendance_format="in_person",
+            venue_name="Private residence, South Croydon, Vic",
+            venue_locality=None,
+        )
+        db.commit()
+        self.event_id = event.id
+        body = self._viewer(db, space, make_user).get(
+            member_url(space, event.id)).json()
+        assert body["venue_name"] == "Private residence, South Croydon, Vic"
+        assert body["venue_locality"] is None
+        app.dependency_overrides.clear()
+
+    def test_the_creator_editor_still_gets_all_four_fields_unprojected(
+        self, client, db, space, make_event,
+    ):
+        """The editor must show what is stored, not a presentation of
+        it — that was the last defect in this area."""
+        event = make_event(
+            space=space, is_published=True,
+            attendance_format="in_person",
+            venue_name="Private residence",
+            venue_locality="South Croydon, Victoria",
+            venue_address="62 Longview Road, South Croydon",
+            access_instructions="Park in the driveway.",
+        )
+        db.commit()
+        body = client.get(creator_url(space, event.id)).json()
+        assert body["venue_name"] == "Private residence"
+        assert body["venue_locality"] == "South Croydon, Victoria"
+        assert body["venue_address"] == "62 Longview Road, South Croydon"
+        assert body["access_instructions"] == "Park in the driveway."
+
+    def test_saving_all_four_round_trips(self, client, db, space, make_event):
+        event = make_event(space=space, is_published=True,
+                           attendance_format="in_person")
+        db.commit()
+        url = creator_url(space, event.id)
+        payload = {
+            "venue_name": "Arrabri Community House",
+            "venue_locality": "42 Allambanan Drive, Bayswater North VIC 3153",
+            "venue_address": "Hall 2, rear entrance",
+            "access_instructions": "Park on the verge.",
+        }
+        r = client.patch(url, json=payload)
+        assert r.status_code == 200, r.text
+        body = client.get(url).json()
+        for field, value in payload.items():
+            assert body[field] == value, field
+
+    def test_clearing_the_private_address_leaves_the_public_one(
+        self, client, db, space, make_event,
+    ):
+        """"Do not automatically clear or overwrite stored private
+        addresses" cuts both ways: a creator who clears it deliberately
+        must have it cleared, and the public address must not move."""
+        event = make_event(
+            space=space, is_published=True, attendance_format="in_person",
+            venue_locality="South Croydon, Victoria",
+            venue_address="62 Longview Road, South Croydon",
+        )
+        db.commit()
+        client.patch(creator_url(space, event.id),
+                     json={"venue_address": None})
+        db.expire_all()
+        row = db.get(Event, event.id)
+        # ``venue_address`` keeps the blanket ``is not None`` treatment,
+        # so an explicit null does NOT clear it — a known asymmetry with
+        # Public location, reported rather than changed here.
+        assert row.venue_address == "62 Longview Road, South Croydon"
+        assert row.venue_locality == "South Croydon, Victoria"
+
+    def test_an_online_gathering_keeps_its_stored_venue(
+        self, client, db, space, make_event, make_user,
+    ):
+        """Switching to online hides the location rather than deleting
+        it, so switching back loses nothing. The API still returns the
+        public half; the frontend composer is what declines to show it."""
+        event = make_event(
+            space=space, is_published=True, is_public=True,
+            attendance_format="online",
+            venue_name="Arrabri Community House",
+            venue_locality="42 Allambanan Drive, Bayswater North",
+        )
+        db.commit()
+        self.event_id = event.id
+        body = self._viewer(db, space, make_user).get(
+            member_url(space, event.id)).json()
+        assert body["venue_name"] == "Arrabri Community House"
+        assert body["attendance_format"] == "online"
+        app.dependency_overrides.clear()

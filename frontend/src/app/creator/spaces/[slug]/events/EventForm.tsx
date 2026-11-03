@@ -722,15 +722,38 @@ export default function EventForm({
 
         {(attendanceFormat === 'in_person' || attendanceFormat === 'hybrid') && (
           <>
-            {/* Public location — the only location field anyone can
-                see before they have booked. It exists so a creator is
-                not forced to choose between telling visitors nothing
-                and putting the venue in a public field: until this
-                was offered, the venue name was the only place to put
-                "South Croydon", and it went out to everyone. */}
+            {/* Four fields, in the order a creator thinks about them:
+                the name of the place, what they are happy to publish,
+                anything more precise for the people actually coming,
+                and how to get in.
+
+                Venue name and Public address are both public. Private
+                address and Arrival instructions are gated on a
+                confirmed booking by the API, not by this form. The
+                wording says which is which at every field, because the
+                previous labels did not: "Venue name" was described as
+                public only "when no public location is set", which was
+                true of the old display rule and is not true now —
+                a named venue is always shown. */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-navy-800">
-                Public location
+                Venue name
+              </label>
+              <input
+                value={venueName}
+                onChange={(e) => setVenueName(e.target.value)}
+                placeholder="e.g. Arrabri Community House"
+                className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+              />
+              <p className="mt-1 text-[12px] leading-relaxed text-black">
+                The name of the place where people will gather. Shown
+                publicly.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-navy-800">
+                Public address
               </label>
               <input
                 value={venueLocality}
@@ -744,45 +767,38 @@ export default function EventForm({
                 className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
               />
               <p className="mt-1 text-[12px] leading-relaxed text-black">
-                Shown publicly so people know roughly where this gathering
-                takes place. A suburb and state is usually enough — never a
-                street address.
+                What you&rsquo;re comfortable sharing publicly. This can be a
+                suburb or a full address.
               </p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="mb-1 text-[13px] font-semibold text-navy-900">
-                Venue and attendee details
+                Only for confirmed attendees
               </p>
               <p className="mb-3 text-[12px] leading-relaxed text-black">
-                Only shared with people who are entitled to receive attendance
-                details — confirmed attendees and the people running this
-                collective.
+                Shared with people who have a confirmed place, and with the
+                people running this collective. Never shown on the public
+                Gathering page or in announcement emails.
               </p>
               <div className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue name</label>
-              <input
-                value={venueName}
-                onChange={(e) => setVenueName(e.target.value)}
-                placeholder="e.g. The Studio, King Street"
-                className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
-              />
-              <p className="mt-1 text-[12px] leading-relaxed text-black">
-                Shown publicly when no public location is set above, so keep it
-                free of private detail.
-              </p>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue address</label>
-              <textarea
-                value={venueAddress}
-                onChange={(e) => setVenueAddress(e.target.value)}
-                rows={2}
-                placeholder="Full address — shown only to registered attendees."
-                className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
-              />
-            </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-navy-800">
+                    Private address (if different)
+                  </label>
+                  <textarea
+                    value={venueAddress}
+                    onChange={(e) => setVenueAddress(e.target.value)}
+                    rows={2}
+                    placeholder="e.g. 62 Longview Road, South Croydon"
+                    className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                  />
+                  <p className="mt-1 text-[12px] leading-relaxed text-black">
+                    Optional. Leave blank if the public address is all they
+                    need — attendees are shown that instead, so there is no
+                    need to type it twice.
+                  </p>
+                </div>
               </div>
             </div>
           </>
@@ -794,7 +810,7 @@ export default function EventForm({
               ? 'Access instructions'
               : attendanceFormat === 'in_person'
                 ? 'Arrival instructions'
-                : 'Instructions for both attendance options'}
+                : 'Arrival and joining instructions'}
           </label>
           <textarea
             value={accessInstructions}
@@ -807,8 +823,9 @@ export default function EventForm({
             }
             className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
           />
-          <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
-            Only shown to registered attendees.
+          <p className="mt-1 text-[12px] leading-relaxed text-black">
+            Optional details such as parking, entry or what to bring. Only
+            shared with confirmed attendees.
           </p>
         </div>
       </Section>
