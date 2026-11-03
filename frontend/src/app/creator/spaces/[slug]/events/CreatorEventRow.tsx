@@ -5,7 +5,9 @@ import {
   attendanceFormatLabel,
   accessTypeMeta,
 } from '@/lib/gatheringTypes'
-import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
+import { formatGatheringTimeFriendly, NO_DATE_LABEL, parseServerDatetime } from '@/lib/dateTime'
+import DuplicateGatheringButton from '@/components/creator/DuplicateGatheringButton'
+import { canDuplicateGathering } from '@/lib/gatheringDuplication'
 
 /**
  * CreatorEventRow — the compact list row used on both the main
@@ -16,7 +18,8 @@ import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime
  * always points at the same detail URL regardless of context.
  */
 
-function formatDate(iso: string, timezone: string) {
+function formatDate(iso: string | null, timezone: string) {
+  if (!iso) return NO_DATE_LABEL
   // In the Collective's zone, via the canonical parser. A bare
   // ``new Date`` on a naive-UTC string rendered these rows in whatever
   // zone the server was in — UTC in production.
@@ -47,9 +50,19 @@ interface Props {
   slug: string
   /** The Collective's timezone — a Gathering has none of its own. */
   timezone: string
+  /**
+   * Offer Duplicate on eligible rows. Opt-in: the archive wants it,
+   * and the Series editors that also use this row do not — every
+   * Gathering listed there is an occurrence, which cannot be
+   * duplicated anyway.
+   */
+  allowDuplicate?: boolean
 }
 
-export default function CreatorEventRow({ event, slug, timezone }: Props) {
+export default function CreatorEventRow({
+  event, slug, timezone, allowDuplicate = false,
+}: Props) {
+  const showDuplicate = allowDuplicate && canDuplicateGathering(event)
   const isCancelled = event.status === 'cancelled'
   const access = accessTypeMeta(event.booking_access_type)
   const typeIcon = gatheringIcon(event.gathering_type)
@@ -144,6 +157,13 @@ export default function CreatorEventRow({ event, slug, timezone }: Props) {
           )}
         </div>
       </div>
+      {/* Duplicate before Edit, so Edit stays the rightmost action it
+          has always been. Absent for a Series occurrence — this row is
+          also used inside Series editors, where every Gathering listed
+          is one. */}
+      {showDuplicate && (
+        <DuplicateGatheringButton spaceSlug={slug} event={event} variant="row" />
+      )}
       <Link
         href={`/creator/spaces/${slug}/events/${event.id}`}
         className="shrink-0 rounded-lg border border-navy-200 px-3 py-1.5 text-xs font-medium text-navy-700 hover:border-navy-400 hover:bg-navy-50"

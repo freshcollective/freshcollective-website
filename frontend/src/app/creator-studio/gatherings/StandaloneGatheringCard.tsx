@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import type { CreatorEvent } from '@/types/platform'
-import { parseServerDatetime } from '@/lib/dateTime'
+import { NO_DATE_LABEL, parseServerDatetime } from '@/lib/dateTime'
+import DuplicateGatheringButton from '@/components/creator/DuplicateGatheringButton'
+import { canDuplicateGathering } from '@/lib/gatheringDuplication'
 import {
   gatheringIcon, gatheringLabel,
   attendanceFormatLabel,
@@ -22,7 +24,8 @@ import {
  * child Gatherings should stay dense.
  */
 
-function fmtDate(iso: string, timezone: string) {
+function fmtDate(iso: string | null, timezone: string) {
+  if (!iso) return NO_DATE_LABEL
   // ``parseServerDatetime`` treats naive ISO strings as UTC (matching
   // the app's storage convention). ``timeZone`` forces the display
   // into the collective's local time.
@@ -177,19 +180,26 @@ export default function StandaloneGatheringCard({ event, slug, spaceTimezone }: 
           passed to Client Component props". An ordinary <Link> needs no
           handler, keeps this file a Server Component, and is reachable
           by keyboard and middle-click as a link should be. */}
-      {showAttendance && (
-        <div className="px-4 pb-4">
-          <Link
-            href={`/creator/spaces/${slug}/events/${event.id}/attendance`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors"
-            style={{
-              borderColor: 'rgba(56,160,158,0.35)',
-              background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
-              color: 'var(--fc-accent-700, #0f766e)',
-            }}
-          >
-            Attendance dashboard →
-          </Link>
+      {/* Actions — siblings of the card link for the same reason the
+          Attendance link is one. Duplicate is a button because it
+          posts; the backend refuses a Series occurrence and
+          ``canDuplicateGathering`` hides it for the same rows. */}
+      {(showAttendance || canDuplicateGathering(event)) && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-4">
+          {showAttendance && (
+            <Link
+              href={`/creator/spaces/${slug}/events/${event.id}/attendance`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors"
+              style={{
+                borderColor: 'rgba(56,160,158,0.35)',
+                background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+                color: 'var(--fc-accent-700, #0f766e)',
+              }}
+            >
+              Attendance dashboard →
+            </Link>
+          )}
+          <DuplicateGatheringButton spaceSlug={slug} event={event} />
         </div>
       )}
     </div>

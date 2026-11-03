@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import { parseServerDatetime } from '@/lib/dateTime'
+import { NO_DATE_LABEL, parseServerDatetime } from '@/lib/dateTime'
 import type {
   CreatorEvent,
   CreatorGatheringSeries,
@@ -107,7 +107,8 @@ function fmtDateShort(iso: string | null, timezone: string): string {
   })
 }
 
-function fmtDateTime(iso: string, timezone: string): string {
+function fmtDateTime(iso: string | null, timezone: string): string {
+  if (!iso) return NO_DATE_LABEL
   return parseServerDatetime(iso).toLocaleString('en-AU', {
     timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short',
@@ -118,7 +119,8 @@ function fmtDateTime(iso: string, timezone: string): string {
 /** Full-context date+time used in the Add-existing modal so the
  *  Creator sees title + full date (with year) + time in every row.
  *  E.g. "Thu 13 Aug 2026 · 6:00 pm". */
-function fmtDateTimeFull(iso: string, timezone: string): string {
+function fmtDateTimeFull(iso: string | null, timezone: string): string {
+  if (!iso) return NO_DATE_LABEL
   return parseServerDatetime(iso).toLocaleString('en-AU', {
     timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
@@ -881,10 +883,14 @@ function SeriesGatheringsCard({
 /** True when an Event's start falls outside a finite Series window.
  *  Ongoing series (no ends_at) never mark an Event as out-of-range. */
 function isEventOutOfRange(
-  eventStartsAt: string,
+  // Null for a dateless draft, which has no position relative to
+  // the Series window — so it is never reported out of range and
+  // never triggers the confirmation prompt.
+  eventStartsAt: string | null,
   seriesStartsAt: string,
   seriesEndsAt: string | null,
 ): boolean {
+  if (eventStartsAt == null) return false
   const start = new Date(eventStartsAt).getTime()
   const winStart = new Date(seriesStartsAt).getTime()
   const winEnd = seriesEndsAt ? new Date(seriesEndsAt).getTime() : null
@@ -942,7 +948,7 @@ function AttachExistingModal({
           const aOut = isEventOutOfRange(a.starts_at, seriesStartsAt, seriesEndsAt)
           const bOut = isEventOutOfRange(b.starts_at, seriesStartsAt, seriesEndsAt)
           if (aOut !== bOut) return aOut ? 1 : -1
-          return a.starts_at.localeCompare(b.starts_at)
+          return (a.starts_at ?? '').localeCompare(b.starts_at ?? '')
         })
         setEvents(eligible)
         setLoading(false)

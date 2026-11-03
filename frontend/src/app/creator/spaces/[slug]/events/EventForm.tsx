@@ -132,7 +132,12 @@ export default function EventForm({
   // Core fields
   const [title, setTitle] = useState(event?.title ?? '')
   const [description, setDescription] = useState(event?.description ?? '')
-  const [startsAt, setStartsAt] = useState(event ? toLocalDatetime(event.starts_at) : '')
+  // Empty for a dateless draft, which is what a duplicate is until
+  // its creator chooses a time. The field is required to publish,
+  // so an empty box is the prompt.
+  const [startsAt, setStartsAt] = useState(
+    event?.starts_at ? toLocalDatetime(event.starts_at) : '',
+  )
   const [endsAt, setEndsAt] = useState(event?.ends_at ? toLocalDatetime(event.ends_at) : '')
   const [locationType, setLocationType] = useState<string>(event?.location_type ?? 'zoom')
   const [locationUrl, setLocationUrl] = useState(event?.location_url ?? '')

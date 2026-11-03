@@ -409,3 +409,284 @@ class TestADatelessDraftIsInvisibleToMembers:
         ids = {e.id for e in published_upcoming}
         assert original.id in ids
         assert copy_id not in ids
+
+
+# ---------------------------------------------------------------------------
+# The duplicate has to be findable
+# ---------------------------------------------------------------------------
+
+
+class TestTheDuplicateAppearsInCreatorStudio:
+    """The gap the UI work found.
+
+    The endpoint created a correct draft that nobody could reach. It
+    set ``status="draft"`` — a value no other Event path produces; the
+    column holds active / cancelled / archived — and Creator Studio's
+    ``upcoming`` scope filters on ``status == "active"``. The dateless
+    row then failed the archive's filter too, because every comparison
+    against a NULL end time is NULL rather than false. In neither
+    scope, so invisible: the same shape of bug as the future-archived
+    Gathering that once fell out of both.
+    """
+
+    @staticmethod
+    def _creator_client(db, creator):
+        from app.auth.dependencies import get_creator_user
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: creator
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        app.dependency_overrides[get_verified_creator_user] = lambda: creator
+        return TestClient(app)
+
+    def _ids(self, client, space, scope: str) -> list[str]:
+        r = client.get(f"/api/creator/spaces/{space.slug}/events?scope={scope}")
+        assert r.status_code == 200, r.text
+        return [row["id"] for row in r.json()]
+
+    def test_a_duplicate_is_an_ordinary_unpublished_gathering(
+        self, client, db, space, make_event,
+    ):
+        """Draft-ness is ``is_published=False`` and nothing else."""
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        body = client.post(url(space.slug, original.id)).json()
+        assert body["is_published"] is False
+        assert body["status"] == "active", (
+            "status carries a value no other Event path produces"
+        )
+
+    def test_it_shows_up_on_the_gatherings_page(
+        self, db, space, creator, make_event,
+    ):
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            assert created["starts_at"] is None
+            assert created["id"] in self._ids(client, space, "upcoming"), (
+                "the duplicate is missing from the list it was created for"
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_it_is_not_in_the_archive(self, db, space, creator, make_event):
+        """It is work in progress, not history."""
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            assert created["id"] not in self._ids(client, space, "archive")
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_it_sorts_after_the_dated_gatherings(
+        self, db, space, creator, make_event,
+    ):
+        """``ORDER BY starts_at ASC`` puts NULLs last in Postgres, so a
+        draft awaiting a date sits at the end of the schedule rather
+        than above today. The frontend ordering helper matches."""
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            ids = self._ids(client, space, "upcoming")
+            assert ids[-1] == created["id"], ids
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_a_dated_gathering_is_still_scoped_as_before(
+        self, db, space, creator, make_event,
+    ):
+        """The widened filter must not drag history into ``upcoming``."""
+        from datetime import datetime, timedelta
+
+        past = make_event(
+            space=space, is_published=True,
+            starts_at=datetime.utcnow() - timedelta(days=10),
+            ends_at=datetime.utcnow() - timedelta(days=10, hours=-1),
+        )
+        future = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            upcoming = self._ids(client, space, "upcoming")
+            archive = self._ids(client, space, "archive")
+            assert future.id in upcoming
+            assert past.id not in upcoming
+            assert past.id in archive
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_a_cancelled_dateless_draft_is_not_in_upcoming(
+        self, db, space, creator, make_event,
+    ):
+        """The status filter still does its job — only the date
+        condition was widened."""
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            from app.models.platform import Event
+
+            db.expire_all()
+            db.get(Event, created["id"]).status = "cancelled"
+            db.commit()
+            assert created["id"] not in self._ids(client, space, "upcoming")
+            assert created["id"] in self._ids(client, space, "archive")
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_a_dateless_draft_is_still_invisible_to_members(
+        self, db, space, creator, make_event, make_user,
+    ):
+        """``status="active"`` must not have made it member-visible.
+        ``is_published`` is what members filter on."""
+        from app.auth.dependencies import get_optional_user
+
+        original = make_event(space=space, is_published=True, is_public=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+        finally:
+            app.dependency_overrides.clear()
+
+        # An active member, so the listing answers at all — the point
+        # is what it contains, not whether the door opens.
+        viewer = make_user()
+        db.add(SpaceMembership(
+            id=_uid("sm"), user_id=viewer.id, space_id=space.id,
+            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+        ))
+        db.commit()
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_optional_user] = lambda: viewer
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        try:
+            member = TestClient(app)
+            rows = member.get(f"/api/spaces/{space.slug}/events").json()
+            assert isinstance(rows, list), rows
+            assert created["id"] not in [r["id"] for r in rows]
+            detail = member.get(
+                f"/api/spaces/{space.slug}/events/{created['id']}")
+            assert detail.status_code == 404, detail.status_code
+        finally:
+            app.dependency_overrides.clear()
+
+
+class TestTheWholeWorkflow:
+    """Duplicate, set a date, publish — the sequence the creator runs."""
+
+    @staticmethod
+    def _creator_client(db, creator):
+        from app.auth.dependencies import get_creator_user
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: creator
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        app.dependency_overrides[get_verified_creator_user] = lambda: creator
+        return TestClient(app)
+
+    def test_duplicate_then_date_then_publish(
+        self, db, space, creator, make_event,
+    ):
+        from datetime import datetime, timedelta
+
+        original = make_event(
+            space=space, is_published=True, title="November Women's Circle",
+            attendance_format="in_person",
+            venue_name="Arrabri Community House",
+            venue_locality="42 Allambanan Drive, Bayswater North",
+            booking_access_type="paid_separately",
+            ticket_price_cents=4500, ticket_currency="AUD",
+            capacity=12, requires_booking=True,
+        )
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            event_url = f"/api/creator/spaces/{space.slug}/events/{created['id']}"
+
+            # The editor loads it.
+            loaded = client.get(event_url)
+            assert loaded.status_code == 200, loaded.text
+            body = loaded.json()
+            assert body["title"] == "November Women's Circle"
+            assert body["venue_name"] == "Arrabri Community House"
+            assert body["venue_locality"] == "42 Allambanan Drive, Bayswater North"
+            assert body["ticket_price_cents"] == 4500
+            assert body["capacity"] == 12
+            assert body["starts_at"] is None
+
+            # Publishing without a date is refused.
+            refused = client.patch(event_url, json={"is_published": True})
+            assert refused.status_code == 400, refused.text
+
+            # Date, title, publish — together, as the editor sends it.
+            when = datetime.utcnow() + timedelta(days=40)
+            saved = client.patch(event_url, json={
+                "title": "December Women's Circle",
+                "starts_at": when.isoformat(),
+                "ends_at": (when + timedelta(hours=2)).isoformat(),
+                "is_published": True,
+            })
+            assert saved.status_code == 200, saved.text
+            assert saved.json()["is_published"] is True
+
+            # And the original is exactly as it was.
+            from app.models.platform import Event
+
+            db.expire_all()
+            source = db.get(Event, original.id)
+            assert source.title == "November Women's Circle"
+            assert source.is_published is True
+            assert source.starts_at is not None
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_duplicating_emits_no_announcement(
+        self, db, space, creator, make_event,
+    ):
+        """A draft has been published to nobody. The announcement fires
+        at the duplicate's own first publication, not at creation."""
+        from app.comms.models import CommunicationEvent
+
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        before = db.query(CommunicationEvent).count()
+        client = self._creator_client(db, creator)
+        try:
+            r = client.post(url(space.slug, original.id))
+            assert r.status_code == 201, r.text
+            assert db.query(CommunicationEvent).count() == before
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_no_channel_link_comes_with_it(
+        self, db, space, creator, make_event,
+    ):
+        """A channel may be linked to several experiences, so copying
+        a link would hand the new Gathering somebody else's members."""
+        from sqlalchemy import text as _sql
+
+        original = make_event(space=space, is_published=True)
+        db.commit()
+        client = self._creator_client(db, creator)
+        try:
+            created = client.post(url(space.slug, original.id)).json()
+            linked = db.execute(
+                _sql(
+                    "SELECT count(*) FROM channel_experience_links "
+                    "WHERE event_id = :id"
+                ),
+                {"id": created["id"]},
+            ).scalar()
+            assert linked == 0
+        finally:
+            app.dependency_overrides.clear()

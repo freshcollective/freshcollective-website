@@ -31,18 +31,23 @@ import { parseServerDatetime } from './dateTime.ts'
  * naive-UTC strings with no designator, which ES2019+ parses as local —
  * identical on a UTC host and off by the offset anywhere else.
  */
-export function orderGatheringsByStart<T extends { starts_at: string }>(
+export function orderGatheringsByStart<T extends { starts_at: string | null }>(
   events: readonly T[],
 ): T[] {
-  return [...events].sort(
-    (a, b) =>
-      parseServerDatetime(a.starts_at).getTime() -
-      parseServerDatetime(b.starts_at).getTime(),
-  )
+  // A dateless Gathering sorts last rather than to 1970. It is a
+  // draft awaiting a time, so it belongs at the end of a schedule,
+  // not above today — which is also where Postgres puts it in the
+  // query this list arrives from (`ORDER BY starts_at ASC` is NULLS
+  // LAST), so the two orderings agree.
+  const at = (row: T) =>
+    row.starts_at == null
+      ? Number.POSITIVE_INFINITY
+      : parseServerDatetime(row.starts_at).getTime()
+  return [...events].sort((a, b) => at(a) - at(b))
 }
 
 /** The Snapshot count and the "Next gathering" moment, from one array. */
-export function overviewGatherings<T extends { starts_at: string }>(
+export function overviewGatherings<T extends { starts_at: string | null }>(
   events: readonly T[],
 ): { ordered: T[]; count: number; next: T | null } {
   const ordered = orderGatheringsByStart(events)

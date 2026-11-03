@@ -182,7 +182,9 @@ export default async function CreatorStudioCollectiveHome() {
       icon: '📅',
       tint: 'gold',
       text: `Next gathering: "${next.title}"`,
-      when: next.starts_at,
+      // A dateless draft sorts to the bottom, like a member with no
+      // joined_at below — same idiom as the join moments.
+      when: next.starts_at ?? '',
       href: '/creator-studio/gatherings',
     })
   }

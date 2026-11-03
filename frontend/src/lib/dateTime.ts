@@ -240,3 +240,15 @@ export function countdownLabel(
   const months = Math.round(daysUntil / 30)
   return `In ${months} month${months === 1 ? '' : 's'}`
 }
+
+/**
+ * What a creator surface shows where a Gathering's date would go.
+ *
+ * A duplicated Gathering is dateless until its creator chooses a time
+ * — migration 175 made the column nullable for exactly that — so this
+ * is a real state, not a defect. One constant so the Gatherings list,
+ * the archive, the Series editor and the dashboard agree.
+ *
+ * Member surfaces never need it: publishing without dates is refused.
+ */
+export const NO_DATE_LABEL = 'Date to be set'

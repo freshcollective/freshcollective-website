@@ -134,7 +134,9 @@ function AttendanceButtons({ bookingId, eventId, spaceSlug, currentStatus, onUpd
 export default function EventManagePanel({ event, spaceSlug, initialBookings, members }: Props) {
   const router = useRouter()
   const isCancelled = event.status === 'cancelled'
-  const isPast = new Date(event.starts_at) < new Date()
+  // A dateless draft has no time, so it is not in the past.
+  const isPast = event.starts_at != null
+    && new Date(event.starts_at) < new Date()
 
   // Cancel event
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)

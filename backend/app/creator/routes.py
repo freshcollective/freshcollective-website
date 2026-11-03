@@ -4557,7 +4557,20 @@ def list_events(
         )
         now = _dt.utcnow()
         if scope == "upcoming":
-            query = query.filter(Event.status == "active", end_marker > now)
+            # A dateless draft is on the current schedule.
+            #
+            # ``end_marker`` is NULL without a start, so every
+            # comparison against it is NULL — which is not true, so a
+            # duplicated Gathering awaiting its date passed neither
+            # this filter nor the archive's and could not be found at
+            # all. It belongs here: it is work in progress, not
+            # history. ``ORDER BY starts_at ASC`` puts NULLs last in
+            # Postgres, so it sits at the end of the schedule rather
+            # than above today.
+            query = query.filter(
+                Event.status == "active",
+                or_(end_marker > now, Event.starts_at.is_(None)),
+            )
             query = query.order_by(Event.starts_at.asc())
         else:
             # Archive — everything that no longer belongs on the current
@@ -4935,7 +4948,16 @@ def duplicate_event(
         recording_url=None,
         # A new draft is never live, whatever the original was.
         is_published=False,
-        status="draft",
+        # Draft-ness is ``is_published=False`` and nothing else. This
+        # said ``status="draft"``, which no other Event path produces —
+        # the column's values are active / cancelled / archived — and
+        # Creator Studio's ``upcoming`` scope filters on
+        # ``status == "active"``, so every duplicate fell straight out
+        # of the list it was supposed to appear in. Together with the
+        # dateless row (see below) it was in neither scope and
+        # unreachable, the same way a future archived Gathering once
+        # was.
+        status="active",
         is_public=original.is_public,
         requires_booking=original.requires_booking,
         capacity=original.capacity,

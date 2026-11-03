@@ -953,7 +953,14 @@ export interface CreatorEvent {
   id: string
   title: string
   description: string | null
-  starts_at: string
+  /**
+   * Null while a duplicated Gathering is still a dateless draft —
+   * migration 175 made the column nullable so a duplicate can exist
+   * before its date is chosen. Creator surfaces must handle it; member
+   * surfaces never see one, because publishing without dates is
+   * refused.
+   */
+  starts_at: string | null
   ends_at: string | null
   location_type: 'zoom' | 'in_person' | 'async_recorded'
   location_url: string | null

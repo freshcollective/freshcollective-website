@@ -37,6 +37,9 @@ export default async function GatheringsPage() {
   const now = Date.now()
   const hasFutureCancelled = past.some((e) => {
     if (e.status !== 'cancelled') return false
+    // No start, no end — a dateless draft is never a future
+    // cancellation, and `Date.parse(null)` is NaN.
+    if (!e.starts_at) return false
     const endMs = e.ends_at
       ? Date.parse(e.ends_at)
       : Date.parse(e.starts_at) + 60 * 60 * 1000
