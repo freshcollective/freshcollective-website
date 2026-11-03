@@ -8,6 +8,9 @@ import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import { unitCountLabel } from '@/lib/pathwayTerminology'
 import {
   ARCHIVE_CONFIRM_PARAGRAPHS,
+  PATHWAY_ARCHIVE_HREF,
+  RESTORE_CONFIRM_PARAGRAPHS,
+  activePathways,
   DELETE_CONFIRM_PARAGRAPHS,
   GENERIC_ARCHIVE_ERROR,
   GENERIC_DELETE_ERROR,
@@ -27,20 +30,49 @@ import {
  * anchored by artwork (its own cover, the collective's Location, or a
  * quiet neutral fallback) and grouped by lifecycle state.
  *
- * The page shows the whole catalogue, grouped by lifecycle state:
- * Live, Coming soon, Building, and Archived.
+ * The page shows what a creator is actively offering or developing,
+ * grouped by lifecycle state: Live, Coming soon, Building.
  *
- * Archived used to be hidden here, on the reasoning that "deletion is
- * the way to remove a pathway from the collective". That left archived
- * pathways in a trap: the Settings status dropdown has always offered
- * Archived, and choosing it made the pathway vanish from this page
- * with no route back except typing its settings URL from memory. The
- * group below is that route, and it carries Restore.
+ * Archived pathways have their own page now, reached by the button at
+ * the foot of this one — the same arrangement as the Gathering
+ * archive. They were briefly listed here, and that was a fix for a
+ * worse problem: before it they vanished from Creator Studio entirely
+ * when archived, with no route back except typing a settings URL from
+ * memory. A dedicated page keeps the route and takes the clutter off
+ * the gallery. The button is always shown, including when nothing is
+ * archived, so the way back is learnable rather than discovered.
  */
+
+/** The three lifecycle actions the confirmation dialog serves. */
+export type PathwayLifecycleAction = 'delete' | 'archive' | 'restore'
 
 // ---------------------------------------------------------------------------
 // Small display helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The way to the archive, matching the Gathering archive's pill.
+ *
+ * Rendered whether or not anything is archived: a door a creator can
+ * only find once they have used it is not a door. The count is shown
+ * when there is one so the page says what is behind it.
+ */
+function ArchiveLink({ count }: { count: number }) {
+  return (
+    <Link
+      href={PATHWAY_ARCHIVE_HREF}
+      className="rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
+      style={{
+        background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+        color: 'var(--fc-accent, #0f766e)',
+      }}
+    >
+      View Pathway archive
+      {count > 0 && ` (${count})`}
+      {' \u2192'}
+    </Link>
+  )
+}
 
 function statusLabel(status: string): string {
   if (status === 'active') return 'Live'
@@ -74,11 +106,11 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-// Ordered so the page reads Live → Coming soon → Building →
-// Archived: in front of members first, then in progress, then put
-// away. New statuses can be added by extending this list; only groups
-// with items render, so a collective with nothing archived looks
-// exactly as it did before.
+// Ordered so the page reads Live → Coming soon → Building: in front
+// of members first, then in progress. New statuses can be added by
+// extending this list; only groups with items render.
+//
+// Archived is deliberately absent — see the archive page.
 const STATUS_ORDER: {
   key: string
   label: string
@@ -88,7 +120,6 @@ const STATUS_ORDER: {
   { key: 'live',        label: 'Live',        helper: 'Available for members to begin.',                match: (p) => p.status === 'active' },
   { key: 'coming_soon', label: 'Coming soon', helper: 'Ready and waiting for release.',                 match: (p) => p.status === 'coming_soon' },
   { key: 'building',    label: 'Building',    helper: "Only visible to you while you're creating.",     match: (p) => p.status === 'draft' },
-  { key: 'archived',    label: 'Archived',    helper: 'Not offered any more. Members who already have access keep it.', match: (p) => p.status === 'archived' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -233,7 +264,11 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
 
   // Every status is shown now, archived included — see the Archived
   // group in STATUS_ORDER above and the trap it exists to close.
-  const visiblePathways = pathways
+  // Archived pathways are on their own page. Filtered here rather
+  // than relying on the groups above not matching them, so a status
+  // added later cannot quietly reappear in the gallery.
+  const visiblePathways = activePathways(pathways)
+  const archivedCount = pathways.length - visiblePathways.length
 
   if (visiblePathways.length === 0) {
     return (
@@ -253,6 +288,12 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
         <PrimaryActionLink href="/creator-studio/pathways/new">
           Create pathway
         </PrimaryActionLink>
+        {/* A collective whose only pathways are archived would
+            otherwise read as having none at all, with no way to the
+            ones it has. */}
+        <div className="mt-8">
+          <ArchiveLink count={archivedCount} />
+        </div>
       </div>
     )
   }
@@ -334,6 +375,10 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
         })}
       </div>
 
+      <div className="mt-10 flex justify-center">
+        <ArchiveLink count={archivedCount} />
+      </div>
+
       {confirming && (
         <LifecycleConfirmDialog
           pathway={confirming.pathway}
@@ -356,14 +401,18 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
 // Card
 // ---------------------------------------------------------------------------
 
-function PathwayCard({
-  pathway, collectiveFallback, busy, onDelete, onArchive, onRestore,
+export function PathwayCard({
+  pathway, collectiveFallback, busy, onRestore,
+  onDelete = () => {}, onArchive = () => {},
 }: {
   pathway: CreatorPathway
   collectiveFallback: string | null
   busy: boolean
-  onDelete: () => void
-  onArchive: () => void
+  /** Absent on the archive page: the menu only offers Delete on a
+   *  draft and Archive on anything not already archived, so neither
+   *  can be reached from there. */
+  onDelete?: () => void
+  onArchive?: () => void
   onRestore: () => void
 }) {
   const artwork = resolveMediaUrl(pathway.cover_image_url ?? undefined) ?? collectiveFallback
@@ -599,7 +648,7 @@ function OverflowMenu({
               onClick={() => { setOpen(false); onRestore() }}
               className="block w-full px-4 py-2 text-left text-[13px] text-teal-700 transition-colors hover:bg-teal-50"
             >
-              Restore
+              Restore to Draft
             </button>
           )}
           {isArchivableStatus(status) && (
@@ -650,7 +699,7 @@ function OverflowMenu({
  * about why a source scrape is the wrong test for copy.
  */
 function dialogCopy(
-  pathway: CreatorPathway, action: 'delete' | 'archive',
+  pathway: CreatorPathway, action: PathwayLifecycleAction,
 ): {
   title: string
   paragraphs: readonly string[]
@@ -658,6 +707,15 @@ function dialogCopy(
   busy: string
   danger: boolean
 } {
+  if (action === 'restore') {
+    return {
+      title: `Restore \u201C${pathway.title}\u201D to Draft?`,
+      paragraphs: RESTORE_CONFIRM_PARAGRAPHS,
+      confirm: 'Restore to Draft',
+      busy: 'Restoring…',
+      danger: false,
+    }
+  }
   if (action === 'archive') {
     return {
       title: `Archive \u201C${pathway.title}\u201D?`,
@@ -687,11 +745,11 @@ function dialogCopy(
 }
 
 
-function LifecycleConfirmDialog({
+export function LifecycleConfirmDialog({
   pathway, action, busy, onCancel, onConfirm,
 }: {
   pathway: CreatorPathway
-  action: 'delete' | 'archive'
+  action: PathwayLifecycleAction
   busy: boolean
   onCancel: () => void
   onConfirm: () => void

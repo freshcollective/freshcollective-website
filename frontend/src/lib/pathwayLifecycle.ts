@@ -157,6 +157,79 @@ export const DELETE_CONFIRM_PARAGRAPHS: readonly string[] = [
   'Otherwise this action cannot be undone.',
 ]
 
+/**
+ * What restoring an archived pathway does.
+ *
+ * Restore used to be offered with no confirmation at all, on the
+ * reasoning that it is reversible and lands in Draft so nothing
+ * becomes visible. Both still true — this is a sentence of
+ * orientation rather than a warning, and it says where the pathway
+ * goes so a creator is not left looking for it.
+ */
+export const RESTORE_CONFIRM_PARAGRAPHS: readonly string[] = [
+  'It will move back to Building, where you can review and edit it '
+  + 'before publishing again.',
+  'Nothing is published by restoring, and nothing a member already '
+  + 'has changes.',
+]
+
+/** Where archived pathways live. */
+export const PATHWAY_ARCHIVE_HREF = '/creator-studio/pathways/archive'
+export const PATHWAYS_HREF = '/creator-studio/pathways'
+
+/** Stored status of an archived pathway. */
+export const ARCHIVED_STATUS = 'archived'
+
+/** The fields the split below reads. */
+export interface HasLifecycleStatus {
+  status: string
+  updated_at?: string | null
+  created_at?: string
+}
+
+/**
+ * Whether a pathway belongs on the main Pathways page.
+ *
+ * Archiving a Pathway is always a deliberate creator action — unlike a
+ * Gathering Series, nothing here is derived from dates, and no pathway
+ * becomes archived by getting old. So this is one comparison against
+ * one stored status, and that is all it should ever be.
+ */
+export function isActivePathway(pathway: HasLifecycleStatus): boolean {
+  return pathway.status !== ARCHIVED_STATUS
+}
+
+export function activePathways<T extends HasLifecycleStatus>(
+  pathways: readonly T[],
+): T[] {
+  return pathways.filter(isActivePathway)
+}
+
+/**
+ * Archived pathways, most recently touched first.
+ *
+ * There is no ``archived_at``, and adding a column to sort a list is
+ * not worth a migration — archiving is an update, so ``updated_at`` is
+ * the closest stored answer to "when was this put away". It is only
+ * approximate: a creator who edits an archived pathway moves it to the
+ * top. ``created_at`` is the fallback for a row with no
+ * ``updated_at``, and the id is the final discriminator so two
+ * pathways sharing a timestamp keep a fixed order between renders
+ * rather than swapping places.
+ */
+export function archivedPathways<T extends HasLifecycleStatus & { id: string }>(
+  pathways: readonly T[],
+): T[] {
+  return pathways
+    .filter((p) => !isActivePathway(p))
+    .sort((a, b) => {
+      const at = new Date(a.updated_at ?? a.created_at ?? 0).getTime()
+      const bt = new Date(b.updated_at ?? b.created_at ?? 0).getTime()
+      if (bt !== at) return bt - at
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    })
+}
+
 /** Shown if a pathway stops being a draft under an open menu. */
 export const NOT_DELETABLE_PARAGRAPHS: readonly string[] = [
   'Only a draft pathway can be permanently deleted.',
