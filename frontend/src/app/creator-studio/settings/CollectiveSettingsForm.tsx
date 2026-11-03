@@ -11,8 +11,8 @@ import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
 
-// TODO: Connect banner upload to storage once file upload API is available in production.
-// Currently uses the local file storage backend (backend/uploads/covers/).
+/** The limit the copy beside the picker states. */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 export type CollectiveSettingsTab = 'details' | 'visibility' | 'pricing' | 'about'
 
@@ -113,29 +113,55 @@ function isPaidType(type: PricingType): boolean {
     return type === 'paid_one_time' || type === 'paid_monthly' || type === 'paid_annual'
   }
 
+  /**
+   * Choosing a banner uploads it, the way choosing a logo does.
+   *
+   * It used to only stage the file: the creator pressed "Choose
+   * image", saw a preview of their own local file, and then had to
+   * find a second "Upload banner" button. Pressing the form's Save
+   * button instead — the obvious thing, at the foot of the page —
+   * saved every other setting and reported success while the banner
+   * had never been sent. The preview kept showing their image, so
+   * nothing looked wrong until they refreshed. That is the difference
+   * between this and the logo, which has always uploaded on select.
+   */
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     setBannerError(null)
     setBannerSaved(false)
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    // Type by MIME *or* by name. Some browsers and operating systems
+    // hand over an empty ``type`` for a perfectly good JPG, and a
+    // MIME-only check rejected it — the logo has always accepted
+    // either.
+    const okType = ALLOWED_IMAGE_TYPES.includes(file.type)
+      || /\.(jpe?g|png)$/i.test(file.name)
+    if (!okType) {
       setBannerError('Please select a JPG or PNG image.')
+      return
+    }
+    // The limit the copy states. It was never enforced, so an
+    // oversized file travelled all the way to the server to fail.
+    if (file.size > MAX_IMAGE_BYTES) {
+      setBannerError('That image is larger than 10 MB. Please choose a smaller one.')
       return
     }
 
     setBannerFile(file)
     const preview = URL.createObjectURL(file)
     setBannerPreview(preview)
+    void uploadBanner(file)
   }
 
-  async function uploadBanner() {
-    if (!bannerFile) return
+  async function uploadBanner(file?: File) {
+    const chosen = file ?? bannerFile
+    if (!chosen || bannerUploading) return
     setBannerUploading(true)
     setBannerError(null)
     try {
       const formData = new FormData()
-      formData.append('file', bannerFile)
+      formData.append('file', chosen)
       const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}/cover`), {
         method: 'POST',
         credentials: 'include',
@@ -151,6 +177,11 @@ function isPaidType(type: PricingType): boolean {
       setBannerPreview(null)
       setBannerSaved(true)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      // The header above this form, and every other server-rendered
+      // surface showing the Collective, holds the old value in the
+      // router cache. Without this the new image appears only after a
+      // manual reload, which reads as "it did not save".
+      router.refresh()
     } catch (err) {
       setBannerError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
@@ -185,6 +216,7 @@ function isPaidType(type: PricingType): boolean {
       const data = await res.json()
       setExistingLogo(data.logo_url ?? null)
       setLogoSaved(true)
+      router.refresh()
     } catch (err) {
       setLogoError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
@@ -479,8 +511,18 @@ function isPaidType(type: PricingType): boolean {
         <p className="mb-2 text-[14px] text-black">
           Add a banner to give your collective a stronger visual identity.
         </p>
+        {/* The precedence stated the wrong way round.
+            ``CollectiveIdentityHeader`` and ``CollectiveArtworkHeader``
+            both read Location artwork first and the banner only as a
+            fallback — the hierarchy is deliberate and documented in
+            both components — so a Collective with Location artwork
+            never showed its uploaded banner on those pages. The copy
+            promised the opposite, which is why a save that worked read
+            as a save that failed. */}
         <p className="mb-5 text-[13px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
-          If no separate banner is uploaded, this collective will use its Location artwork by default.
+          Your Location artwork leads your collective&rsquo;s pages. This
+          banner is used where there is no Location artwork, and on your
+          collective&rsquo;s cards in dashboards, sign-up and checkout.
         </p>
 
         {/* Current banner indicator */}
@@ -535,15 +577,22 @@ function isPaidType(type: PricingType): boolean {
               onChange={handleFileSelect}
               className="sr-only"
             />
-            {bannerFile && (
+            {bannerUploading && (
+              <span className="text-[13px] font-medium text-teal-700">
+                Uploading&hellip;
+              </span>
+            )}
+            {/* A retry, not the upload step. Choosing an image uploads
+                it; this appears only when that failed, so the creator
+                is not left with a staged file and no way to send it. */}
+            {bannerFile && bannerError && !bannerUploading && (
               <button
                 type="button"
-                onClick={uploadBanner}
-                disabled={bannerUploading}
-                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                onClick={() => { void uploadBanner() }}
+                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
               >
-                {bannerUploading ? 'Uploading…' : 'Upload banner'}
+                Try again
               </button>
             )}
           </div>

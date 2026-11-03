@@ -2234,13 +2234,39 @@ async def upload_cover_image(
     if ext not in ("jpg", "jpeg", "png"):
         raise HTTPException(status_code=400, detail="Only JPG and PNG images are allowed.")
     data = await file.read()
-    if space.cover_image_url:
-        old_rel = space.cover_image_url.removeprefix("/api/uploads/")
-        delete_file(old_rel)
-    rel_path, _, _ = save_file(data, filename, file.content_type or "image/jpeg", "covers")
+
+    # The replacement is stored before the old one is removed.
+    #
+    # It was the other way round, which meant a ``save_file`` that
+    # raised — a storage error, a rejected extension this endpoint
+    # allows but the storage layer does not — left the Collective with
+    # no banner file and a column still pointing at it: a broken image
+    # the creator could not undo, from an upload they were told had
+    # failed. ``delete_file`` is best-effort by design, so the worst
+    # case now is an orphaned file rather than a missing one.
+    #
+    # Namespaced per Collective, like logos. ``covers/`` was flat and
+    # shared; the uuid prefix made collisions impossible, but a path
+    # that says which Collective owns a file is the arrangement the
+    # rest of the uploads already use. Existing URLs are stored
+    # absolute and keep resolving — nothing is moved.
+    try:
+        rel_path, _, _ = save_file(
+            data, filename, file.content_type or "image/jpeg",
+            f"covers/{space.slug}",
+        )
+    except ValueError as exc:
+        # ``save_file`` raises for an extension it does not permit and
+        # for a file over its ceiling. Unhandled, that reached the
+        # creator as a 500 and an opaque "Upload failed (500)" — its
+        # message names the actual limit, so it is worth passing on.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    previous = space.cover_image_url
     space.cover_image_url = f"/api/uploads/{rel_path}"
     db.commit()
     db.refresh(space)
+    if previous:
+        delete_file(previous.removeprefix("/api/uploads/"))
     return _space_detail_response(space, db)
 
 
@@ -2260,13 +2286,21 @@ async def upload_logo(
     if ext not in ("jpg", "jpeg", "png", "webp"):
         raise HTTPException(status_code=400, detail="Only JPG, PNG, and WebP images are allowed.")
     data = await file.read()
-    if space.logo_url:
-        old_rel = space.logo_url.removeprefix("/api/uploads/")
-        delete_file(old_rel)
-    rel_path, _, _ = save_file(data, filename, file.content_type or "image/png", f"logos/{space.slug}")
+    # Store first, then remove the old one — see the cover endpoint for
+    # why. The same ordering bug was here.
+    try:
+        rel_path, _, _ = save_file(
+            data, filename, file.content_type or "image/png",
+            f"logos/{space.slug}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    previous = space.logo_url
     space.logo_url = f"/api/uploads/{rel_path}"
     db.commit()
     db.refresh(space)
+    if previous:
+        delete_file(previous.removeprefix("/api/uploads/"))
     return _space_detail_response(space, db)
 
 
