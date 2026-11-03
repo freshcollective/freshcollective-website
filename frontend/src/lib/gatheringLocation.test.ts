@@ -372,10 +372,18 @@ describe('the Gathering page uses this and nothing else', () => {
     }
   })
 
-  it('marks an attendee-only address as such', () => {
+  it('does not label the address for the viewer', () => {
+    // There was an italic "Shared with confirmed attendees" under a
+    // private address. Removed deliberately: a member reading their
+    // own Gathering does not need telling which column the line came
+    // from, and it raised a question rather than answering one.
+    //
+    // `isPrivateAddress` is still computed and still tested above —
+    // the composer knows the difference, no surface currently says it.
+    const source = page()
     assert.ok(
-      /location\.isPrivateAddress && \(/.test(page()),
-      'an attendee is no longer told the address is not the public one',
+      !/Shared with confirmed attendees/.test(source),
+      'the attendee-only label is back on the Gathering page',
     )
   })
 

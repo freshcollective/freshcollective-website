@@ -525,14 +525,6 @@ export default async function EventDetailPage({ params }: Props) {
                           {location.address}
                         </p>
                       )}
-                      {/* Said out loud, so an attendee knows the
-                          address they are reading is not the one on
-                          the public page. */}
-                      {location.isPrivateAddress && (
-                        <p className="text-[11.5px] italic" style={{ color: detailPalette.secondary }}>
-                          Shared with confirmed attendees
-                        </p>
-                      )}
                       {event.attendance_format === 'hybrid' && (
                         <p className="text-[12.5px]" style={{ color: detailPalette.secondary }}>
                           In person and online
