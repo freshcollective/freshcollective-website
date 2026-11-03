@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import SpaceNav from '@/components/spaces/SpaceNav'
 import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
 import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
@@ -41,7 +41,39 @@ export default async function SpaceLayout({ children, params }: Props) {
   const space = privateSpace
     ?? (publicAbout ? publicAboutAsSpace(publicAbout) : null)
 
-  if (!space) notFound()
+  if (!space) {
+    // A signed-out visitor following a link into a Collective they
+    // cannot resolve is asked to sign in and returned afterwards.
+    //
+    // Why here: this layout wraps every Collective page, and it
+    // resolves the Collective first. For a non-public one viewed
+    // anonymously it gets nothing and 404s — so a Gathering or
+    // Pathway page never runs, and never gets to offer the door
+    // itself. That is why a publication email's link landed on "page
+    // not found" for a member who simply was not signed in.
+    //
+    // Public Collectives are untouched: `space` resolves for anyone,
+    // through `getSpace` or the public About fallback above, so this
+    // branch is not reached for them.
+    //
+    // No disclosure. A private Collective and a slug that does not
+    // exist produce the *same* redirect, so an anonymous visitor
+    // cannot tell one from the other and cannot enumerate private
+    // Collectives — which is the trade a flat 404 was making in the
+    // other direction, at the cost of locking members out.
+    //
+    // A signed-in visitor gets `notFound()` as before: they are
+    // authenticated and still cannot see it, so there is nothing
+    // further to offer and a login loop would be the only
+    // alternative.
+    if (!user) {
+      const { headers } = await import('next/headers')
+      const { loginReturnFor } = await import('@/lib/loginReturn')
+      const requested = (await headers()).get('x-pathname')
+      redirect(loginReturnFor(requested, { fallback: `/spaces/${slug}` }))
+    }
+    notFound()
+  }
 
   const isMember = memberships.some((m) => m.space_slug === slug)
 

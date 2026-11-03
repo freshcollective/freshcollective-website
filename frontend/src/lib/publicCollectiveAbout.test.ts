@@ -221,9 +221,19 @@ describe('the Collective layout falls back too', () => {
     // before the page could render — the page produced correct markup
     // and the response was still a 404. Found in production
     // verification, not in the suite.
+    //
+    // The fall-through is now a block rather than a one-liner: a
+    // signed-out visitor is sent to login first, so a member
+    // following a publication email into a non-public Collective is
+    // not 404'd for the same reason. A signed-in visitor still gets
+    // notFound(). Both facts are asserted, since the public fallback
+    // above is what keeps this branch from being reached at all for a
+    // public Collective.
     const src = layout()
     assert.match(src, /privateSpace \? null : await getPublicCollectiveAbout/)
-    assert.match(src, /if \(!space\) notFound\(\)/)
+    assert.match(src, /if \(!space\) \{/)
+    assert.match(src, /if \(!user\) \{[\s\S]*?redirect\(loginReturnFor/)
+    assert.match(src, /\n    notFound\(\)\n  \}/)
   })
 
   it('it reads the same adapter as the page, not its own', () => {

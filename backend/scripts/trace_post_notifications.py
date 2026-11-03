@@ -23,6 +23,12 @@ Usage, from the fc-api Render Shell::
 With ``--space`` and no ``--post`` it takes that Collective's most
 recent published post, which is usually the one being asked about.
 
+Still works, and still the place the post-specific channel-eligibility
+walk lives. For Pathway, Gathering and Series announcements use
+``scripts/trace_notifications.py --kind ...``, which handles all four
+kinds and delegates the post case straight back to ``run_trace`` here
+rather than keeping a second copy of it.
+
 Privacy
 -------
 Addresses are shown as ``a***@domain`` — the domain is the point,

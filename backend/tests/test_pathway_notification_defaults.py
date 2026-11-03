@@ -331,3 +331,79 @@ class TestNothingIsAnnouncedRetroactively:
             migration.index("INSERT INTO communication_events")
             < migration.index("SET default_enabled = true")
         )
+
+
+class TestThePublishingCreatorIsExcluded:
+    """§D — the creator does not receive their own announcement.
+
+    The Gathering and Series resolvers were written with this
+    exclusion; the Pathway one predated them and mailed the creator
+    their own publication.
+    """
+
+    @pytest.fixture
+    def published(self, db, make_space, make_user):
+        from app.comms.models import CommunicationEvent
+
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        members = [make_user() for _ in range(2)]
+        for who in (creator, *members):
+            db.add(SpaceMembership(
+                id=_uid("sm"), user_id=who.id, space_id=space.id,
+                role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+                joined_at=datetime.utcnow(),
+            ))
+        pathway = Pathway(
+            id=_uid("pw"), space_id=space.id, title="Know Yourself",
+            slug=f"ky-{uuid.uuid4().hex[:8]}",
+            status="active", access_type="free",
+        )
+        db.add(pathway)
+        db.flush()
+        event = CommunicationEvent(
+            id=_uid("evt"), event_type="pathway.published",
+            topic_key="pathways", category_key="pathways",
+            source_type="creator", source_id=creator.id,
+            priority_hint="immediate",
+            actor_user_id=creator.id,
+            subject_type="pathway", subject_id=pathway.id,
+            context={"space_id": space.id, "collective_name": space.name},
+            payload={
+                "pathway_id": pathway.id,
+                "pathway_slug": pathway.slug,
+                "pathway_title": pathway.title,
+            },
+            dedupe_key=f"{pathway.id}:{space.id}",
+        )
+        db.add(event)
+        db.flush()
+        return event, creator, members
+
+    def _resolve(self, db, event):
+        from app.comms.routing.resolvers.pathways import (
+            PathwayPublishedResolver,
+        )
+
+        return PathwayPublishedResolver().resolve(db, event)
+
+    def test_the_creator_is_not_a_recipient(self, db, published):
+        event, creator, _members = published
+        ids = {r.user_id for r in self._resolve(db, event)}
+        assert creator.id not in ids
+
+    def test_the_other_members_still_are(self, db, published):
+        event, _creator, members = published
+        ids = {r.user_id for r in self._resolve(db, event)}
+        assert ids == {m.id for m in members}
+
+    def test_the_announcement_still_carries_its_destination(
+        self, db, published,
+    ):
+        """Excluding somebody must not disturb the payload."""
+        event, _creator, _members = published
+        recipients = self._resolve(db, event)
+        assert recipients
+        assert recipients[0].template_context["pathway_url"], (
+            "the CTA destination went missing"
+        )

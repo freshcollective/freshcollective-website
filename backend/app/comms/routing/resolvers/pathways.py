@@ -64,6 +64,12 @@ class PathwayPublishedResolver:
 
         out: list[ResolvedRecipient] = []
         for row in rows:
+            # The creator published it; they do not need telling.
+            # Matches the Gathering and Series resolvers — this one
+            # predated them and had been mailing the creator their own
+            # announcement.
+            if event.actor_user_id and row.user_id == event.actor_user_id:
+                continue
             out.append(
                 ResolvedRecipient(
                     user_id=row.user_id,
