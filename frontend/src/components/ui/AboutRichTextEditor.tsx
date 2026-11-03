@@ -6,41 +6,11 @@ import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { markdownToHtml } from '@/lib/markdownToHtml'
 import EmojiPicker from '@/components/community/EmojiPicker'
-
-// ---------------------------------------------------------------------------
-// Toolbar button
-// ---------------------------------------------------------------------------
-
-function ToolBtn({
-  onClick,
-  active,
-  title,
-  children,
-}: {
-  onClick: () => void
-  active?: boolean
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => {
-        // Prevent blur before the command fires
-        e.preventDefault()
-        onClick()
-      }}
-      title={title}
-      className={`rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
-        active
-          ? 'border-teal-300 bg-teal-50 text-teal-700'
-          : 'border-slate-200 bg-white text-black hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
+import {
+  TOOLBAR_CLASS,
+  ToolButton,
+  ToolDivider,
+} from '@/components/creator/EditorToolbar'
 
 // ---------------------------------------------------------------------------
 // Editor
@@ -55,10 +25,12 @@ interface Props {
   /**
    * Offer italic and numbered lists.
    *
-   * Opt-in so the Collective About toolbar is untouched: it has never
-   * had either, and adding buttons to it is a separate decision. The
-   * renderer already handles ``<em>`` and ``<ol>``, so turning them on
-   * costs nothing downstream.
+   * Opt-in so the Collective About page's *capabilities* are
+   * unchanged: it has never had either, and adding them there is a
+   * separate decision. Its toolbar does now look different — flat
+   * squares in the shared Creator Studio chrome rather than bordered
+   * text pills — which is the point: it was the only editor of the
+   * three that disagreed.
    */
   extendedMarks?: boolean
   /** Replaces the About-page placeholder. */
@@ -108,7 +80,7 @@ export default function AboutRichTextEditor({
   if (!editor) {
     return (
       <div
-        className="w-full rounded-xl border border-slate-200 bg-slate-50/70"
+        className="w-full rounded-lg border border-slate-200 bg-slate-50/70"
         style={{ minHeight: minHeight ?? '320px' }}
       />
     )
@@ -126,77 +98,84 @@ export default function AboutRichTextEditor({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-400/20">
-      {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-        <ToolBtn
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          active={editor.isActive('heading', { level: 2 })}
-          title="Section heading (##)"
-        >
-          Heading
-        </ToolBtn>
-
-        <ToolBtn
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          active={editor.isActive('heading', { level: 3 })}
-          title="Sub-heading (###)"
-        >
-          Sub-heading
-        </ToolBtn>
-
-        <ToolBtn
+    // No ``overflow-hidden``. It was clipping the emoji panel at the
+    // container's edge — the exact problem ``RichTextEditor`` documents
+    // solving the same way: rounding goes on the toolbar and the editor
+    // area separately, so the corners still look right while a popover
+    // can leave the box.
+    <div className="rounded-lg border border-slate-200 bg-white transition-colors focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-400/20">
+      {/* ── Toolbar — shared Creator Studio chrome ── */}
+      <div className={TOOLBAR_CLASS}>
+        {/* Text */}
+        <ToolButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}
-          title="Bold (**text**)"
+          title="Bold"
         >
-          <strong>Bold</strong>
-        </ToolBtn>
+          <strong>B</strong>
+        </ToolButton>
 
         {extendedMarks && (
-          <ToolBtn
+          <ToolButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
             active={editor.isActive('italic')}
-            title="Italic (*text*)"
+            title="Italic"
           >
-            <em>Italic</em>
-          </ToolBtn>
+            <em>I</em>
+          </ToolButton>
         )}
 
-        <ToolBtn
+        <ToolDivider />
+
+        {/* Structure */}
+        <ToolButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          active={editor.isActive('heading', { level: 2 })}
+          title="Heading 2"
+          wide
+        >
+          H2
+        </ToolButton>
+        <ToolButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          active={editor.isActive('heading', { level: 3 })}
+          title="Heading 3"
+          wide
+        >
+          H3
+        </ToolButton>
+        <ToolButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive('bulletList')}
           title="Bullet list"
+          wide
         >
-          List
-        </ToolBtn>
+          •≡
+        </ToolButton>
 
         {extendedMarks && (
-          <ToolBtn
+          <ToolButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             active={editor.isActive('orderedList')}
             title="Numbered list"
+            wide
           >
-            1. List
-          </ToolBtn>
+            1≡
+          </ToolButton>
         )}
 
-        <ToolBtn
-          onClick={handleAddLink}
+        <ToolDivider />
+
+        {/* Insert */}
+        <ToolButton
+          onClick={() => (editor.isActive('link')
+            ? editor.chain().focus().unsetLink().run()
+            : handleAddLink())}
           active={editor.isActive('link')}
-          title="Add or edit link"
+          title={editor.isActive('link') ? 'Remove link' : 'Add link'}
         >
-          Link
-        </ToolBtn>
-
-        {editor.isActive('link') && (
-          <ToolBtn
-            onClick={() => editor.chain().focus().unsetLink().run()}
-            title="Remove link"
-          >
-            Remove link
-          </ToolBtn>
-        )}
+          🔗
+        </ToolButton>
 
         <EmojiPicker
           variant="compact"
@@ -204,20 +183,28 @@ export default function AboutRichTextEditor({
           onSelect={(emoji) => editor.chain().focus().insertContent(emoji).run()}
         />
 
-        <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden="true" />
+        <ToolDivider />
 
-        <ToolBtn onClick={() => editor.chain().focus().undo().run()} title="Undo">
-          Undo
-        </ToolBtn>
-        <ToolBtn onClick={() => editor.chain().focus().redo().run()} title="Redo">
-          Redo
-        </ToolBtn>
+        <ToolButton
+          onClick={() => editor.chain().focus().undo().run()}
+          title="Undo"
+          wide
+        >
+          ↶
+        </ToolButton>
+        <ToolButton
+          onClick={() => editor.chain().focus().redo().run()}
+          title="Redo"
+          wide
+        >
+          ↷
+        </ToolButton>
       </div>
 
       {/* ── Editor area — uses .rich-editor CSS class from globals.css ── */}
       <div
         id={id}
-        className="rich-editor px-5 py-4"
+        className="rich-editor rounded-b-lg px-5 py-4"
         style={{ minHeight: minHeight ?? '320px' }}
       >
         <EditorContent editor={editor} />
