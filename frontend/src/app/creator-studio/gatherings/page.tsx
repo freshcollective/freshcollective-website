@@ -5,6 +5,7 @@ import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeade
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import GatheringSeriesBand from './GatheringSeriesBand'
 import StandaloneGatheringCard from './StandaloneGatheringCard'
+import { standaloneGatherings } from '@/lib/seriesArchive'
 
 /**
  * Creator Studio → Gatherings.
@@ -29,7 +30,7 @@ export default async function GatheringsPage() {
         getCreatorEvents(primarySpace.slug, 'upcoming'),
         getCreatorEvents(primarySpace.slug, 'archive'),
         getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
-        getCreatorGatheringSeriesList(primarySpace.slug),
+        getCreatorGatheringSeriesList(primarySpace.slug, 'upcoming'),
       ])
     : [[], [], null, []]
 
@@ -107,9 +108,16 @@ export default async function GatheringsPage() {
         24 of its sessions repeated below the Series card). Backend
         rows are untouched — this is purely a Creator Studio
         presentation filter.
+
+        The rule now lives in ``lib/seriesArchive`` so this page and
+        Archives cannot disagree about it. It deliberately does not
+        also hide ``recurrence_series_id`` rows — see that file: a
+        bulk create with no Series chosen stamps that tag and creates
+        no Series row, so hiding those would make them unreachable
+        rather than de-duplicated.
       */}
       {(() => {
-        const standalone = primarySpace ? upcoming.filter((e) => !e.series_id) : []
+        const standalone = primarySpace ? standaloneGatherings(upcoming) : []
         return (
           <>
             {primarySpace && (

@@ -138,6 +138,7 @@ def _series_to_dict(series: EventSeries) -> dict:
 
 def _series_summary(
     series: EventSeries, *, gathering_count: int, payment_option_count: int,
+    lifecycle: str | None = None,
 ) -> dict:
     return {
         "id": series.id,
@@ -152,6 +153,11 @@ def _series_summary(
         "published_at": series.published_at,
         "notify_members": series.notify_members,
         "updated_at": series.updated_at,
+        # Where this Series sits in its life — see
+        # ``services/series_lifecycle``. Derived at read time from the
+        # stored status and the dates; nothing writes it, and the
+        # stored ``status`` beside it is unchanged.
+        "lifecycle": lifecycle,
     }
 
 
@@ -167,10 +173,36 @@ def _series_summary(
 )
 def list_gathering_series(
     slug: str,
+    scope: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[dict]:
+    """Every Series in a Collective, or one scope of them.
+
+    ``scope`` mirrors ``list_events``:
+
+      ``upcoming`` — drafts, scheduled and running Series: what belongs
+                     on the main Gatherings page.
+      ``archive``  — completed and explicitly archived Series.
+      omitted      — everything, which is what this returned before the
+                     parameter existed and what other callers still get.
+
+    The filter is applied in Python rather than SQL because
+    "completed" is not a stored value — it is the stored status read
+    against the dates, and deriving it in a query would duplicate the
+    rule. A Collective's Series are counted in tens, so the whole set
+    is cheap to classify.
+    """
+    from datetime import datetime as _dt
+
     from sqlalchemy import func as _sqfn
+
+    from app.services.series_lifecycle import (
+        archive_sort_key,
+        classify_series,
+        series_in_scope,
+    )
+
     space = _get_managed_space(slug, current_user, db)
     rows = (
         db.query(EventSeries)
@@ -180,6 +212,27 @@ def list_gathering_series(
     )
     if not rows:
         return []
+
+    now = _dt.utcnow()
+    lifecycles = {
+        s.id: classify_series(
+            status=s.status, starts_at=s.starts_at, ends_at=s.ends_at, now=now,
+        )
+        for s in rows
+    }
+    if scope is not None:
+        rows = [s for s in rows if series_in_scope(lifecycles[s.id], scope)]
+        if not rows:
+            return []
+    if scope == "archive":
+        # Most recently finished or put away first.
+        rows.sort(
+            key=lambda s: archive_sort_key(
+                lifecycle=lifecycles[s.id], ends_at=s.ends_at,
+                starts_at=s.starts_at, updated_at=s.updated_at,
+            ),
+            reverse=True,
+        )
     ids = [s.id for s in rows]
     # Active only, matching the list this number labels. Counting every
     # status told a Creator "12 Gatherings" for a Series holding nine.
@@ -204,6 +257,7 @@ def list_gathering_series(
             s,
             gathering_count=ev_counts.get(s.id, 0),
             payment_option_count=po_counts.get(s.id, 0),
+            lifecycle=lifecycles[s.id],
         )
         for s in rows
     ]

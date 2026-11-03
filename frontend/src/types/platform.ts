@@ -2004,6 +2004,10 @@ export interface ActivityListResponse {
 
 export type GatheringSeriesStatus = 'draft' | 'published' | 'archived'
 
+/** See `lib/seriesArchive`. */
+export type SeriesLifecycle =
+  | 'draft' | 'scheduled' | 'running' | 'completed' | 'archived'
+
 export interface CreatorGatheringSeriesSummary {
   id: string
   slug: string
@@ -2015,6 +2019,17 @@ export interface CreatorGatheringSeriesSummary {
   gathering_count: number
   payment_option_count: number
   updated_at: string
+  /**
+   * Where the Series sits in its life, derived by the server at read
+   * time from `status` and the dates — draft / scheduled / running /
+   * completed / archived. `status` beside it is the unchanged stored
+   * value, which has no "completed": a term that finished last month
+   * is still `published` until a creator archives it.
+   *
+   * Optional because older callers of the list endpoint do not ask
+   * for a scope and the field is not stored.
+   */
+  lifecycle?: SeriesLifecycle | null
 }
 
 export interface CreatorGatheringSeries {

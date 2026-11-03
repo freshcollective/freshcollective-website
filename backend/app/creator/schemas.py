@@ -3040,6 +3040,12 @@ class GatheringSeriesSummary(BaseModel):
     payment_option_count: int = 0
     published_at: datetime | None = None
     updated_at: datetime
+    #: Where the Series sits in its life — draft / scheduled / running
+    #: / completed / archived. Derived at read time from ``status`` and
+    #: the dates (see ``services/series_lifecycle``); nothing stores
+    #: it, and ``status`` above is the unchanged stored value. Optional
+    #: so a caller that does not set it still validates.
+    lifecycle: str | None = None
 
 
 # ---------------------------------------------------------------------------

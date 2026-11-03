@@ -904,8 +904,21 @@ export const getCreatorPathways = cache(async (slug: string) => {
 
 // ── Gathering Series ───────────────────────────────────────────────
 
-export const getCreatorGatheringSeriesList = cache(async (slug: string) => {
-  const res = await fetchWithSession(`/api/creator/spaces/${slug}/gathering-series`)
+/**
+ * Gathering Series for a Collective.
+ *
+ * ``scope`` mirrors ``getCreatorEvents``: ``upcoming`` for drafts,
+ * scheduled and running Series, ``archive`` for completed and
+ * archived ones, omitted for everything. The classification is the
+ * server's — see ``services/series_lifecycle``.
+ */
+export const getCreatorGatheringSeriesList = cache(async (
+  slug: string, scope?: 'upcoming' | 'archive',
+) => {
+  const query = scope ? `?scope=${scope}` : ''
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/gathering-series${query}`,
+  )
   if (!res.ok) return []
   return res.json()
 })
