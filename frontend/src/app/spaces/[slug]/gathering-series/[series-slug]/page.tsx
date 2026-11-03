@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import MarkdownBody from '@/components/ui/MarkdownBody'
 import Link from 'next/link'
 import {
   getSpace,
@@ -251,7 +252,9 @@ export default async function MemberGatheringSeriesPage({
             </div>
           ) : detail.description ? (
             <div className="rounded-2xl border border-border bg-white px-6 py-5">
-              <p className="text-[15px] leading-relaxed text-black">{detail.description}</p>
+              {/* Through the shared About renderer, so a formatted
+                  summary displays and a plain-text one is unchanged. */}
+              <MarkdownBody content={detail.description} />
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-8 text-center text-[13px] italic text-slate-500">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 import { NO_DATE_LABEL, parseServerDatetime } from '@/lib/dateTime'
 import type {
   CreatorEvent,
@@ -18,7 +19,6 @@ import {
   Input,
   Modal,
   Select,
-  TextArea,
   useToast,
 } from '@/components/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
@@ -1490,12 +1490,26 @@ function SeriesPaymentOptionModal({
                 maxLength={200}
               />
             </FormField>
-            <FormField label="Description" helper="Optional. Short and useful.">
-              <TextArea
+            {/* The same editor the Gathering description and the
+                Collective About page use. ``maxLength`` is gone with
+                the textarea: a character cap over HTML counts markup
+                against the author, and the column is unbounded Text.
+
+                This stays the Series' short summary — the field cards
+                and summary rows read — and its full rich content is
+                still the About tab. Formatting here is so a summary
+                can carry a bold phrase or a link, not so it becomes a
+                second About page. */}
+            <FormField
+              label="Description"
+              helper="Optional. A short summary for cards and listings."
+            >
+              <AboutRichTextEditor
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                maxLength={1000}
+                onChange={setDescription}
+                extendedMarks
+                minHeight="140px"
+                placeholder="A sentence or two about this series."
               />
             </FormField>
           </div>

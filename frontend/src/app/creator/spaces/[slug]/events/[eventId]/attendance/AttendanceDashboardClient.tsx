@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { richTextExcerpt } from '@/lib/richTextPlain'
 import { useRouter } from 'next/navigation'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import { parseServerDatetime } from '@/lib/dateTime'
@@ -409,8 +410,10 @@ function EventHeader({ event }: { event: AttendanceDashboard['event'] }) {
             {event.title}
           </h1>
           {event.description && (
+            // A one-line plain-text summary. This is a dense operational
+            // header, not a place to render the formatted description.
             <p className="mt-2 text-[14.5px] italic" style={{ color: 'var(--fc-ink-secondary, rgba(12,24,38,0.68))', fontFamily: 'Georgia, serif' }}>
-              {event.description}
+              {richTextExcerpt(event.description, 180)}
             </p>
           )}
           <dl className="mt-4 grid grid-cols-1 gap-2 text-[13px] md:grid-cols-2" style={{ color: 'var(--fc-ink-primary)' }}>

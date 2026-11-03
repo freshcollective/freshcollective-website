@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { richTextToPlain } from '@/lib/richTextPlain'
 import { resolveMediaUrl } from '@/lib/api'
 import type { EventSummary } from '@/types/platform'
 import { formatCalendarDate, formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
@@ -214,7 +215,7 @@ function SeriesCard({
         <h3 className="font-serif text-[17px] leading-snug text-navy-900">{series.title}</h3>
         {series.description && (
           <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600">
-            {series.description}
+            {richTextToPlain(series.description)}
           </p>
         )}
         <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
@@ -299,7 +300,7 @@ function StandaloneCard({
         <h3 className="mt-1 font-serif text-[16px] leading-snug text-navy-900">{event.title}</h3>
         {event.description && (
           <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600">
-            {event.description}
+            {richTextToPlain(event.description)}
           </p>
         )}
         <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">

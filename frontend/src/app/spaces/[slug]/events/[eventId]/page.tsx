@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpace, getSpaceEvent, getSpaceEventAboutBlocks, getMe } from '@/lib/serverApi'
 import { composeGatheringLocation } from '@/lib/gatheringLocation'
+import { richTextToPlain } from '@/lib/richTextPlain'
+import MarkdownBody from '@/components/ui/MarkdownBody'
 import { requireArea } from '@/lib/areaAccess'
 import { resolveMediaUrl } from '@/lib/api'
 import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
@@ -67,7 +69,9 @@ function calendarUrls(event: EventDetail) {
     action: 'TEMPLATE',
     text: event.title,
     dates: `${fmt(start)}/${fmt(end)}`,
-    details: event.description ?? '',
+    // Plain text: a calendar entry's details field is text, so markup
+    // would arrive as literal angle brackets in somebody's diary.
+    details: richTextToPlain(event.description),
     location: event.location_url ?? '',
   })
   const google = `https://calendar.google.com/calendar/render?${googleParams}`
@@ -78,7 +82,7 @@ function calendarUrls(event: EventDetail) {
     startdt: start.toISOString(),
     enddt: end.toISOString(),
     subject: event.title,
-    body: event.description ?? '',
+    body: richTextToPlain(event.description),
     location: event.location_url ?? '',
   })
   const outlook = `https://outlook.live.com/calendar/0/action/compose?${outlookParams}`
@@ -601,10 +605,15 @@ export default async function EventDetailPage({ params }: Props) {
               )
               : event.description
                 ? (
-                  <div className="max-w-[62ch] space-y-3 text-[15px] leading-[1.75] text-navy-900">
-                    {event.description.split('\n').filter(Boolean).map((para: string, i: number) => (
-                      <p key={i}>{para}</p>
-                    ))}
+                  // Formatted descriptions render through the shared
+                  // About renderer — the same component the Collective
+                  // About page uses, which detects HTML or markdown and
+                  // never uses dangerouslySetInnerHTML. A legacy
+                  // plain-text description takes the markdown path and
+                  // reads exactly as it did: one paragraph per block,
+                  // line breaks kept.
+                  <div className="max-w-[62ch]">
+                    <MarkdownBody content={event.description} />
                   </div>
                 )
                 : (

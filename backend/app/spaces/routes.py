@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.core.database import get_db
 from app.core.public_url import public_app_url
+from app.services.rich_text import rich_text_to_plain
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
@@ -3662,7 +3663,11 @@ def download_ics(
     # has it on the Gathering page and in their confirmation; a
     # calendar file is downloadable by people who have not.
     location = venue_projection.public_location_summary(event)
-    description = (event.description or "").replace("\n", "\\n")
+    # Plain text. A description is formatted HTML now, and a calendar
+    # client shows ``DESCRIPTION`` as text — so markup would arrive as
+    # literal angle brackets in somebody's diary. Line breaks are
+    # escaped the way iCalendar wants them, after the conversion.
+    description = rich_text_to_plain(event.description).replace("\n", "\\n")
     # Was a hardcoded ``fresh.community``, which is not a Fresh
     # Collective domain — every calendar entry carried a dead link.
     event_url = public_app_url(f"/spaces/{slug}/events/{event.id}")

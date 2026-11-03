@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { richTextFirstLine } from '@/lib/richTextPlain'
 import type { EventSummary } from '@/types/platform'
 import { countdownLabel, formatGatheringDate } from '@/lib/dateTime'
 import { getGatheringAccent } from '@/lib/gatheringAccent'
@@ -66,8 +67,10 @@ export default function EventCard({
   const countdown = event.status === 'cancelled' || archive
     ? null
     : countdownLabel(event.starts_at, event.ends_at ?? null)
+  // Plain text. A description carries the creator's formatting now, so
+  // slicing the raw value would put "<strong>" on a card.
   const oneLine = event.description
-    ? event.description.split('\n').find((line) => line.trim().length > 0)?.trim() ?? null
+    ? richTextFirstLine(event.description)
     : null
 
   const isCancelled = event.status === 'cancelled'

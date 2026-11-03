@@ -52,15 +52,31 @@ interface Props {
   /** Called with TipTap HTML output on every change */
   onChange: (html: string) => void
   id?: string
+  /**
+   * Offer italic and numbered lists.
+   *
+   * Opt-in so the Collective About toolbar is untouched: it has never
+   * had either, and adding buttons to it is a separate decision. The
+   * renderer already handles ``<em>`` and ``<ol>``, so turning them on
+   * costs nothing downstream.
+   */
+  extendedMarks?: boolean
+  /** Replaces the About-page placeholder. */
+  placeholder?: string
+  /** Editing area height. About pages want a tall canvas; a Gathering
+   *  description is usually a few paragraphs. */
+  minHeight?: string
 }
 
-export default function AboutRichTextEditor({ value, onChange, id }: Props) {
+export default function AboutRichTextEditor({
+  value, onChange, id, extendedMarks = false, placeholder, minHeight,
+}: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
         // Disable features not needed for About pages
-        italic: false,
+        italic: extendedMarks ? undefined : false,
         strike: false,
         code: false,
         codeBlock: false,
@@ -75,8 +91,8 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
         },
       }),
       Placeholder.configure({
-        placeholder:
-          'Write your About page content here.\n\nUse the toolbar to add headings, bold text, and bullet lists.',
+        placeholder: placeholder
+          ?? 'Write your About page content here.\n\nUse the toolbar to add headings, bold text, and bullet lists.',
       }),
     ],
     // Convert markdown → HTML if needed; HTML passes through unchanged
@@ -93,7 +109,7 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
     return (
       <div
         className="w-full rounded-xl border border-slate-200 bg-slate-50/70"
-        style={{ minHeight: '320px' }}
+        style={{ minHeight: minHeight ?? '320px' }}
       />
     )
   }
@@ -137,6 +153,16 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
           <strong>Bold</strong>
         </ToolBtn>
 
+        {extendedMarks && (
+          <ToolBtn
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            active={editor.isActive('italic')}
+            title="Italic (*text*)"
+          >
+            <em>Italic</em>
+          </ToolBtn>
+        )}
+
         <ToolBtn
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive('bulletList')}
@@ -144,6 +170,16 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
         >
           List
         </ToolBtn>
+
+        {extendedMarks && (
+          <ToolBtn
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            active={editor.isActive('orderedList')}
+            title="Numbered list"
+          >
+            1. List
+          </ToolBtn>
+        )}
 
         <ToolBtn
           onClick={handleAddLink}
@@ -182,7 +218,7 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
       <div
         id={id}
         className="rich-editor px-5 py-4"
-        style={{ minHeight: '320px' }}
+        style={{ minHeight: minHeight ?? '320px' }}
       >
         <EditorContent editor={editor} />
       </div>

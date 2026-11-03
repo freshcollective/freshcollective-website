@@ -36,9 +36,16 @@ function safeHref(raw: string): string | null {
  */
 function parseInlineHtml(html: string, keyBase: string): React.ReactNode {
   const nodes: React.ReactNode[] = []
-  // Matches: <strong>…</strong> | <em>…</em> | <a href="…">…</a> | any other tag | text
+  // Matches, in order: bold (<strong> or the pasted <b>), italic (<em>
+  // or the pasted <i>), a link, a line break, any other tag, text.
+  //
+  // ``b`` and ``i`` are here because the sanitiser allows them: the
+  // editor emits <strong>/<em>, but pasting from a word processor
+  // brings <b>/<i>, and those used to fall into the "any other tag"
+  // branch — content kept, emphasis silently dropped. ``br`` likewise
+  // vanished entirely, taking an author's line break with it.
   const re =
-    /<strong[^>]*>([\s\S]*?)<\/strong>|<em[^>]*>([\s\S]*?)<\/em>|<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>|<[^>]+>|([^<]+)/g
+    /<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>|<(?:em|i)[^>]*>([\s\S]*?)<\/(?:em|i)>|<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>|<br\s*\/?>|<[^>]+>|([^<]+)/g
   let m: RegExpExecArray | null
   let idx = 0
 
@@ -69,6 +76,8 @@ function parseInlineHtml(html: string, keyBase: string): React.ReactNode {
       } else {
         nodes.push(<React.Fragment key={k}>{decodeEntities(m[4])}</React.Fragment>)
       }
+    } else if (m[0].toLowerCase().startsWith('<br')) {
+      nodes.push(<br key={k} />)
     } else if (m[5] !== undefined) {
       nodes.push(<React.Fragment key={k}>{decodeEntities(m[5])}</React.Fragment>)
     }
@@ -84,7 +93,7 @@ function parseInlineHtml(html: string, keyBase: string): React.ReactNode {
  */
 type HtmlBlock =
   | { tag: 'h2' | 'h3' | 'p'; inner: string }
-  | { tag: 'ul'; items: string[] }
+  | { tag: 'ul' | 'ol'; items: string[] }
 
 function splitHtmlBlocks(html: string): HtmlBlock[] {
   const blocks: HtmlBlock[] = []
@@ -132,7 +141,11 @@ function splitHtmlBlocks(html: string): HtmlBlock[] {
         const pMatch = /<p[^>]*>([\s\S]*?)<\/p>/.exec(liInner)
         items.push(pMatch ? pMatch[1] : liInner)
       }
-      if (items.length > 0) blocks.push({ tag: 'ul', items })
+      // The tag is kept. An <ol> used to be collected as a 'ul' and
+      // rendered with bullets, so a sequence an author had numbered —
+      // steps to follow, an order of events — arrived unnumbered and
+      // the meaning was quietly lost.
+      if (items.length > 0) blocks.push({ tag: tag as 'ul' | 'ol', items })
     } else if (tag === 'h2') {
       blocks.push({ tag: 'h2', inner })
     } else if (tag === 'h3') {
@@ -175,12 +188,34 @@ function renderHtml(html: string): React.ReactNode {
         </ul>
       )
     }
-    // p
-    return (
-      <p key={k} className="mb-4 text-[15px] leading-[1.85] text-black">
-        {parseInlineHtml(b.inner, k)}
-      </p>
-    )
+    if (b.tag === 'ol') {
+      // The number is rendered rather than left to the browser's
+      // marker, so it matches the bullet treatment above: same
+      // indent, same line height, same teal accent.
+      return (
+        <ol key={k} className="mb-4 space-y-1.5 pl-1">
+          {b.items.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2 text-[15px] leading-[1.75] text-black">
+              <span className="mt-[0.1em] w-4 shrink-0 text-right text-[13px] font-semibold text-teal-600">
+                {idx + 1}.
+              </span>
+              <span>{parseInlineHtml(item, `${k}-li${idx}`)}</span>
+            </li>
+          ))}
+        </ol>
+      )
+    }
+    // Checked explicitly rather than left as a fall-through: the
+    // discriminant stopped narrowing once 'ol' became its own branch,
+    // and a cast here would have hidden a real mismatch instead.
+    if (b.tag === 'p') {
+      return (
+        <p key={k} className="mb-4 text-[15px] leading-[1.85] text-black">
+          {parseInlineHtml(b.inner, k)}
+        </p>
+      )
+    }
+    return null
   })
 }
 

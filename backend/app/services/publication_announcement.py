@@ -45,6 +45,8 @@ pipeline.
 
 from __future__ import annotations
 
+from app.services.rich_text import rich_text_to_plain
+
 import logging
 from datetime import datetime
 
@@ -248,7 +250,15 @@ def announce_gathering_if_newly_published(
                 # September at 9:00am" reads the same in an
                 # announcement as in the reminder that follows it.
                 "gathering_when": _friendly_when(gathering, space),
-                "description": (gathering.description or "")[:280] or None,
+                # Plain text, truncated. A description is formatted
+                # HTML now, and ``render_email_shell`` escapes
+                # everything it is handed — so a slice of raw markup
+                # would put "<strong>" in front of a member rather
+                # than bolding anything. Slicing HTML could also cut
+                # mid-tag or mid-entity.
+                "description": rich_text_to_plain(
+                    gathering.description, limit=280,
+                ) or None,
                 "is_paid": (
                     getattr(gathering, "booking_access_type", None)
                     == "paid_separately"
@@ -341,7 +351,9 @@ def announce_series_if_newly_published(
                     series.ends_at.isoformat() if series.ends_at else None
                 ),
                 "session_count": count,
-                "description": (series.description or "")[:280] or None,
+                "description": rich_text_to_plain(
+                    series.description, limit=280,
+                ) or None,
             },
             dedupe_key=series_dedupe_key(series.id, series.space_id),
         )

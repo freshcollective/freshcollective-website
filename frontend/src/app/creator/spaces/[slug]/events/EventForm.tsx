@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorPathway } from '@/types/platform'
 import { Switch } from '@/components/platform'
+import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 import {
   GATHERING_TYPES,
   ATTENDANCE_FORMATS,
@@ -458,13 +459,28 @@ export default function EventForm({
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-navy-800">Description</label>
-          <textarea
+          <label
+            className="mb-1.5 block text-sm font-medium text-navy-800"
+            htmlFor="gathering-description"
+          >
+            Description
+          </label>
+          {/* The same editor the Collective About page uses, so the
+              toolbar and the keyboard behaviour are the ones a creator
+              has already met. It accepts a legacy plain-text or
+              markdown description and converts it on load, so opening
+              an old Gathering shows its words rather than its markup —
+              and the member-facing renderer reads both formats too. */}
+          <AboutRichTextEditor
+            id="gathering-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="What will happen in this Gathering?"
-            className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            onChange={setDescription}
+            extendedMarks
+            minHeight="180px"
+            placeholder={
+              'What will happen in this Gathering?\n\n'
+              + 'Use the toolbar for headings, bold, lists and links.'
+            }
           />
         </div>
 

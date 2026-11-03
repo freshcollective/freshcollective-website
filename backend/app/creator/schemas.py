@@ -945,6 +945,20 @@ class EventCreateRequest(BaseModel):
             raise ValueError("Invalid access type.")
         return normalised
 
+    @field_validator("description")
+    @classmethod
+    def _sanitize_description(cls, v: str | None) -> str | None:
+        """The authoritative boundary for formatted description HTML.
+
+        At the schema rather than in each handler, so create, update
+        and bulk-create are all covered by one rule and a new write
+        path cannot forget it. The editor constrains what a creator
+        can produce; this constrains what the API will store.
+        """
+        from app.services.rich_text import sanitize_rich_text
+
+        return sanitize_rich_text(v)
+
 
 class EventUpdateRequest(BaseModel):
     title: str | None = None
@@ -1024,6 +1038,20 @@ class EventUpdateRequest(BaseModel):
         if normalised not in ACCESS_TYPE_VALUES:
             raise ValueError("Invalid access type.")
         return normalised
+
+    @field_validator("description")
+    @classmethod
+    def _sanitize_description(cls, v: str | None) -> str | None:
+        """The authoritative boundary for formatted description HTML.
+
+        At the schema rather than in each handler, so create, update
+        and bulk-create are all covered by one rule and a new write
+        path cannot forget it. The editor constrains what a creator
+        can produce; this constrains what the API will store.
+        """
+        from app.services.rich_text import sanitize_rich_text
+
+        return sanitize_rich_text(v)
 
 
 class EventResponse(BaseModel):
@@ -2903,6 +2931,20 @@ class GatheringSeriesCreateRequest(BaseModel):
             )
         return v
 
+    @field_validator("description")
+    @classmethod
+    def _sanitize_description(cls, v: str | None) -> str | None:
+        """The authoritative boundary for formatted description HTML.
+
+        At the schema rather than in each handler, so create, update
+        and bulk-create are all covered by one rule and a new write
+        path cannot forget it. The editor constrains what a creator
+        can produce; this constrains what the API will store.
+        """
+        from app.services.rich_text import sanitize_rich_text
+
+        return sanitize_rich_text(v)
+
 
 class GatheringSeriesUpdateRequest(BaseModel):
     """PATCH — every field optional. ``ends_at`` uses
@@ -2941,6 +2983,20 @@ class GatheringSeriesUpdateRequest(BaseModel):
                 f"Status must be one of: {', '.join(_VALID_GATHERING_SERIES_STATUSES)}."
             )
         return v
+
+    @field_validator("description")
+    @classmethod
+    def _sanitize_description(cls, v: str | None) -> str | None:
+        """The authoritative boundary for formatted description HTML.
+
+        At the schema rather than in each handler, so create, update
+        and bulk-create are all covered by one rule and a new write
+        path cannot forget it. The editor constrains what a creator
+        can produce; this constrains what the API will store.
+        """
+        from app.services.rich_text import sanitize_rich_text
+
+        return sanitize_rich_text(v)
 
 
 class GatheringSeriesResponse(BaseModel):
