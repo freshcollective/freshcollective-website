@@ -863,6 +863,10 @@ class EventCreateRequest(BaseModel):
     #: True so a client that omits the field keeps the behaviour every
     #: existing Gathering has.
     show_remaining_publicly: bool = True
+    #: "Notify Collective members about this Gathering". Default
+    #: True; read only at first publication, so carrying True
+    #: through a fortnight of draft edits announces nothing.
+    notify_members: bool = True
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
@@ -947,6 +951,8 @@ class EventUpdateRequest(BaseModel):
     #: None = not supplied, leave as-is. A PATCH that omits this must
     #: not silently re-reveal a count the creator hid.
     show_remaining_publicly: bool | None = None
+    #: None = not supplied, leave as-is.
+    notify_members: bool | None = None
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
@@ -1023,6 +1029,7 @@ class EventResponse(BaseModel):
     requires_booking: bool = False
     capacity: int | None = None
     show_remaining_publicly: bool = True
+    notify_members: bool = True
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     booked_count: int = 0
@@ -2853,6 +2860,9 @@ class GatheringSeriesCreateRequest(BaseModel):
     ends_at: datetime | None = None
     cover_image_url: str | None = None
     slug: str | None = None  # auto from title if omitted
+    #: "Notify Collective members about this Series". Default True;
+    #: read only when the Series is first published.
+    notify_members: bool = True
 
     @field_validator("title")
     @classmethod
@@ -2893,6 +2903,8 @@ class GatheringSeriesUpdateRequest(BaseModel):
     ends_at: datetime | None = None
     cover_image_url: str | None = None
     status: str | None = None
+    #: None = not supplied, leave as-is.
+    notify_members: bool | None = None
 
     @field_validator("title")
     @classmethod

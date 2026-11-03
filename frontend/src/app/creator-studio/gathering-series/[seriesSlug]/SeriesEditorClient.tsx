@@ -510,6 +510,13 @@ function AboutSeriesCard({
   const [endsAt, setEndsAt] = useState(isoToDateInput(initial.ends_at))
   const [cover, setCover] = useState<string | null>(initial.cover_image_url)
   const [status, setStatus] = useState<GatheringSeriesStatus>(initial.status)
+  // "Notify Collective members". One announcement for the whole term —
+  // the sessions inside it never announce individually. Only read at a
+  // first publication, so it is offered until the Series has been
+  // published and is moot afterwards.
+  const [notifyMembers, setNotifyMembers] = useState(
+    initial.notify_members ?? true,
+  )
   const [saving, setSaving] = useState(false)
 
   async function save(patch: Record<string, unknown>) {
@@ -552,12 +559,15 @@ function AboutSeriesCard({
       // through the final calendar day of the term.
       ends_at: dateInputToNaiveIso(endsAt, true),
       cover_image_url: cover,
+      notify_members: notifyMembers,
     })
   }
 
   async function onStatusChange(next: GatheringSeriesStatus) {
     setStatus(next)
-    await save({ status: next })
+    // The choice travels with the status change, so publishing in one
+    // action cannot race a separate save of the toggle.
+    await save({ status: next, notify_members: notifyMembers })
   }
 
   return (
@@ -581,6 +591,30 @@ function AboutSeriesCard({
           </Select>
         </div>
       </header>
+
+      {/* Offered until the Series has been published; afterwards the
+          announcement has either gone or been declined, and the
+          toggle would be a control over nothing. */}
+      {initial.published_at == null && (
+        <label className="mb-5 flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={notifyMembers}
+            onChange={(e) => setNotifyMembers(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-teal-500"
+          />
+          <span>
+            <span className="text-[13.5px] font-medium text-navy-900">
+              Notify Collective members about this Series
+            </span>
+            <span className="mt-0.5 block text-[12.5px] leading-relaxed text-slate-600">
+              {notifyMembers
+                ? 'One email when you publish — for the Series as a whole, never one per session. Drafts send nothing.'
+                : 'This Series will publish quietly — no announcement email.'}
+            </span>
+          </span>
+        </label>
+      )}
 
       <div className="grid gap-5 md:grid-cols-2">
         <FormField label="Title">

@@ -101,6 +101,10 @@ F_MEMBER_FIRST_NAME = MergeField(
     "not set one, so a greeting never addresses an empty space.",
 )
 
+F_SERIES = MergeField(
+    "series_name", "series_title", "Autumn Term",
+    "The Gathering Series' title.",
+)
 F_POST_AUTHOR = MergeField(
     "author_name", "author_name", "Kelly",
     "Who published the post.",
@@ -572,6 +576,74 @@ declare(TemplateDeclaration(
 # ---------------------------------------------------------------------------
 # Community
 # ---------------------------------------------------------------------------
+
+declare(TemplateDeclaration(
+    template_key="gathering.published.email_transactional",
+    event_type="gathering.published",
+    display_name="New gathering published",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="Every active member of the Collective, except the creator",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_GATHERING, F_GATHERING_WHEN),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "New in {{collective_name}}: {{gathering_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("collective_name", "gathering_name")),
+        EditableSlot("heading", "Heading", "{{gathering_name}}",
+                     multiline=False, required_fields=("gathering_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "A new gathering has been added to "
+                     "{{collective_name}}.",
+                     required_fields=("collective_name",)),
+        EditableSlot("body.closing", "Closing",
+                     "Open the gathering to see the details and save your "
+                     "place."),
+        EditableSlot("cta_label", "Button label (free)",
+                     "Book Your Place", multiline=False, max_length=40),
+        EditableSlot("cta_label_paid", "Button label (ticketed)",
+                     "View Gathering", multiline=False, max_length=40),
+    ),
+    locked_notes=(
+        "The date, attendance details and description are generated.",
+        "Only the public locality is included, never the street "
+        "address or joining link — an announcement goes to people who "
+        "have not booked.",
+        "A ticketed gathering says View Gathering rather than Book "
+        "Your Place, so the email does not imply the price has been "
+        "dealt with.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="series.published.email_transactional",
+    event_type="series.published",
+    display_name="New series published",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="Every active member of the Collective, except the creator",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_SERIES),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "New in {{collective_name}}: {{series_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("collective_name", "series_name")),
+        EditableSlot("heading", "Heading", "{{series_name}}",
+                     multiline=False, required_fields=("series_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "A new series has been added to {{collective_name}}.",
+                     required_fields=("collective_name",)),
+        EditableSlot("body.closing", "Closing",
+                     "Open the series to see every session."),
+        EditableSlot("cta_label", "Button label", "View Series",
+                     multiline=False, max_length=40),
+    ),
+    locked_notes=(
+        "The schedule line is generated — a session count and a start "
+        "date rather than every date, which would be a wall of text.",
+        "One email per Series, never one per session.",
+    ),
+))
 
 declare(TemplateDeclaration(
     template_key="community.post.published.email_transactional",

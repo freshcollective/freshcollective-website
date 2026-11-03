@@ -144,6 +144,16 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("gathering.multi_booking.confirmed",  TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
 
     # Pathways
+    # Publication announcements for Gatherings and Series. On the
+    # gatherings topic, beside the booking and reminder events, because
+    # that is the category a member reasons about — and it means a
+    # member who has quietened Gatherings is quiet for these too.
+    #
+    # Deliberately NOT event-locked: an announcement is exactly the
+    # kind of message somebody should be able to switch off, unlike a
+    # cancellation notice.
+    EventDefinition("gathering.published",                TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
+    EventDefinition("series.published",                   TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
     EventDefinition("pathway.published",                  TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
     EventDefinition("pathway.step_added",                 TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
     EventDefinition("pathway.enrolment.completed",        TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),

@@ -30,7 +30,9 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException
+from fastapi import BackgroundTasks, Depends, HTTPException
+
+from app.comms.rollout import schedule_routing_if_needed
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -128,6 +130,7 @@ def _series_to_dict(series: EventSeries) -> dict:
         "status": series.status,
         "cover_image_url": series.cover_image_url,
         "published_at": series.published_at,
+        "notify_members": series.notify_members,
         "created_at": series.created_at,
         "updated_at": series.updated_at,
     }
@@ -147,6 +150,7 @@ def _series_summary(
         "gathering_count": gathering_count,
         "payment_option_count": payment_option_count,
         "published_at": series.published_at,
+        "notify_members": series.notify_members,
         "updated_at": series.updated_at,
     }
 
@@ -249,6 +253,7 @@ def create_gathering_series(
         starts_at=body.starts_at,
         ends_at=body.ends_at,
         status="draft",
+        notify_members=body.notify_members,
         cover_image_url=body.cover_image_url,
     )
     db.add(row)
@@ -281,6 +286,7 @@ def update_gathering_series(
     slug: str,
     series_slug: str,
     body: GatheringSeriesUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> dict:
@@ -306,6 +312,11 @@ def update_gathering_series(
             status_code=400,
             detail="End date must be after the start date.",
         )
+    if "notify_members" in sent and body.notify_members is not None:
+        # Applied before the status transition below, so the choice is
+        # in place when the announcement decision is made in the same
+        # request that publishes.
+        row.notify_members = body.notify_members
     if "status" in sent and body.status is not None:
         # Stamp published_at the first time the Series transitions to
         # 'published' — never cleared. Enables the delete-vs-archive
@@ -324,7 +335,23 @@ def update_gathering_series(
     activity_producers.record_series_published(
         db, row, actor_user_id=current_user.id,
     )
+    # One announcement for the whole term, on the same reasoning as
+    # the activity row above and with the same shape: a no-op unless
+    # the Series is published, and silent on every later edit because
+    # the dedupe key already exists. The occurrences announce nothing
+    # of their own — that is refused in
+    # ``publication_announcement.should_announce_gathering``.
+    from app.services.publication_announcement import (
+        announce_series_if_newly_published,
+    )
+    _announcement = announce_series_if_newly_published(
+        db, row, actor_user_id=current_user.id,
+    )
     db.commit()
+    if _announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, _announcement, "series.published",
+        )
     db.refresh(row)
     return _series_to_dict(row)
 

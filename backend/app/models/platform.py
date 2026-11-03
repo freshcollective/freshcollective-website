@@ -1206,6 +1206,11 @@ class EventSeries(Base):
     # Series that has never been public can be removed with attached
     # events detached in-place; a once-published Series is archived
     # instead so historical AccessPass rows keep a resolvable target.
+    #: "Notify Collective members about this Series". One announcement
+    #: for the whole term — the occurrences never announce themselves.
+    notify_members: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_true(), default=True,
+    )
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
@@ -1281,6 +1286,13 @@ class Event(Base):
     #: numbers. Availability status (including Sold out) stays visible
     #: when this is False; only the count and the total are withheld.
     show_remaining_publicly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_true(), default=True,
+    )
+    #: The creator's "tell members about this" choice, read only at a
+    #: first publication. Stored rather than inferred so it survives a
+    #: draft being saved repeatedly. A Series occurrence ignores it —
+    #: the choice that matters there belongs to the Series.
+    notify_members: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=sa_true(), default=True,
     )
     booking_closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)

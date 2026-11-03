@@ -11,6 +11,7 @@ import uuid
 from datetime import date, datetime, timedelta
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi import HTTPException
 
 from app.creator._gathering_series_routes import (
@@ -179,6 +180,7 @@ class TestSeriesCRUD:
         r2 = update_gathering_series(
             slug=space.slug, series_slug=r["slug"],
             body=GatheringSeriesUpdateRequest(ends_at=None),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert r2["ends_at"] is None
@@ -232,6 +234,7 @@ class TestSeriesCRUD:
                 booking_access_type="included_with_collective",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         delete_gathering_series(
@@ -267,11 +270,13 @@ class TestSeriesCRUD:
         update_gathering_series(
             slug=space.slug, series_slug=s["slug"],
             body=GatheringSeriesUpdateRequest(status="published"),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         update_gathering_series(
             slug=space.slug, series_slug=s["slug"],
             body=GatheringSeriesUpdateRequest(status="draft"),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         with pytest.raises(HTTPException) as ex:
@@ -330,6 +335,7 @@ class TestSeriesCRUD:
         updated = update_gathering_series(
             slug=space.slug, series_slug=s["slug"],
             body=GatheringSeriesUpdateRequest(status="published"),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert updated["published_at"] is not None
@@ -338,11 +344,13 @@ class TestSeriesCRUD:
         update_gathering_series(
             slug=space.slug, series_slug=s["slug"],
             body=GatheringSeriesUpdateRequest(status="draft"),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         re_pub = update_gathering_series(
             slug=space.slug, series_slug=s["slug"],
             body=GatheringSeriesUpdateRequest(status="published"),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert re_pub["published_at"] == first_stamp
@@ -367,6 +375,7 @@ class TestSeriesCRUD:
                 booking_access_type="included_with_collective",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         create_series_payment_option(
@@ -413,6 +422,7 @@ class TestEventSeriesAttachment:
                 gathering_type="circle",
                 booking_access_type="included_with_collective",
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert e["series_id"] is None
@@ -420,6 +430,7 @@ class TestEventSeriesAttachment:
         updated = update_event(
             slug=space.slug, event_id=e["id"],
             body=EventUpdateRequest(series_id=s["id"]),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert updated["series_id"] == s["id"]
@@ -444,6 +455,7 @@ class TestEventSeriesAttachment:
                 booking_access_type="included_with_collective",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert e["series_id"] == s["id"]
@@ -451,6 +463,7 @@ class TestEventSeriesAttachment:
         detached = update_event(
             slug=space.slug, event_id=e["id"],
             body=EventUpdateRequest(series_id=None),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert detached["series_id"] is None
@@ -479,6 +492,7 @@ class TestEventSeriesAttachment:
                     booking_access_type="included_with_collective",
                     series_id=s_b["id"],
                 ),
+                background_tasks=BackgroundTasks(),
                 db=db, current_user=creator,
             )
         assert ex.value.status_code == 400
@@ -774,6 +788,7 @@ class TestSeriesPassInvariant:
                     booking_access_type="included_with_series",
                     # No series_id — this is the invalid pairing.
                 ),
+                background_tasks=BackgroundTasks(),
                 db=db, current_user=creator,
             )
         assert ex.value.status_code == 400
@@ -803,6 +818,7 @@ class TestSeriesPassInvariant:
                 booking_access_type="included_with_series",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert result["booking_access_type"] == "included_with_series"
@@ -861,12 +877,14 @@ class TestSeriesPassInvariant:
                 booking_access_type="included_with_series",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         with pytest.raises(HTTPException) as ex:
             update_event(
                 slug=space.slug, event_id=e["id"],
                 body=EventUpdateRequest(series_id=None),
+                background_tasks=BackgroundTasks(),
                 db=db, current_user=creator,
             )
         assert ex.value.status_code == 400
@@ -898,6 +916,7 @@ class TestSeriesPassInvariant:
                 booking_access_type="included_with_series",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         result = update_event(
@@ -906,6 +925,7 @@ class TestSeriesPassInvariant:
                 booking_access_type="included_with_collective",
                 series_id=None,
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert result["booking_access_type"] == "included_with_collective"
@@ -928,6 +948,7 @@ class TestSeriesPassInvariant:
                 attendance_format="online",
                 booking_access_type="included_with_collective",
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         with pytest.raises(HTTPException) as ex:
@@ -937,6 +958,7 @@ class TestSeriesPassInvariant:
                     booking_access_type="included_with_series",
                     # No series_id → resulting state is invalid.
                 ),
+                background_tasks=BackgroundTasks(),
                 db=db, current_user=creator,
             )
         assert ex.value.status_code == 400
@@ -966,6 +988,7 @@ class TestSeriesPassInvariant:
                 attendance_format="online",
                 booking_access_type="included_with_collective",
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         result = update_event(
@@ -974,6 +997,7 @@ class TestSeriesPassInvariant:
                 booking_access_type="included_with_series",
                 series_id=s["id"],
             ),
+            background_tasks=BackgroundTasks(),
             db=db, current_user=creator,
         )
         assert result["booking_access_type"] == "included_with_series"

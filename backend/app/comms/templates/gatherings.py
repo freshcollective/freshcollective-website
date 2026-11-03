@@ -389,3 +389,200 @@ class MultiBookingConfirmedInAppTemplate:
                 "url": ctx.get("cta_url"),
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Publication announcements
+# ---------------------------------------------------------------------------
+
+_EVENT_GATHERING_PUBLISHED = "gathering.published"
+_EVENT_SERIES_PUBLISHED = "series.published"
+
+
+def _announcement_url(ctx: dict, key: str) -> str:
+    """Absolute URL for the CTA.
+
+    The resolver supplies a path, which is joined to the member-facing
+    origin here — so the resolver stays free of origin concerns and the
+    template is the only place that knows what a member-facing link
+    looks like.
+
+    An already-absolute value is passed through rather than refused.
+    ``public_app_url`` raises on one, and its own message says what to
+    do: "if the link is already built, use it as it is". The admin
+    template preview supplies built links, and a rendering error there
+    is worse than a link that was already correct.
+    """
+    from app.core.public_url import public_app_url
+
+    value = (ctx.get(key) or "").strip()
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    return public_app_url(value)
+
+
+@template_for(_EVENT_GATHERING_PUBLISHED, CHANNEL_IN_APP)
+class GatheringPublishedInAppTemplate:
+    key = "gathering.published.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        when = (ctx.get("gathering_when") or "").strip()
+        title = _title(recipient)
+        return RenderedPayload(
+            to="",
+            subject=f"New gathering: {title}",
+            body_text=(f"{title} — {when}" if when else title),
+            metadata={
+                "notification_type": "gathering_published",
+                "gathering_id": ctx.get("gathering_id"),
+            },
+        )
+
+
+@template_for(_EVENT_GATHERING_PUBLISHED, CHANNEL_EMAIL_TRANSACTIONAL)
+class GatheringPublishedEmailTemplate:
+    key = "gathering.published.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        when = (ctx.get("gathering_when") or "").strip()
+        where = _where_line(ctx)
+        description = (ctx.get("description") or "").strip()
+        url = _announcement_url(ctx, "gathering_url")
+
+        r = resolver_for(db, self.key, ctx)
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        closing = r.text("body.closing")
+        # One destination for paid and free alike: the Gathering page,
+        # where tickets are bought or a place is reserved. The label
+        # differs because "Book your place" on a paid Gathering would
+        # imply the price had been dealt with.
+        cta = r.text("cta_label_paid") if ctx.get("is_paid") else r.text("cta_label")
+
+        details = [line for line in (when, where) if line]
+        paragraphs = [opening, *details, description, closing]
+        body_text = "\n\n".join([p for p in paragraphs if p] + ([url] if url else []))
+
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=render_email_shell(
+                db=db,
+                preheader=opening,
+                heading=r.text("heading"),
+                body_paragraphs=[p for p in paragraphs if p],
+                action=(cta, url) if url else None,
+            ),
+            body_text=body_text,
+            metadata={
+                "notification_type": "gathering_published",
+                "gathering_id": ctx.get("gathering_id"),
+            },
+        )
+
+
+def _where_line(ctx: dict) -> str:
+    """Public attendance details only.
+
+    ``venue_locality`` is the member-safe suburb-and-region the public
+    Gathering page already shows; the street address and joining link
+    are never in an announcement, which goes to people who have not
+    booked.
+    """
+    fmt = (ctx.get("attendance_format") or "").strip()
+    locality = (ctx.get("venue_locality") or "").strip()
+    location_type = (ctx.get("location_type") or "").strip()
+    if locality:
+        return f"In person — {locality}"
+    if location_type in ("zoom", "online") or fmt == "online":
+        return "Online"
+    return fmt.replace("_", " ").capitalize() if fmt else ""
+
+
+@template_for(_EVENT_SERIES_PUBLISHED, CHANNEL_IN_APP)
+class SeriesPublishedInAppTemplate:
+    key = "series.published.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        title = (ctx.get("series_title") or "a new series").strip()
+        return RenderedPayload(
+            to="",
+            subject=f"New series: {title}",
+            body_text=_series_schedule(ctx) or title,
+            metadata={
+                "notification_type": "series_published",
+                "series_id": ctx.get("series_id"),
+            },
+        )
+
+
+@template_for(_EVENT_SERIES_PUBLISHED, CHANNEL_EMAIL_TRANSACTIONAL)
+class SeriesPublishedEmailTemplate:
+    key = "series.published.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        schedule = _series_schedule(ctx)
+        description = (ctx.get("description") or "").strip()
+        url = _announcement_url(ctx, "series_url")
+
+        r = resolver_for(db, self.key, ctx)
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        closing = r.text("body.closing")
+        cta = r.text("cta_label")
+
+        paragraphs = [opening, schedule, description, closing]
+        body_text = "\n\n".join(
+            [p for p in paragraphs if p] + ([url] if url else []),
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=render_email_shell(
+                db=db,
+                preheader=opening,
+                heading=r.text("heading"),
+                body_paragraphs=[p for p in paragraphs if p],
+                action=(cta, url) if url else None,
+            ),
+            body_text=body_text,
+            metadata={
+                "notification_type": "series_published",
+                "series_id": ctx.get("series_id"),
+            },
+        )
+
+
+def _series_schedule(ctx: dict) -> str:
+    """The shape of the term, not a list of its dates.
+
+    Thirty dates in an email is a wall. "12 sessions, from 3 March"
+    tells a member what they are deciding about, and the Series page
+    has every date.
+    """
+    count = ctx.get("session_count") or 0
+    starts = (ctx.get("starts_at") or "")[:10]
+    parts: list[str] = []
+    if count:
+        parts.append(f"{count} session{'s' if count != 1 else ''}")
+    if starts:
+        parts.append(f"from {starts}")
+    return ", ".join(parts)

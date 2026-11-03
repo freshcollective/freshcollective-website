@@ -171,6 +171,12 @@ export default function EventForm({
   const [showRemainingPublicly, setShowRemainingPublicly] = useState(
     event?.show_remaining_publicly ?? true,
   )
+  // "Notify Collective members". Default on; read by the backend only
+  // at a first publication, so leaving it on through a fortnight of
+  // draft edits announces nothing.
+  const [notifyMembers, setNotifyMembers] = useState(
+    event?.notify_members ?? true,
+  )
   const [bookingClosesAt, setBookingClosesAt] = useState(
     event?.booking_closes_at ? toLocalDatetime(event.booking_closes_at) : ''
   )
@@ -349,6 +355,7 @@ export default function EventForm({
         requires_booking: requiresBooking,
         capacity: capacity ? parseInt(capacity, 10) : null,
         show_remaining_publicly: showRemainingPublicly,
+        notify_members: notifyMembers,
         booking_closes_at: bookingClosesAt ? new Date(bookingClosesAt).toISOString() : null,
         booking_note: bookingNote || null,
         // Gatherings 2.0 vocabulary — see `lib/gatheringTypes.ts`.
@@ -1176,6 +1183,26 @@ export default function EventForm({
 
       {/* ─────────── PUBLICATION ─────────── */}
       <Section title="PUBLICATION">
+        {/* The announcement choice, beside the Publish button rather
+            than buried in a settings tab — it is a decision about this
+            act of publishing. Hidden for a recurring Series: the
+            Series announces itself once, and its occurrences never
+            announce individually. */}
+        {!isRecurring && (
+          <div className="mb-3 flex items-start gap-3">
+            <Toggle checked={notifyMembers} onChange={setNotifyMembers} />
+            <div>
+              <span className="text-sm font-medium text-navy-800">
+                Notify Collective members about this Gathering
+              </span>
+              <p className="mt-0.5 text-xs leading-relaxed text-black">
+                {notifyMembers
+                  ? 'One email when you publish, to members who haven’t turned these off. Saving a draft sends nothing.'
+                  : 'This will publish quietly — no announcement email.'}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             type="submit"

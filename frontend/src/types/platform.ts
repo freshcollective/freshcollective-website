@@ -964,6 +964,8 @@ export interface CreatorEvent {
   capacity: number | null
   /** Creator-side mirror of the public display setting. */
   show_remaining_publicly?: boolean
+  /** "Notify Collective members" — read only at first publication. */
+  notify_members?: boolean
   booking_closes_at: string | null
   booking_note: string | null
   booked_count: number
@@ -2022,6 +2024,9 @@ export interface CreatorGatheringSeries {
    *  to decide whether Delete (never published) or Archive is the
    *  correct lifecycle action to expose. */
   published_at: string | null
+  /** "Notify Collective members about this Series" — one announcement
+   *  for the whole term, read only at first publication. */
+  notify_members?: boolean
   created_at: string
   updated_at: string
 }

@@ -119,6 +119,14 @@ AUDITED: dict[str, str] = {
     "gathering.cancelled":                           LOCKED,
     # The canonical optional message: useful, repeatable, skippable.
     "gathering.reminder.24h":                        PREFERENCE,
+    # Publication announcements. An invitation to something new is
+    # exactly the kind of message a member should be able to switch
+    # off — unlike the cancellation notice above it, which is a
+    # material change to something they already booked. So: not
+    # locked, and governed by the Gatherings preference like the
+    # reminder.
+    "gathering.published":                           PREFERENCE,
+    "series.published":                              PREFERENCE,
 
     # ── Member money and access ──────────────────────────────────────
     "purchase.completed":                            LOCKED,
@@ -555,6 +563,11 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     "gathering.cancelled":                         "editable",
     "gathering.multi_booking.confirmed":           "partial",
     "gathering.reminder.24h":                      "editable",
+    # Both announcements are fully editable: a creator's own words
+    # introducing their own Gathering or Series. The generated parts
+    # (date, locality, schedule line) are named in their locked_notes.
+    "gathering.published":                         "editable",
+    "series.published":                            "editable",
     "access.suspended":                            "system",
     "payment.instalment_failed":                   "system",
     "payment.recovered":                           "system",

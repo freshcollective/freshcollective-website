@@ -4757,6 +4757,7 @@ def _validate_ticket_config_or_400(
 def create_event(
     slug: str,
     body: EventCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
@@ -4791,6 +4792,7 @@ def create_event(
         requires_booking=body.requires_booking,
         capacity=body.capacity,
         show_remaining_publicly=body.show_remaining_publicly,
+        notify_members=body.notify_members,
         booking_closes_at=body.booking_closes_at,
         booking_note=body.booking_note,
         thumbnail_url=body.thumbnail_url,
@@ -4820,7 +4822,22 @@ def create_event(
         db, event, actor_user_id=current_user.id,
     )
 
+    # A Gathering created straight into published announces here; one
+    # created as a draft announces when it is published, from the
+    # update handler. Refused for a Series occurrence on the same
+    # reasoning as the activity row above.
+    from app.services.publication_announcement import (
+        announce_gathering_if_newly_published,
+    )
+    _announcement = announce_gathering_if_newly_published(
+        db, event, actor_user_id=current_user.id,
+    )
+
     db.commit()
+    if _announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, _announcement, "gathering.published",
+        )
     db.refresh(event)
     return _event_to_dict(event, 0)
 
@@ -5081,6 +5098,7 @@ def bulk_create_events(
             requires_booking=body.requires_booking,
             capacity=body.capacity,
             show_remaining_publicly=body.show_remaining_publicly,
+        notify_members=body.notify_members,
             booking_closes_at=body.booking_closes_at,
             booking_note=body.booking_note,
             thumbnail_url=body.thumbnail_url,
@@ -5117,6 +5135,7 @@ def update_event(
     slug: str,
     event_id: str,
     body: EventUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
@@ -5166,7 +5185,7 @@ def update_event(
 
     for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url",
                   "recording_url", "is_published", "is_public", "requires_booking", "capacity",
-                  "show_remaining_publicly",
+                  "show_remaining_publicly", "notify_members",
                   "booking_closes_at", "booking_note", "thumbnail_url",
                   "gathering_type", "attendance_format",
                   "venue_name", "venue_address", "venue_locality", "access_instructions",
@@ -5223,7 +5242,23 @@ def update_event(
     event.ticket_price_cents = ticket_price
     event.ticket_currency = ticket_currency
 
+    # First publication is announced here, after every validation above
+    # has passed and before the commit — so a refusal takes the
+    # announcement with it and a failed publish announces nothing.
+    # Returning to draft and publishing again is a no-op: the dedupe
+    # key already exists.
+    from app.services.publication_announcement import (
+        announce_gathering_if_newly_published,
+    )
+    _announcement = announce_gathering_if_newly_published(
+        db, event, actor_user_id=current_user.id,
+    )
+
     db.commit()
+    if _announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, _announcement, "gathering.published",
+        )
     db.refresh(event)
     booked_count = (
         db.query(func.count(EventBooking.id))

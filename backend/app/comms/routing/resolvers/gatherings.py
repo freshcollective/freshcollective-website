@@ -6,6 +6,7 @@ immediate-priority example. The booker is the recipient.
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.comms.models import CommunicationEvent
@@ -144,3 +145,155 @@ class MultiBookingConfirmedResolver:
                 },
             ),
         ]
+
+
+@resolver_for("gathering.published")
+class GatheringPublishedResolver:
+    """Everyone in the Collective, bar the creator who published it.
+
+    Re-checks visibility here as well as at emit time. Routing runs in
+    a background task after the response, so the Gathering can be
+    unpublished, cancelled, or its Collective closed in the gap, and
+    nobody should be emailed an invitation to something that has since
+    gone. The same reasoning as the Pathway resolver beside it.
+    """
+    event_type = "gathering.published"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        from app.models.platform import Event, Space, SpaceMembership
+        from app.services.publication_announcement import (
+            gathering_is_member_visible,
+        )
+
+        context = event.context or {}
+        payload = event.payload or {}
+        space_id = context.get("space_id")
+        if not space_id:
+            return []
+
+        space = db.get(Space, space_id)
+        gathering_id = payload.get("gathering_id") or event.subject_id
+        gathering = db.get(Event, gathering_id) if gathering_id else None
+        if gathering is None or not gathering_is_member_visible(db, gathering):
+            return []
+
+        collective_name = (
+            context.get("collective_name")
+            or (space.name if space else "your collective")
+        )
+        # The member-facing page. Tickets are bought there for a paid
+        # Gathering and the booking CTA lives there for a free one, so
+        # one destination serves both — and neither grants anything by
+        # being linked.
+        gathering_url = (
+            f"/spaces/{space.slug}/events/{gathering.id}" if space else None
+        )
+
+        rows = db.execute(
+            select(SpaceMembership).where(
+                SpaceMembership.space_id == space_id,
+                SpaceMembership.status == "active",
+            )
+        ).scalars().all()
+
+        out: list[ResolvedRecipient] = []
+        for row in rows:
+            # The creator published it; they do not need telling.
+            if event.actor_user_id and row.user_id == event.actor_user_id:
+                continue
+            out.append(
+                ResolvedRecipient(
+                    user_id=row.user_id,
+                    role_in_event="member_of_collective",
+                    human_reason=f"You're a member of {collective_name}.",
+                    template_context={
+                        "collective_name": collective_name,
+                        "gathering_id": gathering.id,
+                        "gathering_title": payload.get("gathering_title"),
+                        "starts_at": payload.get("starts_at"),
+                        "ends_at": payload.get("ends_at"),
+                        "location_type": payload.get("location_type"),
+                        "attendance_format": payload.get("attendance_format"),
+                        "venue_locality": payload.get("venue_locality"),
+                        "description": payload.get("description"),
+                        "is_paid": payload.get("is_paid"),
+                        "gathering_url": gathering_url,
+                        "space_id": space_id,
+                    },
+                )
+            )
+        return out
+
+
+@resolver_for("series.published")
+class SeriesPublishedResolver:
+    """One announcement for the Series, to the whole Collective.
+
+    The occurrences never reach this point — a Gathering carrying a
+    ``series_id`` is refused by ``should_announce_gathering`` before an
+    event is written — so there is no de-duplication to do here
+    between a Series and its sessions.
+    """
+    event_type = "series.published"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        from app.models.platform import EventSeries, Space, SpaceMembership
+        from app.services.publication_announcement import (
+            series_is_member_visible,
+        )
+
+        context = event.context or {}
+        payload = event.payload or {}
+        space_id = context.get("space_id")
+        if not space_id:
+            return []
+
+        space = db.get(Space, space_id)
+        series_id = payload.get("series_id") or event.subject_id
+        series = db.get(EventSeries, series_id) if series_id else None
+        if series is None or not series_is_member_visible(db, series):
+            return []
+
+        collective_name = (
+            context.get("collective_name")
+            or (space.name if space else "your collective")
+        )
+        series_url = (
+            f"/spaces/{space.slug}/gathering-series/{series.slug}"
+            if space else None
+        )
+
+        rows = db.execute(
+            select(SpaceMembership).where(
+                SpaceMembership.space_id == space_id,
+                SpaceMembership.status == "active",
+            )
+        ).scalars().all()
+
+        out: list[ResolvedRecipient] = []
+        for row in rows:
+            if event.actor_user_id and row.user_id == event.actor_user_id:
+                continue
+            out.append(
+                ResolvedRecipient(
+                    user_id=row.user_id,
+                    role_in_event="member_of_collective",
+                    human_reason=f"You're a member of {collective_name}.",
+                    template_context={
+                        "collective_name": collective_name,
+                        "series_id": series.id,
+                        "series_title": payload.get("series_title"),
+                        "starts_at": payload.get("starts_at"),
+                        "ends_at": payload.get("ends_at"),
+                        "session_count": payload.get("session_count"),
+                        "description": payload.get("description"),
+                        "series_url": series_url,
+                        "space_id": space_id,
+                    },
+                )
+            )
+        return out
