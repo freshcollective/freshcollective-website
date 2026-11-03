@@ -116,6 +116,43 @@ def _find_subject(db, kind: str, space, subject_id: str | None):
     return query.order_by(order.desc()).first()
 
 
+def _cta_lines(db, kind: str) -> list[str]:
+    """The button label as it will render, and any stored override.
+
+    Admin-editable copy is per *slot* and never carries a link — the
+    destination is generated — so an override cannot reintroduce a
+    broken one. Printed anyway, because "is a saved template still
+    rendering the old wording" is otherwise unanswerable without
+    opening an inbox.
+    """
+    from app.comms.templates.editable import (
+        get_declaration, load_overrides, resolver_for,
+    )
+
+    key = f"{KINDS[kind]['event_type']}.email_transactional"
+    out: list[str] = []
+    try:
+        decl = get_declaration(key)
+        if decl is None:
+            return [f"cta           (no declaration for {key})"]
+        slots = {slot.slot_id for slot in decl.slots}
+        labels = [s for s in ("cta_label", "cta_label_paid") if s in slots]
+        if not labels:
+            out.append("cta           (label is fixed in code)")
+        else:
+            r = resolver_for(db, key, {})
+            for slot_id in labels:
+                out.append(f"cta {slot_id:9} {r.text(slot_id)!r}")
+        stored = load_overrides(db, key)
+        if stored:
+            out.append(f"overrides     {', '.join(sorted(stored))}")
+        else:
+            out.append("overrides     none — rendering the code defaults")
+    except Exception as exc:  # a diagnostic must not raise
+        out.append(f"cta           (unavailable: {type(exc).__name__}: {exc})")
+    return out
+
+
 def _describe(kind: str, subject, space) -> tuple[list[tuple[str, str]], str, str]:
     """``(rows, dedupe_key, url_path)`` for one subject."""
     from app.services import publication_announcement as pub
@@ -362,7 +399,21 @@ def run_trace(db, kind: str, subject, space) -> int:
     print(f"     reached the provider: {len(reached)} of {len(intents)}")
 
     print("\n  8. LINK DIAGNOSTICS")
-    print(f"     destination   {url_path}")
+    print(f"     path          {url_path}")
+    # What the email actually carries. A path is not a link: a mail
+    # client has no base URL to resolve one against, so the Pathway
+    # announcement rendered its CTA with an unresolvable ``href`` and
+    # printed the bare path under "or copy this link". Shown as the
+    # absolute form so that failure is visible from here.
+    from app.comms.templates.base import absolute_email_url
+
+    absolute = absolute_email_url(url_path)
+    print(f"     email link    {absolute}")
+    if not absolute.startswith(("http://", "https://")):
+        print("     STOPPED HERE: the email would carry a relative link.")
+        print("     Check PUBLIC_APP_URL — see app/core/public_url.py.")
+    for line in _cta_lines(db, kind):
+        print(f"     {line}")
     exists, route = _route_exists(kind)
     print(f"     route exists  {exists}")
     if not exists:

@@ -8,7 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
-from app.comms.templates.base import render_email_shell
+from app.comms.templates.base import announcement_url, render_email_shell
 from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
@@ -399,28 +399,11 @@ _EVENT_GATHERING_PUBLISHED = "gathering.published"
 _EVENT_SERIES_PUBLISHED = "series.published"
 
 
-def _announcement_url(ctx: dict, key: str) -> str:
-    """Absolute URL for the CTA.
-
-    The resolver supplies a path, which is joined to the member-facing
-    origin here — so the resolver stays free of origin concerns and the
-    template is the only place that knows what a member-facing link
-    looks like.
-
-    An already-absolute value is passed through rather than refused.
-    ``public_app_url`` raises on one, and its own message says what to
-    do: "if the link is already built, use it as it is". The admin
-    template preview supplies built links, and a rendering error there
-    is worse than a link that was already correct.
-    """
-    from app.core.public_url import public_app_url
-
-    value = (ctx.get(key) or "").strip()
-    if not value:
-        return ""
-    if value.startswith("http://") or value.startswith("https://"):
-        return value
-    return public_app_url(value)
+# The resolver supplies a path and the template needs a member-facing
+# link. Both now come from ``base``, which is also where the shell
+# absolutises an ``action`` — the Pathway announcement had its own
+# un-absolutised copy of this step and shipped a bare path to an inbox.
+_announcement_url = announcement_url
 
 
 @template_for(_EVENT_GATHERING_PUBLISHED, CHANNEL_IN_APP)

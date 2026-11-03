@@ -143,6 +143,57 @@ class TestEachKindRunsToCompletion:
         out = capsys.readouterr().out
         assert "published_at" in out
 
+    def test_it_reports_the_email_link_and_the_button(
+        self, db, space, pathway, members, capsys,
+    ):
+        """The Pathway announcement went out with a relative link and
+        nothing in the diagnostic said so. It prints the absolute form
+        and the button label now, so the next one is visible from a
+        shell rather than from an inbox."""
+        db.commit()
+        module = _load()
+        module.run_trace(db, "pathway", pathway, space)
+        out = capsys.readouterr().out
+        assert "email link" in out
+        assert "http" in out.split("email link")[1].split("\n")[0], (
+            "the email link is not shown in absolute form"
+        )
+        assert "Explore Pathway" in out, "the button label is not shown"
+        assert "overrides" in out, "stored overrides are not reported"
+
+    def test_it_names_a_stored_override(
+        self, db, space, pathway, members, capsys,
+    ):
+        """"Is a saved template still rendering the old wording" is
+        otherwise unanswerable without opening an inbox."""
+        from app.models.communication_template_override import (
+            CommunicationTemplateOverride,
+        )
+
+        from app.comms.templates.editable import get_declaration
+
+        slot = get_declaration(
+            "pathway.published.email_transactional",
+        ).slot("cta_label")
+        db.add(CommunicationTemplateOverride(
+            id=_uid("cto"),
+            template_key="pathway.published.email_transactional",
+            slot_id="cta_label", value="Start here", space_id=None,
+            default_fingerprint=slot.fingerprint(),
+        ))
+        db.commit()
+        try:
+            module = _load()
+            module.run_trace(db, "pathway", pathway, space)
+            out = capsys.readouterr().out
+            assert "cta_label" in out
+            assert "Start here" in out, "the override is not what is reported"
+        finally:
+            db.query(CommunicationTemplateOverride).filter(
+                CommunicationTemplateOverride.slot_id == "cta_label",
+            ).delete()
+            db.commit()
+
     def test_it_reports_the_route_for_each_kind(
         self, db, space, pathway, series, make_event, members, capsys,
     ):

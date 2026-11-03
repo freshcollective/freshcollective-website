@@ -705,18 +705,19 @@ declare(TemplateDeclaration(
     locked_notes=("The link to the conversation is generated.",),
 ))
 
-# Not currently live — ``pathways`` and ``direct_messages`` are absent
-# from COMMS_LIVE_TOPICS, so nothing is sent. Declared so the inventory
-# is complete and so they appear in the editor automatically if and
-# when their topic goes live; the admin surface filters on live status
-# rather than on a hand-maintained list.
+# ``pathways`` went live in COMMS_LIVE_TOPICS and the Pathway
+# announcement now sends; ``direct_messages`` is still absent, so
+# nothing is sent for a DM. Both stay declared so the inventory is
+# complete and so each appears in the editor automatically when its
+# topic goes live; the admin surface filters on live status rather
+# than on a hand-maintained list.
 
 declare(TemplateDeclaration(
     template_key="pathway.published.email_transactional",
     event_type="pathway.published",
     display_name="New pathway published",
     category=CATEGORY_COMMUNITY_LABEL,
-    audience="Every active member of the Collective",
+    audience="Every active member of the Collective, except the creator",
     classification=EDITABLE,
     merge_fields=(F_COLLECTIVE, F_PATHWAY),
     slots=(
@@ -733,7 +734,10 @@ declare(TemplateDeclaration(
                      required_fields=("pathway_name",)),
         EditableSlot("body.closing", "Closing",
                      "Open Fresh Collective to explore."),
+        EditableSlot("cta_label", "Button label", "Explore Pathway",
+                     multiline=False, max_length=40),
     ),
+    locked_notes=("The link to the pathway is generated.",),
 ))
 
 declare(TemplateDeclaration(

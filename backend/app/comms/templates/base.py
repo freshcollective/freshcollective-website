@@ -63,6 +63,7 @@ email keeps the plain card.
 from __future__ import annotations
 
 import html as _html
+import logging
 from typing import Any, Protocol, Sequence
 
 from sqlalchemy.orm import Session
@@ -72,6 +73,8 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.core.public_url import public_app_url
+
+logger = logging.getLogger(__name__)
 
 
 class Template(Protocol):
@@ -127,6 +130,51 @@ _FONT_STACK_SERIF = "Georgia, 'Times New Roman', Times, serif"
 def preferences_url() -> str:
     """Absolute URL of the member's Stay Connected preferences page."""
     return public_app_url("/settings/stay-connected")
+
+
+def absolute_email_url(value: str | None) -> str:
+    """The absolute form of a link destined for an email.
+
+    An email has no base URL. A root-relative ``href`` has nothing to
+    resolve against, so a client either drops the anchor — taking its
+    inline styles, and therefore the whole button, with it — or
+    resolves it against the webmail host, where it is wrong. Either way
+    the reader cannot reach the page.
+
+    Resolvers build *paths* — ``/spaces/<slug>/pathways/<slug>`` — so
+    they stay free of origin concerns, and one of those paths reached a
+    member's inbox verbatim: the Pathway announcement rendered a
+    styleless label and printed the bare path under "or copy this
+    link".
+
+    So this is the one rule, applied in one place:
+
+      * empty          → ``""`` (the caller suppresses the CTA)
+      * ``http(s)://`` → unchanged; the link is already built
+      * ``/path``      → joined to the member-facing origin
+      * anything else  → unchanged
+
+    ``//host`` is deliberately in the last group rather than joined:
+    ``join_public_url`` refuses it, and a protocol-relative value is
+    not a path this function should be inventing an origin for.
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if text.lower().startswith(("http://", "https://")):
+        return text
+    if text.startswith("/") and not text.startswith("//"):
+        return public_app_url(text)
+    return text
+
+
+def announcement_url(ctx: dict, key: str) -> str:
+    """:func:`absolute_email_url` for a key in a template context.
+
+    The shape publication templates want: the resolver put a path in
+    ``ctx[key]``, and the template needs the member-facing link.
+    """
+    return absolute_email_url(ctx.get(key))
 
 
 def _esc_text(value: str) -> str:
@@ -271,10 +319,31 @@ def render_email_shell(
     )
 
     action_html = ""
+    # Absolutised here as well as at the call site, because this is the
+    # only place that knows the value is about to become an email
+    # ``href``. A caller handing over a path is not a caller error
+    # worth raising on — it is the common case, since resolvers build
+    # paths — and the button and the "or copy this link" fallback both
+    # read this one value, so they cannot disagree about where they
+    # point.
+    cta_url = absolute_email_url(action[1]) if action is not None else ""
+    if action is not None and not cta_url.startswith(("http://", "https://")):
+        # No CTA rather than a dead one. A button an email client
+        # cannot resolve is worse than no button: the reader presses
+        # it, nothing useful happens, and the fallback line underneath
+        # offers them the same unusable string to copy. Logged, because
+        # a CTA vanishing must be discoverable — the Pathway
+        # announcement went out with an unresolvable link and the only
+        # signal was a member noticing.
+        logger.warning(
+            "comms: suppressing a CTA with a non-absolute URL %r (label %r)",
+            action[1], action[0],
+        )
+        action = None
     if action is not None:
-        label, url = action
+        label, _url = action
         safe_label = _esc_text(label)
-        safe_url = _esc_attr(url)
+        safe_url = _esc_attr(cta_url)
         action_html = f'''
         <tr>
           <td align="center" style="padding:16px 40px 8px 40px;">

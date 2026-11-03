@@ -323,6 +323,46 @@ class TestPathwayReachesTheProvider:
         assert len(sent) == 1
         assert f"/spaces/{space.slug}/pathways/{pathway.slug}" in sent[0]["html"]
 
+    def test_the_provider_gets_a_pressable_button(
+        self, db, space, member, published_pathway, sent, monkeypatch,
+    ):
+        """The path alone appearing in the HTML is what this assertion
+        used to settle for, and an absolute URL contains the path as a
+        substring — so the relative ``href`` that reached a member's
+        inbox passed it. Parsed out of the handed-over HTML instead."""
+        import re
+
+        from app.core.config import settings
+
+        monkeypatch.setattr(
+            settings, "public_app_url", "https://freshcollective.au",
+            raising=False,
+        )
+        pathway, event = published_pathway
+        _dispatch(db, event)
+
+        html = sent[0]["html"]
+        button = re.search(
+            r'<a href="([^"]*)"\s+style="[^"]*linear-gradient[^"]*">'
+            r'\s*([^<]+?)\s*</a>',
+            html, re.S,
+        )
+        assert button, "no CTA button in the email handed to Resend"
+        href, label = button.group(1), button.group(2).strip()
+        assert label == "Explore Pathway", label
+        assert href == (
+            f"https://freshcollective.au/spaces/{space.slug}"
+            f"/pathways/{pathway.slug}"
+        ), href
+
+        copied = re.search(
+            r"or copy this link:<br />\s*<span[^>]*>([^<]*)</span>", html, re.S,
+        )
+        assert copied and copied.group(1).strip() == href, (
+            "the fallback link does not match the button"
+        )
+        assert href in sent[0]["text"], "the plain-text body lost the link"
+
     def test_the_creator_is_not_emailed(
         self, db, kelly, member, published_pathway, sent,
     ):

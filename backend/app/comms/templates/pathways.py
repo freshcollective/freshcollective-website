@@ -8,7 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
-from app.comms.templates.base import render_email_shell
+from app.comms.templates.base import announcement_url, render_email_shell
 from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
@@ -54,16 +54,19 @@ class PathwayPublishedEmailTemplate:
         subject = r.text("subject")
         opening = r.text("body.opening")
         closing = r.text("body.closing")
-        # A CTA, now that the resolver carries the destination. Without
-        # one the email announced a Pathway and gave the reader nothing
-        # to press, which is the main reason this template read as
-        # unfinished.
-        url = recipient.template_context.get("pathway_url")
-        action = ("Open the pathway", url) if url else None
+        cta = r.text("cta_label")
+        # Absolute, like the Gathering and Series announcements beside
+        # it. The resolver supplies ``/spaces/<slug>/pathways/<slug>``
+        # and this step was missing, so the path went to an inbox as it
+        # was: nothing for a mail client to resolve, so no button, and
+        # the bare path printed under "or copy this link".
+        url = announcement_url(recipient.template_context, "pathway_url")
+        action = (cta, url) if url else None
 
+        # The same link the button carries, so the two cannot drift.
         body_text = (
             f"{opening}\n\n"
-            + (f"Open the pathway:\n{url}\n\n" if url else "")
+            + (f"{cta}:\n{url}\n\n" if url else "")
             + f"{closing}"
         )
         body_html = render_email_shell(
