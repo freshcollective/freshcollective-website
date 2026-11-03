@@ -448,6 +448,15 @@ class TestPublicationAnnouncesOnce:
 # The retained feature — a later step on a live Pathway
 # ---------------------------------------------------------------------------
 
+class _StubNotif:
+    """Stands in for the row ``create_notification`` returns.
+
+    The function keeps a reference to it, so a bare None would mask a
+    real AttributeError.
+    """
+    email_sent_at = None
+
+
 class TestLaterStepsOnALivePathway:
     def test_a_step_added_to_a_published_pathway_still_notifies(
         self, db, world_builders, make_pathway,
@@ -483,6 +492,16 @@ class TestLaterStepsOnALivePathway:
         step = make_step(guide, title="Chapter one")
         db.commit()
         monkeypatch.setattr(notification_service, "SessionLocal", lambda: db)
+        # The wording is now checked on the in-app notification, which
+        # is where a new section is announced. Email for steps stopped
+        # being automatic: it went to every active member on the same
+        # preference as "a new Pathway was published", so a creator
+        # building a Pathway out sent one email per section.
+        titles: list[str] = []
+        monkeypatch.setattr(
+            notification_service, "create_notification",
+            lambda **kw: titles.append(kw["title"]) or _StubNotif(),
+        )
         sent: list = []
         monkeypatch.setattr(
             notification_service.email_service, "send",
@@ -491,10 +510,10 @@ class TestLaterStepsOnALivePathway:
 
         notification_service.trigger_new_step(step.id, creator.id)
 
-        assert sent, "a live guide still announces"
-        subject = sent[0]["subject"]
-        assert "section" in subject.lower()
-        assert "step" not in subject.lower()
+        assert sent == [], "a new section must not email the Collective"
+        assert titles, "a live guide still announces in-app"
+        assert "section" in titles[0].lower()
+        assert "step" not in titles[0].lower()
 
     def test_a_guided_experience_still_says_step(
         self, db, world_builders, make_pathway, make_step, monkeypatch,
@@ -509,6 +528,11 @@ class TestLaterStepsOnALivePathway:
         step = make_step(pathway, title="Step one")
         db.commit()
         monkeypatch.setattr(notification_service, "SessionLocal", lambda: db)
+        titles: list[str] = []
+        monkeypatch.setattr(
+            notification_service, "create_notification",
+            lambda **kw: titles.append(kw["title"]) or _StubNotif(),
+        )
         sent: list = []
         monkeypatch.setattr(
             notification_service.email_service, "send",
@@ -517,8 +541,9 @@ class TestLaterStepsOnALivePathway:
 
         notification_service.trigger_new_step(step.id, creator.id)
 
-        assert sent
-        assert "step" in sent[0]["subject"].lower()
+        assert sent == []
+        assert titles
+        assert "step" in titles[0].lower()
 
     def test_a_guide_links_to_the_guide_not_a_step_route(
         self, db, world_builders, make_pathway, make_step, monkeypatch,

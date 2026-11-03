@@ -514,13 +514,22 @@ def trigger_new_step(step_id: str, creator_id: str) -> None:
                     url=notif_url,
                 )
 
-                if _get_notification_pref(db, membership.user_id, pathway.space_id, "new_pathway_email"):
-                    member = db.query(User).filter(User.id == membership.user_id).first()
-                    if member:
-                        html = notification_email_html(title=title, message=message, url=notif_url)
-                        email_service.send(to=member.email, subject=title, html_body=html)
-                        notif.email_sent_at = datetime.utcnow()
-                        db.commit()
+                # In-app only. A new section is not an announcement.
+                #
+                # This used to email every active member, gated on the
+                # legacy ``new_pathway_email`` flag — the same flag as
+                # "a new Pathway was published". So a creator building
+                # a Pathway out over a fortnight sent the Collective
+                # one email per section, under a preference the member
+                # had set to hear about new *Pathways*.
+                #
+                # The in-app notification stays: somebody working
+                # through a Pathway benefits from knowing a section
+                # landed, and it costs them nothing. Email for steps
+                # is deliberately not automatic — see
+                # docs/notification-defaults.md for the opt-in control
+                # this leaves room for.
+                _ = notif
             except Exception:
                 logger.exception("trigger_new_step failed for member %s", membership.user_id)
     except Exception:
