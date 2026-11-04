@@ -41,6 +41,7 @@ export default async function PathwayArchivePage() {
           }
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         />
       ) : (
         <div className="mb-8">

@@ -125,7 +125,7 @@ describe('what happens after a successful upload', () => {
     const source = form()
     const banner = source.slice(
       source.indexOf('async function uploadBanner'),
-      source.indexOf('async function uploadLogo'),
+      source.indexOf('async function selectPreference'),
     )
     assert.ok(/router\.refresh\(\)/.test(banner))
   })
@@ -143,7 +143,7 @@ describe('what happens after a successful upload', () => {
     const source = form()
     const banner = source.slice(
       source.indexOf('async function uploadBanner'),
-      source.indexOf('async function uploadLogo'),
+      source.indexOf('async function selectPreference'),
     )
     assert.ok(/typeof b\.detail === 'string' \? b\.detail/.test(banner))
     assert.ok(/setBannerError\(/.test(banner))
@@ -163,7 +163,7 @@ describe('what happens after a successful upload', () => {
     const source = form()
     const banner = source.slice(
       source.indexOf('async function uploadBanner'),
-      source.indexOf('async function uploadLogo'),
+      source.indexOf('async function selectPreference'),
     )
     const responseAt = banner.indexOf('const data = await res.json()')
     const savedAt = banner.indexOf('setBannerSaved(true)')
@@ -203,58 +203,106 @@ describe('the banner and the logo stay independent', () => {
   })
 })
 
-describe('the display hierarchy is unchanged and now described honestly', () => {
-  it('Location artwork still leads on the member Collective pages', () => {
-    // Deliberate and documented. Changing it is a design decision,
-    // not a bug fix — so this asserts it did NOT change.
+describe('the agreed header-image design', () => {
+  it('the member Collective header follows the creator choice', () => {
+    // Changed deliberately. It used to prefer Location artwork
+    // unconditionally — `locationArt ?? legacyBanner` — which is why
+    // an uploaded banner appeared nowhere. Phase 1 makes it the
+    // creator's choice, through the one shared rule.
     const header = readFileSync(MEMBER_HEADER, 'utf8')
     assert.ok(
-      /const backgroundImage = locationArt \?\? legacyBanner/.test(header),
-      'the member header precedence changed',
+      /selectCollectiveHeaderImage\(\{/.test(header),
+      'the member header no longer uses the shared rule',
     )
-  })
-
-  it('Location artwork still leads in Creator Studio', () => {
-    const header = readFileSync(STUDIO_HEADER, 'utf8')
     assert.ok(
-      /location\?\.hero_artwork_url\s*\n?\s*\?\? location\?\.thumbnail_artwork_url\s*\n?\s*\?\? coverImageUrl/
-        .test(header),
-      'the Creator Studio header precedence changed',
+      !/const backgroundImage = locationArt \?\? legacyBanner/.test(header),
+      'the unconditional Location-first precedence is back',
     )
   })
 
-  it('the settings copy no longer claims the banner leads', () => {
-    // It said "If no separate banner is uploaded, this collective will
-    // use its Location artwork by default" — the inverse of what every
-    // display surface does, which is why a save that worked read as a
-    // save that failed.
+  it('the Creator Studio header follows it too', () => {
+    const header = readFileSync(STUDIO_HEADER, 'utf8')
+    assert.ok(/selectCollectiveHeaderImage\(\{/.test(header))
+    assert.ok(
+      !/\?\? location\?\.thumbnail_artwork_url\s*\n?\s*\?\? coverImageUrl/.test(header),
+      'the old unconditional chain is back',
+    )
+  })
+
+  it('the settings section is the agreed header-image chooser', () => {
     const source = form()
+    assert.ok(/Collective header image/.test(source))
+    assert.ok(/Choose the image that welcomes people into your Collective/.test(source))
+    assert.ok(/Use my Location artwork/.test(source))
+    assert.ok(/Use my own banner/.test(source))
     assert.ok(
       !/If no separate banner is uploaded/.test(source),
       'the inverted precedence copy is back',
     )
-    assert.ok(/Location artwork leads/.test(source))
   })
 
-  it('the copy names where the banner IS used', () => {
-    // It is not unused: the dashboard cards, sign-up and checkout read
-    // `cover_image_url` with no Location fallback.
+  it('both sources are previewed, so they can be compared', () => {
     const source = form()
-    assert.ok(/cards in dashboards, sign-up and checkout/.test(source))
+    assert.ok(/imageUrl=\{locationArtwork\}/.test(source))
+    assert.ok(/imageUrl=\{bannerPreview \?\? existingBanner\}/.test(source))
+    // Matched as the JSX it was, not as the words: two comments
+    // explain the old line, and a bare substring check failed on the
+    // prose describing what it replaced.
+    assert.ok(
+      !/Banner uploaded\.\{' '\}/.test(source),
+      'the "a file exists" line is back in place of a preview',
+    )
   })
 
-  it('those surfaces still read the banner directly', () => {
+  it('the preview is the header shape and is not distorted', () => {
+    const source = form()
+    assert.ok(/aspectRatio: '16 \/ 5'/.test(source))
+    assert.ok(/object-cover/.test(source))
+  })
+
+  it('offers Upload, Replace and Remove', () => {
+    const source = form()
+    assert.ok(/existingBanner \? 'Replace image' : 'Upload banner'/.test(source))
+    assert.ok(/Remove banner/.test(source))
+    assert.ok(/onClick=\{removeBanner\}/.test(source))
+  })
+
+  it('switching sources does not re-upload', () => {
+    const source = form()
+    const select = source.slice(
+      source.indexOf('async function selectPreference'),
+      source.indexOf('async function removeBanner'),
+    )
+    assert.ok(/header_image_preference: next/.test(select))
+    assert.ok(!/FormData/.test(select), 'switching sends a file again')
+  })
+
+  it('the chooser is a radio group, not two loose buttons', () => {
+    const source = form()
+    assert.ok(/role="radiogroup"/.test(source))
+    assert.ok(/role="radio"/.test(source))
+    assert.ok(/aria-checked=\{selected\}/.test(source))
+  })
+
+  it('an option with no image cannot be chosen', () => {
+    const source = form()
+    assert.ok(/disabled=\{!locationArtwork\}/.test(source))
+    assert.ok(/disabled=\{!existingBanner && !bannerPreview\}/.test(source))
+  })
+
+  it('the cards and signup still show the Collective image', () => {
+    // These read the banner with no Location fallback before, so they
+    // now read the resolved choice instead — the same field either way.
     for (const [path, needle] of [
       [join(SRC, 'app', 'dashboard', 'CreatorCollectiveCard.tsx'),
-        'detail?.cover_image_url'],
-      [join(SRC, 'app', 'signup', 'member', 'page.tsx'),
-        'collective.cover_image_url'],
-      [join(SRC, 'app', 'checkout', 'member', 'page.tsx'),
-        'collective.cover_image_url'],
+        'selectCollectiveHeaderImage'],
+      [join(SRC, 'app', 'signup', 'member', 'page.tsx'), 'headerImageFor'],
+      [join(SRC, 'app', 'checkout', 'member', 'page.tsx'), 'headerImageFor'],
+      [join(SRC, 'components', 'explore', 'CollectiveCard.tsx'), 'headerImageFor'],
     ] as [string, string][]) {
       assert.ok(
         readFileSync(path, 'utf8').includes(needle),
-        `${path} no longer reads the banner`,
+        `${path} does not use the shared rule`,
       )
     }
   })

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headerImageFor } from '@/lib/collectiveHeaderImage'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
@@ -54,12 +55,10 @@ export default async function CheckoutMemberPage({
     ? `/checkout/next?flow=member-upgrade&collective=${collective.slug}&preview=true`
     : `/signup/member?collective=${collective.slug}&preview=true`
 
-  const artUrl =
-    resolveMediaUrl(
-      collective.location_thumbnail_artwork_url ??
-        collective.location_hero_artwork_url ??
-        collective.cover_image_url,
-    ) ?? null
+  // The creator's chosen header image — see
+  // ``lib/collectiveHeaderImage``. Somebody joining or paying should
+  // see the Collective presented the way its creator chose.
+  const artUrl = resolveMediaUrl(headerImageFor(collective) ?? undefined) ?? null
 
   return (
     <SiteShell>

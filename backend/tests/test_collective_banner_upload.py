@@ -313,13 +313,14 @@ class TestTheLogoAndBannerAreIndependent:
         assert after["logo_url"] is None
         assert after["cover_image_url"] == banner
 
-    def test_there_is_no_banner_removal_endpoint(self, client, db, space):
-        """Reported rather than added: the logo has a DELETE and the
-        banner does not. Replacing works; clearing does not. A new
-        endpoint is a feature decision, not part of this fix."""
+    def test_the_banner_can_be_removed(self, client, db, space):
+        """Added in the header-image work: this test previously
+        recorded its absence, which was the honest state then."""
         upload(client, space, "cover", "banner.png", PNG, "image/png")
         r = client.delete(f"{base(space)}/cover")
-        assert r.status_code in (404, 405), r.status_code
+        assert r.status_code == 200, r.text
+        assert r.json()["cover_image_url"] is None
+        assert settings(client, space)["cover_image_url"] is None
 
     def test_a_settings_save_does_not_disturb_either_image(
         self, client, db, space,

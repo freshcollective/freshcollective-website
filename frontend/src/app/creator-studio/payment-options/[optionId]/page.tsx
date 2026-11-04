@@ -30,6 +30,7 @@ export default async function PaymentOptionEditorPage({ params }: Props) {
           meta={<>Manage what's included and how members pay.</>}
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
           backLink={{ href: '/creator-studio/payment-options', label: 'Back to Payment Options' }}
         />
       )}

@@ -23,6 +23,9 @@ interface Props {
   readiness: OfferingReadiness | null
   location?: Location | null
   coverImageUrl?: string | null
+  /** The server's resolved header image — see
+   *  `lib/collectiveHeaderImage`. */
+  headerImageUrl?: string | null
 }
 
 /**
@@ -45,7 +48,7 @@ interface Props {
  */
 export default function OfferingHeader({
   active, spaceSlug, spaceName, offering, readiness,
-  location = null, coverImageUrl = null,
+  location = null, coverImageUrl = null, headerImageUrl = null,
 }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -115,6 +118,7 @@ export default function OfferingHeader({
         meta={metaParts.join(' · ')}
         location={location}
         coverImageUrl={coverImageUrl}
+        headerImageUrl={headerImageUrl}
         backLink={{ href: '/creator-studio/offerings', label: 'Back to Offerings' }}
       />
 

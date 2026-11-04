@@ -108,6 +108,7 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
         meta={metaLine}
         location={spaceDetail?.location ?? null}
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         backLink={{ href: '/creator-studio/gatherings', label: '← Back to Gatherings' }}
       />
 

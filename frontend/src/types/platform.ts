@@ -34,6 +34,9 @@ export interface SpaceResponse {
   status: string
   timezone: string
   cover_image_url: string | null
+  /** The creator's header choice — see `lib/collectiveHeaderImage`. */
+  header_image_preference?: string | null
+  header_image_url?: string | null
   /** Optional "hosted by" mark shown subtly beside the collective name. */
   logo_url?: string | null
   pathways: PathwaySummary[]
@@ -847,6 +850,10 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   status: string
   timezone: string
   cover_image_url: string | null
+  /** The creator's header choice and the image it resolves to — see
+   *  `lib/collectiveHeaderImage`. Absent reads as 'location'. */
+  header_image_preference?: string | null
+  header_image_url?: string | null
   /** Optional "hosted by" mark shown subtly beside the collective name. */
   logo_url?: string | null
   themes: string[]
@@ -1298,6 +1305,10 @@ export interface PublicCollectiveAbout {
   about_content: string | null
   cover_image_url: string | null
   logo_url: string | null
+  /** See `lib/collectiveHeaderImage`. Defaults to 'location' for
+   *  every Collective that has not chosen. */
+  header_image_preference?: string | null
+  header_image_url?: string | null
   location_hero_artwork_url: string | null
   location_thumbnail_artwork_url: string | null
   location_name: string | null
@@ -1331,6 +1342,12 @@ export interface PublicSpaceCard {
    *  to `cover_image_url` for legacy spaces with no Location assigned. */
   location_hero_artwork_url?: string | null
   location_thumbnail_artwork_url?: string | null
+  /** Where the Collective lives, e.g. "Moon Lagoon". */
+  location_name?: string | null
+  /** The creator's header choice, and the image it resolves to —
+   *  see `lib/collectiveHeaderImage`. */
+  header_image_preference?: string | null
+  header_image_url?: string | null
   min_paid_pathway_price_cents: number | null
   /** How someone becomes a member. Authoritative over
    *  `pricing_type` for any statement about joining. */

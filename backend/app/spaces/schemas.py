@@ -54,6 +54,13 @@ class SpaceResponse(BaseModel):
     status: str
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
+    #: The creator's header choice, and the image it resolves to. One
+    #: rule — ``services/collective_header_image`` — so this payload
+    #: and Creator Studio cannot disagree about which image a
+    #: Collective shows. The Location fields are unchanged: the island
+    #: card on the About page reads those whatever the header shows.
+    header_image_preference: str = "location"
+    header_image_url: str | None = None
     # Optional "hosted by" mark. Rendered subtly beside the collective name
     # in the header. Location artwork is still the primary visual identity.
     logo_url: str | None = None
@@ -632,6 +639,11 @@ class PublicCollectiveAbout(BaseModel):
     location_hero_artwork_url: str | None = None
     location_thumbnail_artwork_url: str | None = None
     location_name: str | None = None
+    #: The creator's header choice and the resolved image. The Location
+    #: fields above stay exactly as they are — the small island card on
+    #: this page shows Location artwork whatever the header shows.
+    header_image_preference: str = "location"
+    header_image_url: str | None = None
     themes: list[str] = []
     creator_name: str | None = None
     #: True for a Collective whose membership the platform grants from
@@ -704,6 +716,14 @@ class PublicSpaceCard(BaseModel):
     # falling back to `cover_image_url` for legacy spaces with no Location.
     location_hero_artwork_url: str | None = None
     location_thumbnail_artwork_url: str | None = None
+    #: The Location's name, so a card can say where a Collective lives
+    #: ("Moon Lagoon") alongside the creator's own branding.
+    location_name: str | None = None
+    #: The creator's header choice, and the image it resolves to. Both
+    #: come from ``services/collective_header_image`` so a card shows
+    #: the same image as the Collective's own header.
+    header_image_preference: str = "location"
+    header_image_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -218,6 +218,17 @@ class Space(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     about_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Which image welcomes people into this Collective: the Atlas
+    # Location artwork, or the creator's own uploaded banner above.
+    #
+    # ``'location'`` | ``'banner'``. A stored preference rather than a
+    # rule derived from "is there a banner", because holding a banner
+    # is not the same as wanting it shown — see migration 181, and
+    # ``services/collective_header_image`` for how it is read.
+    header_image_preference: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="location",
+        server_default="location",
+    )
     # Optional "hosted by" mark shown subtly beside the collective name.
     # Not brand chrome — the Location artwork remains the primary visual
     # identity. Nullable; most collectives will not set one.

@@ -1,4 +1,5 @@
 import { resolveMediaUrl } from '@/lib/api'
+import { selectCollectiveHeaderImage } from '@/lib/collectiveHeaderImage'
 
 /**
  * CollectiveIdentityHeader
@@ -27,6 +28,10 @@ interface Props {
   tagline: string | null
   logoUrl?: string | null
   coverImageUrl?: string | null
+  /** The creator's header choice — see `lib/collectiveHeaderImage`.
+   *  Absent reads as 'location', which is what every Collective
+   *  showed before the choice existed. */
+  headerImagePreference?: string | null
   location?: Location | null
   atmosphereLabels?: string[]
 }
@@ -36,14 +41,22 @@ export default function CollectiveIdentityHeader({
   tagline,
   logoUrl,
   coverImageUrl,
+  headerImagePreference,
   location,
   atmosphereLabels = [],
 }: Props) {
-  const locationArt = resolveMediaUrl(
-    location?.hero_artwork_url ?? undefined,
+  // One rule, shared with every other primary Collective surface —
+  // see ``lib/collectiveHeaderImage``. This chose Location artwork
+  // first unconditionally, which is why a creator's uploaded banner
+  // never appeared here.
+  const backgroundImage = resolveMediaUrl(
+    selectCollectiveHeaderImage({
+      preference: headerImagePreference,
+      bannerUrl: coverImageUrl,
+      locationHeroUrl: location?.hero_artwork_url,
+      locationThumbnailUrl: location?.thumbnail_artwork_url,
+    }) ?? undefined,
   )
-  const legacyBanner = resolveMediaUrl(coverImageUrl ?? undefined)
-  const backgroundImage = locationArt ?? legacyBanner
   const logoResolved = resolveMediaUrl(logoUrl ?? undefined)
 
   return (

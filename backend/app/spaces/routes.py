@@ -13,6 +13,7 @@ from app.auth.dependencies import get_current_user, get_optional_user, get_verif
 from app.core.database import get_db
 from app.core.public_url import public_app_url
 from app.services.rich_text import rich_text_to_plain
+from app.services import collective_header_image as _header_image
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
@@ -536,6 +537,15 @@ def get_public_collective_about(
         location_hero_artwork_url=hero,
         location_thumbnail_artwork_url=thumb,
         location_name=name,
+        header_image_preference=_header_image.normalise_preference(
+            space.header_image_preference,
+        ),
+        header_image_url=_header_image.collective_header_image(
+            preference=space.header_image_preference,
+            banner_url=space.cover_image_url,
+            location_hero_url=hero,
+            location_thumbnail_url=thumb,
+        ),
         themes=space.themes or [],
         creator_name=creator_name,
         creator_only=space.auto_grant_role is not None,
@@ -629,13 +639,20 @@ def hydrate_public_space_cards(
     from app.models.platform import Location  # local import to keep top imports flat
     location_ids = [s.location_id for s in spaces if s.location_id]
     location_art: dict[str, tuple[str | None, str | None]] = {}
+    # The Location's name travels with its artwork so a card can say
+    # where a Collective lives beside the creator's own branding.
+    location_names: dict[str, str | None] = {}
     if location_ids:
         locs = (
-            db.query(Location.id, Location.hero_artwork_url, Location.thumbnail_artwork_url)
+            db.query(
+                Location.id, Location.hero_artwork_url,
+                Location.thumbnail_artwork_url, Location.name,
+            )
             .filter(Location.id.in_(location_ids))
             .all()
         )
         location_art = {row.id: (row.hero_artwork_url, row.thumbnail_artwork_url) for row in locs}
+        location_names = {row.id: row.name for row in locs}
 
     return [
         PublicSpaceCard(
@@ -666,6 +683,24 @@ def hydrate_public_space_cards(
             min_paid_pathway_price_cents=min_pathway_prices.get(s.id),
             location_hero_artwork_url=location_art.get(s.location_id or "", (None, None))[0] if s.location_id else None,
             location_thumbnail_artwork_url=location_art.get(s.location_id or "", (None, None))[1] if s.location_id else None,
+            location_name=location_names.get(s.location_id or "") if s.location_id else None,
+            header_image_preference=_header_image.normalise_preference(
+                s.header_image_preference,
+            ),
+            # One rule, so an Explore card and the Collective's own
+            # header cannot disagree about which image it shows.
+            header_image_url=_header_image.collective_header_image(
+                preference=s.header_image_preference,
+                banner_url=s.cover_image_url,
+                location_hero_url=(
+                    location_art.get(s.location_id or "", (None, None))[0]
+                    if s.location_id else None
+                ),
+                location_thumbnail_url=(
+                    location_art.get(s.location_id or "", (None, None))[1]
+                    if s.location_id else None
+                ),
+            ),
         )
         for s in spaces
     ]
@@ -1224,6 +1259,17 @@ def get_space(
                 "hero_artwork_url": loc.hero_artwork_url,
                 "thumbnail_artwork_url": loc.thumbnail_artwork_url,
             }
+    # The one header-image rule, resolved from the Location just
+    # hydrated above so the member header shows what the creator chose.
+    _header_preference = _header_image.normalise_preference(
+        space.header_image_preference,
+    )
+    _header_image_url = _header_image.collective_header_image(
+        preference=space.header_image_preference,
+        banner_url=space.cover_image_url,
+        location_hero_url=(location_dict or {}).get("hero_artwork_url"),
+        location_thumbnail_url=(location_dict or {}).get("thumbnail_artwork_url"),
+    )
     palette_dict = None
     if space.colour_story_key:
         cs = db.query(ColourStory).filter(ColourStory.key == space.colour_story_key).first()
@@ -1336,6 +1382,8 @@ def get_space(
         "learner_count": learner_count,
         "leader_count": leader_count,
         "location": location_dict,
+        "header_image_preference": _header_preference,
+        "header_image_url": _header_image_url,
         "colour_palette": palette_dict,
         "colour_palette_key": space.colour_story_key,
         "atmosphere_keys": atmo_keys,

@@ -24,6 +24,7 @@ export default async function PathwaysPage() {
           meta={<>Create guided journeys people can move through over time.</>}
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
           action={
             <PrimaryActionLink href="/creator-studio/pathways/new">
               Create pathway

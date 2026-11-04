@@ -85,6 +85,7 @@ export default async function SettingsPage() {
           meta="Shape how this Collective feels and how people experience it."
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         />
       )}
 

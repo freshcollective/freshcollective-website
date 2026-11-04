@@ -47,6 +47,7 @@ export default async function OfferingDetailsPage({ params }: Props) {
         readiness={readiness}
         location={spaceDetail?.location ?? null}
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
       />
       <OfferingDetailsClient
         spaceSlug={activeSpace.slug}

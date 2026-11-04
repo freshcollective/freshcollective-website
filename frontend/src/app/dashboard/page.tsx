@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { selectCollectiveHeaderImage } from '@/lib/collectiveHeaderImage'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { SESSION_COOKIE } from '@/lib/session'
@@ -142,7 +143,12 @@ function filterUpcoming(cards: MembershipCard[]): { soon: UpcomingEvent[]; hasMo
     .flatMap((c) => {
       const loc = c.space?.location
       const locArt = resolveMediaUrl(
-        loc?.thumbnail_artwork_url ?? loc?.hero_artwork_url ?? undefined,
+        selectCollectiveHeaderImage({
+          preference: c.space?.header_image_preference,
+          bannerUrl: c.space?.cover_image_url,
+          locationHeroUrl: loc?.hero_artwork_url,
+          locationThumbnailUrl: loc?.thumbnail_artwork_url,
+        }) ?? undefined,
       )
       const cover = resolveMediaUrl(c.space?.cover_image_url ?? undefined)
       return (c.events ?? []).map((e) => ({
@@ -872,11 +878,20 @@ function CollectiveCard({
   ].filter(Boolean).join(' · ') || null
 
   const loc = card.space?.location
-  const locationArt = resolveMediaUrl(
-    loc?.thumbnail_artwork_url ?? loc?.hero_artwork_url ?? undefined,
+  // The creator's chosen header image — see
+  // ``lib/collectiveHeaderImage``. A member's card shows the
+  // Collective the way its creator chose to present it.
+  const artUrl = resolveMediaUrl(
+    selectCollectiveHeaderImage({
+      preference: card.space?.header_image_preference
+        ?? publicCard?.header_image_preference,
+      bannerUrl: card.space?.cover_image_url ?? publicCard?.cover_image_url,
+      locationHeroUrl: loc?.hero_artwork_url
+        ?? publicCard?.location_hero_artwork_url,
+      locationThumbnailUrl: loc?.thumbnail_artwork_url
+        ?? publicCard?.location_thumbnail_artwork_url,
+    }) ?? undefined,
   )
-  const cover = resolveMediaUrl(card.space?.cover_image_url ?? publicCard?.cover_image_url ?? null)
-  const artUrl = locationArt ?? cover
   const cs = getCollectiveCoverStyle(card.membership.space_slug)
 
   return (

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { resolveMediaUrl } from '@/lib/api'
+import { selectCollectiveHeaderImage } from '@/lib/collectiveHeaderImage'
 
 /**
  * CollectivePageHeader (file name kept as CollectiveArtworkHeader.tsx
@@ -14,11 +15,14 @@ import { resolveMediaUrl } from '@/lib/api'
  * Since the sidebar no longer carries an active-collective card, this
  * header is the single visual anchor for collective identity.
  *
- * Artwork fallback chain:
- *   1. Location hero artwork (Atlas v1.2 — first choice)
- *   2. Location thumbnail (Atlas v1.2 — second choice)
- *   3. Collective banner (legacy `cover_image_url`)
- *   4. Soft neutral gradient (no artwork exists)
+ * Artwork comes from the shared header-image rule — see
+ * ``lib/collectiveHeaderImage``. In short: the creator's uploaded
+ * banner when they have chosen it, otherwise Location hero, then
+ * Location thumbnail, then the banner, then a soft neutral gradient.
+ *
+ * It used to prefer Location artwork unconditionally and call the
+ * banner "legacy", which is why a creator who uploaded one never saw
+ * it here.
  *
  * Variants:
  *   - default (~200-260px) — the standard page header
@@ -50,18 +54,32 @@ interface Props {
   /** Uploaded collective banner, used as a fallback when no Location
    *  artwork is available. */
   coverImageUrl?: string | null
+  /** The creator's header choice — see `lib/collectiveHeaderImage`. */
+  headerImagePreference?: string | null
+  /** The resolved image, when the caller already has the server's
+   *  answer (`SpaceDetail.header_image_url`). Wins over the parts. */
+  headerImageUrl?: string | null
   /** Header size. ``slim`` is used by the step editor. */
   variant?: 'default' | 'slim'
 }
 
 export default function CollectiveArtworkHeader({
   collectiveName, sectionTitle, meta, action, backLink,
-  location, coverImageUrl, variant = 'default',
+  location, coverImageUrl, headerImagePreference, headerImageUrl,
+  variant = 'default',
 }: Props) {
   const artwork = resolveMediaUrl(
-    location?.hero_artwork_url
-      ?? location?.thumbnail_artwork_url
-      ?? coverImageUrl
+    // ``headerImageUrl`` is the same rule already resolved by the
+    // server (``SpaceDetail.header_image_url``). Preferred when a page
+    // has it, so Creator Studio and the member pages cannot disagree;
+    // computed here for the callers that hold the parts instead.
+    headerImageUrl
+    ?? selectCollectiveHeaderImage({
+      preference: headerImagePreference,
+      bannerUrl: coverImageUrl,
+      locationHeroUrl: location?.hero_artwork_url,
+      locationThumbnailUrl: location?.thumbnail_artwork_url,
+    })
       ?? undefined,
   )
 

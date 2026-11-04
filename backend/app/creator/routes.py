@@ -344,6 +344,12 @@ def _space_detail_response(
                 "name": loc.name,
                 "description": loc.description,
                 "hero_artwork_url": loc.hero_artwork_url,
+                # Carried because the shared header-image rule reads
+                # it. ``CollectiveArtworkHeader`` has always listed it
+                # in its fallback chain, and it was never in this
+                # payload — so that step of the chain could not fire
+                # in Creator Studio.
+                "thumbnail_artwork_url": loc.thumbnail_artwork_url,
                 # Long-form Atlas Entry, sourced from World Management.
                 # Read-only in Creator Studio — the Atlas Entry helps a
                 # Creator understand the feeling and story of their
@@ -351,6 +357,30 @@ def _space_detail_response(
                 # manage. Editing lives in /admin/atlas.
                 "atlas_entry": loc.atlas_entry,
             }
+    # The one image rule, answered server-side.
+    #
+    # Every surface asked this question itself, nine different ways,
+    # which is how a creator's banner came to appear nowhere. Resolved
+    # here from the Location just hydrated above so Creator Studio and
+    # the member pages read the same answer. Location artwork is read,
+    # never written — World Artwork is untouched.
+    from app.services.collective_header_image import (
+        header_image_for_space,
+        normalise_preference,
+    )
+
+    data["header_image_preference"] = normalise_preference(
+        space.header_image_preference,
+    )
+    _loc_for_image = data.get("location") or {}
+    data["header_image_url"] = header_image_for_space(
+        space,
+        type("_Loc", (), {
+            "hero_artwork_url": _loc_for_image.get("hero_artwork_url"),
+            "thumbnail_artwork_url": _loc_for_image.get("thumbnail_artwork_url"),
+        })(),
+    )
+
     # Hydrate Colour Palette
     if space.colour_story_key:
         cs = db.query(ColourStory).filter(ColourStory.key == space.colour_story_key).first()
@@ -1605,6 +1635,21 @@ def update_space(
         space.description = body.description.strip() or None
     if body.about_content is not None:
         space.about_content = body.about_content.strip() or None
+    if body.header_image_preference is not None:
+        # Switching to the banner is refused when there is no banner to
+        # switch to, rather than stored as a preference pointing at
+        # nothing. The schema validates the vocabulary; this validates
+        # that the choice is available.
+        if (body.header_image_preference == "banner"
+                and not space.cover_image_url):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Upload a banner image before choosing it as your "
+                    "Collective header."
+                ),
+            )
+        space.header_image_preference = body.header_image_preference
     if body.is_public is not None:
         space.is_public = body.is_public
     if body.status is not None:
@@ -2263,8 +2308,50 @@ async def upload_cover_image(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     previous = space.cover_image_url
     space.cover_image_url = f"/api/uploads/{rel_path}"
+    # Uploading a banner selects it. A creator who has just chosen an
+    # image for their Collective wants to see it; asking them to upload
+    # and then select would be a second step for a decision already
+    # made. Switching back is one press away and keeps the file.
+    from app.services.collective_header_image import preference_after_upload
+
+    space.header_image_preference = preference_after_upload()
     db.commit()
     db.refresh(space)
+    if previous:
+        delete_file(previous.removeprefix("/api/uploads/"))
+    return _space_detail_response(space, db)
+
+
+@router.delete("/spaces/{slug}/cover", response_model=SpaceDetail)
+def clear_cover_image(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> Space:
+    """Remove the creator's uploaded banner.
+
+    The Collective returns to its Location artwork, which is the only
+    thing left to show — so the preference goes with the file rather
+    than being left pointing at nothing.
+
+    The Location itself is untouched: this clears ``cover_image_url``
+    and nothing else. World Artwork and the Atlas Location assignment
+    are not read here.
+
+    The row is committed before the file is deleted, and the deletion
+    is best-effort, so a storage problem leaves an orphaned file rather
+    than a Collective whose column points at bytes that are gone — the
+    same ordering the upload uses.
+    """
+    from app.services.collective_header_image import preference_after_removal
+
+    space = _get_managed_space(slug, current_user, db)
+    previous = space.cover_image_url
+    if previous or space.header_image_preference != preference_after_removal():
+        space.cover_image_url = None
+        space.header_image_preference = preference_after_removal()
+        db.commit()
+        db.refresh(space)
     if previous:
         delete_file(previous.removeprefix("/api/uploads/"))
     return _space_detail_response(space, db)

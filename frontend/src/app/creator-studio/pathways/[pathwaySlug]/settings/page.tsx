@@ -60,6 +60,7 @@ export default async function PathwaySettingsPage({ params }: Props) {
         showManualReleases={hasManualStep}
         location={spaceDetail?.location ?? null}
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         steps={steps}
         sections={sections}
       />

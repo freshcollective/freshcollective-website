@@ -3,7 +3,11 @@
 import Link from 'next/link'
 import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import {
+  type HeaderImagePreference,
+  normalisePreference,
+} from '@/lib/collectiveHeaderImage'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { CreatorSpaceDetail, PricingType } from '@/types/platform'
 import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
@@ -67,6 +71,20 @@ export default function CollectiveSettingsForm({ space, tab = 'details', paidOff
   const [bannerFile, setBannerFile] = useState<File | null>(null)
   const [bannerPreview, setBannerPreview] = useState<string | null>(null)
   const [existingBanner, setExistingBanner] = useState<string | null>(space.cover_image_url)
+  // The creator's choice. Absent reads as 'location', which is what
+  // every Collective showed before the choice existed.
+  const [headerPreference, setHeaderPreference] = useState<HeaderImagePreference>(
+    normalisePreference(space.header_image_preference),
+  )
+  const [preferenceSaving, setPreferenceSaving] = useState(false)
+  const [preferenceError, setPreferenceError] = useState<string | null>(null)
+  // Read for the side-by-side preview only. Never written — World
+  // Artwork and the Atlas Location assignment are not touched here.
+  const locationArtwork = resolveMediaUrl(
+    space.location?.hero_artwork_url
+      ?? space.location?.thumbnail_artwork_url
+      ?? undefined,
+  ) ?? null
   const [bannerError, setBannerError] = useState<string | null>(null)
   const [bannerUploading, setBannerUploading] = useState(false)
   const [bannerSaved, setBannerSaved] = useState(false)
@@ -173,6 +191,10 @@ function isPaidType(type: PricingType): boolean {
       }
       const data = await res.json()
       setExistingBanner(data.cover_image_url ?? null)
+      // The server selects the banner on upload — a creator who has
+      // just chosen an image wants to see it. Read back rather than
+      // assumed, so the two cannot disagree.
+      setHeaderPreference(normalisePreference(data.header_image_preference))
       setBannerFile(null)
       setBannerPreview(null)
       setBannerSaved(true)
@@ -184,6 +206,84 @@ function isPaidType(type: PricingType): boolean {
       router.refresh()
     } catch (err) {
       setBannerError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setBannerUploading(false)
+    }
+  }
+
+  /**
+   * Switch between the two image sources, without re-uploading.
+   *
+   * The banner file stays stored whichever is selected, so a creator
+   * can go back and forth — and a Collective that chose Location
+   * artwork has not thrown its banner away.
+   */
+  async function selectPreference(next: HeaderImagePreference) {
+    if (next === headerPreference || preferenceSaving) return
+    setPreferenceError(null)
+    setPreferenceSaving(true)
+    const previous = headerPreference
+    setHeaderPreference(next)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ header_image_preference: next }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setHeaderPreference(previous)
+        setPreferenceError(
+          typeof b.detail === 'string' ? b.detail : `Could not save (${res.status})`,
+        )
+        return
+      }
+      router.refresh()
+    } catch {
+      setHeaderPreference(previous)
+      setPreferenceError('Could not save that choice. Please try again.')
+    } finally {
+      setPreferenceSaving(false)
+    }
+  }
+
+  /**
+   * Remove the uploaded banner.
+   *
+   * The server clears the file and returns the Collective to its
+   * Location artwork — there is nothing else left to show, so leaving
+   * the preference pointing at a banner that no longer exists would be
+   * a stored contradiction. The Location itself, and the logo, are
+   * untouched.
+   */
+  async function removeBanner() {
+    if (!existingBanner || bannerUploading) return
+    setBannerError(null)
+    setBannerSaved(false)
+    setBannerUploading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}/cover`), {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(
+          typeof b.detail === 'string' ? b.detail : `Remove failed (${res.status})`,
+        )
+      }
+      const data = await res.json()
+      setExistingBanner(data.cover_image_url ?? null)
+      setHeaderPreference(normalisePreference(data.header_image_preference))
+      setBannerPreview(null)
+      setBannerFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      router.refresh()
+    } catch (err) {
+      setBannerError(
+        err instanceof Error ? err.message : 'Remove failed. Please try again.',
+      )
     } finally {
       setBannerUploading(false)
     }
@@ -507,67 +607,66 @@ function isPaidType(type: PricingType): boolean {
       {showArtwork && (
       <>
       <div className="rounded-2xl border border-border bg-white p-6">
-        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Banner image</h2>
-        <p className="mb-2 text-[14px] text-black">
-          Add a banner to give your collective a stronger visual identity.
-        </p>
-        {/* The precedence stated the wrong way round.
-            ``CollectiveIdentityHeader`` and ``CollectiveArtworkHeader``
-            both read Location artwork first and the banner only as a
-            fallback — the hierarchy is deliberate and documented in
-            both components — so a Collective with Location artwork
-            never showed its uploaded banner on those pages. The copy
-            promised the opposite, which is why a save that worked read
-            as a save that failed. */}
-        <p className="mb-5 text-[13px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
-          Your Location artwork leads your collective&rsquo;s pages. This
-          banner is used where there is no Location artwork, and on your
-          collective&rsquo;s cards in dashboards, sign-up and checkout.
+        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">
+          Collective header image
+        </h2>
+        <p className="mb-5 text-[14px] text-black">
+          Choose the image that welcomes people into your Collective.
         </p>
 
-        {/* Current banner indicator */}
-        {existingBanner && !bannerPreview && (
-          <div
-            className="mb-4 flex items-center gap-3 rounded-xl px-4 py-3"
-            style={{ background: 'rgba(56,160,158,0.07)', border: '1px solid rgba(56,160,158,0.18)' }}
-          >
-            <div
-              className="h-3 w-3 rounded-full"
-              style={{ background: '#38A09E' }}
-            />
-            <p className="text-[13px] text-black">
-              Banner uploaded.{' '}
-              <span className="text-black">Upload a new image to replace it.</span>
-            </p>
-          </div>
-        )}
-
-        {/* Preview of selected file */}
-        {bannerPreview && (
-          <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={bannerPreview}
-              alt="Banner preview"
-              className="h-40 w-full object-cover"
-            />
-          </div>
-        )}
-
-        {/* File input */}
+        {/* Two sources, one choice.
+            A Collective has two visual identities — the creator's own
+            brand and its home in the Fresh Collective world — and they
+            are not rivals. Both previews are shown together so the
+            creator can compare them before deciding, which is what the
+            old "Banner uploaded." line could not do: it reported a
+            file existed and never showed it. */}
         <div
-          className="flex flex-col gap-3 rounded-xl border-2 border-dashed px-5 py-5 transition-colors"
+          className="grid gap-4 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Collective header image"
+        >
+          <HeaderImageOption
+            selected={headerPreference === 'location'}
+            disabled={!locationArtwork}
+            busy={preferenceSaving}
+            title="Use my Location artwork"
+            body="Display the beautiful imagery from your chosen Fresh Collective location."
+            imageUrl={locationArtwork}
+            emptyLabel="No Location artwork yet"
+            onSelect={() => selectPreference('location')}
+          />
+          <HeaderImageOption
+            selected={headerPreference === 'banner'}
+            disabled={!existingBanner && !bannerPreview}
+            busy={preferenceSaving}
+            title="Use my own banner"
+            body="Upload an image that reflects your Collective's unique identity."
+            imageUrl={bannerPreview ?? existingBanner}
+            emptyLabel="No banner uploaded yet"
+            onSelect={() => selectPreference('banner')}
+          />
+        </div>
+
+        {preferenceError && (
+          <p className="mt-3 text-[13px]" style={{ color: '#dc2626' }} role="alert">
+            {preferenceError}
+          </p>
+        )}
+
+        {/* Banner actions. Upload when there is none, Replace and
+            Remove when there is — the three the brief asks for, and
+            nothing in between to press by mistake. */}
+        <div
+          className="mt-4 flex flex-col gap-3 rounded-xl border-2 border-dashed px-5 py-5 transition-colors"
           style={{ borderColor: 'rgba(56,160,158,0.25)' }}
         >
-          <p className="text-[13px] text-black">
-            {bannerFile ? bannerFile.name : 'No file selected'}
-          </p>
           <div className="flex flex-wrap items-center gap-3">
             <label
               htmlFor="banner-upload"
               className="cursor-pointer rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
             >
-              Choose image
+              {existingBanner ? 'Replace image' : 'Upload banner'}
             </label>
             <input
               id="banner-upload"
@@ -577,14 +676,22 @@ function isPaidType(type: PricingType): boolean {
               onChange={handleFileSelect}
               className="sr-only"
             />
+            {existingBanner && !bannerUploading && (
+              <button
+                type="button"
+                onClick={removeBanner}
+                className="rounded-xl px-4 py-2 text-[13px] font-medium text-black transition-colors hover:text-red-600"
+              >
+                Remove banner
+              </button>
+            )}
             {bannerUploading && (
               <span className="text-[13px] font-medium text-teal-700">
                 Uploading&hellip;
               </span>
             )}
             {/* A retry, not the upload step. Choosing an image uploads
-                it; this appears only when that failed, so the creator
-                is not left with a staged file and no way to send it. */}
+                it; this appears only when that failed. */}
             {bannerFile && bannerError && !bannerUploading && (
               <button
                 type="button"
@@ -602,7 +709,9 @@ function isPaidType(type: PricingType): boolean {
         </div>
 
         {bannerError && (
-          <p className="mt-2 text-[13px]" style={{ color: '#dc2626' }}>{bannerError}</p>
+          <p className="mt-2 text-[13px]" style={{ color: '#dc2626' }} role="alert">
+            {bannerError}
+          </p>
         )}
         {bannerSaved && !bannerError && (
           <p className="mt-2 text-[13px]" style={{ color: '#38A09E' }}>
@@ -969,5 +1078,87 @@ function isPaidType(type: PricingType): boolean {
       </div>
 
     </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Header image option
+// ---------------------------------------------------------------------------
+
+/**
+ * One of the two header-image sources, with its image shown.
+ *
+ * A wide 16:5 plate, matching the Collective header's own proportions,
+ * so what a creator sees here is what members will see. The previous
+ * experience said only "Banner uploaded." — a sentence about a file,
+ * which could not answer the question a creator was actually asking.
+ *
+ * A radio rather than a button pair: these are two values of one
+ * setting, and a screen reader should hear them that way.
+ */
+function HeaderImageOption({
+  selected, disabled, busy, title, body, imageUrl, emptyLabel, onSelect,
+}: {
+  selected: boolean
+  disabled?: boolean
+  busy?: boolean
+  title: string
+  body: string
+  imageUrl: string | null
+  emptyLabel: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={title}
+      disabled={disabled || busy}
+      onClick={onSelect}
+      className={`group flex flex-col overflow-hidden rounded-xl border-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+        selected
+          ? 'border-teal-500 shadow-sm'
+          : 'border-slate-200 hover:border-teal-300'
+      }`}
+    >
+      {/* 16:5 — the Collective header's plate. */}
+      <div className="relative w-full" style={{ aspectRatio: '16 / 5' }}>
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt=""
+            // ``object-cover`` so a tall or narrow upload is cropped to
+            // the header's shape rather than squashed into it.
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{
+              background:
+                'linear-gradient(135deg, rgba(56,160,158,0.14) 0%, rgba(85,184,182,0.08) 100%)',
+            }}
+          >
+            <span className="text-[12px] font-medium" style={{ color: '#0f766e' }}>
+              {emptyLabel}
+            </span>
+          </div>
+        )}
+        {selected && (
+          <span
+            className="absolute right-2 top-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-white"
+            style={{ background: 'rgba(15,118,110,0.92)' }}
+          >
+            In use
+          </span>
+        )}
+      </div>
+      <div className="flex-1 px-4 py-3">
+        <p className="text-[13.5px] font-semibold text-navy-900">{title}</p>
+        <p className="mt-0.5 text-[12.5px] leading-relaxed text-black">{body}</p>
+      </div>
+    </button>
   )
 }

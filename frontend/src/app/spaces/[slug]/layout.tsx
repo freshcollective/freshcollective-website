@@ -150,6 +150,7 @@ export default async function SpaceLayout({ children, params }: Props) {
         tagline={space.tagline}
         logoUrl={space.logo_url}
         coverImageUrl={space.cover_image_url}
+        headerImagePreference={space.header_image_preference ?? null}
         location={space.location ?? null}
         atmosphereLabels={space.atmosphere_labels ?? []}
       />

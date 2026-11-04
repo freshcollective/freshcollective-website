@@ -73,6 +73,7 @@ export default async function CreatorStudioCommunityPage({ searchParams }: Props
           meta="Start conversations, respond to members and care for the people who gather here."
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         />
       ) : (
         <div className="mb-8">

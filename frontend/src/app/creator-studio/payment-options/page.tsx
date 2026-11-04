@@ -53,6 +53,7 @@ export default async function PaymentOptionsPage() {
           }
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
           action={
             <PrimaryActionLink href="/creator-studio/payment-options/new">
               New Payment Option

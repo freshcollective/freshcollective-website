@@ -29,6 +29,9 @@ interface Props {
    *  around it. Missing fields degrade to sensible fallbacks. */
   location?: Location | null
   coverImageUrl?: string | null
+  /** The server's resolved header image — see
+   *  `lib/collectiveHeaderImage`. */
+  headerImageUrl?: string | null
   /** Optional counts feeding the header's meta line
    *  ("22 steps · 6 sections · Draft"). */
   steps?: CreatorStep[]
@@ -45,7 +48,7 @@ interface Props {
  */
 export default function PathwayHeader({
   active, spaceName, pathway, showManualReleases,
-  location = null, coverImageUrl = null, steps, sections,
+  location = null, coverImageUrl = null, headerImageUrl = null, steps, sections,
 }: Props) {
   const tabs: { key: Tab; label: string; href: string }[] = [
     { key: 'content',  label: 'Content',  href: `/creator-studio/pathways/${pathway.slug}` },
@@ -91,6 +94,7 @@ export default function PathwayHeader({
         meta={metaParts.join(' · ')}
         location={location}
         coverImageUrl={coverImageUrl}
+        headerImageUrl={headerImageUrl}
         backLink={{ href: '/creator-studio/pathways', label: 'Back to Pathways' }}
       />
 

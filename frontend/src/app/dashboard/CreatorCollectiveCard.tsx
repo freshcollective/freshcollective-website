@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { selectCollectiveHeaderImage } from '@/lib/collectiveHeaderImage'
 import { resolveMediaUrl } from '@/lib/api'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import type { CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
@@ -29,14 +30,19 @@ export default function CreatorCollectiveCard({ summary, detail }: Props) {
   const name = detail?.name ?? summary.name
   const tagline = detail?.tagline ?? summary.tagline ?? null
 
-  // Location artwork first (identity), then legacy cover, then a slug-based
-  // procedural gradient — same fallback chain used for membership cards.
+  // The creator's chosen header image, then a slug-based procedural
+  // gradient — see ``lib/collectiveHeaderImage``. This put Location
+  // artwork first unconditionally, so a creator looking at their own
+  // Collective card never saw their own branding.
   const loc = detail?.location
-  const locationArt = resolveMediaUrl(
-    loc?.thumbnail_artwork_url ?? loc?.hero_artwork_url ?? undefined,
+  const artUrl = resolveMediaUrl(
+    selectCollectiveHeaderImage({
+      preference: detail?.header_image_preference,
+      bannerUrl: detail?.cover_image_url,
+      locationHeroUrl: loc?.hero_artwork_url,
+      locationThumbnailUrl: loc?.thumbnail_artwork_url,
+    }) ?? undefined,
   )
-  const cover = resolveMediaUrl(detail?.cover_image_url ?? undefined)
-  const artUrl = locationArt ?? cover
   const cs = getCollectiveCoverStyle(summary.slug)
 
   function open() {

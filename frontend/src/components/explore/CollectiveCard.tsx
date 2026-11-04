@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { headerImageFor } from '@/lib/collectiveHeaderImage'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import {
@@ -40,13 +41,16 @@ export default function CollectiveCard({
   isCreator?: boolean
 }) {
   const cs = getCollectiveCoverStyle(space.slug)
-  // Atlas v1.2 — prefer the collective's assigned Location artwork.
-  // Fallback order: location thumbnail → location hero → space cover_image → placeholder.
-  const resolvedImageUrl = resolveMediaUrl(
-    space.location_thumbnail_artwork_url
-      ?? space.location_hero_artwork_url
-      ?? space.cover_image_url,
-  )
+  // The creator's chosen header image — see
+  // ``lib/collectiveHeaderImage``, and prefer the server's resolved
+  // answer so this card and the Collective's own header agree.
+  //
+  // This preferred Location artwork unconditionally, which meant a
+  // creator who had uploaded their own branding could not be
+  // recognised by it in Explore. Their Location is still named below,
+  // so a Collective is discoverable by both its creator's identity
+  // and the atmosphere they chose.
+  const resolvedImageUrl = resolveMediaUrl(headerImageFor(space) ?? undefined)
   const hasImage = Boolean(resolvedImageUrl)
   // Label and destination together, from one rule — see
   // ``collectiveCardAction``. A creator-only Collective sends a
@@ -191,6 +195,18 @@ export default function CollectiveCard({
             {space.member_count > 0 && (
               <span className="hidden sm:inline">
                 · {space.member_count} {space.member_count === 1 ? 'member' : 'members'}
+              </span>
+            )}
+            {/* Where this Collective lives. Kept here, in the metadata
+                line that already exists, rather than as another badge:
+                the point is that a Collective can be discovered by its
+                creator's identity *and* by its atmosphere, which needs
+                one short phrase, not a second visual element. Shown
+                whichever image the creator chose — the Location stays
+                part of the Collective either way. */}
+            {space.location_name && (
+              <span className="hidden sm:inline">
+                {' · '}🌙 {space.location_name}
               </span>
             )}
           </div>

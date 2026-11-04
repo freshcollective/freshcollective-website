@@ -47,6 +47,7 @@ export default async function OfferingFilesPage({ params }: Props) {
         readiness={readiness}
         location={spaceDetail?.location ?? null}
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
       />
       <OfferingFilesClient
         spaceSlug={activeSpace.slug}

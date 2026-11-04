@@ -83,6 +83,10 @@ class SpaceUpdateRequest(BaseModel):
     tagline: str | None = None
     description: str | None = None
     about_content: str | None = None
+    #: Which image welcomes people in — ``location`` or ``banner``.
+    #: Lets a creator switch back to a banner they already uploaded
+    #: without sending the file again.
+    header_image_preference: str | None = None
     is_public: bool | None = None
     status: str | None = None
     timezone: str | None = None
@@ -180,6 +184,20 @@ class SpaceUpdateRequest(BaseModel):
         return v
 
 
+    @field_validator("header_image_preference")
+    @classmethod
+    def _validate_header_image_preference(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.services.collective_header_image import PREFERENCES
+
+        if v not in PREFERENCES:
+            raise ValueError(
+                f"Header image preference must be one of: {', '.join(PREFERENCES)}."
+            )
+        return v
+
+
 class SpaceDetail(BaseModel):
     model_config = {"from_attributes": True}
     id: str
@@ -199,6 +217,15 @@ class SpaceDetail(BaseModel):
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     logo_url: str | None = None
+    #: The creator's choice of header image — ``location`` (the
+    #: default, and what every existing Collective reads as) or
+    #: ``banner``. See ``services/collective_header_image``.
+    header_image_preference: str = "location"
+    #: The image a primary Collective surface should actually show,
+    #: resolved server-side by that one rule so Creator Studio and the
+    #: member pages cannot disagree. Null when a Collective has neither
+    #: a banner nor Location artwork.
+    header_image_url: str | None = None
     themes: list[str] = []
     pricing_type: str = 'free'
     pricing_amount_cents: int | None = None

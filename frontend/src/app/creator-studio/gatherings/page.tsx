@@ -58,6 +58,7 @@ export default async function GatheringsPage() {
           meta="Live sessions, circles, workshops and community touchpoints."
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
           action={
             <div className="flex items-center gap-4">
               {hasArchive && (

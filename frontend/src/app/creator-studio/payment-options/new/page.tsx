@@ -25,6 +25,7 @@ export default async function NewPaymentOptionPage() {
           meta={<>Give it a name to start. You'll add included experiences and payment methods next.</>}
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
           backLink={{ href: '/creator-studio/payment-options', label: 'Back to Payment Options' }}
         />
       )}

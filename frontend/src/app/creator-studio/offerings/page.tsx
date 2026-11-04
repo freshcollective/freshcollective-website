@@ -40,6 +40,7 @@ export default async function OfferingsPage() {
           meta={<>Digital resources people can download — workbooks, audio, templates.</>}
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          headerImageUrl={spaceDetail?.header_image_url ?? null}
         />
       )}
 
