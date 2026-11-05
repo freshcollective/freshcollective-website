@@ -1255,7 +1255,14 @@ def get_space(
                 "id": loc.id,
                 "key": loc.key,
                 "name": loc.name,
+                # The short reading — a tagline, used wherever a
+                # summary of the island is needed.
                 "description": loc.description,
+                # The long-form page in the atlas: the island's story,
+                # plain text with its paragraph breaks preserved.
+                # Carried so the member-facing island page can tell it
+                # without a second copy existing anywhere.
+                "atlas_entry": loc.atlas_entry,
                 "hero_artwork_url": loc.hero_artwork_url,
                 "thumbnail_artwork_url": loc.thumbnail_artwork_url,
             }

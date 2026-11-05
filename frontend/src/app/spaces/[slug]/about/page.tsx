@@ -28,6 +28,7 @@ import SpaceAboutCTA from './SpaceAboutCTA'
 import MarkdownBody from '@/components/ui/MarkdownBody'
 import type { Metadata } from 'next'
 import { collectiveMetadata } from '@/lib/collectiveSeo'
+import { exploreIslandLabel, islandHref } from '@/lib/islandPage'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -154,6 +155,11 @@ export default async function SpaceAboutPage({ params }: Props) {
   // The main About card no longer repeats a hero banner — the layout-level
   // CollectiveIdentityHeader already establishes visual identity.
   const locationName = space.location?.name ?? null
+  // Whether this card can offer the island page. True only on the
+  // private payload: the public About shim has a Location name and
+  // artwork but no story, atmosphere or palette, so the page it would
+  // link to would be empty. See ``app/spaces/[slug]/island``.
+  const canExploreIsland = privateSpace !== null
   const sidebarArtworkUrl = resolveMediaUrl(
     space.location?.thumbnail_artwork_url
       ?? space.location?.hero_artwork_url
@@ -430,6 +436,28 @@ export default async function SpaceAboutPage({ params }: Props) {
                   )}
                 </div>
               </div>
+
+              {/* The island, as a door.
+                  Only offered when the island page will actually open:
+                  this card also renders from the public About shim,
+                  which carries a Location name and artwork but no
+                  story, atmosphere or palette — there would be nothing
+                  to show. ``canExploreIsland`` is that condition.
+
+                  A plain link rather than making the whole card
+                  clickable: the card already contains links and
+                  avatars, and nesting interactive elements inside an
+                  anchor is invalid markup and unreachable by
+                  keyboard. */}
+              {canExploreIsland && locationName && (
+                <Link
+                  href={islandHref(slug)}
+                  className="mb-4 inline-flex items-center gap-1 text-[12.5px] font-semibold text-teal-700 underline-offset-2 transition-colors hover:text-teal-800 hover:underline focus-visible:underline"
+                >
+                  {exploreIslandLabel(locationName)}
+                  <span aria-hidden="true">&rarr;</span>
+                </Link>
+              )}
               {space.tagline && (
                 <p className="mb-4 text-[13px] leading-relaxed text-black">{space.tagline}</p>
               )}

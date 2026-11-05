@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import { resolveMediaUrl } from '@/lib/api'
+import { islandHref } from '@/lib/islandPage'
 import { selectCollectiveHeaderImage } from '@/lib/collectiveHeaderImage'
 
 /**
@@ -28,6 +30,9 @@ interface Props {
   tagline: string | null
   logoUrl?: string | null
   coverImageUrl?: string | null
+  /** Needed only to link the island name. Absent leaves the name
+   *  as plain text, which is what it was before. */
+  collectiveSlug?: string | null
   /** The creator's header choice — see `lib/collectiveHeaderImage`.
    *  Absent reads as 'location', which is what every Collective
    *  showed before the choice existed. */
@@ -42,6 +47,7 @@ export default function CollectiveIdentityHeader({
   logoUrl,
   coverImageUrl,
   headerImagePreference,
+  collectiveSlug,
   location,
   atmosphereLabels = [],
 }: Props) {
@@ -97,11 +103,26 @@ export default function CollectiveIdentityHeader({
             experience the artwork and the named island directly;
             no exposed system terminology. */}
         {location?.name && (
-          <p
-            className="mb-6 font-serif text-[15px] italic md:text-[16px]"
-            style={{ color: 'rgba(255,255,255,0.90)' }}
-          >
-            {location.name}
+          <p className="mb-6 font-serif text-[15px] italic md:text-[16px]">
+            {/* A door to the island, when we know which Collective we
+                are in. Only the navigation behaviour changes — the
+                name, its typography and its place in the header are
+                exactly as they were, and the header's image rule is
+                untouched. A real link, so it is keyboard-reachable
+                and middle-clickable. */}
+            {collectiveSlug ? (
+              <Link
+                href={islandHref(collectiveSlug)}
+                className="underline-offset-4 transition-opacity hover:underline hover:opacity-90 focus-visible:underline"
+                style={{ color: 'rgba(255,255,255,0.90)' }}
+              >
+                {location.name}
+              </Link>
+            ) : (
+              <span style={{ color: 'rgba(255,255,255,0.90)' }}>
+                {location.name}
+              </span>
+            )}
           </p>
         )}
 
