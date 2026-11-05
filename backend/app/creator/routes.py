@@ -247,6 +247,7 @@ from app.services.content_url import (
     validate_nav_url,
 )
 from app.services.embed_validator import EmbedValidationError, extract_and_validate_embed_url
+from app.services.gathering_fields import shared_event_fields
 from app.services.gathering_types import normalise_access_type
 from app.comms.rollout import schedule_routing_if_needed
 from app.services.notification_service import trigger_new_step
@@ -4976,37 +4977,22 @@ def create_event(
     # unresolvable Series-pass gate.
     _enforce_series_pass_invariant(body.booking_access_type, resolved_series_id)
 
+    # Settings come from the one shared mapping; this handler adds only
+    # the columns a single Gathering owns. See
+    # ``services/gathering_fields`` for why the list is not written out
+    # twice any more.
     event = Event(
         id=str(uuid4()),
         space_id=space.id,
         created_by_id=current_user.id,
-        title=body.title.strip(),
-        description=body.description,
         starts_at=body.starts_at,
         ends_at=body.ends_at,
-        location_type=body.location_type,
-        location_url=body.location_url,
-        recording_url=body.recording_url,
-        is_published=body.is_published,
-        is_public=body.is_public,
-        requires_booking=body.requires_booking,
-        capacity=body.capacity,
-        show_remaining_publicly=body.show_remaining_publicly,
-        notify_members=body.notify_members,
-        booking_closes_at=body.booking_closes_at,
-        booking_note=body.booking_note,
-        thumbnail_url=body.thumbnail_url,
-        gathering_type=body.gathering_type,
-        attendance_format=body.attendance_format,
-        venue_name=body.venue_name,
-        venue_address=body.venue_address,
-        venue_locality=body.venue_locality,
-        access_instructions=body.access_instructions,
-        booking_access_type=body.booking_access_type,
-        booking_required_pathway_id=body.booking_required_pathway_id,
-        ticket_price_cents=ticket_price,
-        ticket_currency=ticket_currency,
         series_id=resolved_series_id,
+        **shared_event_fields(
+            body,
+            ticket_price_cents=ticket_price,
+            ticket_currency=ticket_currency,
+        ),
     )
     db.add(event)
     db.flush()
@@ -5189,6 +5175,19 @@ def bulk_create_events(
         raise HTTPException(status_code=400, detail="recurrence is required for bulk creation.")
 
     space = _get_managed_space(slug, current_user, db)
+    # Same write gate as ``create_event``. Its absence here was not a
+    # deliberate exemption: a restricted creator, a frozen Collective
+    # or a closed one could still generate a run of Gatherings through
+    # this route while a single one was refused.
+    _ensure_creator_write_allowed(current_user, space, db)
+    # Ticket configuration is validated BEFORE any date is enumerated,
+    # so an invalid paid configuration is one field-scoped 400 rather
+    # than N rows that violate ``ck_events_ticket_price_valid_when_
+    # published`` and surface as a 500.
+    ticket_price, ticket_currency = _validate_ticket_config_or_400(
+        body.booking_access_type, body.is_published,
+        body.ticket_price_cents, body.ticket_currency,
+    )
     rec = body.recurrence
     # Recurrence tag — unique per bulk-create, marks "these rows
     # were generated together". Distinct from the semantic
@@ -5290,39 +5289,29 @@ def bulk_create_events(
         raise HTTPException(status_code=400, detail="No valid dates generated from recurrence settings.")
 
     total = len(dates)
+    # Built once, outside the loop: every occurrence in a batch carries
+    # the same settings by definition, and resolving them per row would
+    # be the same work N times.
+    shared = shared_event_fields(
+        body,
+        ticket_price_cents=ticket_price,
+        ticket_currency=ticket_currency,
+    )
     for idx, (new_start, new_end) in enumerate(dates, start=1):
         event = Event(
             id=str(uuid4()),
             space_id=space.id,
             created_by_id=current_user.id,
-            title=body.title.strip(),
-            description=body.description,
+            # The dates are what a recurrence varies; everything else
+            # comes from ``shared``.
             starts_at=new_start,
             ends_at=new_end,
-            location_type=body.location_type,
-            location_url=body.location_url,
-            recording_url=body.recording_url,
-            is_published=body.is_published,
-            is_public=body.is_public,
-            requires_booking=body.requires_booking,
-            capacity=body.capacity,
-            show_remaining_publicly=body.show_remaining_publicly,
-        notify_members=body.notify_members,
-            booking_closes_at=body.booking_closes_at,
-            booking_note=body.booking_note,
-            thumbnail_url=body.thumbnail_url,
-            gathering_type=body.gathering_type,
-            attendance_format=body.attendance_format,
-            venue_name=body.venue_name,
-            venue_address=body.venue_address,
-            access_instructions=body.access_instructions,
-            booking_access_type=body.booking_access_type,
-            booking_required_pathway_id=body.booking_required_pathway_id,
             recurrence_series_id=recurrence_tag,
             recurrence_label=series_label,
             recurrence_index=idx,
             recurrence_total=total,
             series_id=resolved_series_id,
+            **shared,
         )
         db.add(event)
 

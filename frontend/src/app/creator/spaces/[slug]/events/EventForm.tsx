@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { extractApiErrorFromResponse } from '@/lib/apiError'
 import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorPathway } from '@/types/platform'
 import { Switch } from '@/components/platform'
 import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
@@ -409,9 +410,13 @@ export default function EventForm({
           body: JSON.stringify({ ...basePayload, recurrence }),
         })
         if (!res.ok) {
-          let detail = `HTTP ${res.status}`
-          try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
-          throw new Error(detail)
+          // The ticket validators answer with a structured detail —
+          // ``{code, field, message}`` — which the old reader here
+          // only accepted as a plain string, so a creator who left a
+          // paid Gathering's price empty was told "HTTP 400". The
+          // shared extractor already understands every shape the
+          // backend sends.
+          throw new Error(await extractApiErrorFromResponse(res))
         }
       } else {
         // Single event create or edit
@@ -429,9 +434,9 @@ export default function EventForm({
           body: JSON.stringify(payload),
         })
         if (!res.ok) {
-          let detail = `HTTP ${res.status}`
-          try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
-          throw new Error(detail)
+          // Same reader as the bulk branch above — the single and the
+          // recurring path should not explain a refusal differently.
+          throw new Error(await extractApiErrorFromResponse(res))
         }
       }
 

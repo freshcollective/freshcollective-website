@@ -173,3 +173,50 @@ describe('extractApiErrorMessage — Error instances', () => {
     assert.ok(msg.includes('x'))
   })
 })
+
+
+describe('extractApiErrorMessage — Gathering ticket validators (FC-201)', () => {
+  // ``_validate_ticket_config_or_400`` answers with a flat
+  // ``{code, field, message}`` detail — no ``errors`` list. The
+  // Gathering editor used to read ``detail`` only when it was a plain
+  // string, so a creator publishing a paid recurring Gathering with no
+  // price was told "HTTP 400". These pin the shape rather than the
+  // editor, so the message survives a rewrite of the form.
+
+  test('a published paid Gathering with no price explains itself', () => {
+    const body = {
+      detail: {
+        code: 'invalid_ticket_config',
+        field: 'ticket_price_cents',
+        message: 'Ticket price must be at least 100 cents.',
+      },
+    }
+    assert.equal(
+      extractApiErrorMessage(body),
+      'Ticket price must be at least 100 cents.',
+    )
+  })
+
+  test('an unsupported currency explains itself', () => {
+    const body = {
+      detail: {
+        code: 'invalid_ticket_currency',
+        field: 'ticket_currency',
+        message: 'Unsupported currency JPY. Supported: AUD, CAD, EUR, GBP, NZD, USD.',
+      },
+    }
+    const msg = extractApiErrorMessage(body)
+    assert.ok(msg.startsWith('Unsupported currency JPY.'))
+    assert.notEqual(msg, '[object Object]')
+  })
+
+  test('a plain-string detail still comes through — the series guards use one', () => {
+    const body = {
+      detail: 'Gathering Series not found in this Collective.',
+    }
+    assert.equal(
+      extractApiErrorMessage(body),
+      'Gathering Series not found in this Collective.',
+    )
+  })
+})
