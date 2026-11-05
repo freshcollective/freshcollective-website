@@ -103,25 +103,33 @@ export function possessive(name: string): string {
 }
 
 /**
- * The island page's heading: the location introduced as *this*
- * Collective's chosen home rather than as a generic island.
+ * The island page's heading, in its two levels.
  *
- *     { emoji: '🌿', sentence: 'EMBODY’s island is Sanctuary Springs' }
+ *     { intro: 'EMBODY’s island is', emoji: '🌿', name: 'Sanctuary Springs' }
  *
- * Returned in two parts so the emoji can lead the line and be hidden
- * from assistive technology — a screen reader announcing "seedling
- * EMBODY's island is Sanctuary Springs" is worse than one that reads
- * the sentence.
+ * Two parts, not one sentence. The island's name is the thing the
+ * card is about and stays the large line; the Collective reference is
+ * a small italic introduction above it. Rendering them as one run of
+ * large text made the two equally loud and lost that hierarchy.
+ *
+ * The emoji is returned apart from the name only so a surface can
+ * hide it from assistive technology — it sits immediately before the
+ * name when rendered, exactly as it does inside ``Location.name``, so
+ * nothing looks different. "seedling Sanctuary Springs" is not a
+ * useful thing to hear.
+ *
+ * Either part missing degrades rather than reading oddly: no island
+ * name and there is nothing to introduce, no Collective name and the
+ * island simply stands alone.
  */
 export function islandHeading(
   collectiveName: string | null | undefined,
   islandName: string | null | undefined,
-): { emoji: string; sentence: string } {
+): { intro: string; emoji: string; name: string } {
   const { emoji, name } = splitIslandEmoji(islandName)
   const collective = (collectiveName ?? '').trim()
-  if (!name) return { emoji: '', sentence: collective }
-  if (!collective) return { emoji, sentence: name }
-  return { emoji, sentence: `${possessive(collective)} island is ${name}` }
+  if (!name || !collective) return { intro: '', emoji, name }
+  return { intro: `${possessive(collective)} island is`, emoji, name }
 }
 
 // ---------------------------------------------------------------------------

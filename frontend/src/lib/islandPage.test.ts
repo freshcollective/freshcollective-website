@@ -282,7 +282,7 @@ describe('the page structure', () => {
     // appears in generateMetadata, above everything.
     const order = [
       'aria-label="Breadcrumb"',
-      'Your island',
+      '{heading.intro}',
       '<h1',
       'About this island',
       'The feeling of this place',
@@ -337,21 +337,20 @@ describe('the page structure', () => {
     assert.ok(!/<img/.test(header), 'the artwork became the heading background')
   })
 
-  it('the introductory label is not the banned eyebrow', () => {
+  it('the introduction is not the banned eyebrow', () => {
     // CLAUDE.md bans small uppercase teal eyebrow labels above
-    // headings platform-wide. The mockup asked for "YOUR ISLAND"; it
-    // is rendered sentence-case in white instead — see the report.
+    // headings platform-wide. This line is small and sits above a
+    // heading, so it must be neither uppercased nor teal — it is
+    // serif italic in white at reduced opacity instead.
     const source = page()
-    assert.ok(/Your island/.test(source))
-    assert.ok(!/YOUR ISLAND/.test(source), 'the uppercase eyebrow is back')
-    // The label's own element. A 400-character window caught the
-    // accent LINE above it, which is PageHero's own treatment and is
-    // allowed — the ban is on uppercase teal *labels*.
-    const at = source.indexOf('Your island')
+    const at = source.indexOf('{heading.intro}')
+    assert.ok(at > -1, 'no introduction line')
     const open = source.lastIndexOf('<p', at)
     const label = source.slice(open, at)
-    assert.ok(!/uppercase/.test(label), `the label is uppercased: ${label}`)
-    assert.ok(!/38A09E|teal/i.test(label), `the label is tinted teal: ${label}`)
+    assert.ok(!/uppercase/.test(label), `the introduction is uppercased: ${label}`)
+    assert.ok(!/tracking-\[/.test(label), 'the introduction is letterspaced')
+    assert.ok(!/38A09E|teal/i.test(label), `the introduction is tinted teal: ${label}`)
+    assert.ok(/italic/.test(label), 'the introduction is not italic')
   })
 
   it('both palette-driven surfaces read the resolved colours', () => {
@@ -571,112 +570,170 @@ describe('the possessive', () => {
   })
 })
 
-describe('the heading sentence', () => {
-  it('reads as the approved sentence', () => {
+describe('the heading, in two levels', () => {
+  it('introduces the Collective above the island name', () => {
     assert.deepEqual(islandHeading('EMBODY', '🌿 Sanctuary Springs'), {
+      intro: 'EMBODY’s island is',
       emoji: '🌿',
-      sentence: 'EMBODY’s island is Sanctuary Springs',
+      name: 'Sanctuary Springs',
     })
     assert.deepEqual(islandHeading('Moonlit Circle', '🌙 Moon Lagoon'), {
+      intro: 'Moonlit Circle’s island is',
       emoji: '🌙',
-      sentence: 'Moonlit Circle’s island is Moon Lagoon',
+      name: 'Moon Lagoon',
     })
   })
 
   it('handles a Collective name ending in s', () => {
     assert.equal(
-      islandHeading('World Builders', '🌍 The Commons').sentence,
-      'World Builders’ island is The Commons',
+      islandHeading('World Builders', '🌍 The Commons').intro,
+      'World Builders’ island is',
     )
   })
 
-  it('keeps the emoji out of the sentence', () => {
-    // It leads the line instead, so it is not buried mid-clause.
+  it('never puts the island name in the introduction', () => {
+    // Two levels, not one sentence: the name is the large line and
+    // the introduction must not repeat or absorb it.
+    for (const [c, i] of [
+      ['EMBODY', '🌿 Sanctuary Springs'],
+      ['World Builders', '🌍 The Commons'],
+      ['Life in Full Colour', '🍋 Azure Terrace'],
+    ] as [string, string][]) {
+      const out = islandHeading(c, i)
+      assert.ok(!out.intro.includes(out.name), out.intro)
+      assert.ok(!out.intro.includes(out.emoji || '\u0000'), out.intro)
+      assert.ok(out.intro.endsWith('island is'), out.intro)
+    }
+  })
+
+  it('keeps the emoji with the name, not in the introduction', () => {
     const out = islandHeading('EMBODY', '🌿 Sanctuary Springs')
-    assert.ok(!out.sentence.includes('🌿'))
     assert.equal(out.emoji, '🌿')
+    assert.ok(!out.intro.includes('🌿'))
+    assert.ok(!out.name.includes('🌿'))
   })
 
   it('works for an island with no emoji', () => {
     assert.deepEqual(islandHeading('Moonlit Circle', 'Plain Island'), {
+      intro: 'Moonlit Circle’s island is',
       emoji: '',
-      sentence: 'Moonlit Circle’s island is Plain Island',
+      name: 'Plain Island',
     })
   })
 
-  it('falls back rather than reading oddly when a part is missing', () => {
+  it('degrades rather than reading oddly when a part is missing', () => {
     // The page 404s without an island name, and a Collective always
-    // has a name — these are belt and braces, not states a visitor
-    // can reach.
-    assert.deepEqual(islandHeading('EMBODY', null), { emoji: '', sentence: 'EMBODY' })
+    // has one — belt and braces, not states a visitor can reach.
     assert.deepEqual(
-      islandHeading(null, '🌙 Moon Lagoon'),
-      { emoji: '🌙', sentence: 'Moon Lagoon' },
+      islandHeading(null, '🔥 The Hearth'),
+      { intro: '', emoji: '🔥', name: 'The Hearth' },
     )
-    assert.deepEqual(islandHeading(null, null), { emoji: '', sentence: '' })
+    assert.deepEqual(
+      islandHeading('EMBODY', null), { intro: '', emoji: '', name: '' },
+    )
   })
 })
 
-describe('the heading card renders the sentence', () => {
-  it('is one heading, with no separate label', () => {
-    assert.ok(/heading\.sentence/.test(page()))
-    assert.ok(
-      !/Your island/.test(jsxOnly(page())),
-      'the separate "Your island" label is back',
-    )
-  })
-
-  it('does not render the island name on its own any more', () => {
+describe('the heading card renders both levels', () => {
+  it('the introduction is small and italic above the name', () => {
     const source = page()
     const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
-    assert.ok(
-      !/\{island\.name\}/.test(header),
-      'the bare island name is back in the heading card',
+    const intro = header.indexOf('{heading.intro}')
+    const name = header.indexOf('{heading.name}')
+    assert.ok(intro > -1, 'no introduction line')
+    assert.ok(name > -1, 'no island name line')
+    assert.ok(intro < name, 'the introduction is below the name')
+
+    const introBlock = header.slice(
+      header.indexOf('{heading.intro && ('), intro,
     )
+    assert.ok(/italic/.test(introBlock), 'the introduction is not italic')
+    assert.ok(/text-\[14px\]/.test(introBlock), 'the introduction is not small')
+    assert.ok(/font-serif/.test(introBlock))
+    assert.ok(/rgba\(255,255,255,0\.62\)/.test(introBlock),
+      'the introduction lost its subtle treatment')
   })
 
-  it('leads with the emoji, hidden from assistive technology', () => {
-    // "seedling EMBODY's island is Sanctuary Springs" is worse than
-    // the sentence alone.
-    const source = page()
-    assert.ok(/\{heading\.emoji && \(/.test(source))
-    assert.ok(/<span aria-hidden="true">\{heading\.emoji\}/.test(source))
-  })
-
-  it('keeps the heading colour inline and the hierarchy unchanged', () => {
-    // globals.css would otherwise render it navy on a navy card.
+  it('the island name is the large line, as it was', () => {
     const source = page()
     const h1 = source.slice(source.indexOf('<h1'), source.indexOf('</h1>'))
-    assert.ok(/style=\{\{ color: '#FFFFFF' \}\}/.test(h1))
+    assert.ok(/\{heading\.name\}/.test(h1))
     assert.ok(/font-serif/.test(h1))
     assert.ok(/text-\[28px\]/.test(h1))
     assert.ok(/sm:text-\[34px\]/.test(h1))
     assert.ok(/leading-tight/.test(h1))
+    // Inline, or globals.css renders it navy on a navy card.
+    assert.ok(/style=\{\{ color: '#FFFFFF' \}\}/.test(h1))
   })
 
-  it('wraps attractively rather than stranding a word', () => {
+  it('the two are not combined into one large sentence', () => {
     const source = page()
     const h1 = source.slice(source.indexOf('<h1'), source.indexOf('</h1>'))
-    assert.ok(/text-balance/.test(h1))
-    assert.ok(/max-w-2xl/.test(h1))
+    assert.ok(
+      !/heading\.intro/.test(h1),
+      'the introduction is inside the large heading again',
+    )
+    assert.ok(
+      !/heading\.sentence/.test(source),
+      'the one-sentence heading is back',
+    )
   })
 
-  it('leaves everything below the heading card alone', () => {
+  it('the emoji sits immediately before the name, hidden from readers', () => {
+    const source = page()
+    const h1 = source.slice(source.indexOf('<h1'), source.indexOf('</h1>'))
+    const emoji = h1.indexOf('{heading.emoji}')
+    const name = h1.indexOf('{heading.name}')
+    assert.ok(emoji > -1 && name > emoji, 'the emoji is not before the name')
+    assert.ok(/<span aria-hidden="true">\{heading\.emoji\}/.test(h1))
+  })
+
+  it('the old static label is gone', () => {
+    assert.ok(
+      !/Your island/.test(jsxOnly(page())),
+      'the static "Your island" label is back',
+    )
+  })
+
+  it('the navy card around it is untouched', () => {
+    const source = page()
+    const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
+    assert.ok(/background: '#071824'/.test(header))
+    assert.ok(/rounded-2xl/.test(header))
+    assert.ok(/px-7 py-8 sm:px-9 sm:py-10/.test(header))
+    // The accent line above the introduction stays.
+    assert.ok(/38A09E/.test(header))
+    assert.ok(!/<img/.test(header), 'the artwork became the heading background')
+  })
+
+  it('the island tagline still sits under the name', () => {
+    // Part of the card before this change and not in scope for it.
+    // Removed by accident once already, which is why this is here.
+    const source = page()
+    const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
+    const name = header.indexOf('{heading.name}')
+    const tagline = header.indexOf('{tagline}')
+    assert.ok(tagline > -1, 'the island tagline is gone from the heading card')
+    assert.ok(tagline > name, 'the tagline moved above the island name')
+    assert.ok(/max-w-xl/.test(header.slice(header.indexOf('{tagline && ('), tagline)))
+  })
+
+  it('everything below the heading card is unchanged', () => {
     const source = page()
     for (const marker of [
       'island.hero_artwork_url',
       'About this island',
+      'colours.headingColor',
       'The feeling of this place',
       'colours.cardBackground',
-      'Back to {space.name}',
+      'colours.pillBackground',
       'aria-label="Breadcrumb"',
+      'Back to {space.name}',
+      'getSpace(slug)',
     ]) {
       assert.ok(source.includes(marker), `${marker} went missing`)
     }
-    // Still one image, still the navy plate, still read-only.
     assert.equal((source.match(/<img/g) ?? []).length, 1)
-    assert.ok(/background: '#071824'/.test(source))
-    assert.ok(/getSpace\(slug\)/.test(source))
   })
 })
 

@@ -135,35 +135,39 @@ export default async function CollectiveIslandPage({ params }: Props) {
             }}
             aria-hidden="true"
           />
-          {/* One sentence, so the page introduces the location as
-              *this* Collective's chosen home rather than as a generic
-              island. The separate "Your island" label is gone — the
-              heading says it.
+          {/* Two levels, as the card had before: a small italic
+              introduction, then the island's name as the large line.
+              The name is what the card is about and stays the visual
+              focus; only the introduction's wording changed.
 
-              The emoji leads the line rather than sitting mid-clause:
-              Atlas Locations carry their icon inside ``name`` ("🌿
-              Sanctuary Springs"), which is right for a label and
-              wrong inside a sentence. Split by ``islandHeading``, and
-              hidden from assistive technology — "seedling EMBODY's
-              island is…" is worse than the sentence alone.
-
-              Colour set inline, not with ``text-white``: globals.css
+              The emoji sits immediately before the name, exactly as
+              it does inside ``Location.name`` — Atlas Locations carry
+              their icon there ("🌿 Sanctuary Springs"). It is split
+              out by ``islandHeading`` only so it can be hidden from
+              assistive technology: "seedling Sanctuary Springs" is
+              not a useful thing to hear. Rendered, it looks identical
+              to the stored name. */}
+          {heading.intro && (
+            <p
+              className="mb-2 font-serif text-[14px] italic"
+              style={{ color: 'rgba(255,255,255,0.62)' }}
+            >
+              {heading.intro}
+            </p>
+          )}
+          {/* Colour set inline, not with ``text-white``: globals.css
               carries an unlayered ``h1…h6 { color: navy-950 }`` rule
               that beats the utility, so the class would have rendered
               this heading navy on a navy card — invisible. There is a
-              project-wide test for exactly this, and it caught it.
-
-              ``text-balance`` evens the line lengths rather than
-              leaving one word stranded, and ``max-w`` keeps the
-              sentence from running the full width of a desktop card. */}
+              project-wide test for exactly this, and it caught it. */}
           <h1
-            className="max-w-2xl text-balance font-serif text-[28px] leading-tight sm:text-[34px]"
+            className="font-serif text-[28px] leading-tight sm:text-[34px]"
             style={{ color: '#FFFFFF' }}
           >
             {heading.emoji && (
               <span aria-hidden="true">{heading.emoji}{' '}</span>
             )}
-            {heading.sentence}
+            {heading.name}
           </h1>
           {tagline && (
             <p
