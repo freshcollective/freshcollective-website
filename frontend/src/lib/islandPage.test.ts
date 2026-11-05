@@ -5,6 +5,9 @@ import { describe, it } from 'node:test'
 
 import {
   atmosphereWords,
+  islandHeading,
+  possessive,
+  splitIslandEmoji,
   collectiveAboutHref,
   exploreIslandLabel,
   islandHref,
@@ -18,6 +21,21 @@ const PAGE = join(SRC, 'app', 'spaces', '[slug]', 'island', 'page.tsx')
 const ABOUT = join(SRC, 'app', 'spaces', '[slug]', 'about', 'page.tsx')
 const HEADER = join(SRC, 'components', 'spaces', 'CollectiveIdentityHeader.tsx')
 const page = () => readFileSync(PAGE, 'utf8')
+
+/**
+ * Source with comments removed.
+ *
+ * Every absence check in this file needs it: the page explains what
+ * it deliberately does *not* do — no patterns, no "Your island"
+ * label, no creator banner — and a bare substring check fails on the
+ * prose promising it. Four assertions in this file learned that
+ * individually before it became a helper.
+ */
+const jsxOnly = (source: string) => source
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+  .replace(/^\s*\*.*$/gm, '')
 
 // Moon Lagoon, as the Atlas holds it.
 const MOON_TAGLINE = 'Sheltered waters where people arrive, rest and begin again.'
@@ -294,10 +312,7 @@ describe('the page structure', () => {
     // Comments are stripped first: they say the page has no patterns
     // and no illustration, and a bare substring check failed on the
     // prose promising it.
-    const source = page()
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-      .replace(/^\s*\/\/.*$/gm, '')
+    const source = jsxOnly(page())
     assert.equal((source.match(/<img/g) ?? []).length, 1, 'more than one image')
     for (const banned of ['leaf', 'botanical', 'pattern', '<svg', 'background-image']) {
       assert.ok(
@@ -355,11 +370,7 @@ describe('the page structure', () => {
     // Comments stripped: the module docstring names the Colour
     // Palette by way of explaining what styles the page, which is
     // not the same as showing a member a swatch.
-    const source = page()
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-      .replace(/^\s*\/\/.*$/gm, '')
-      .replace(/^\s*\*.*$/gm, '')
+    const source = jsxOnly(page())
     assert.ok(
       !/colour_palette_key|palette\.name|Colour Palette/.test(source),
       'the palette is named or swatched to a member',
@@ -479,5 +490,207 @@ describe('World Artwork and Atlas curation are untouched', () => {
         `${path} was rewired`,
       )
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The heading sentence
+// ---------------------------------------------------------------------------
+
+describe('splitting the island emoji from its name', () => {
+  it('splits the real production names', () => {
+    // Atlas Locations carry their icon inside `name`; there is no
+    // separate column. These are the live values.
+    const cases: [string, string, string][] = [
+      ['🌿 Sanctuary Springs', '🌿', 'Sanctuary Springs'],
+      ['🌍 The Commons', '🌍', 'The Commons'],
+      ['🔥 The Hearth', '🔥', 'The Hearth'],
+      ['🍋 Azure Terrace', '🍋', 'Azure Terrace'],
+      ['🌙 Moon Lagoon', '🌙', 'Moon Lagoon'],
+    ]
+    for (const [full, emoji, name] of cases) {
+      assert.deepEqual(splitIslandEmoji(full), { emoji, name }, full)
+    }
+  })
+
+  it('handles an emoji with a variation selector', () => {
+    // 🏝️ is U+1F3DD U+FE0F — two code points, one icon.
+    assert.deepEqual(
+      splitIslandEmoji('🏝️ Still Harbour'),
+      { emoji: '🏝️', name: 'Still Harbour' },
+    )
+  })
+
+  it('leaves a name with no emoji alone', () => {
+    assert.deepEqual(
+      splitIslandEmoji('Plain Island'),
+      { emoji: '', name: 'Plain Island' },
+    )
+  })
+
+  it('does not strip an emoji that is the whole name', () => {
+    // Nothing would be left to call the island.
+    assert.deepEqual(splitIslandEmoji('🌙'), { emoji: '', name: '🌙' })
+  })
+
+  it('tolerates extra whitespace', () => {
+    assert.deepEqual(
+      splitIslandEmoji('  🌙   Moon Lagoon  '),
+      { emoji: '🌙', name: 'Moon Lagoon' },
+    )
+  })
+
+  it('handles nothing at all', () => {
+    for (const empty of [null, undefined, '', '   ']) {
+      assert.deepEqual(splitIslandEmoji(empty), { emoji: '', name: '' })
+    }
+  })
+})
+
+describe('the possessive', () => {
+  it('adds apostrophe-s to an ordinary name', () => {
+    assert.equal(possessive('Moonlit Circle'), 'Moonlit Circle’s')
+    assert.equal(possessive('EMBODY'), 'EMBODY’s')
+  })
+
+  it('adds the apostrophe alone to a name ending in s', () => {
+    // "World Builders' island", not "World Builders's island".
+    assert.equal(possessive('World Builders'), 'World Builders’')
+    assert.equal(possessive('Atlas'), 'Atlas’')
+    assert.equal(possessive('THE ISLES'), 'THE ISLES’')
+  })
+
+  it('uses the typographic apostrophe the product uses elsewhere', () => {
+    assert.ok(possessive('EMBODY').includes('’'))
+    assert.ok(!possessive('EMBODY').includes("'"))
+  })
+
+  it('leaves nothing as nothing', () => {
+    assert.equal(possessive(''), '')
+    assert.equal(possessive('   '), '')
+  })
+})
+
+describe('the heading sentence', () => {
+  it('reads as the approved sentence', () => {
+    assert.deepEqual(islandHeading('EMBODY', '🌿 Sanctuary Springs'), {
+      emoji: '🌿',
+      sentence: 'EMBODY’s island is Sanctuary Springs',
+    })
+    assert.deepEqual(islandHeading('Moonlit Circle', '🌙 Moon Lagoon'), {
+      emoji: '🌙',
+      sentence: 'Moonlit Circle’s island is Moon Lagoon',
+    })
+  })
+
+  it('handles a Collective name ending in s', () => {
+    assert.equal(
+      islandHeading('World Builders', '🌍 The Commons').sentence,
+      'World Builders’ island is The Commons',
+    )
+  })
+
+  it('keeps the emoji out of the sentence', () => {
+    // It leads the line instead, so it is not buried mid-clause.
+    const out = islandHeading('EMBODY', '🌿 Sanctuary Springs')
+    assert.ok(!out.sentence.includes('🌿'))
+    assert.equal(out.emoji, '🌿')
+  })
+
+  it('works for an island with no emoji', () => {
+    assert.deepEqual(islandHeading('Moonlit Circle', 'Plain Island'), {
+      emoji: '',
+      sentence: 'Moonlit Circle’s island is Plain Island',
+    })
+  })
+
+  it('falls back rather than reading oddly when a part is missing', () => {
+    // The page 404s without an island name, and a Collective always
+    // has a name — these are belt and braces, not states a visitor
+    // can reach.
+    assert.deepEqual(islandHeading('EMBODY', null), { emoji: '', sentence: 'EMBODY' })
+    assert.deepEqual(
+      islandHeading(null, '🌙 Moon Lagoon'),
+      { emoji: '🌙', sentence: 'Moon Lagoon' },
+    )
+    assert.deepEqual(islandHeading(null, null), { emoji: '', sentence: '' })
+  })
+})
+
+describe('the heading card renders the sentence', () => {
+  it('is one heading, with no separate label', () => {
+    assert.ok(/heading\.sentence/.test(page()))
+    assert.ok(
+      !/Your island/.test(jsxOnly(page())),
+      'the separate "Your island" label is back',
+    )
+  })
+
+  it('does not render the island name on its own any more', () => {
+    const source = page()
+    const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'))
+    assert.ok(
+      !/\{island\.name\}/.test(header),
+      'the bare island name is back in the heading card',
+    )
+  })
+
+  it('leads with the emoji, hidden from assistive technology', () => {
+    // "seedling EMBODY's island is Sanctuary Springs" is worse than
+    // the sentence alone.
+    const source = page()
+    assert.ok(/\{heading\.emoji && \(/.test(source))
+    assert.ok(/<span aria-hidden="true">\{heading\.emoji\}/.test(source))
+  })
+
+  it('keeps the heading colour inline and the hierarchy unchanged', () => {
+    // globals.css would otherwise render it navy on a navy card.
+    const source = page()
+    const h1 = source.slice(source.indexOf('<h1'), source.indexOf('</h1>'))
+    assert.ok(/style=\{\{ color: '#FFFFFF' \}\}/.test(h1))
+    assert.ok(/font-serif/.test(h1))
+    assert.ok(/text-\[28px\]/.test(h1))
+    assert.ok(/sm:text-\[34px\]/.test(h1))
+    assert.ok(/leading-tight/.test(h1))
+  })
+
+  it('wraps attractively rather than stranding a word', () => {
+    const source = page()
+    const h1 = source.slice(source.indexOf('<h1'), source.indexOf('</h1>'))
+    assert.ok(/text-balance/.test(h1))
+    assert.ok(/max-w-2xl/.test(h1))
+  })
+
+  it('leaves everything below the heading card alone', () => {
+    const source = page()
+    for (const marker of [
+      'island.hero_artwork_url',
+      'About this island',
+      'The feeling of this place',
+      'colours.cardBackground',
+      'Back to {space.name}',
+      'aria-label="Breadcrumb"',
+    ]) {
+      assert.ok(source.includes(marker), `${marker} went missing`)
+    }
+    // Still one image, still the navy plate, still read-only.
+    assert.equal((source.match(/<img/g) ?? []).length, 1)
+    assert.ok(/background: '#071824'/.test(source))
+    assert.ok(/getSpace\(slug\)/.test(source))
+  })
+})
+
+describe('the Explore card shows one emoji, the island\'s own', () => {
+  it('no longer hardcodes a moon', () => {
+    // Phase 1 printed "🌙 🌿 Sanctuary Springs" — two icons, and the
+    // wrong one on every island that is not a lagoon.
+    const card = readFileSync(
+      join(SRC, 'components', 'explore', 'CollectiveCard.tsx'), 'utf8',
+    )
+    assert.ok(/\{' · '\}\{space\.location_name\}/.test(card))
+    assert.ok(
+      !/🌙/.test(card.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')),
+      'the hardcoded moon is back',
+    )
   })
 })

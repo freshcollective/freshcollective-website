@@ -206,7 +206,12 @@ export default function CollectiveCard({
                 part of the Collective either way. */}
             {space.location_name && (
               <span className="hidden sm:inline">
-                {' · '}🌙 {space.location_name}
+                {/* The name carries its own icon — Atlas Locations
+                    store it inside ``name`` ("🌿 Sanctuary Springs").
+                    A hardcoded 🌙 here printed two emoji on every
+                    card, and the wrong one on every island that is
+                    not a lagoon. */}
+                {' · '}{space.location_name}
               </span>
             )}
           </div>

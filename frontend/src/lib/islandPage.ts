@@ -51,6 +51,79 @@ export function exploreIslandLabel(islandName: string | null | undefined): strin
   return name ? `Explore ${name}` : 'Explore this island'
 }
 
+/**
+ * The island's name, split from the emoji it begins with.
+ *
+ * Atlas Locations carry their icon inside `Location.name` — production
+ * holds "🌿 Sanctuary Springs", "🌍 The Commons", "🔥 The Hearth". There
+ * is no separate icon column, so the emoji travels with the name
+ * everywhere it is rendered, which is the right default for a label.
+ *
+ * It is wrong for a sentence. "EMBODY's island is 🌿 Sanctuary Springs"
+ * buries the icon mid-clause; the approved heading leads with it —
+ * "🌿 EMBODY's island is Sanctuary Springs" — so the two parts have to
+ * come apart.
+ *
+ * Matched on the Unicode Emoji property rather than on a list of
+ * characters, so an island named with an icon nobody has thought of
+ * yet still splits. A name with no emoji returns an empty one and its
+ * own text, so nothing is lost either way.
+ */
+export function splitIslandEmoji(
+  islandName: string | null | undefined,
+): { emoji: string; name: string } {
+  const full = (islandName ?? '').trim()
+  if (!full) return { emoji: '', name: '' }
+  // One leading emoji (with any variation selector or ZWJ sequence),
+  // then whitespace, then the rest.
+  // The pattern requires whitespace *and* something after it, so a
+  // name that is only an emoji simply does not match and comes back
+  // whole — there is nothing else it could be called. A separate
+  // guard for that case was unreachable, because the input is
+  // trimmed above; a mutation test found it had no coverage, which is
+  // how dead code should be found.
+  const match = /^((?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)+)\s+(\S.*)$/u
+    .exec(full)
+  if (!match) return { emoji: '', name: full }
+  return { emoji: match[1], name: match[2].trim() }
+}
+
+/**
+ * A Collective name in the possessive.
+ *
+ * A name already ending in "s" takes the apostrophe alone — "Atlas'
+ * island", not "Atlas's island" — which is how a brand name reads
+ * naturally and is the form these names are written in. Uses the
+ * typographic apostrophe the rest of the product's copy uses.
+ */
+export function possessive(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return trimmed
+  return /s$/i.test(trimmed) ? `${trimmed}\u2019` : `${trimmed}\u2019s`
+}
+
+/**
+ * The island page's heading: the location introduced as *this*
+ * Collective's chosen home rather than as a generic island.
+ *
+ *     { emoji: '🌿', sentence: 'EMBODY’s island is Sanctuary Springs' }
+ *
+ * Returned in two parts so the emoji can lead the line and be hidden
+ * from assistive technology — a screen reader announcing "seedling
+ * EMBODY's island is Sanctuary Springs" is worse than one that reads
+ * the sentence.
+ */
+export function islandHeading(
+  collectiveName: string | null | undefined,
+  islandName: string | null | undefined,
+): { emoji: string; sentence: string } {
+  const { emoji, name } = splitIslandEmoji(islandName)
+  const collective = (collectiveName ?? '').trim()
+  if (!name) return { emoji: '', sentence: collective }
+  if (!collective) return { emoji, sentence: name }
+  return { emoji, sentence: `${possessive(collective)} island is ${name}` }
+}
+
 // ---------------------------------------------------------------------------
 // The island's story
 // ---------------------------------------------------------------------------

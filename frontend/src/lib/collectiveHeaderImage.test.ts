@@ -248,7 +248,15 @@ describe('Explore keeps the location identity', () => {
   it('the Location is still named on the card', () => {
     const source = card()
     assert.ok(/space\.location_name && \(/.test(source))
-    assert.ok(/🌙 \{space\.location_name\}/.test(source))
+    // The name carries its own icon — Atlas Locations store it inside
+    // ``name`` ("🌿 Sanctuary Springs"). Phase 1 put a hardcoded 🌙
+    // in front of it, which printed two emoji on every card and the
+    // wrong one on every island that is not a lagoon.
+    assert.ok(/\{' · '\}\{space\.location_name\}/.test(source))
+    assert.ok(
+      !/🌙/.test(source.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')),
+      'the hardcoded moon is back',
+    )
   })
 
   it('it sits in the metadata line rather than becoming a badge', () => {
