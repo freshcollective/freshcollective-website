@@ -185,3 +185,83 @@ describe('the four Gathering flows stay distinct', () => {
     )
   })
 })
+
+describe('both creation actions sit on their own section heading', () => {
+  it('Create Gathering is no longer in the banner', () => {
+    // It used to be a white-on-artwork link in the header while New
+    // Series was a solid button in the body, so the less common action
+    // was the louder one. Both now sit on the heading of the section
+    // they create into.
+    const src = code(STUDIO)
+    const header = src.slice(
+      src.indexOf('<CollectiveArtworkHeader'),
+      src.indexOf('/>', src.indexOf('<CollectiveArtworkHeader')),
+    )
+    assert.ok(header.length > 0, 'the artwork header is gone')
+    assert.ok(
+      !header.includes('Create Gathering'),
+      'Create Gathering is back in the banner',
+    )
+  })
+
+  it('the banner keeps its archive link', () => {
+    const src = code(STUDIO)
+    const header = src.slice(
+      src.indexOf('<CollectiveArtworkHeader'),
+      src.indexOf('/>', src.indexOf('<CollectiveArtworkHeader')),
+    )
+    assert.match(header, /archiveLinkLabel/)
+    assert.match(header, /gatherings\/archive/)
+  })
+
+  it('Create Gathering sits on the Standalone Gatherings heading', () => {
+    const src = code(STUDIO)
+    const i = src.indexOf('Standalone Gatherings')
+    assert.ok(i > 0)
+    // Within the heading row that follows, not somewhere further down
+    // the page.
+    const row = src.slice(i, i + 900)
+    assert.match(row, /PrimaryActionLink/)
+    assert.match(row, /Create Gathering/)
+    assert.match(row, /\/events\/new/)
+  })
+
+  it('and is styled by the same component the Series button mirrors', () => {
+    // PrimaryActionLink documents itself as mirroring Button
+    // variant="primary" size="md" — which is exactly what New Series
+    // renders — so the two match without either importing the other.
+    const link = read(join(SRC, 'components', 'creator', 'PrimaryActionLink.tsx'))
+    assert.match(link, /VARIANT\.primary/)
+    assert.match(link, /SIZE\.md/)
+    assert.match(link, /h-10 px-4 text-\[13px\] rounded-\[var\(--fc-radius-md\)\]/)
+
+    const button = read(join(SRC, 'components', 'platform', 'Button.tsx'))
+    assert.match(button, /md: 'h-10 px-4 text-\[13px\] rounded-\[var\(--fc-radius-md\)\]'/)
+    assert.match(read(BAND), /<Button variant="primary"/)
+  })
+
+  it('the heading row wraps rather than squashing on a phone', () => {
+    const src = code(STUDIO)
+    const i = src.indexOf('Standalone Gatherings')
+    const row = src.slice(Math.max(0, i - 300), i)
+    assert.match(row, /flex flex-wrap items-start justify-between gap-3/)
+  })
+
+  it('it matches the Series heading row it sits beside', () => {
+    // Same flex contract on both headings, so the two sections read as
+    // a pair rather than two near-misses.
+    assert.match(read(BAND), /flex flex-wrap items-start justify-between gap-3/)
+  })
+
+  it('the action is present even with no standalone Gatherings yet', () => {
+    // The empty state is exactly when a creator needs the button, so
+    // the heading must not be inside the `standalone.length > 0` branch.
+    const src = code(STUDIO)
+    const i = src.indexOf('Standalone Gatherings')
+    const before = src.slice(Math.max(0, i - 400), i)
+    assert.ok(
+      !before.includes('standalone.length > 0'),
+      'the heading and its button only render once a Gathering exists',
+    )
+  })
+})

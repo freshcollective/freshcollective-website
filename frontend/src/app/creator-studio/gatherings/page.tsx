@@ -59,20 +59,20 @@ export default async function GatheringsPage() {
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
           headerImageUrl={spaceDetail?.header_image_url ?? null}
+          // Create Gathering lives on the Standalone Gatherings
+          // heading now, beside New Series on the Gathering Series
+          // heading — one placement for both creation actions. The
+          // banner keeps only the archive link, and renders no action
+          // wrapper at all when there is no archive.
           action={
-            <div className="flex items-center gap-4">
-              {hasArchive && (
-                <Link
-                  href="/creator-studio/gatherings/archive"
-                  className="text-[13px] font-medium text-white/85 underline-offset-4 transition-colors hover:text-white hover:underline"
-                >
-                  {archiveLinkLabel}
-                </Link>
-              )}
-              <PrimaryActionLink href={`/creator/spaces/${primarySpace.slug}/events/new`}>
-                Create Gathering
-              </PrimaryActionLink>
-            </div>
+            hasArchive ? (
+              <Link
+                href="/creator-studio/gatherings/archive"
+                className="text-[13px] font-medium text-white/85 underline-offset-4 transition-colors hover:text-white hover:underline"
+              >
+                {archiveLinkLabel}
+              </Link>
+            ) : undefined
           }
         />
       ) : (
@@ -122,13 +122,23 @@ export default async function GatheringsPage() {
         return (
           <>
             {primarySpace && (
-              <div className="mb-3 mt-2 flex items-baseline justify-between">
-                <h2 className="font-serif text-[16px] text-navy-900">
-                  Standalone Gatherings
-                </h2>
-                <span className="text-[12px] text-slate-500">
-                  Not part of a Gathering Series
-                </span>
+              <div className="mb-3 mt-2 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-serif text-[16px] text-navy-900">
+                    Standalone Gatherings
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Not part of a Gathering Series
+                  </p>
+                </div>
+                {/* Same component the banner used, so the button is
+                    pixel-identical to New Series — PrimaryActionLink
+                    mirrors Button variant="primary" size="md". Still the
+                    one creation route, where a creator chooses a single
+                    Gathering or a recurring run. */}
+                <PrimaryActionLink href={`/creator/spaces/${primarySpace.slug}/events/new`}>
+                  Create Gathering
+                </PrimaryActionLink>
               </div>
             )}
             {primarySpace && standalone.length === 0 && (
