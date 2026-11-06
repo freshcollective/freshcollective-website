@@ -632,6 +632,39 @@ class TestWhatIsLogged:
         for forbidden in ("user", "current_user", "member", "viewer"):
             assert forbidden not in params
 
+    def test_agreement_is_observable_not_silent(
+        self, db, space, caplog,
+    ):
+        """The trap this avoids: a clean 48-hour window that produced no
+        log output at all would be indistinguishable from the flag
+        never having been switched on. Agreement therefore logs at
+        INFO, with ``matched=`` so the lines can be counted and summed.
+        """
+        series = _series(db, space)
+        opt = _option(db, space)
+        _grant(db, opt, "event_series", series.id, sessions_per_week=1)
+        _pay_in_full(db, opt, cents=18000)
+        purchasable = _member_purchasable_options_for_series(series, space, db)
+
+        name = "app.services.purchase_arrangement_shadow"
+        with caplog.at_level(logging.INFO, logger=name):
+            logging.getLogger(name).disabled = False
+            compare_series_quietly(
+                db, series=series, space=space, purchasable=purchasable,
+            )
+
+        lines = [
+            r.getMessage() for r in caplog.records
+            if r.name == name and r.levelno == logging.INFO
+        ]
+        assert lines, "an agreeing comparison produced no observable line"
+        assert any("agrees" in line for line in lines)
+        assert any("matched=1" in line for line in lines)
+        # Countable by a log scan.
+        assert all(
+            line.startswith("purchase_arrangements_shadow") for line in lines
+        )
+
     def test_a_disagreement_is_a_warning_not_a_debug_line(
         self, db, space, caplog,
     ):

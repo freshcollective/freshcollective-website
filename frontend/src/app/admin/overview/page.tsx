@@ -543,6 +543,12 @@ function WorldHealthSection({ health }: { health: MotherWorldOverview['world_hea
       label: health.standalone_gathering_sales_enabled ? 'Ticket sales on' : 'Ticket sales off',
       state: health.standalone_gathering_sales_enabled ? 'info' : 'ok',
     },
+    // Only shown while the Stage 1B.2A observation window is open. A
+    // shadow comparison that agrees emits no warning, so without this
+    // there is no way to tell "enabled and clean" from "not enabled".
+    ...(health.purchase_arrangements_shadow
+      ? [{ label: 'Purchase shadow on', state: 'info' as const }]
+      : []),
   ]
 
   return (

@@ -242,6 +242,11 @@ class MotherWorldHealth(BaseModel):
     stripe_ok: bool = False
     webhook_configured: bool = False
     standalone_gathering_sales_enabled: bool = False
+    #: Stage 1B.2A observation window. Surfaced because the comparison
+    #: has no other observable: with the flag on and everything
+    #: agreeing there are no warnings, which is indistinguishable from
+    #: the flag being off.
+    purchase_arrangements_shadow: bool = False
     stripe_mode: str = "test"
     # Backup automation isn't wired to a scheduler yet; kept nullable so
     # the UI can render "Manual only" honestly rather than fabricating.

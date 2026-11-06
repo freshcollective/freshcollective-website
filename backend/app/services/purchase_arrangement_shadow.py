@@ -120,15 +120,28 @@ class ShadowReport:
         )
 
     def log(self) -> None:
-        """Emit the result. Agreement is debug; disagreement is a
-        warning, because a price difference is the thing this exists to
-        catch and it must not sit silently in a debug stream."""
+        """Emit the result.
+
+        Agreement is **info**, not debug. A shadow run where everything
+        agrees produces no warnings, which is indistinguishable from
+        the flag never having been switched on — so "no warnings" would
+        be unreadable as evidence. One info line per comparison makes
+        the window auditable: the lines can be counted, and
+        ``matched=`` summed, to show comparisons actually executed.
+
+        Disagreement is a warning, because a price difference is the
+        thing this exists to catch and it must not sit in a stream
+        nobody reads.
+
+        Volume is acceptable: this runs on one low-traffic member
+        endpoint, for a bounded window, behind a flag.
+        """
         head = (
             f"purchase_arrangements_shadow {self.experience_kind}="
             f"{self.experience_id} matched={self.matched}"
         )
         if self.agrees:
-            logger.debug("%s agrees", head)
+            logger.info("%s agrees", head)
             return
         logger.warning(
             "%s DISAGREES differing=%d missing=%d extra=%d",

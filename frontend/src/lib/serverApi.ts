@@ -521,6 +521,8 @@ export interface MotherWorldHealth {
   stripe_ok: boolean
   webhook_configured: boolean
   standalone_gathering_sales_enabled: boolean
+  /** Stage 1B.2A observation window; absent on older responses. */
+  purchase_arrangements_shadow?: boolean
   stripe_mode: 'test' | 'live' | string
   last_backup_at: string | null
 }

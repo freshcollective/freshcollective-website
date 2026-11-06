@@ -1652,6 +1652,7 @@ def get_platform_overview(
         stripe_ok=bool(_s.stripe_enabled),
         webhook_configured=bool(_s.stripe_webhook_secret),
         standalone_gathering_sales_enabled=bool(_s.standalone_gathering_sales_enabled),
+        purchase_arrangements_shadow=bool(_s.purchase_arrangements_shadow),
         stripe_mode=_s.stripe_mode,
         last_backup_at=None,  # no scheduled backup automation yet — reported honestly
     )
