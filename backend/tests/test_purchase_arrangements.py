@@ -988,6 +988,13 @@ AUTHORISED_CALLERS: frozenset[str] = frozenset({
     # Reads arrangements for one experience the caller already manages.
     # Buys nothing, writes nothing, and is not reachable by a member.
     "services/creator_purchase_preview.py",
+    # Stage 1B.2A — the shadow comparison. Reads arrangements purely to
+    # compare them against the projection that actually serves members,
+    # behind a flag that is off by default. Its result is a log line:
+    # it cannot shape a response, and the member endpoint that calls it
+    # does so after its own response is built and swallows anything it
+    # raises.
+    "services/purchase_arrangement_shadow.py",
 })
 
 
@@ -1039,6 +1046,46 @@ class TestTheResolverHasNoProductionCallers:
             rel for rel in AUTHORISED_CALLERS if not (APP_ROOT / rel).exists()
         )
         assert missing == [], f"AUTHORISED_CALLERS is stale: {missing}"
+
+    @pytest.mark.parametrize(
+        "rel",
+        sorted(AUTHORISED_CALLERS),
+        ids=lambda r: r.rsplit("/", 1)[-1],
+    )
+    def test_an_authorised_caller_cannot_mutate_or_bill(self, rel):
+        """Reading arrangements is permitted; becoming a way to buy one
+        is not. Asserted on the AST of every authorised caller rather
+        than on its docstring: no session mutation, and no Stripe."""
+        path = APP_ROOT / rel
+        tree = ast.parse(path.read_text())
+        banned = {
+            "commit", "flush", "add", "add_all", "delete", "merge",
+            "with_for_update", "rollback", "bulk_save_objects",
+        }
+        found = sorted({
+            n.attr for n in ast.walk(tree)
+            if isinstance(n, ast.Attribute)
+            and n.attr in banned
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "db"
+        })
+        assert found == [], f"{rel} may mutate the session: {found}"
+
+        identifiers = {
+            n.id.lower() for n in ast.walk(tree) if isinstance(n, ast.Name)
+        } | {
+            n.attr.lower() for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+        } | {
+            alias.name.lower()
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.Import, ast.ImportFrom))
+            for alias in n.names
+        } | {
+            (n.module or "").lower()
+            for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+        }
+        stripe_refs = sorted(i for i in identifiers if "stripe" in i)
+        assert stripe_refs == [], f"{rel} touches Stripe: {stripe_refs}"
 
     def test_the_authorised_caller_is_not_a_payment_path(self):
         """The preview is allowed to read arrangements; it is not

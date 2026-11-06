@@ -2030,6 +2030,10 @@ class PurchasePreviewArrangementOut(BaseModel):
     currency: str
     total_amount_cents: int | None = None
     upfront_amount_cents: int | None = None
+    #: A deposit configured on the schedule that no billing code
+    #: collects. Present so the preview can warn; never presented as
+    #: the first charge.
+    unsupported_upfront_amount_cents: int | None = None
     installment_amount_cents: int | None = None
     installment_count: int | None = None
     interval: str | None = None
@@ -2110,4 +2114,6 @@ def purchase_preview(
 
     from app.services.creator_purchase_preview import build_preview
 
-    return build_preview(db, kind=kind, experience_row=row).as_dict()
+    return build_preview(
+        db, kind=kind, experience_row=row, space=space,
+    ).as_dict()

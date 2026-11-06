@@ -161,6 +161,23 @@ class Settings(BaseSettings):
     # setting confirmed "Leave the subscription past due".
     finite_plan_member_checkout_enabled: bool = False
 
+    # Stage 1B.2A — shadow comparison for the purchase-arrangement
+    # resolver. Hard-off by default, and off is the only value it
+    # should hold in production without an explicit decision.
+    #
+    # When True, the member Series ways-to-join endpoint additionally
+    # asks ``purchase_arrangements.arrangements_for`` the same question
+    # it just answered, compares the two, and logs any disagreement.
+    # The existing projection stays authoritative: the comparison runs
+    # after the response is built, cannot alter it, and swallows its
+    # own errors — a shadow that can break the page it shadows is
+    # worse than no shadow.
+    #
+    # When False nothing is computed at all: the call site checks the
+    # flag before doing any work, so a member request costs exactly
+    # what it cost before.
+    purchase_arrangements_shadow: bool = False
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every

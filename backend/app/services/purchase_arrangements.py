@@ -203,6 +203,11 @@ class Arrangement:
     currency: str
     schedule_type: str
     total_amount_cents: int | None
+    #: What actually leaves the member's account first. For an
+    #: instalment plan this is the first instalment, because that is
+    #: what Stripe's subscription price charges — see
+    #: ``unsupported_upfront_amount_cents`` for why it is never the
+    #: schedule's own ``upfront_amount_cents``.
     upfront_amount_cents: int | None
     installment_amount_cents: int | None
     installment_count: int | None
@@ -225,6 +230,23 @@ class Arrangement:
     #: for, and conflating that with "sellable" would either strand
     #: those members or quietly put a retired price back on sale.
     is_historical_source: bool = False
+    #: A deposit the creator configured on the schedule that nothing
+    #: collects.
+    #:
+    #: ``PaymentOptionSchedule.upfront_amount_cents`` is settable in
+    #: three creator editors and stored, and **no billing code reads
+    #: it**: ``stripe_finite_plan`` builds the subscription price from
+    #: ``installment_amount_cents`` at a fixed interval and there is no
+    #: separate deposit charge anywhere in the plan lifecycle. So a
+    #: creator who sets one believes they are collecting a deposit and
+    #: are not.
+    #:
+    #: Reporting it as ``upfront_amount_cents`` would repeat the
+    #: creator's mistake back to them as a fact. It is carried
+    #: separately instead, set only when a value is stored and differs
+    #: from what Stripe will charge, so a surface can warn rather than
+    #: either lying or hiding it.
+    unsupported_upfront_amount_cents: int | None = None
 
     @property
     def is_instalment_plan(self) -> bool:
@@ -603,6 +625,25 @@ def _option_unavailable_reason(
     return REASON_SCHEDULE_UNSUPPORTED
 
 
+def _unsupported_upfront(schedule) -> int | None:
+    """A configured deposit that nothing will collect, or ``None``.
+
+    Only meaningful for an instalment plan — a pay-in-full schedule's
+    single charge *is* its total, so an upfront on one says nothing
+    different. Returns ``None`` when the stored value happens to equal
+    the first instalment, because then there is no discrepancy to warn
+    about.
+    """
+    if schedule.schedule_type != "recurring_installments":
+        return None
+    stored = schedule.upfront_amount_cents
+    if stored is None:
+        return None
+    if stored == schedule.installment_amount_cents:
+        return None
+    return stored
+
+
 def _option_arrangements(
     db: Session, exp: _Experience, option: PaymentOption,
 ) -> list[Arrangement]:
@@ -646,19 +687,21 @@ def _option_arrangements(
             currency=(s.currency or option.currency or "AUD").upper(),
             schedule_type=s.schedule_type,
             total_amount_cents=s.total_amount_cents,
-            # What leaves the member's account first. For a plan that is
-            # an explicit upfront amount when the creator set one, and
-            # otherwise the first instalment — not the total, which is
-            # the whole point of a plan.
+            # What leaves the member's account first — taken from what
+            # Stripe actually charges, not from what the schedule says.
+            #
+            # An earlier version preferred the schedule's stored
+            # ``upfront_amount_cents`` when set. That was wrong: no
+            # billing code reads that column, so the figure would never
+            # be collected. For an instalment plan the first charge is
+            # always the first instalment; for pay-in-full it is the
+            # total.
             upfront_amount_cents=(
-                s.upfront_amount_cents
-                if s.upfront_amount_cents is not None
-                else (
-                    s.installment_amount_cents
-                    if s.schedule_type == "recurring_installments"
-                    else s.total_amount_cents
-                )
+                s.installment_amount_cents
+                if s.schedule_type == "recurring_installments"
+                else s.total_amount_cents
             ),
+            unsupported_upfront_amount_cents=_unsupported_upfront(s),
             installment_amount_cents=s.installment_amount_cents,
             installment_count=s.installment_count,
             interval=s.interval or s.stripe_interval,

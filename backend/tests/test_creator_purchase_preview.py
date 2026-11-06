@@ -111,11 +111,22 @@ def _pay_in_full(db, option, *, cents, status="published",
 def _instalments(db, option, *, each, count, interval="week",
                  total=None, status="published", name="Payment plan",
                  position=1) -> PaymentOptionSchedule:
+    """A finite instalment schedule that genuinely validates.
+
+    ``stripe_interval`` / ``stripe_interval_count`` are required by
+    ``validate_recurring_installments_row`` — without them the row is
+    ``schedule_invalid`` and every availability assertion about it
+    passes for the wrong reason. An earlier version of this helper
+    omitted them, which made the Stage 1B.1 instalment tests weaker
+    than they looked: they asserted the figures, which were right, and
+    never noticed the schedule was unsellable.
+    """
     s = PaymentOptionSchedule(
         id=_uid("pos"), payment_option_id=option.id, name=name,
         schedule_type="recurring_installments", status=status,
         installment_amount_cents=each, installment_count=count,
-        interval=interval, total_amount_cents=total if total is not None else each * count,
+        interval=interval, stripe_interval=interval, stripe_interval_count=1,
+        total_amount_cents=total if total is not None else each * count,
         currency="AUD", position=position,
     )
     db.add(s)
@@ -154,6 +165,24 @@ def client_as(db):
     yield _install
     app.dependency_overrides.pop(get_creator_user, None)
     app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture(autouse=True)
+def plan_guard_off():
+    """Pin the creator-plan guard OFF for this module by default.
+
+    Every test here builds a creator with no ``CreatorSubscription``,
+    so with the guard on the plan gate would be the operative reason
+    for every paid arrangement and would mask the configuration
+    reasons these tests are about. Production runs the guard **on** —
+    ``TestCreatorPlanEligibility`` below pins it on and builds real
+    plan rows, so that dimension is covered deliberately rather than
+    inherited from whatever the local ``.env`` happens to say.
+    """
+    with patch(
+        "app.core.config.settings.creator_plan_guard_enabled", False,
+    ):
+        yield
 
 
 @pytest.fixture
@@ -355,6 +384,11 @@ class TestPathwayPreview:
         assert plan["total_amount_cents"] == 9900
         # What leaves the account first, which is not the total.
         assert plan["upfront_amount_cents"] == 3300
+        # And it is genuinely sellable — asserted because the helper
+        # once produced schedules that validated as invalid, which made
+        # the figures above right and the arrangement unusable.
+        assert full["available_for_new_purchase"] is True
+        assert plan["available_for_new_purchase"] is True
 
     def test_a_bundle_says_what_else_it_includes(
         self, client_as, make_user, make_space, db,
@@ -815,4 +849,373 @@ class TestItIsOnlyAPreview:
         assert platform_reasons.isdisjoint(resolver_reasons), (
             "a platform reason is shadowing a resolver reason"
         )
-        assert len(resolver_reasons | platform_reasons) == 12
+        assert len(resolver_reasons | platform_reasons) == 14
+
+
+# ---------------------------------------------------------------------------
+# 6. Creator-plan eligibility — the Stage 1B.1 gap
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorPlanEligibility:
+    """The preview must refuse what checkout refuses.
+
+    Stage 1B.1's overlay asked only whether Gathering ticket sales were
+    switched on. It never asked whether the Collective had a Creator
+    Plan — so a Collective with none showed its $45 ticket as
+    **Available** while the ticket endpoint refused the sale. The same
+    gap applied to a Pathway price and to every Payment Option
+    arrangement, since ``orchestrate_paid_checkout`` and
+    ``start_finite_plan_setup`` enforce the gate as well.
+
+    These tests pin the guard **on**, which is how production runs.
+    """
+
+    @pytest.fixture
+    def guard_on(self):
+        with patch(
+            "app.core.config.settings.creator_plan_guard_enabled", True,
+        ):
+            yield
+
+    @staticmethod
+    def _plan(db, slug: str, fee_bps: int = 800):
+        from app.models.creator_billing import CreatorPlan
+
+        row = CreatorPlan(
+            id=_uid("cp"), slug=slug, name=slug.replace("-", " ").title(),
+            monthly_price_cents=1900, currency="AUD",
+            transaction_fee_basis_points=fee_bps,
+            is_active=True, collective_limit=1,
+        )
+        db.add(row)
+        db.flush()
+        return row
+
+    @staticmethod
+    def _subscribe(db, creator, plan):
+        from datetime import datetime, timedelta
+
+        from app.models.creator_billing import (
+            CreatorSubscription,
+            CreatorSubscriptionStatus,
+        )
+
+        sub = CreatorSubscription(
+            id=_uid("cs"), user_id=creator.id, creator_plan_id=plan.id,
+            status=CreatorSubscriptionStatus.active,
+            starts_at=datetime.utcnow() - timedelta(days=1),
+            source="stripe_paid",
+        )
+        db.add(sub)
+        db.flush()
+        return sub
+
+    def test_no_plan_is_not_available(
+        self, client_as, make_user, make_space, db, guard_on,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, price_cents=4900)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["available_for_new_purchase"] is False
+        assert a["unavailable_reason"] == "creator_plan_not_configured"
+        # Configuration is complete; the platform is the blocker.
+        assert a["configured_available"] is True
+        assert a["blocked_by_platform"] is True
+        assert body["has_purchasable_arrangement"] is False
+
+    def test_a_community_plan_is_not_available(
+        self, client_as, make_user, make_space, db, guard_on,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        self._subscribe(db, creator, self._plan(db, "community", 0))
+        pathway = _pathway(db, space, price_cents=4900)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["available_for_new_purchase"] is False
+        assert a["unavailable_reason"] == "creator_plan_forbids_paid_offers"
+        assert a["blocked_by_platform"] is True
+
+    @pytest.mark.parametrize("slug", ["creator", "pro", "founding-creator"])
+    def test_a_paid_plan_stays_available(
+        self, client_as, make_user, make_space, db, guard_on, slug,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        self._subscribe(db, creator, self._plan(db, slug))
+        pathway = _pathway(db, space, price_cents=4900)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["available_for_new_purchase"] is True, f"{slug}: {a}"
+        assert a["unavailable_reason"] is None
+
+    def test_a_gathering_ticket_follows_the_same_rule(
+        self, client_as, make_user, make_space, make_event, db,
+        guard_on, tickets_on,
+    ):
+        """Kelly's shape: sales flags on, ticket priced, and the plan
+        is the only question left."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        event = make_event(space=space, ticket_price_cents=4500)
+        client = client_as(creator)
+
+        unplanned = _get(client, space, "gathering", event.id).json()
+        assert unplanned["arrangements"][0]["unavailable_reason"] == (
+            "creator_plan_not_configured"
+        )
+
+        self._subscribe(db, creator, self._plan(db, "creator"))
+        planned = _get(client, space, "gathering", event.id).json()
+        a = planned["arrangements"][0]
+        assert a["available_for_new_purchase"] is True, a
+        assert a["total_amount_cents"] == 4500
+
+    def test_the_sales_flags_still_win_for_a_gathering(
+        self, client_as, make_user, make_space, make_event, db,
+        guard_on, tickets_off,
+    ):
+        """Checkout's order, mirrored: ``ensure_sales_enabled_or_raise``
+        is the first line of the ticket endpoint, so a switched-off
+        environment is the reason a member would be given even when the
+        plan is also missing."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        event = make_event(space=space, ticket_price_cents=4500)
+
+        body = _get(client_as(creator), space, "gathering", event.id).json()
+        assert body["arrangements"][0]["unavailable_reason"] == (
+            REASON_GATHERING_SALES_DISABLED
+        )
+
+    def test_an_option_arrangement_is_gated_too(
+        self, client_as, make_user, make_space, db, guard_on, plans_on,
+    ):
+        """``orchestrate_paid_checkout`` and ``start_finite_plan_setup``
+        both enforce the gate, so a bundle is no more purchasable than a
+        direct price when the Collective has no plan."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        _pay_in_full(db, opt, cents=9900)
+        _instalments(db, opt, each=3300, count=3)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        assert len(body["arrangements"]) == 2
+        for a in body["arrangements"]:
+            assert a["available_for_new_purchase"] is False, a
+            assert a["unavailable_reason"] == "creator_plan_not_configured"
+            assert a["blocked_by_platform"] is True
+
+    def test_a_free_pathway_is_never_plan_gated(
+        self, client_as, make_user, make_space, db, guard_on,
+    ):
+        """Checkout's free path resolves its fee context through
+        ``try_resolve_fee_context`` precisely so a Collective with no
+        plan can still give things away. A zero-priced arrangement must
+        not be reported as blocked."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, price_cents=0)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        if body["arrangements"]:
+            a = body["arrangements"][0]
+            assert a["unavailable_reason"] != "creator_plan_not_configured"
+
+    def test_the_preview_and_the_till_agree_about_the_plan(
+        self, client_as, make_user, make_space, make_event, db,
+        guard_on, tickets_on,
+    ):
+        """The consistency requirement, asserted directly: for each
+        plan state, what the preview says and what the ticket endpoint
+        does must match."""
+        from app.services.checkout_orchestration import (
+            NoActiveCreatorPlanError,
+            resolve_fee_context,
+        )
+
+        for slug, expect_available in (
+            (None, False), ("community", False), ("creator", True),
+        ):
+            creator = make_user(role="creator")
+            space = make_space(creator=creator)
+            event = make_event(space=space, ticket_price_cents=4500)
+            if slug is not None:
+                self._subscribe(db, creator, self._plan(db, slug, 0))
+
+            body = _get(client_as(creator), space, "gathering", event.id).json()
+            preview_available = body["arrangements"][0][
+                "available_for_new_purchase"
+            ]
+
+            # What the till would decide, from the same shared rule.
+            try:
+                ctx = resolve_fee_context(space, db)
+                till_allows = ctx.permits_paid_offers
+            except NoActiveCreatorPlanError:
+                till_allows = False
+
+            assert preview_available == till_allows == expect_available, (
+                f"{slug}: preview={preview_available} till={till_allows}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 7. The upfront amount Stripe actually charges
+# ---------------------------------------------------------------------------
+
+
+class TestTheFirstChargeIsWhatStripeCollects:
+    """``PaymentOptionSchedule.upfront_amount_cents`` is settable in
+    three creator editors and stored, and no billing code reads it:
+    ``stripe_finite_plan`` builds the subscription price from
+    ``installment_amount_cents`` at a fixed interval, and there is no
+    separate deposit charge anywhere in the plan lifecycle.
+
+    The resolver used to prefer the stored value when set, which meant
+    the preview could show a creator a "first charge" that would never
+    be collected. It now reports what Stripe charges and carries the
+    configured deposit separately so the discrepancy can be named
+    rather than hidden.
+    """
+
+    def test_a_normal_plan_reports_the_first_instalment(
+        self, client_as, make_user, make_space, db, plans_on,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        _instalments(db, opt, each=3780, count=10, total=37800)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["upfront_amount_cents"] == 3780
+        assert a["installment_amount_cents"] == 3780
+        assert a["installment_count"] == 10
+        assert a["interval"] == "week"
+        assert a["total_amount_cents"] == 37800
+        assert a["unsupported_upfront_amount_cents"] is None
+
+    def test_a_configured_deposit_is_not_reported_as_the_first_charge(
+        self, client_as, make_user, make_space, db, plans_on,
+    ):
+        """The correction. A $100 deposit on a 3 x $33 plan does not
+        happen — Stripe charges $33 first — so $33 is the first charge
+        and the $100 is carried as a discrepancy."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        sched = _instalments(db, opt, each=3300, count=3, total=9900)
+        sched.upfront_amount_cents = 10000
+        db.flush()
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["upfront_amount_cents"] == 3300, "the deposit was reported as real"
+        assert a["unsupported_upfront_amount_cents"] == 10000
+        # The rest of the commitment is untouched.
+        assert a["installment_amount_cents"] == 3300
+        assert a["installment_count"] == 3
+        assert a["total_amount_cents"] == 9900
+        # And it is still purchasable — the schedule is valid, the
+        # deposit is simply not collected.
+        assert a["available_for_new_purchase"] is True
+
+    def test_a_deposit_equal_to_the_instalment_is_not_a_discrepancy(
+        self, client_as, make_user, make_space, db, plans_on,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        sched = _instalments(db, opt, each=3300, count=3, total=9900)
+        sched.upfront_amount_cents = 3300
+        db.flush()
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["upfront_amount_cents"] == 3300
+        assert a["unsupported_upfront_amount_cents"] is None
+
+    def test_pay_in_full_charges_its_total(
+        self, client_as, make_user, make_space, db,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        _pay_in_full(db, opt, cents=9900)
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        a = body["arrangements"][0]
+        assert a["upfront_amount_cents"] == 9900
+        assert a["unsupported_upfront_amount_cents"] is None
+
+    def test_the_schedule_row_is_not_rewritten(
+        self, client_as, make_user, make_space, db, plans_on,
+    ):
+        """We are correcting the presentation, not the record. The
+        stored deposit stays exactly where the creator put it."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, access_type="included_with_offer")
+        opt = _option(db, space)
+        _grant(db, opt, "pathway", pathway.id)
+        sched = _instalments(db, opt, each=3300, count=3, total=9900)
+        sched.upfront_amount_cents = 10000
+        db.flush()
+
+        _get(client_as(creator), space, "pathway", pathway.id)
+        db.refresh(sched)
+        assert sched.upfront_amount_cents == 10000
+        assert sched.installment_amount_cents == 3300
+        assert sched.total_amount_cents == 9900
+
+    def test_stripe_still_prices_from_the_instalment(self):
+        """The premise, pinned on the billing code rather than assumed:
+        the subscription price is built from the instalment amount, and
+        the schedule's upfront column is read nowhere in billing."""
+        import ast
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parents[1] / "app"
+        builder = (root / "services" / "stripe_finite_plan.py").read_text()
+        assert "unit_amount=plan.installment_amount_cents" in builder
+
+        billing = [
+            "services/stripe_finite_plan.py",
+            "services/finite_plan_orchestration.py",
+            "services/finite_plan_lifecycle.py",
+            "webhooks/finite_plan_handlers.py",
+        ]
+        readers = []
+        for rel in billing:
+            path = root / rel
+            if not path.exists():
+                continue
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Attribute)
+                    and node.attr == "upfront_amount_cents"
+                ):
+                    readers.append(rel)
+        assert readers == [], (
+            "billing now reads upfront_amount_cents — the resolver's "
+            f"presentation correction needs revisiting: {readers}"
+        )

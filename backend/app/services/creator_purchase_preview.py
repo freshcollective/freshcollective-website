@@ -83,10 +83,18 @@ PRICING_MODE_PAYMENT_OPTIONS = "payment_options"
 #: "ask us", not "fix it".
 REASON_PATHWAY_REQUIRES_OPTION = "pathway_requires_payment_option"
 REASON_GATHERING_SALES_DISABLED = "gathering_sales_disabled"
+#: The Collective's own commercial terms are not in place. Every paid
+#: door refuses with a 409; the creator cannot fix this themselves.
+REASON_CREATOR_PLAN_NOT_CONFIGURED = "creator_plan_not_configured"
+#: The plan exists and forbids commercial use (Community). Every paid
+#: door refuses with a 403; the fix is an upgrade.
+REASON_CREATOR_PLAN_FORBIDS_PAID = "creator_plan_forbids_paid_offers"
 
 PLATFORM_REASONS: tuple[str, ...] = (
     REASON_PATHWAY_REQUIRES_OPTION,
     REASON_GATHERING_SALES_DISABLED,
+    REASON_CREATOR_PLAN_NOT_CONFIGURED,
+    REASON_CREATOR_PLAN_FORBIDS_PAID,
 )
 
 
@@ -116,8 +124,35 @@ def _gathering_sales_blocked() -> bool:
     return False
 
 
+def _creator_plan_block_reason(db: Session, space: object) -> str | None:
+    """Would the creator-plan gate refuse a paid sale in this
+    Collective, and why?
+
+    Reuses ``try_resolve_fee_context`` — the display-safe variant of the
+    very function every paid door calls — so the preview cannot form a
+    second opinion about plan eligibility. ``None`` back from it means
+    the guard is on and the creator has no active subscription, which is
+    the 409 case; ``permits_paid_offers`` False is the 403 case.
+
+    This was the Stage 1B.1 gap: the overlay asked only whether ticket
+    sales were switched on, so a Collective with no Creator Plan showed
+    its $45 ticket as **Available** while checkout refused it.
+    """
+    from app.services.checkout_orchestration import try_resolve_fee_context
+
+    fee_context = try_resolve_fee_context(space, db)
+    if fee_context is None:
+        return REASON_CREATOR_PLAN_NOT_CONFIGURED
+    if not fee_context.permits_paid_offers:
+        return REASON_CREATOR_PLAN_FORBIDS_PAID
+    return None
+
+
 def platform_block_reason(
-    arrangement: Arrangement, experience_row: object,
+    db: Session,
+    arrangement: Arrangement,
+    experience_row: object,
+    space: object,
 ) -> str | None:
     """Why live checkout would refuse an arrangement the creator has
     configured correctly, or ``None`` when it would not.
@@ -126,27 +161,37 @@ def platform_block_reason(
     available — there is nothing to add to one that is already
     unavailable, and the creator's own reason is the more useful of the
     two.
+
+    **The order below is checkout's order**, deliberately, so the
+    preview names the same reason the member's refusal would name:
+
+    * a direct Pathway price is refused for ``pricing_mode`` before the
+      plan gate is reached (``POST /api/checkout/pathway``);
+    * a Gathering ticket is refused for the sales flags first, since
+      ``ensure_sales_enabled_or_raise`` is the first line of that
+      endpoint;
+    * the creator-plan gate then applies to **every paid arrangement**,
+      direct or Option, because ``orchestrate_paid_checkout`` and
+      ``start_finite_plan_setup`` both enforce it too.
+
+    A free arrangement is not gated: checkout's free path resolves its
+    fee context through ``try_resolve_fee_context`` precisely so a
+    Collective with no plan can still give things away.
     """
-    if arrangement.source != SOURCE_DIRECT:
-        # Option-based purchases do not consult ``pricing_mode``: the
-        # Option branch of ``POST /api/checkout/pathway`` returns
-        # before the mode is read. And a Gathering Option is already
-        # ``unsupported_inclusion`` in the resolver, so the ticket
-        # flag cannot be the operative reason there either.
+    if arrangement.source == SOURCE_DIRECT:
+        if arrangement.experience_kind == KIND_PATHWAY:
+            mode = getattr(experience_row, "pricing_mode", "legacy") or "legacy"
+            if mode == PRICING_MODE_PAYMENT_OPTIONS:
+                return REASON_PATHWAY_REQUIRES_OPTION
+        elif arrangement.experience_kind == KIND_GATHERING:
+            if _gathering_sales_blocked():
+                return REASON_GATHERING_SALES_DISABLED
+
+    # Nothing is charged, so nothing is gated.
+    if arrangement.is_free:
         return None
 
-    if arrangement.experience_kind == KIND_PATHWAY:
-        mode = getattr(experience_row, "pricing_mode", "legacy") or "legacy"
-        if mode == PRICING_MODE_PAYMENT_OPTIONS:
-            return REASON_PATHWAY_REQUIRES_OPTION
-        return None
-
-    if arrangement.experience_kind == KIND_GATHERING:
-        if _gathering_sales_blocked():
-            return REASON_GATHERING_SALES_DISABLED
-        return None
-
-    return None
+    return _creator_plan_block_reason(db, space)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +238,12 @@ class PreviewArrangement:
             "currency": a.currency,
             "total_amount_cents": a.total_amount_cents,
             "upfront_amount_cents": a.upfront_amount_cents,
+            # A configured deposit nothing collects. Carried so the
+            # creator can be warned rather than shown a figure Stripe
+            # will never charge — see the resolver's field docstring.
+            "unsupported_upfront_amount_cents": (
+                a.unsupported_upfront_amount_cents
+            ),
             "installment_amount_cents": a.installment_amount_cents,
             "installment_count": a.installment_count,
             "interval": a.interval,
@@ -274,15 +325,19 @@ def _access_type_of(kind: str, row: object) -> str | None:
 
 
 def build_preview(
-    db: Session, *, kind: str, experience_row: object,
+    db: Session, *, kind: str, experience_row: object, space: object,
 ) -> PurchasePreview:
     """The purchase preview for one experience.
 
-    ``experience_row`` is passed in rather than loaded here so the
-    caller stays responsible for ownership: the route has already
-    proved this row belongs to the Collective being managed. Loading it
-    here from an id would move that check into a module that has no
-    business making it.
+    ``experience_row`` and ``space`` are passed in rather than loaded
+    here so the caller stays responsible for ownership: the route has
+    already proved this row belongs to the Collective being managed.
+    Loading either here from an id would move that check into a module
+    that has no business making it.
+
+    ``space`` is what the creator-plan gate reads. It must be the
+    Collective the experience belongs to — the route resolves it from
+    the managed-space check, so the two cannot disagree.
     """
     experience_id = experience_row.id
     found = arrangements_for(db, kind=kind, experience_id=experience_id)
@@ -295,7 +350,9 @@ def build_preview(
         blocked = False
         final = arrangement
         if configured_available:
-            reason = platform_block_reason(arrangement, experience_row)
+            reason = platform_block_reason(
+                db, arrangement, experience_row, space,
+            )
             if reason is not None:
                 final = with_reason(arrangement, reason)
                 blocked = True

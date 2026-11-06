@@ -43,6 +43,8 @@ from app.models.user import User
 from app.services.connect_payout_model import resolve_payout_model
 from app.services.checkout_orchestration import (
     FeeContext,
+    NO_ACTIVE_CREATOR_PLAN_DETAIL,
+    PLAN_FORBIDS_PAID_OFFERS_DETAIL,
     NoActiveCreatorPlanError,
     check_membership_deliverable_or_raise,
     check_not_banned_or_raise,
@@ -311,21 +313,12 @@ def start_finite_plan_setup(
     except NoActiveCreatorPlanError as exc:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Fresh Collective commercial terms have not been "
-                "configured for this Collective. Paid checkout is "
-                "unavailable until an admin assigns a Creator Plan."
-            ),
+            detail=NO_ACTIVE_CREATOR_PLAN_DETAIL,
         ) from exc
     if not fee_context.permits_paid_offers:
         raise HTTPException(
             status_code=403,
-            detail=(
-                "This Collective's Fresh Collective plan does not "
-                "include paid offers. The creator's plan must be "
-                "upgraded to Creator or higher to enable commercial "
-                "checkout."
-            ),
+            detail=PLAN_FORBIDS_PAID_OFFERS_DETAIL,
         )
 
     # ── Insert plan row ───────────────────────────────────────────

@@ -17,7 +17,7 @@ import {
   arrangementStatus,
   arrangementTitle,
   arrangementTotalLine,
-  arrangementUpfrontLine,
+  arrangementUpfrontWarning,
   groupByOption,
   includedKindLabel,
 } from '@/lib/purchasePreview'
@@ -70,7 +70,7 @@ function ArrangementRow({
   title: string
 }) {
   const total = arrangementTotalLine(arrangement)
-  const upfront = arrangementUpfrontLine(arrangement)
+  const upfrontWarning = arrangementUpfrontWarning(arrangement)
   const explanation = arrangementExplanation(arrangement, kind)
 
   return (
@@ -83,8 +83,15 @@ function ArrangementRow({
             <span className="text-slate-500"> &middot; {total}</span>
           )}
         </p>
-        {upfront && (
-          <p className="mt-0.5 text-[12px] text-slate-500">{upfront}</p>
+        {upfrontWarning && (
+          /* Amber, and worded as a discrepancy rather than an error:
+             the schedule sells perfectly well, it is the deposit that
+             does nothing. Rendered above the availability explanation
+             because it is about money the creator thinks they are
+             collecting. */
+          <p className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-2 text-[12.5px] leading-relaxed text-amber-900">
+            {upfrontWarning}
+          </p>
         )}
         {explanation && (
           <p className="mt-1 text-[12.5px] leading-relaxed text-slate-600">

@@ -13,7 +13,7 @@ import {
   arrangementStatus,
   arrangementTitle,
   arrangementTotalLine,
-  arrangementUpfrontLine,
+  arrangementUpfrontWarning,
   groupByOption,
   includedKindLabel,
 } from './purchasePreview.ts'
@@ -45,6 +45,7 @@ function arrangement(
     currency: 'AUD',
     total_amount_cents: 9900,
     upfront_amount_cents: 9900,
+    unsupported_upfront_amount_cents: null,
     installment_amount_cents: null,
     installment_count: null,
     interval: null,
@@ -150,13 +151,34 @@ describe('each schedule keeps its own price', () => {
     assert.ok(!line.includes('$99'), line)
   })
 
-  it('mentions a first charge only when it differs', () => {
-    assert.equal(arrangementUpfrontLine(PLAN), null)
+  it('says nothing extra about the first charge on a normal plan', () => {
+    // The payment line already carries it, and for a plan the first
+    // charge IS the instalment.
+    assert.equal(arrangementUpfrontWarning(PLAN), null)
+    assert.equal(PLAN.upfront_amount_cents, 3300)
+  })
+
+  it('names a configured deposit as uncollected, not as the first charge', () => {
+    // `upfront_amount_cents` on a schedule is stored and read by no
+    // billing code — Stripe prices the subscription from the instalment
+    // amount. Presenting the deposit as real would repeat the creator's
+    // mistake back to them as a fact; dropping it would leave them
+    // believing it works.
     const deposit = arrangement({
       ...PLAN,
-      upfront_amount_cents: 5000,
+      unsupported_upfront_amount_cents: 10000,
     })
-    assert.equal(arrangementUpfrontLine(deposit), '$50 to start')
+    const warning = arrangementUpfrontWarning(deposit)!
+    assert.match(warning, /\$100 upfront amount set/)
+    assert.match(warning, /not collected/)
+    assert.match(warning, /charged \$33 first/)
+    // The first charge shown elsewhere stays the instalment.
+    assert.equal(arrangementPaymentLine(deposit), '3 weekly payments of $33')
+    assert.equal(deposit.upfront_amount_cents, 3300)
+  })
+
+  it('and a pay-in-full schedule never warns', () => {
+    assert.equal(arrangementUpfrontWarning(arrangement()), null)
   })
 
   it('two schedules on one Option stay two rows under one name', () => {
@@ -322,6 +344,48 @@ describe('configured and purchasable are kept apart', () => {
     })
     assert.match(arrangementExplanation(a, 'pathway')!, /Pathway is not active/)
     assert.match(arrangementExplanation(a, 'gathering')!, /not published/)
+  })
+})
+
+describe('creator-plan eligibility reads as a platform block', () => {
+  // The Stage 1B.1 gap: the overlay asked only whether ticket sales
+  // were switched on, so a Collective with no Creator Plan showed its
+  // $45 ticket as Available while checkout refused the sale.
+
+  it('no plan is pending, with an explanation the creator can act on', () => {
+    const a = arrangement({
+      source: 'direct',
+      total_amount_cents: 4500,
+      available_for_new_purchase: false,
+      configured_available: true,
+      blocked_by_platform: true,
+      unavailable_reason: 'creator_plan_not_configured',
+    })
+    assert.deepEqual(arrangementStatus(a), {
+      label: 'Not purchasable yet', tone: 'pending',
+    })
+    // Not 'attention': the creator's own setup is correct.
+    assert.notEqual(arrangementStatus(a).tone, 'attention')
+    const copy = arrangementExplanation(a, 'gathering')!
+    assert.match(copy, /does not have a Fresh Collective plan/)
+    assert.match(copy, /Contact us/)
+    // Says plainly that they have not made a mistake.
+    assert.match(copy, /your setup here is fine/)
+    // And the price stays visible.
+    assert.equal(arrangementPaymentLine(a), '$45 once')
+  })
+
+  it('a plan that forbids paid offers names the upgrade', () => {
+    const a = arrangement({
+      available_for_new_purchase: false,
+      configured_available: true,
+      blocked_by_platform: true,
+      unavailable_reason: 'creator_plan_forbids_paid_offers',
+    })
+    assert.equal(arrangementStatus(a).tone, 'pending')
+    const copy = arrangementExplanation(a, 'pathway')!
+    assert.match(copy, /does not include paid offers/)
+    assert.match(copy, /Creator or higher/)
   })
 })
 

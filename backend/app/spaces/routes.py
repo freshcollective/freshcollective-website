@@ -2871,7 +2871,6 @@ def cancel_booking(
 from pydantic import BaseModel, Field, HttpUrl  # noqa: E402
 import stripe as _stripe  # noqa: E402
 from app.services import gathering_tickets as _gt  # noqa: E402
-from app.checkout.routes import _resolve_fee_bps as _resolve_fee_bps_for_ticket  # noqa: E402
 
 
 class GatheringCheckoutRequest(BaseModel):
@@ -2946,8 +2945,37 @@ def create_gathering_ticket_checkout(
         # Stripe response). Fall through: create a fresh Session and
         # UPDATE-reuse the row via `create_or_reuse_hold`.
 
-    # 3. Resolve creator fee — same helper as pathway checkout
-    fee_bps, plan_id, sub_id = _resolve_fee_bps_for_ticket(offer.space.creator_id, db)
+    # 3. The creator-plan gate, and the creator fee it resolves.
+    #
+    # This endpoint used to call the legacy ``_resolve_fee_bps`` shim,
+    # which returns the fee triple and nothing else. That left it the
+    # only paid door enforcing neither half of the gate every other one
+    # enforces: ``NoActiveCreatorPlanError`` escaped unhandled as a
+    # 500 — a buyer saw "please try again" and could retry forever —
+    # and ``permits_paid_offers`` was never consulted, so a Community
+    # creator, whose plan forbids commercial use, sold tickets.
+    #
+    # ``resolve_fee_context_or_raise_http`` is the shared mapping of
+    # that rule onto 409/403. The fee itself is unchanged: for a
+    # creator-owned Space the context carries the triple from the very
+    # same ``_resolve_fee_bps_for_creator`` the shim called, and for a
+    # platform-owned Space both answer ``(0, None, None)``.
+    #
+    # Placed here, after the in-flight fast path above and before the
+    # hold, the transaction and the Stripe Session. A buyer who already
+    # holds a live Session is deliberately still handed it: that path
+    # creates nothing, the Session exists, and stranding somebody
+    # mid-payment is worse than honouring a checkout that was legitimate
+    # when it opened. Nothing *new* can be created past this point
+    # without an eligible plan.
+    from app.services.checkout_orchestration import (
+        resolve_fee_context_or_raise_http as _resolve_fee_context_or_raise,
+    )
+
+    _fee_context = _resolve_fee_context_or_raise(offer.space, db)
+    fee_bps = _fee_context.fee_bps
+    plan_id = _fee_context.creator_plan_id
+    sub_id = _fee_context.creator_subscription_id
 
     # 4. Create (or UPDATE-reuse) the hold + pending transaction, in one lock.
     #

@@ -196,6 +196,54 @@ def resolve_fee_context(space: Space, db: Session) -> FeeContext:
     )
 
 
+#: The two refusals every paid door gives when the Collective's own
+#: commercial terms are not in place. Named once because the exact
+#: wording was duplicated at three call sites byte-for-byte, and a
+#: fourth was about to be added for standalone Gathering tickets.
+NO_ACTIVE_CREATOR_PLAN_DETAIL = (
+    "Fresh Collective commercial terms have not been configured for "
+    "this Collective. Paid checkout is unavailable until an admin "
+    "assigns a Creator Plan."
+)
+PLAN_FORBIDS_PAID_OFFERS_DETAIL = (
+    "This Collective's Fresh Collective plan does not include paid "
+    "offers. The creator's plan must be upgraded to Creator or higher "
+    "to enable commercial checkout."
+)
+
+
+def resolve_fee_context_or_raise_http(space: Space, db: Session) -> FeeContext:
+    """The creator-plan gate, as the HTTP refusals every paid door uses.
+
+    ``resolve_fee_context`` is the rule; this is the one mapping of that
+    rule onto status codes. Added because the standalone Gathering
+    ticket endpoint had *neither* half of it: it called the legacy
+    ``_resolve_fee_bps`` shim, so ``NoActiveCreatorPlanError`` escaped
+    unhandled as a 500 and ``permits_paid_offers`` was never consulted
+    at all. A creator with no plan got an opaque "please try again" the
+    buyer could retry forever, and a Community creator — whose plan
+    forbids commercial use — sold tickets.
+
+    Fee and payout behaviour is unchanged by using this: for a
+    creator-owned Space ``resolve_fee_context`` returns the triple from
+    the very same ``_resolve_fee_bps_for_creator`` the shim called, and
+    for a platform-owned Space both answer ``(0, None, None)``. The
+    only additions are ``permits_paid_offers`` and
+    ``is_platform_owned``, both read-only.
+    """
+    try:
+        fee_context = resolve_fee_context(space, db)
+    except NoActiveCreatorPlanError as exc:
+        raise HTTPException(
+            status_code=409, detail=NO_ACTIVE_CREATOR_PLAN_DETAIL,
+        ) from exc
+    if not fee_context.permits_paid_offers:
+        raise HTTPException(
+            status_code=403, detail=PLAN_FORBIDS_PAID_OFFERS_DETAIL,
+        )
+    return fee_context
+
+
 def try_resolve_fee_context(space: Space, db: Session) -> FeeContext | None:
     """Display-safe variant of :func:`resolve_fee_context`.
 
@@ -1311,21 +1359,12 @@ def orchestrate_paid_checkout(
     except NoActiveCreatorPlanError as exc:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Fresh Collective commercial terms have not been "
-                "configured for this Collective. Paid checkout is "
-                "unavailable until an admin assigns a Creator Plan."
-            ),
+            detail=NO_ACTIVE_CREATOR_PLAN_DETAIL,
         ) from exc
     if not fee_context.permits_paid_offers:
         raise HTTPException(
             status_code=403,
-            detail=(
-                "This Collective's Fresh Collective plan does not "
-                "include paid offers. The creator's plan must be "
-                "upgraded to Creator or higher to enable commercial "
-                "checkout."
-            ),
+            detail=PLAN_FORBIDS_PAID_OFFERS_DETAIL,
         )
 
     base_metadata: dict[str, str] = {

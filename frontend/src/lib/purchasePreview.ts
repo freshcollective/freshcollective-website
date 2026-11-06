@@ -46,7 +46,13 @@ export interface PreviewArrangement {
   schedule_type: string
   currency: string
   total_amount_cents: number | null
+  /** What actually leaves the member's account first. For an instalment
+   *  plan this is the first instalment, because that is what Stripe's
+   *  subscription price charges. */
   upfront_amount_cents: number | null
+  /** A deposit configured on the schedule that no billing code
+   *  collects. Never the first charge — see `arrangementUpfrontWarning`. */
+  unsupported_upfront_amount_cents: number | null
   installment_amount_cents: number | null
   installment_count: number | null
   interval: string | null
@@ -123,19 +129,33 @@ export function arrangementTotalLine(
   return scheduleTotalLine(arrangement)
 }
 
-/** The first charge, when it differs from the per-instalment amount.
+/** A configured deposit that nothing will collect.
  *
- * Returned only when it adds something: an explicit upfront that is
- * not simply the first instalment. Otherwise the payment line already
- * said it. */
-export function arrangementUpfrontLine(
+ * `PaymentOptionSchedule.upfront_amount_cents` is settable in three
+ * creator editors and stored, and no billing code reads it: Stripe's
+ * subscription price is built from the instalment amount at a fixed
+ * interval, with no separate deposit charge anywhere in the plan
+ * lifecycle. A creator who set one believes they are collecting a
+ * deposit and are not.
+ *
+ * So the figure is never presented as the first charge — it is named
+ * as a discrepancy, because silently dropping it would leave the
+ * creator believing the deposit works, and showing it as real would
+ * repeat their mistake back to them as a fact. */
+export function arrangementUpfrontWarning(
   arrangement: PreviewArrangement,
 ): string | null {
-  if (arrangement.schedule_type !== 'recurring_installments') return null
-  const upfront = arrangement.upfront_amount_cents
-  if (upfront == null) return null
-  if (upfront === arrangement.installment_amount_cents) return null
-  return `${formatMoney(upfront, arrangement.currency)} to start`
+  const configured = arrangement.unsupported_upfront_amount_cents
+  if (configured == null) return null
+  const first = arrangement.installment_amount_cents
+  const firstText =
+    first != null ? formatMoney(first, arrangement.currency) : 'the first instalment'
+  return (
+    `This arrangement has a ${formatMoney(configured, arrangement.currency)} ` +
+    `upfront amount set, but it is not collected. Members are charged ` +
+    `${firstText} first, then the rest of the plan. Remove the upfront ` +
+    `amount, or ask us about deposits.`
+  )
 }
 
 const INCLUDED_KIND_LABELS: Record<string, string> = {
@@ -240,6 +260,10 @@ export function arrangementExplanation(
         : 'This Pathway is not active yet, so nobody can purchase it.'
     case 'pathway_requires_payment_option':
       return 'This Pathway now sells through Payment Options, so its own price is no longer offered at checkout. Members purchase through the Options listed here.'
+    case 'creator_plan_not_configured':
+      return 'Your Collective does not have a Fresh Collective plan assigned yet, so paid checkout is unavailable. Contact us and we will sort it out — your setup here is fine.'
+    case 'creator_plan_forbids_paid_offers':
+      return 'Your current Fresh Collective plan does not include paid offers. Upgrading to Creator or higher enables paid checkout.'
     case 'gathering_sales_disabled':
       // Deliberately the same explanation the Gathering editor already
       // gives beside the ticket price. One fact, one wording.

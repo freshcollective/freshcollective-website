@@ -65,6 +65,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
+from app.core.config import settings
 from app.creator.schemas import AboutBlockResponse
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment_option import PaymentOption
@@ -850,8 +851,10 @@ def list_member_series_payment_options(
             if oid:
                 held_option_ids.add(oid)
 
+    purchasable = _member_purchasable_options_for_series(series, space, db)
+
     out: list[MemberPaymentOptionOut] = []
-    for po in _member_purchasable_options_for_series(series, space, db):
+    for po in purchasable:
         allowance_per_week = po.series_grant.sessions_per_week if po.series_grant else None
         allowance_total = po.series_grant.total_sessions if po.series_grant else None
         out.append(MemberPaymentOptionOut(
@@ -870,6 +873,32 @@ def list_member_series_payment_options(
             ],
             viewer_holds_this_option=po.option.id in held_option_ids,
         ))
+
+    # Stage 1B.2A — shadow comparison, off by default.
+    #
+    # Runs after the response is fully built, so it cannot shape it,
+    # and swallows everything it might raise. The flag is checked
+    # before any work happens: with it off a member request costs
+    # exactly what it cost before, with no extra query.
+    #
+    # Deliberately given ``purchasable`` rather than recomputing it —
+    # comparing the resolver against a second evaluation of the
+    # projection would leave a disagreement ambiguous between the two
+    # implementations and the two evaluations.
+    #
+    # The member-specific parts above (``viewer_holds_this_option``,
+    # plan recovery) are applied by this endpoint and are not part of
+    # the comparison: the resolver answers creator configuration only,
+    # and eligibility stays with the guards that own it.
+    if settings.purchase_arrangements_shadow:
+        from app.services.purchase_arrangement_shadow import (
+            compare_series_quietly,
+        )
+
+        compare_series_quietly(
+            db, series=series, space=space, purchasable=purchasable,
+        )
+
     return out
 
 
