@@ -178,6 +178,25 @@ class Settings(BaseSettings):
     # what it cost before.
     purchase_arrangements_shadow: bool = False
 
+    # Stage 1B.2B — the member Series "Ways to Join" display, built
+    # from the shared purchase-arrangement resolver instead of the
+    # legacy projection. Hard-off by default.
+    #
+    # Display only. Checkout is untouched either way: the resolver
+    # carries the same ``payment_option_id`` and
+    # ``payment_option_schedule_id`` the legacy payload carried, and
+    # those are what the member hands back, so the arrangement a member
+    # chooses is the arrangement checkout prices.
+    #
+    # Deliberately separate from ``purchase_arrangements_shadow``. The
+    # shadow only *compares* and can run forever at no risk; this one
+    # changes what a member reads, and must not inherit the shadow's
+    # permission to be on.
+    #
+    # Flip to True only after the shadow observation window has closed
+    # clean and the change has been verified on a real Series.
+    purchase_arrangements_member_display: bool = False
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every

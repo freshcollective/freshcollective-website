@@ -995,6 +995,13 @@ AUTHORISED_CALLERS: frozenset[str] = frozenset({
     # does so after its own response is built and swallows anything it
     # raises.
     "services/purchase_arrangement_shadow.py",
+    # Stage 1B.2B — the member Series "Ways to Join" display, behind
+    # ``purchase_arrangements_member_display`` and off by default. The
+    # first caller whose output a *member* can read, which is why it
+    # went in behind its own flag rather than inheriting the shadow's.
+    # Still display only: it carries the same checkout identifiers the
+    # legacy payload carried and prices nothing.
+    "spaces/series_arrangement_display.py",
 })
 
 

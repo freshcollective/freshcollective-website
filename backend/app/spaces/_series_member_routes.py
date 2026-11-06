@@ -736,9 +736,18 @@ def get_member_gathering_series(
     # here we care about the *stricter* rule (needs a published
     # pay_in_full schedule) so the frontend knows whether to render
     # the "Ways to join" section at all.
-    has_purchasable = bool(
-        _member_purchasable_options_for_series(series, space, db)
-    )
+    # Stage 1B.2B — the gate reads whichever source the list endpoint
+    # will render, so the section cannot be shown empty or hidden while
+    # options exist. The two agree today (shadow-verified), which is
+    # exactly why switching both together is safe.
+    if settings.purchase_arrangements_member_display:
+        from app.spaces.series_arrangement_display import build_display_options
+
+        has_purchasable = bool(build_display_options(db, series_id=series.id))
+    else:
+        has_purchasable = bool(
+            _member_purchasable_options_for_series(series, space, db)
+        )
 
     # FIP4B1 — surface plan-recovery state so the ways-to-join
     # sidebar shows the recovery banner instead of standard purchase
@@ -851,28 +860,64 @@ def list_member_series_payment_options(
             if oid:
                 held_option_ids.add(oid)
 
+    # Computed either way. With the display flag off it is
+    # authoritative; with it on it is the shadow comparison's baseline,
+    # which is what keeps a safety net under the switch rather than
+    # removing it at the moment it is most useful. When the resolver
+    # becomes permanent, this call and the legacy branch below go
+    # together.
     purchasable = _member_purchasable_options_for_series(series, space, db)
 
     out: list[MemberPaymentOptionOut] = []
-    for po in purchasable:
-        allowance_per_week = po.series_grant.sessions_per_week if po.series_grant else None
-        allowance_total = po.series_grant.total_sessions if po.series_grant else None
-        out.append(MemberPaymentOptionOut(
-            id=po.option.id,
-            name=po.option.name,
-            description=po.option.description,
-            allowance_per_week=allowance_per_week,
-            allowance_total=allowance_total,
-            included_titles=po.included_titles,
-            # Shared projection — the Collective joining doors render
-            # the same shape with the same client component, so the
-            # two surfaces cannot drift on what a price means.
-            schedules=[
-                MemberPaymentOptionScheduleOut(**schedule_view(s, po.option))
-                for s in po.schedules
-            ],
-            viewer_holds_this_option=po.option.id in held_option_ids,
-        ))
+
+    if settings.purchase_arrangements_member_display:
+        # Stage 1B.2B — the same cards from the shared resolver.
+        #
+        # Only the *source of purchase-arrangement data* changes. The
+        # response model, the field names, the ordering, the checkout
+        # identifiers and ``viewer_holds_this_option`` are all exactly
+        # as before, so the frontend and checkout see no difference.
+        #
+        # Eligibility stays here, deliberately: the resolver answers
+        # what the creator configured and has no member in the
+        # question, so who already holds an Option is still decided by
+        # the AccessPass read above.
+        from app.spaces.series_arrangement_display import build_display_options
+
+        for card in build_display_options(db, series_id=series.id):
+            out.append(MemberPaymentOptionOut(
+                id=card.id,
+                name=card.name,
+                description=card.description,
+                allowance_per_week=card.allowance_per_week,
+                allowance_total=card.allowance_total,
+                included_titles=card.included_titles,
+                schedules=[
+                    MemberPaymentOptionScheduleOut(**sched.as_payload())
+                    for sched in card.schedules
+                ],
+                viewer_holds_this_option=card.id in held_option_ids,
+            ))
+    else:
+        for po in purchasable:
+            allowance_per_week = po.series_grant.sessions_per_week if po.series_grant else None
+            allowance_total = po.series_grant.total_sessions if po.series_grant else None
+            out.append(MemberPaymentOptionOut(
+                id=po.option.id,
+                name=po.option.name,
+                description=po.option.description,
+                allowance_per_week=allowance_per_week,
+                allowance_total=allowance_total,
+                included_titles=po.included_titles,
+                # Shared projection — the Collective joining doors render
+                # the same shape with the same client component, so the
+                # two surfaces cannot drift on what a price means.
+                schedules=[
+                    MemberPaymentOptionScheduleOut(**schedule_view(s, po.option))
+                    for s in po.schedules
+                ],
+                viewer_holds_this_option=po.option.id in held_option_ids,
+            ))
 
     # Stage 1B.2A — shadow comparison, off by default.
     #
