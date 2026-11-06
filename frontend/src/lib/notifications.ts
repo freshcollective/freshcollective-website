@@ -58,6 +58,17 @@ const TYPE_MAP: Record<string, TypeMeta> = {
   event_registration:  { category: 'gathering', label: 'Booking' },
   booking_confirmed:   { category: 'gathering', label: 'Booking' },
   gathering_cancelled: { category: 'gathering', label: 'Cancelled' },
+  // The four the Communications Layer sends that were never mapped,
+  // so they each showed as a generic "Update" outside the Gatherings
+  // category. Behaviour-free: `metaFor` already had a fallback, this
+  // just files them where a member would look for them.
+  gathering_reminder_24h:          { category: 'gathering', label: 'Reminder' },
+  multi_booking_confirmed:         { category: 'gathering', label: 'Booking' },
+  gathering_published:             { category: 'gathering', label: 'New gathering' },
+  series_published:                { category: 'gathering', label: 'New series' },
+  // A run of dates published together — one notification for the
+  // schedule, not one per occurrence.
+  gathering_recurrence_published:  { category: 'gathering', label: 'New dates' },
 
   // Pathways
   new_pathway:                     { category: 'pathway', label: 'New pathway' },

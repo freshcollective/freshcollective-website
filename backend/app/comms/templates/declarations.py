@@ -105,6 +105,11 @@ F_SERIES = MergeField(
     "series_name", "series_title", "Autumn Term",
     "The Gathering Series' title.",
 )
+F_SCHEDULE = MergeField(
+    "schedule_name", "schedule_name", "Women's Circle",
+    "The recurring schedule's name — what the creator called it, or "
+    "the Gathering's own title when they named nothing.",
+)
 F_POST_AUTHOR = MergeField(
     "author_name", "author_name", "Kelly",
     "Who published the post.",
@@ -642,6 +647,53 @@ declare(TemplateDeclaration(
         "The schedule line is generated — a session count and a start "
         "date rather than every date, which would be a wall of text.",
         "One email per Series, never one per session.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="gathering.recurrence.published.email_transactional",
+    event_type="gathering.recurrence.published",
+    display_name="New recurring gatherings published",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="Every active member of the Collective, except the creator",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_SCHEDULE),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "New dates in {{collective_name}}: {{schedule_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("collective_name", "schedule_name")),
+        EditableSlot("heading", "Heading", "{{schedule_name}}",
+                     multiline=False, required_fields=("schedule_name",)),
+        # No count and no "several" here: the number of dates is
+        # generated below, because one string cannot stay true across
+        # "1 gathering" and "12 gatherings" — the same reason every
+        # other computed sentence in this file is not a slot.
+        EditableSlot("body.opening", "Opening",
+                     "{{schedule_name}} is now open in {{collective_name}}.",
+                     required_fields=("collective_name", "schedule_name")),
+        EditableSlot("body.closing", "Closing",
+                     "Open the gatherings to see every date."),
+        EditableSlot("cta_label", "Button label", "See The Dates",
+                     multiline=False, max_length=40),
+    ),
+    locked_notes=(
+        "One email for the whole schedule, never one per date. Keyed to "
+        "the recurrence, so editing or moving an occurrence does not "
+        "send it again.",
+        "The count and the first date are generated — not every date, "
+        "which would be a wall of text. The Gatherings page has them "
+        "all.",
+        "\u201cEach date is booked separately\u201d is generated and "
+        "cannot be edited away. A recurring schedule is a set of "
+        "independent Gatherings, not a package, and the email must "
+        "never imply a member has to buy the whole run.",
+        "Only the public locality is included, never the street "
+        "address or joining link \u2014 an announcement goes to people "
+        "who have not booked.",
+        "The button goes to the Collective's Gatherings page rather "
+        "than one occurrence, so it still works after a date moves or "
+        "one is cancelled.",
     ),
 ))
 

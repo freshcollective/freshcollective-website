@@ -535,6 +535,7 @@ class TestBulkCreateAssignsSeries:
                 ),
             ),
             db=db, current_user=creator,
+            background_tasks=BackgroundTasks(),
         )
         assert resp.created_count == 4
         # Both response names carry the same recurrence tag.
@@ -565,6 +566,7 @@ class TestBulkCreateAssignsSeries:
                 ),
             ),
             db=db, current_user=creator,
+            background_tasks=BackgroundTasks(),
         )
         payload = resp.model_dump()
         assert payload["recurrence_series_id"] == payload["series_id"]
@@ -846,6 +848,7 @@ class TestSeriesPassInvariant:
                     ),
                 ),
                 db=db, current_user=creator,
+                background_tasks=BackgroundTasks(),
             )
         assert ex.value.status_code == 400
 

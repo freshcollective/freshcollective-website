@@ -569,3 +569,130 @@ def _series_schedule(ctx: dict) -> str:
     if starts:
         parts.append(f"from {starts}")
     return ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# gathering.recurrence.published — a run of dates, announced once
+# ---------------------------------------------------------------------------
+#
+# The third publication announcement. Deliberately worded so a member
+# never reads it as a package they must buy: a recurring schedule is a
+# set of independent Gatherings, each booked and paid for on its own,
+# and the closing line and the CTA both say so. ``series.published``
+# above is the one that invites somebody into a connected term.
+
+_EVENT_RECURRENCE_PUBLISHED = "gathering.recurrence.published"
+
+
+def _schedule_name(ctx: dict) -> str:
+    """The creator's own name for the schedule, or the Gathering title.
+
+    The resolver already falls back, so this is the second line of
+    defence — a heading is the one thing in an email that cannot be
+    blank.
+    """
+    return (
+        (ctx.get("schedule_name") or "").strip()
+        or (ctx.get("gathering_title") or "").strip()
+        or "a new run of gatherings"
+    )
+
+
+def _recurrence_span(ctx: dict) -> str:
+    """How many dates, and when they start — not the timetable.
+
+    The same decision as ``_series_schedule``: twelve dates in an email
+    is a wall, and the Gatherings page has every one of them. "12
+    gatherings, the first on Friday 7 November at 10:00am" is the shape
+    of the thing.
+    """
+    count = int(ctx.get("occurrence_count") or 0)
+    when = (ctx.get("first_when") or "").strip()
+    parts: list[str] = []
+    if count:
+        parts.append(f"{count} gathering{'s' if count != 1 else ''}")
+    if when:
+        # "the first on" only means something when there is more than
+        # one. A creator who published a single occurrence of a draft
+        # batch should not be told their one date is "the first".
+        parts.append(f"the first on {when}" if count != 1 else f"on {when}")
+    return ", ".join(parts)
+
+
+@template_for(_EVENT_RECURRENCE_PUBLISHED, CHANNEL_IN_APP)
+class RecurrencePublishedInAppTemplate:
+    key = "gathering.recurrence.published.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _schedule_name(ctx)
+        count = int(ctx.get("occurrence_count") or 0)
+        span = _recurrence_span(ctx)
+        return RenderedPayload(
+            to="",
+            subject=(
+                f"New dates: {name}" if count != 1 else f"New gathering: {name}"
+            ),
+            body_text=span or name,
+            metadata={
+                "notification_type": "gathering_recurrence_published",
+                "url": ctx.get("gatherings_url"),
+            },
+        )
+
+
+@template_for(_EVENT_RECURRENCE_PUBLISHED, CHANNEL_EMAIL_TRANSACTIONAL)
+class RecurrencePublishedEmailTemplate:
+    key = "gathering.recurrence.published.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _schedule_name(ctx)
+        span = _recurrence_span(ctx)
+        where = _where_line(ctx)
+        description = (ctx.get("description") or "").strip()
+        url = _announcement_url(ctx, "gatherings_url")
+
+        r = resolver_for(db, self.key, {**ctx, "schedule_name": name})
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        # The line that keeps a schedule from reading as a package. Not
+        # a slot an admin can empty into something misleading — it is
+        # generated, and the declaration says why. Suppressed at a
+        # single visible date, where there is nothing to choose between
+        # and the sentence would be noise.
+        separately = (
+            "Each date is booked separately, so you can come to the ones "
+            "that suit you."
+            if int(ctx.get("occurrence_count") or 0) != 1 else ""
+        )
+        closing = r.text("body.closing")
+        cta = r.text("cta_label")
+
+        details = [line for line in (span, where) if line]
+        paragraphs = [opening, *details, description, separately, closing]
+        kept = [p for p in paragraphs if p]
+        body_text = "\n\n".join(kept + ([url] if url else []))
+
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=render_email_shell(
+                db=db,
+                preheader=opening,
+                heading=r.text("heading"),
+                body_paragraphs=kept,
+                action=(cta, url) if url else None,
+            ),
+            body_text=body_text,
+            metadata={
+                "notification_type": "gathering_recurrence_published",
+                "recurrence_series_id": ctx.get("recurrence_series_id"),
+            },
+        )

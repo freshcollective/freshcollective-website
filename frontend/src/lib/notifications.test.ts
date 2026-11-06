@@ -106,3 +106,34 @@ describe('notificationTint', () => {
     assert.deepEqual(a, b)
   })
 })
+
+describe('the Communications Layer gathering notifications (FC-209)', () => {
+  // Four types the comms layer sends were never in TYPE_MAP, so each
+  // showed as a generic "Update" outside the Gatherings category. The
+  // fifth is new. Grouped here because a member scanning the tray
+  // should find all five under Gatherings.
+  const GATHERING_TYPES = [
+    'gathering_reminder_24h',
+    'multi_booking_confirmed',
+    'gathering_published',
+    'series_published',
+    'gathering_recurrence_published',
+  ]
+
+  for (const type of GATHERING_TYPES) {
+    it(`${type} is a Gathering, not a generic update`, () => {
+      assert.notEqual(notificationLabel(type), 'Update')
+      // Same tint as a booking, which is the category's own.
+      assert.deepEqual(
+        notificationTint(type), notificationTint('booking_confirmed'),
+      )
+    })
+  }
+
+  it('a recurring schedule reads as dates, not as a series', () => {
+    // The product distinction FC-209 exists to preserve: a recurrence
+    // is a run of independent Gatherings, a Series is a package.
+    assert.equal(notificationLabel('gathering_recurrence_published'), 'New dates')
+    assert.equal(notificationLabel('series_published'), 'New series')
+  })
+})

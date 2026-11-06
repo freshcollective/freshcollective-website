@@ -5010,19 +5010,20 @@ def create_event(
 
     # A Gathering created straight into published announces here; one
     # created as a draft announces when it is published, from the
-    # update handler. Refused for a Series occurrence on the same
-    # reasoning as the activity row above.
+    # update handler. Which announcement it is — a single Gathering, a
+    # recurring schedule, or none because a Series will speak for it —
+    # is decided in the service, not here.
     from app.services.publication_announcement import (
-        announce_gathering_if_newly_published,
+        announce_if_newly_published,
     )
-    _announcement = announce_gathering_if_newly_published(
+    _announcement = announce_if_newly_published(
         db, event, actor_user_id=current_user.id,
     )
 
     db.commit()
     if _announcement is not None:
         schedule_routing_if_needed(
-            background_tasks, _announcement, "gathering.published",
+            background_tasks, _announcement.event, _announcement.event_type,
         )
     db.refresh(event)
     return _event_to_dict(event, 0)
@@ -5165,10 +5166,16 @@ def duplicate_event(
 def bulk_create_events(
     slug: str,
     body: EventCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> BulkEventCreateResponse:
-    """Create a recurring series of individual event records."""
+    """Create a recurring run of individual Gathering records.
+
+    One announcement for the schedule when it is published with the
+    creator's consent — never one per occurrence. See
+    ``services/publication_announcement``.
+    """
     from datetime import timedelta
 
     if not body.recurrence:
@@ -5315,7 +5322,39 @@ def bulk_create_events(
         )
         db.add(event)
 
+    # The schedule announces itself, once, if the creator asked for it.
+    #
+    # Inside this transaction and before the commit, like every other
+    # publication announcement: a rollback takes the announcement with
+    # it, so there is never an email about Gatherings that do not
+    # exist. ``flush`` first because the service aggregates the rows it
+    # is announcing rather than trusting what this handler thinks it
+    # created.
+    #
+    # Refused when the batch belongs to a formal Series — that Series
+    # announces when it is published — and when the creator turned the
+    # notification off. Both decisions live in the service.
+    from app.services.publication_announcement import (
+        RECURRENCE_EVENT,
+        announce_recurrence_if_newly_published,
+    )
+
+    _announcement = None
+    if body.is_published and not resolved_series_id:
+        db.flush()
+        _announcement = announce_recurrence_if_newly_published(
+            db,
+            space_id=space.id,
+            recurrence_series_id=recurrence_tag,
+            actor_user_id=current_user.id,
+            notify_members=body.notify_members,
+        )
+
     db.commit()
+    if _announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, _announcement, RECURRENCE_EVENT,
+        )
     # Both names on the response point at the same value — the
     # low-level recurrence UUID stamped on every generated row.
     # ``recurrence_series_id`` is the canonical name; ``series_id``
@@ -5459,17 +5498,23 @@ def update_event(
     # announcement with it and a failed publish announces nothing.
     # Returning to draft and publishing again is a no-op: the dedupe
     # key already exists.
+    #
+    # This is also where a *draft recurring schedule* announces. There
+    # is no batch-level publish action, so a creator publishes a draft
+    # batch one occurrence at a time; the first one to become
+    # member-visible announces the schedule, and the eleven that follow
+    # find the dedupe key already there.
     from app.services.publication_announcement import (
-        announce_gathering_if_newly_published,
+        announce_if_newly_published,
     )
-    _announcement = announce_gathering_if_newly_published(
+    _announcement = announce_if_newly_published(
         db, event, actor_user_id=current_user.id,
     )
 
     db.commit()
     if _announcement is not None:
         schedule_routing_if_needed(
-            background_tasks, _announcement, "gathering.published",
+            background_tasks, _announcement.event, _announcement.event_type,
         )
     db.refresh(event)
     booked_count = (

@@ -154,6 +154,27 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # cancellation notice.
     EventDefinition("gathering.published",                TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
     EventDefinition("series.published",                   TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
+    # A run of Gatherings generated together and published without a
+    # formal Series — Kelly's Women's Circle on the first Friday of
+    # each month. One announcement for the whole schedule, keyed to
+    # the ``recurrence_series_id``, never one per occurrence.
+    #
+    # The third member of the publication family, and the reason it
+    # exists: the occurrence-level refusal in
+    # ``publication_announcement._belongs_to_series`` correctly stops
+    # twelve emails, and nothing used to pick the batch up afterwards,
+    # so publishing a recurring schedule told nobody.
+    #
+    # Distinct from ``series.published``, which announces a formal
+    # ``EventSeries`` — a connected experience with its own page and
+    # payment options. A recurrence is a set of independent
+    # Gatherings, each booked and paid for on its own, and the copy
+    # says so. A batch that *does* carry a ``series_id`` is refused
+    # here and announced by the Series instead, so the two can never
+    # both fire for the same Gatherings.
+    #
+    # Not event-locked, for the same reason as the two above.
+    EventDefinition("gathering.recurrence.published",     TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
     EventDefinition("pathway.published",                  TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
     EventDefinition("pathway.step_added",                 TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
     EventDefinition("pathway.enrolment.completed",        TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),

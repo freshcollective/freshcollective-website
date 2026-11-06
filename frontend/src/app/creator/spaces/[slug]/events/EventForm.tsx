@@ -607,10 +607,12 @@ export default function EventForm({
           <div className="rounded-xl border border-border bg-slate-50/50 p-5">
             <div className="mb-3 flex items-center gap-3">
               <Toggle checked={isRecurring} onChange={setIsRecurring} />
-              <span className="text-sm font-medium text-navy-800">Recurring series</span>
+              <span className="text-sm font-medium text-navy-800">Repeat on a schedule</span>
             </div>
             <p className="mb-4 text-xs italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
-              Weekly recurrence is the only pattern currently supported.
+              Creates one Gathering per date, each booked separately. Not a
+              Gathering Series — weekly recurrence is the only pattern
+              currently supported.
             </p>
 
             {isRecurring && (
@@ -637,11 +639,15 @@ export default function EventForm({
                 </div>
 
                 <div>
-                  <p className="mb-2 text-sm font-medium text-navy-800">Series name</p>
+                  <p className="mb-2 text-sm font-medium text-navy-800">Schedule name</p>
+                  <p className="mb-2 text-xs text-black">
+                    Shown to members on each date, and used in the
+                    announcement if you notify them.
+                  </p>
                   <input
                     value={seriesLabel}
                     onChange={(e) => setSeriesLabel(e.target.value)}
-                    placeholder="e.g. Weekly Accountability Call"
+                    placeholder="e.g. Women's Circle"
                     className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
                   />
                 </div>
@@ -1233,24 +1239,39 @@ export default function EventForm({
       <Section title="PUBLICATION">
         {/* The announcement choice, beside the Publish button rather
             than buried in a settings tab — it is a decision about this
-            act of publishing. Hidden for a recurring Series: the
-            Series announces itself once, and its occurrences never
-            announce individually. */}
-        {!isRecurring && (
-          <div className="mb-3 flex items-start gap-3">
-            <Toggle checked={notifyMembers} onChange={setNotifyMembers} />
-            <div>
-              <span className="text-sm font-medium text-navy-800">
-                Notify Collective members about this Gathering
-              </span>
-              <p className="mt-0.5 text-xs leading-relaxed text-black">
-                {notifyMembers
-                  ? 'One email when you publish, to members who haven’t turned these off. Saving a draft sends nothing.'
-                  : 'This will publish quietly — no announcement email.'}
+            act of publishing.
+
+            Offered for a recurring schedule too. It used to be hidden
+            on the grounds that "the Series announces itself", which
+            was only true when the creator had also attached the batch
+            to a formal Series — without one, publishing a run of
+            twelve told nobody at all. The copy says plainly that one
+            email covers the whole schedule, because the fear the
+            hidden toggle was protecting against was twelve. */}
+        <div className="mb-3 flex items-start gap-3">
+          <Toggle checked={notifyMembers} onChange={setNotifyMembers} />
+          <div>
+            <span className="text-sm font-medium text-navy-800">
+              {isRecurring
+                ? 'Notify Collective members about these Gatherings'
+                : 'Notify Collective members about this Gathering'}
+            </span>
+            <p className="mt-0.5 text-xs leading-relaxed text-black">
+              {notifyMembers
+                ? (isRecurring
+                    ? 'One email about the whole schedule when you publish — never one per date — to members who haven’t turned these off. Saving a draft sends nothing.'
+                    : 'One email when you publish, to members who haven’t turned these off. Saving a draft sends nothing.')
+                : 'This will publish quietly — no announcement email.'}
+            </p>
+            {isRecurring && seriesId && (
+              <p className="mt-1 text-xs leading-relaxed italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                These dates belong to a Gathering Series, so the Series
+                sends the announcement when you open it. Nothing is sent
+                from here.
               </p>
-            </div>
+            )}
           </div>
-        )}
+        </div>
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             type="submit"
@@ -1270,7 +1291,7 @@ export default function EventForm({
           >
             {saving && submitMode === 'publish'
               ? 'Publishing…'
-              : (isRecurring ? 'Publish Series' : 'Publish Gathering')}
+              : (isRecurring ? 'Publish Recurring Gatherings' : 'Publish Gathering')}
           </button>
 
           {isEdit && event?.is_published && (

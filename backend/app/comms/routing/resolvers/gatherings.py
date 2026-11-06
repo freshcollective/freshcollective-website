@@ -297,3 +297,97 @@ class SeriesPublishedResolver:
                 )
             )
         return out
+
+
+@resolver_for("gathering.recurrence.published")
+class RecurrencePublishedResolver:
+    """One announcement for a recurring schedule, to the whole
+    Collective, bar the creator who published it.
+
+    The same shape as ``GatheringPublishedResolver`` beside it, with
+    one difference: the subject is a batch, so visibility is re-checked
+    against the batch rather than a row. Routing runs in a background
+    task after the response, so every occurrence can be unpublished or
+    cancelled in the gap — and nobody should be emailed an invitation
+    to a schedule that has since gone.
+
+    The occurrences themselves never reach this point: a Gathering
+    carrying a ``recurrence_series_id`` is refused by
+    ``should_announce_gathering``, and one carrying a ``series_id`` is
+    refused before this event is even written. So there is no
+    de-duplication to do here between a schedule and its sessions, or
+    between a schedule and a Series.
+    """
+
+    event_type = "gathering.recurrence.published"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        from app.models.platform import Space, SpaceMembership
+        from app.services.publication_announcement import (
+            recurrence_is_member_visible,
+        )
+
+        context = event.context or {}
+        payload = event.payload or {}
+        space_id = context.get("space_id")
+        recurrence_series_id = (
+            payload.get("recurrence_series_id") or event.subject_id
+        )
+        if not space_id or not recurrence_series_id:
+            return []
+
+        if not recurrence_is_member_visible(
+            db, space_id, recurrence_series_id,
+        ):
+            return []
+
+        space = db.get(Space, space_id)
+        collective_name = (
+            context.get("collective_name")
+            or (space.name if space else "your collective")
+        )
+        # The Gatherings list, not an occurrence. It is where every date
+        # in the schedule appears and where each one is booked, it is
+        # not keyed to any single Gathering so editing or cancelling one
+        # cannot break it, and it describes nothing as a package.
+        gatherings_url = f"/spaces/{space.slug}/events" if space else None
+
+        rows = db.execute(
+            select(SpaceMembership).where(
+                SpaceMembership.space_id == space_id,
+                SpaceMembership.status == "active",
+            )
+        ).scalars().all()
+
+        out: list[ResolvedRecipient] = []
+        for row in rows:
+            # The creator published it; they do not need telling.
+            if event.actor_user_id and row.user_id == event.actor_user_id:
+                continue
+            out.append(
+                ResolvedRecipient(
+                    user_id=row.user_id,
+                    role_in_event="member_of_collective",
+                    human_reason=f"You're a member of {collective_name}.",
+                    template_context={
+                        "collective_name": collective_name,
+                        "recurrence_series_id": recurrence_series_id,
+                        "schedule_name": payload.get("schedule_name"),
+                        "gathering_title": payload.get("gathering_title"),
+                        "occurrence_count": payload.get("occurrence_count"),
+                        "first_starts_at": payload.get("first_starts_at"),
+                        "last_starts_at": payload.get("last_starts_at"),
+                        "first_when": payload.get("first_when"),
+                        "location_type": payload.get("location_type"),
+                        "attendance_format": payload.get("attendance_format"),
+                        "venue_locality": payload.get("venue_locality"),
+                        "description": payload.get("description"),
+                        "is_paid": payload.get("is_paid"),
+                        "gatherings_url": gatherings_url,
+                        "space_id": space_id,
+                    },
+                )
+            )
+        return out

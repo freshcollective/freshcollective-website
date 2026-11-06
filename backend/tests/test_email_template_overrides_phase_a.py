@@ -59,6 +59,12 @@ SAMPLE = {
     "gathering_id": "ev_1", "gathering_url": "https://fc.test/g", "added_by_creator": False,
     "gathering_when": "Friday 19 September at 9:00am", "was_ticketed": True,
     "series_title": "Spring Term", "session_count": 8,
+    # The recurring-schedule announcement. Present so the shared
+    # harness renders its generated span line rather than dropping it
+    # for want of a count.
+    "schedule_name": "Women's Circle", "occurrence_count": 12,
+    "first_when": "Friday 7 November at 10:00am",
+    "recurrence_series_id": "rec_1", "gatherings_url": "https://fc.test/ev",
     "first_starts_at": "Fri 19 Sep", "last_starts_at": "Fri 7 Nov",
     "cta_url": "https://fc.test/s", "schedule_preview": [{"title": "W1", "when": "Fri"}],
     "excerpt": "A quiet thought.", "post_title": "On stillness",

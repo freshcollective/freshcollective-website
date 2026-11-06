@@ -127,6 +127,11 @@ AUDITED: dict[str, str] = {
     # reminder.
     "gathering.published":                           PREFERENCE,
     "series.published":                              PREFERENCE,
+    # A recurring schedule, announced once. Same reasoning as the two
+    # above, and deliberately the same answer: an invitation to a run
+    # of new dates is skippable, and it is governed by the Gatherings
+    # preference alongside the reminder.
+    "gathering.recurrence.published":                PREFERENCE,
 
     # ── Member money and access ──────────────────────────────────────
     "purchase.completed":                            LOCKED,
@@ -568,6 +573,11 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     # (date, locality, schedule line) are named in their locked_notes.
     "gathering.published":                         "editable",
     "series.published":                            "editable",
+    # The recurring-schedule announcement, on the same footing. The
+    # count, the first date, the locality and the "each date is booked
+    # separately" line are generated — see its locked_notes, which
+    # explain why that last one is not an admin's to remove.
+    "gathering.recurrence.published":              "editable",
     "access.suspended":                            "system",
     "payment.instalment_failed":                   "system",
     "payment.recovered":                           "system",

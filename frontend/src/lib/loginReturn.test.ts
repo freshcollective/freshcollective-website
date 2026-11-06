@@ -221,3 +221,24 @@ describe('private and missing Collectives are indistinguishable', () => {
     }
   })
 })
+
+describe('the recurring-schedule announcement link (FC-209)', () => {
+  // The announcement sends members to the Collective's Gatherings
+  // page. That destination has to survive a signed-out click from an
+  // inbox, which is the whole point of the layout redirect this file
+  // covers.
+  it('the Gatherings page is a safe return path', () => {
+    assert.equal(isSafeReturnPath('/spaces/moonlit-circle/events'), true)
+  })
+
+  it('the shared Collective layout still offers the door', () => {
+    // Not keyed to Gatherings specifically — the layout wraps every
+    // Collective page, so a schedule link inherits the same
+    // sign-in-and-come-back behaviour a Conversations link has. If
+    // this import disappears, the announcement link starts landing on
+    // "page not found" for signed-out members.
+    const src = readFileSync(LAYOUT, 'utf8')
+    assert.match(src, /loginReturnFor/)
+    assert.match(src, /if \(!user\)/)
+  })
+})
