@@ -311,6 +311,58 @@ def preview_discount_code(
     )
 
 
+def _run_checkout_shadow(db, *, resolved, recurring: bool, discounted: bool) -> None:
+    """Stage 1B.3 — compare the decision just made against the resolver.
+
+    Called after every guard has passed and before Stripe is
+    contacted. Reads, compares, logs; changes nothing. Off by default.
+
+    The flag is checked before any work, so with it off this costs a
+    boolean and no query.
+
+    A discounted purchase is recorded as ``not_comparable`` rather than
+    compared: the resolver prices the *arrangement*, and a discount
+    changes what Stripe charges without changing the arrangement. A
+    naive comparison would report a disagreement on every discounted
+    checkout and bury the real ones.
+
+    Scoped to Gathering Series by asking the Option which Series it
+    grants — the unified endpoint is kind-agnostic, so a request never
+    names one. An Option granting no Series is simply not this stage's
+    business and is skipped before any comparison is built.
+    """
+    if not settings.purchase_arrangements_checkout_shadow:
+        return
+    try:
+        from app.services import checkout_arrangement_shadow as _ccs
+
+        series_id = _ccs.series_id_for_option(db, resolved.payment_option.id)
+        if series_id is None:
+            return
+        if recurring:
+            authoritative = _ccs.authoritative_from_finite_plan(
+                series_id=series_id, resolved=resolved,
+            )
+        else:
+            authoritative = _ccs.authoritative_from_pay_in_full(
+                series_id=series_id, resolved=resolved,
+            )
+        if discounted:
+            _ccs.not_comparable(authoritative, "discount_applied").log()
+            return
+        _ccs.compare_checkout_quietly(db, authoritative=authoritative)
+    except Exception:  # noqa: BLE001
+        # Even assembling the comparison must not disturb a checkout
+        # that has already been accepted.
+        logger.warning(
+            "purchase_arrangements_checkout_shadow verdict=shadow_error "
+            "option=%s", getattr(
+                getattr(resolved, "payment_option", None), "id", "-",
+            ),
+            exc_info=True,
+        )
+
+
 @router.post("", response_model=UnifiedCheckoutResponse)
 def create_unified_checkout_session(
     body: UnifiedCheckoutRequest,
@@ -440,6 +492,9 @@ def create_unified_checkout_session(
             db, user=current_user,
             payment_option=recurring_resolved.payment_option, now=now,
         )
+        _run_checkout_shadow(
+            db, resolved=recurring_resolved, recurring=True, discounted=False,
+        )
         outcome = start_finite_plan_setup(
             db,
             resolved=recurring_resolved,
@@ -493,6 +548,11 @@ def create_unified_checkout_session(
             status_code=409,
             detail={"reason": exc.reason, "message": exc.message},
         ) from exc
+
+    _run_checkout_shadow(
+        db, resolved=resolved, recurring=False,
+        discounted=bool(body.discount_code),
+    )
 
     # ── Free path: skip Stripe, apply grants directly ─────────────
     if resolved.price_cents == 0:

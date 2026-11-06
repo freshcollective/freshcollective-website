@@ -1002,6 +1002,14 @@ AUTHORISED_CALLERS: frozenset[str] = frozenset({
     # Still display only: it carries the same checkout identifiers the
     # legacy payload carried and prices nothing.
     "spaces/series_arrangement_display.py",
+    # Stage 1B.3 — the checkout-validation shadow, behind
+    # ``purchase_arrangements_checkout_shadow`` and off by default. It
+    # runs on the path where money is about to move, which is exactly
+    # why it only reads: it calls ``resolve_arrangement`` to re-derive
+    # the price from the identifiers the member supplied, compares,
+    # logs, and swallows its own failures. The authoritative checkout
+    # decides in both flag states.
+    "services/checkout_arrangement_shadow.py",
 })
 
 
@@ -1078,21 +1086,34 @@ class TestTheResolverHasNoProductionCallers:
         })
         assert found == [], f"{rel} may mutate the session: {found}"
 
-        identifiers = {
-            n.id.lower() for n in ast.walk(tree) if isinstance(n, ast.Name)
-        } | {
-            n.attr.lower() for n in ast.walk(tree) if isinstance(n, ast.Attribute)
-        } | {
-            alias.name.lower()
-            for n in ast.walk(tree)
-            if isinstance(n, (ast.Import, ast.ImportFrom))
-            for alias in n.names
-        } | {
-            (n.module or "").lower()
-            for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
-        }
-        stripe_refs = sorted(i for i in identifiers if "stripe" in i)
-        assert stripe_refs == [], f"{rel} touches Stripe: {stripe_refs}"
+        # "Calls Stripe", not "contains the word". Narrowed from a
+        # substring sweep over every identifier, which flagged
+        # ``schedule.stripe_interval`` — a column holding a cadence,
+        # read from the database and never sent anywhere. Ban the use,
+        # not the word.
+        stripe_refs: set[str] = set()
+        for n in ast.walk(tree):
+            # ``import stripe`` / ``import stripe.x``
+            if isinstance(n, ast.Import):
+                stripe_refs |= {
+                    a.name for a in n.names
+                    if a.name == "stripe" or a.name.startswith("stripe.")
+                }
+            # ``from stripe... import x``
+            if isinstance(n, ast.ImportFrom) and n.module:
+                if n.module == "stripe" or n.module.startswith("stripe."):
+                    stripe_refs.add(n.module)
+            # ``stripe.checkout.Session.create(...)`` — attribute access
+            # rooted at a name called ``stripe``.
+            if isinstance(n, ast.Attribute):
+                root = n
+                while isinstance(root, ast.Attribute):
+                    root = root.value
+                if isinstance(root, ast.Name) and root.id in ("stripe", "_stripe"):
+                    stripe_refs.add(f"{root.id}.{n.attr}")
+        assert stripe_refs == set(), (
+            f"{rel} calls Stripe: {sorted(stripe_refs)}"
+        )
 
     def test_the_authorised_caller_is_not_a_payment_path(self):
         """The preview is allowed to read arrangements; it is not

@@ -197,6 +197,26 @@ class Settings(BaseSettings):
     # clean and the change has been verified on a real Series.
     purchase_arrangements_member_display: bool = False
 
+    # Stage 1B.3 — the checkout-validation shadow. Hard-off by default.
+    #
+    # When True, a Gathering Series checkout that has already passed
+    # every guard asks the resolver to re-derive the same arrangement
+    # from the identifiers the member supplied, and logs whether the
+    # two agree on identity, currency, immediate charge, total and
+    # instalment shape.
+    #
+    # The comparison runs **after** the authoritative decision is made
+    # and before Stripe is contacted. It cannot change the outcome: it
+    # reads, compares, logs, and swallows its own failures. A resolver
+    # bug must never cost a member their purchase.
+    #
+    # Deliberately its own flag rather than reusing
+    # ``purchase_arrangements_shadow``. That one compares a *display*
+    # and is safe to leave on indefinitely; this one runs on the path
+    # where money is about to move, so the decision to observe it is
+    # separate.
+    purchase_arrangements_checkout_shadow: bool = False
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every
