@@ -271,9 +271,35 @@ def _do_charge_refunded(
         webhook_event_row_id=webhook_event_row_id,
     )
 
+    # Give the seat back, when this was a fully refunded Gathering
+    # ticket. Narrow by design — see
+    # ``services/gathering_refund_reconciliation`` for what it refuses
+    # to touch and why. A partial refund reaches this line too and is
+    # skipped there: the member is still coming.
+    #
+    # Inside this transaction on purpose. A recorded refund whose seat
+    # stayed sold is the inconsistency being fixed, so if the booking
+    # cannot be released the ledger write should roll back with it and
+    # let Stripe retry the whole event.
+    from app.services.gathering_refund_reconciliation import (
+        reconcile_fully_refunded_ticket,
+    )
+
+    _seat = reconcile_fully_refunded_ticket(db, txn=txn)
+    if _seat.applied:
+        logger.info(
+            "charge.refunded: released seat booking=%s on event=%s for txn=%s",
+            _seat.booking_id, _seat.event_id, txn.id,
+        )
+
     # Comms — member-facing refund confirmation. Stripe fires
     # ``charge.refunded`` only after a refund has actually succeeded, so
     # reaching this line means the money is genuinely on its way back.
+    #
+    # The booking cancellation above is deliberately silent: nothing in
+    # the codebase notifies on a booking cancellation, so this refund
+    # confirmation remains the single member-facing message and no
+    # duplicate or contradictory email is produced.
     # Guarded on a real increase in the cumulative total: same-value
     # re-delivery and out-of-order events emit nothing.
     refund_delta = incoming_amount - previous_refunded_cents
