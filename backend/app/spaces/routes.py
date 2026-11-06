@@ -3103,9 +3103,19 @@ def create_gathering_ticket_checkout(
     )
 
 
-# NOTE for future maintainers: refunds / dispute revocation are NOT
-# implemented. A manual Stripe refund does NOT release the seat or
-# revoke the AccessPass — this is a documented MVP gap.
+# NOTE for future maintainers: a **fully refunded** ticket now releases
+# the seat and cancels its AccessPass — see
+# ``services/gathering_refund_reconciliation``, driven from the
+# ``charge.refunded`` webhook. A partial refund deliberately changes
+# nothing but the money.
+#
+# Still NOT reconciled: **disputes**. ``charge.dispute.created`` and
+# ``charge.dispute.closed`` are handled, but only for the money — they
+# hold or reclaim the creator's share (``connect_money_handlers``) and
+# never touch the booking. That is deliberate rather than missed: a
+# dispute is not a refund. The money is held, not returned, and it may
+# come back, so whether the seat should stay sold while a dispute is
+# open is a product decision nobody has made.
 
 
 @router.get("/{slug}/my-passes", response_model=list[AccessPassOut])
