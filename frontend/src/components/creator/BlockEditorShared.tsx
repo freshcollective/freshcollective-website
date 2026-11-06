@@ -1389,7 +1389,17 @@ export function BlockEditForm({
           </div>
           <div>
             <label className="field-label">Button label (optional)</label>
-            <input value={label} onChange={e => setLabel(e.target.value)} className="field-input" placeholder="Download workbook" />
+            {/* Capped to match `pathway_step_blocks.label`, which is
+                VARCHAR(300). Without it the column is the only limit and
+                a paste over it returns an HTTP 500 — the same shape as
+                FC-API-M, which was `caption` at 500. */}
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              className="field-input"
+              placeholder="Download workbook"
+              maxLength={300}
+            />
           </div>
         </>
       )}
@@ -1402,7 +1412,15 @@ export function BlockEditForm({
           </div>
           <div>
             <label className="field-label">Link label</label>
-            <input value={label} onChange={e => setLabel(e.target.value)} className="field-input" placeholder="Visit resource" />
+            {/* Same 300 as the column, for the same reason as the
+                download button label above. */}
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              className="field-input"
+              placeholder="Visit resource"
+              maxLength={300}
+            />
           </div>
           <CaptionField
             id="block-caption-link"
