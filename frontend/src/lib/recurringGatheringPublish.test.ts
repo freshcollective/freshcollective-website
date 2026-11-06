@@ -100,26 +100,9 @@ function src_notify(): string {
   return src.slice(src.indexOf('PUBLICATION'))
 }
 
-describe('the schedule is described as a schedule, not a Series', () => {
-  it('the toggle invites repeating on a schedule', () => {
-    assert.match(raw(), /Repeat on a schedule/)
-  })
-
-  it('it says each date is booked separately', () => {
-    // The same promise the announcement email makes, made at the
-    // point the creator decides.
-    assert.match(raw(), /each booked separately/)
-  })
-
-  it('it says plainly that this is not a Gathering Series', () => {
-    assert.match(raw(), /Not a\s*\n?\s*Gathering Series/)
-  })
-
-  it('the label field is a Schedule name', () => {
-    assert.match(raw(), /Schedule name/)
-    assert.ok(
-      !code().includes('Series name'),
-      'the recurrence label is still called "Series name"',
-    )
-  })
-})
+// The toggle's own label and the "not a Series" copy moved to
+// `creatorStudioGatheringCreation.test.ts`, which asserts them as part
+// of the whole Creator Studio → Create Gathering → recurrence chain.
+// Keeping a second copy here meant two files to update for one wording
+// change, and the chain is the thing that was actually missing
+// coverage. This file stays about publication and the announcement.

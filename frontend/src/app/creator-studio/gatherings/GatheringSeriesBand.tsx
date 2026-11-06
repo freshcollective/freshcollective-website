@@ -41,9 +41,15 @@ export default function GatheringSeriesBand({ spaceSlug, series }: Props) {
         <div>
           <h2 className="font-serif text-[18px] text-navy-900">Gathering Series</h2>
           <p className="mt-1 max-w-lg text-[13px] text-black">
-            Group related Gatherings — a term, a program, or an ongoing
-            circle. Everything from access to payment is authored on
-            the Series itself.
+            Group related Gatherings into one connected experience — a
+            term or a program, bought as a whole. Everything from access
+            to payment is authored on the Series itself.
+          </p>
+          <p className="mt-1 max-w-lg text-[12.5px] text-slate-500">
+            Just repeating the same Gathering on a schedule? Use
+            <span className="whitespace-nowrap"> Create Gathering</span> and
+            turn on Recurring Gatherings — members book each date
+            separately, with no Series needed.
           </p>
         </div>
         <Button variant="primary" onClick={() => setNewOpen(true)}>

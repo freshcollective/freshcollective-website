@@ -139,7 +139,8 @@ export default async function GatheringsPage() {
                 <p className="mx-auto max-w-md text-[13.5px] leading-relaxed text-black">
                   Any Gatherings you&rsquo;ve added to a Series live inside
                   their Series editor above. Create a standalone
-                  Gathering &mdash; or add it to a Series &mdash; to see it here.
+                  Gathering &mdash; one date, or a recurring run of them
+                  &mdash; to see it here.
                 </p>
               </div>
             )}

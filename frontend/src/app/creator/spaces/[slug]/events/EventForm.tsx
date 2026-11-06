@@ -607,12 +607,13 @@ export default function EventForm({
           <div className="rounded-xl border border-border bg-slate-50/50 p-5">
             <div className="mb-3 flex items-center gap-3">
               <Toggle checked={isRecurring} onChange={setIsRecurring} />
-              <span className="text-sm font-medium text-navy-800">Repeat on a schedule</span>
+              <span className="text-sm font-medium text-navy-800">Recurring Gatherings</span>
             </div>
-            <p className="mb-4 text-xs italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
-              Creates one Gathering per date, each booked separately. Not a
-              Gathering Series — weekly recurrence is the only pattern
-              currently supported.
+            <p className="mb-4 text-xs leading-relaxed text-black">
+              Repeat this Gathering on a schedule. Creates one Gathering per
+              date, each booked and paid for separately — not a Gathering
+              Series. Weekly recurrence is the only pattern currently
+              supported.
             </p>
 
             {isRecurring && (
