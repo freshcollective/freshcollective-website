@@ -16,8 +16,15 @@
  *   * "weekly" / "fortnightly" / "monthly" — humanised cadence
  *   * "N weekly payments of A$X"           — instalment description
  *   * "A$Y total"                          — total commitment line
+ *
+ * Money formatting is delegated to ``lib/formatMoney`` so AUD and
+ * USD are never both rendered as a bare "$".
  */
 
+// Relative, with the extension: this is a *runtime* import and the
+// node:test harness resolves no path alias. `@/types/platform` below
+// is `import type` and is erased, which is why it can use the alias.
+import { formatMoneyCents } from './formatMoney.ts'
 import type {
   PaymentOptionScheduleSummary,
   PublicPaymentOptionSchedule,
@@ -47,14 +54,23 @@ export type AnyPaymentSchedule =
       | 'name'
     >
 
-/** Format cents as a currency string. AUD/USD render with `$`;
- *  everything else prefixes the ISO code so unknown currencies
- *  never look like they're being silently displayed as dollars. */
+/** Format cents as a currency string.
+ *
+ * Delegates to the shared `formatMoneyCents`, which disambiguates:
+ * `A$49`, `US$49`, `£49`, `€49`. This function previously rendered
+ * AUD *and* USD as a bare `$49`, which made a price ambiguous on every
+ * surface that reads this module — including the pre-Stripe
+ * confirmation dialog, where Stripe's own setup page cannot show an
+ * amount and this is the last figure a member sees before handing over
+ * a card.
+ *
+ * Kept as a named export rather than replaced at the call sites: the
+ * schedule helpers below are the single place purchase wording is
+ * built, so one delegation fixes every surface at once and there is
+ * still exactly one currency-formatting implementation.
+ */
 export function formatMoney(cents: number, currency: string): string {
-  const symbol =
-    currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  const dollars = cents / 100
-  return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`
+  return formatMoneyCents(cents, currency)
 }
 
 /** Humanise cadence — the frontend never surfaces `week` /

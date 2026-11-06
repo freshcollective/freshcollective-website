@@ -45,17 +45,31 @@ const paif = (overrides = {}) => ({
 })
 
 describe('formatMoney', () => {
-  test('renders AUD with $ prefix, integer', () => {
-    assert.equal(formatMoney(2000, 'AUD'), '$20')
+  // Delegates to the shared `formatMoneyCents`. The point of the change
+  // is the third assertion: AUD and USD used to render identically as
+  // "$20", so a member could not tell which currency they were about to
+  // be charged in.
+  test('renders AUD unambiguously, integer', () => {
+    assert.equal(formatMoney(2000, 'AUD'), 'A$20')
   })
   test('renders AUD with 2 decimals when non-integer', () => {
-    assert.equal(formatMoney(2050, 'AUD'), '$20.50')
+    assert.equal(formatMoney(2050, 'AUD'), 'A$20.50')
   })
-  test('renders USD with $ prefix', () => {
-    assert.equal(formatMoney(2000, 'USD'), '$20')
+  test('renders USD distinctly from AUD', () => {
+    assert.equal(formatMoney(2000, 'USD'), 'US$20')
+    assert.notEqual(formatMoney(2000, 'USD'), formatMoney(2000, 'AUD'))
   })
-  test('renders unknown currencies with ISO code prefix', () => {
-    assert.equal(formatMoney(2000, 'EUR'), 'EUR 20')
+  test('renders GBP and EUR with their own symbols', () => {
+    assert.equal(formatMoney(2000, 'GBP'), '\u00a320')
+    assert.equal(formatMoney(2000, 'EUR'), '\u20ac20')
+  })
+  test('keeps the ISO code for a currency outside the whitelist', () => {
+    // Never a bare "20" — an amount with no currency reads as the
+    // viewer's own.
+    assert.equal(formatMoney(2000, 'JPY'), 'JPY 20')
+  })
+  test('renders zero', () => {
+    assert.equal(formatMoney(0, 'AUD'), 'A$0')
   })
 })
 
@@ -91,33 +105,33 @@ describe('scheduleKindLabel', () => {
 
 describe('scheduleShortDescription', () => {
   test('formats a weekly x N plan', () => {
-    assert.equal(scheduleShortDescription(fin()), '3 weekly payments of $20')
+    assert.equal(scheduleShortDescription(fin()), '3 weekly payments of A$20')
   })
   test('formats a fortnightly plan', () => {
     assert.equal(
       scheduleShortDescription(fin({ interval: 'fortnight' })),
-      '3 fortnightly payments of $20',
+      '3 fortnightly payments of A$20',
     )
   })
   test('formats a monthly plan', () => {
     assert.equal(
       scheduleShortDescription(fin({ interval: 'month' })),
-      '3 monthly payments of $20',
+      '3 monthly payments of A$20',
     )
   })
   test('formats pay-in-full with "once"', () => {
-    assert.equal(scheduleShortDescription(paif()), '$600 once')
+    assert.equal(scheduleShortDescription(paif()), 'A$600 once')
   })
 })
 
 describe('scheduleTotalLine', () => {
   test('returns total for a finite plan when total_amount_cents is set', () => {
-    assert.equal(scheduleTotalLine(fin()), '$60 total')
+    assert.equal(scheduleTotalLine(fin()), 'A$60 total')
   })
   test('computes total from per x count when total is missing', () => {
     assert.equal(
       scheduleTotalLine(fin({ total_amount_cents: null })),
-      '$60 total',
+      'A$60 total',
     )
   })
   test('returns null for pay-in-full (total is in short description)', () => {
@@ -128,14 +142,14 @@ describe('scheduleTotalLine', () => {
 describe('scheduleDisclosureCopy', () => {
   test('produces a complete finite-plan disclosure paragraph', () => {
     const copy = scheduleDisclosureCopy(fin())
-    assert.ok(copy.includes('3 weekly payments of $20'))
-    assert.ok(copy.includes('$60 total'))
+    assert.ok(copy.includes('3 weekly payments of A$20'))
+    assert.ok(copy.includes('A$60 total'))
     assert.ok(copy.includes('charged automatically'))
     assert.ok(copy.includes('Access begins after your first payment succeeds'))
   })
   test('produces a short pay-in-full disclosure', () => {
     const copy = scheduleDisclosureCopy(paif())
-    assert.ok(copy.includes('$600 paid now'))
+    assert.ok(copy.includes('A$600 paid now'))
     assert.ok(copy.includes('Access begins immediately'))
   })
 })
@@ -145,7 +159,7 @@ describe('scheduleCtaLabel', () => {
     assert.equal(scheduleCtaLabel(fin()), 'Start payment plan')
   })
   test('pay-in-full → "Pay $X"', () => {
-    assert.equal(scheduleCtaLabel(paif()), 'Pay $600')
+    assert.equal(scheduleCtaLabel(paif()), 'Pay A$600')
   })
 })
 
@@ -169,9 +183,9 @@ describe('planConfirmationCopy', () => {
       }),
     )
     assert.ok(copy)
-    assert.equal(copy.firstCharge, '$37.80 charged after setup')
-    assert.equal(copy.thenLine, 'Then 9 weekly payments of $37.80')
-    assert.equal(copy.totalLine, '$378 total')
+    assert.equal(copy.firstCharge, 'A$37.80 charged after setup')
+    assert.equal(copy.thenLine, 'Then 9 weekly payments of A$37.80')
+    assert.equal(copy.totalLine, 'A$378 total')
     assert.equal(copy.count, 10)
   })
 
@@ -184,7 +198,7 @@ describe('planConfirmationCopy', () => {
       }),
     )
     assert.ok(copy)
-    assert.equal(copy.thenLine, 'Then 1 weekly payment of $37.80')
+    assert.equal(copy.thenLine, 'Then 1 weekly payment of A$37.80')
   })
 
   test('uses the schedule cadence, not a fixed word', () => {
@@ -208,7 +222,7 @@ describe('planConfirmationCopy', () => {
       }),
     )
     assert.ok(copy)
-    assert.equal(copy.totalLine, '$378 total')
+    assert.equal(copy.totalLine, 'A$378 total')
   })
 
   test('prefers the stored total over a derived one', () => {
@@ -222,7 +236,7 @@ describe('planConfirmationCopy', () => {
       }),
     )
     assert.ok(copy)
-    assert.equal(copy.totalLine, '$59 total')
+    assert.equal(copy.totalLine, 'A$59 total')
   })
 
   test('respects the schedule currency', () => {
@@ -230,7 +244,8 @@ describe('planConfirmationCopy', () => {
       fin({ currency: 'GBP', installment_amount_cents: 1000, installment_count: 4, total_amount_cents: 4000 }),
     )
     assert.ok(copy)
-    assert.match(copy.firstCharge, /GBP 10 charged after setup/)
+    // GBP now gets its own symbol rather than an ISO prefix.
+    assert.match(copy.firstCharge, /\u00a310 charged after setup/)
   })
 
   test('returns null for pay-in-full', () => {

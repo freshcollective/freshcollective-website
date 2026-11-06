@@ -9,6 +9,7 @@ import {
 } from '@/lib/apiError'
 import type { PaymentOptionRow } from '../PaymentOptionsIndexClient'
 import ExperiencePickerModal, { type Experience } from './ExperiencePickerModal'
+import { formatMoneyCents } from '@/lib/formatMoney'
 
 /**
  * Central Payment Option editor.
@@ -31,10 +32,11 @@ type Schedule = PaymentOptionRow['schedules'][number]
 // stays the single source of truth for local aliases.
 type GrantableExperience = Experience
 
+/** Delegates to the shared formatter so a creator reads an amount the
+ *  same way a member does. This was a fourth local copy of the
+ *  AUD/USD-ambiguous `$` rule. */
 function formatMoney(cents: number, currency: string): string {
-  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  const dollars = cents / 100
-  return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`
+  return formatMoneyCents(cents, currency)
 }
 
 export default function PaymentOptionEditorClient({

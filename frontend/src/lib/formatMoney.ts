@@ -48,10 +48,15 @@ export function formatMoneyCents(
 ): string {
   if (cents == null || currency == null) return ''
   const upper = currency.toUpperCase()
-  const prefix = AMBIGUITY_AWARE_PREFIX[upper] ?? ''
+  const prefix = AMBIGUITY_AWARE_PREFIX[upper]
   const dollars = cents / 100
   // Whole numbers show no decimals ("A$25"); fractional show two ("A$19.95").
   const body = Number.isInteger(dollars) ? dollars.toString() : dollars.toFixed(2)
+  // A currency outside the whitelist has no symbol we can safely use,
+  // so it keeps its ISO code rather than losing it. Returning a bare
+  // "49" would be the worst of the three options: an amount with no
+  // currency at all reads as the viewer's own.
+  if (prefix === undefined) return `${upper} ${body}`
   const base = `${prefix}${body}`
   return variant === 'full' ? `${base} ${upper}` : base
 }

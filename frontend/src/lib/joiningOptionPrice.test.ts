@@ -66,9 +66,9 @@ describe('the production shape', () => {
     // screenshot, as an assertion.
     const labels = PRODUCTION_DOORS.map(joiningOptionPriceLabel)
     assert.deepEqual(labels, [
-      '$180 once or 10 weekly payments of $18',
-      '$306 once or 10 weekly payments of $30.60',
-      '$378 once or 10 weekly payments of $37.80',
+      'A$180 once or 10 weekly payments of A$18',
+      'A$306 once or 10 weekly payments of A$30.60',
+      'A$378 once or 10 weekly payments of A$37.80',
     ])
     for (const label of labels) {
       assert.ok(!label.includes('No price set'))
@@ -95,14 +95,14 @@ describe('where the price comes from', () => {
   test('pay-in-full alone reads as a single figure', () => {
     assert.equal(
       joiningOptionPriceLabel({ currency: 'AUD', schedules: [payInFull(18000)] }),
-      '$180 once',
+      'A$180 once',
     )
   })
 
   test('a plan alone reads as the instalments', () => {
     assert.equal(
       joiningOptionPriceLabel({ currency: 'AUD', schedules: [weekly(18000, 1800, 10)] }),
-      '10 weekly payments of $18',
+      '10 weekly payments of A$18',
     )
   })
 
@@ -113,7 +113,7 @@ describe('where the price comes from', () => {
       joiningOptionPriceLabel({
         currency: 'AUD', schedules: [payInFull(18000), gated],
       }),
-      '$180 once',
+      'A$180 once',
     )
   })
 
@@ -125,7 +125,7 @@ describe('where the price comes from', () => {
         effective_price_cents: 99900,
         schedules: [payInFull(18000)],
       }),
-      '$180 once',
+      'A$180 once',
     )
   })
 })

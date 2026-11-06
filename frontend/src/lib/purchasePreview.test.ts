@@ -105,7 +105,7 @@ describe('a direct price reads as an individual purchase', () => {
   })
 
   it('shows the price once, in the members wording', () => {
-    assert.equal(arrangementPaymentLine(DIRECT), '$49 once')
+    assert.equal(arrangementPaymentLine(DIRECT), 'A$49 once')
   })
 
   it('has no total line — the payment line already carries it', () => {
@@ -132,15 +132,15 @@ describe('a direct price reads as an individual purchase', () => {
 
 describe('each schedule keeps its own price', () => {
   it('a pay-in-full schedule states the single amount', () => {
-    assert.equal(arrangementPaymentLine(arrangement()), '$99 once')
+    assert.equal(arrangementPaymentLine(arrangement()), 'A$99 once')
   })
 
   it('an instalment schedule states the per-payment amount and cadence', () => {
-    assert.equal(arrangementPaymentLine(PLAN), '3 weekly payments of $33')
+    assert.equal(arrangementPaymentLine(PLAN), '3 weekly payments of A$33')
   })
 
   it('and its total, so nobody multiplies in their head', () => {
-    assert.equal(arrangementTotalLine(PLAN), '$99 total')
+    assert.equal(arrangementTotalLine(PLAN), 'A$99 total')
   })
 
   it('never reads the total as the per-payment amount', () => {
@@ -169,11 +169,11 @@ describe('each schedule keeps its own price', () => {
       unsupported_upfront_amount_cents: 10000,
     })
     const warning = arrangementUpfrontWarning(deposit)!
-    assert.match(warning, /\$100 upfront amount set/)
+    assert.match(warning, /A\$100 upfront amount set/)
     assert.match(warning, /not collected/)
-    assert.match(warning, /charged \$33 first/)
+    assert.match(warning, /charged A\$33 first/)
     // The first charge shown elsewhere stays the instalment.
-    assert.equal(arrangementPaymentLine(deposit), '3 weekly payments of $33')
+    assert.equal(arrangementPaymentLine(deposit), '3 weekly payments of A$33')
     assert.equal(deposit.upfront_amount_cents, 3300)
   })
 
@@ -191,7 +191,7 @@ describe('each schedule keeps its own price', () => {
     assert.equal(groups[0].schedules.length, 2)
     assert.deepEqual(
       groups[0].schedules.map(arrangementPaymentLine),
-      ['$99 once', '3 weekly payments of $33'],
+      ['A$99 once', '3 weekly payments of A$33'],
     )
   })
 
@@ -268,7 +268,7 @@ describe('availability is reported honestly', () => {
     assert.match(copy, /cannot purchase/)
     // The figures are still shown — hiding them would hide the
     // creator's own configuration from them.
-    assert.equal(arrangementPaymentLine(a), '3 monthly payments of $1000')
+    assert.equal(arrangementPaymentLine(a), '3 monthly payments of A$1000')
   })
 
   it('a missing price needs attention, which is a different thing', () => {
@@ -316,7 +316,7 @@ describe('configured and purchasable are kept apart', () => {
     const copy = arrangementExplanation(a, 'pathway')!
     assert.match(copy, /sells through Payment Options/)
     // And the price stays visible.
-    assert.equal(arrangementPaymentLine(a), '$49 once')
+    assert.equal(arrangementPaymentLine(a), 'A$49 once')
   })
 
   it('switched-off ticket sales are pending, in the editors own words', () => {
@@ -329,7 +329,7 @@ describe('configured and purchasable are kept apart', () => {
       unavailable_reason: 'gathering_sales_disabled',
     })
     assert.equal(arrangementStatus(a).tone, 'pending')
-    assert.equal(arrangementPaymentLine(a), '$3000 once')
+    assert.equal(arrangementPaymentLine(a), 'A$3000 once')
     const copy = arrangementExplanation(a, 'gathering')!
     // Same fact, same wording as the ticket-price field already uses.
     assert.match(copy, /switched off on this environment/)
@@ -372,7 +372,7 @@ describe('creator-plan eligibility reads as a platform block', () => {
     // Says plainly that they have not made a mistake.
     assert.match(copy, /your setup here is fine/)
     // And the price stays visible.
-    assert.equal(arrangementPaymentLine(a), '$45 once')
+    assert.equal(arrangementPaymentLine(a), 'A$45 once')
   })
 
   it('a plan that forbids paid offers names the upgrade', () => {

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import type { CreatorBillingResponse } from '@/types/platform'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
 import { PROCESSING_COVERED_LINE } from '@/lib/plans'
+import { formatMoneyCents } from '@/lib/formatMoney'
 
 type AccountTab = 'profile' | 'plan' | 'billing' | 'settings'
 
@@ -558,10 +559,11 @@ function formatInvoiceDate(iso: string): string {
   })
 }
 
+/** Delegates to the shared formatter so a creator reads an amount the
+ *  same way a member does. This was a fourth local copy of the
+ *  AUD/USD-ambiguous `$` rule. */
 function formatMoney(cents: number, currency: string): string {
-  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  const dollars = cents / 100
-  return `${symbol}${Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2)}`
+  return formatMoneyCents(cents, currency)
 }
 
 function SettingsTab({ user }: { user: User }) {

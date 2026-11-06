@@ -48,7 +48,7 @@ describe('the plan the creator is actually on', () => {
     // The reported bug, as an assertion.
     const v = buildCreatorPlanCard(FOUNDING, sub({ source: 'manual_grant' }), 0)
     assert.equal(v.planName, 'Founding Creator')
-    assert.equal(v.priceLabel, '$0 / month')
+    assert.equal(v.priceLabel, 'A$0 / month')
     assert.equal(v.feeLabel, '0%')
     assert.equal(v.trialLabel, null)
     assert.equal(v.statusNote, null)
@@ -59,13 +59,13 @@ describe('the plan the creator is actually on', () => {
       plan({ name: 'Pro', slug: 'pro', monthly_price_cents: 7900 }), sub(), 800,
     )
     assert.equal(v.planName, 'Pro')
-    assert.equal(v.priceLabel, '$79 / month')
+    assert.equal(v.priceLabel, 'A$79 / month')
     assert.equal(v.feeLabel, '8%')
   })
 
   test('a $19 plan still reads $19 — for the right reason', () => {
     const v = buildCreatorPlanCard(plan(), sub(), 800)
-    assert.equal(v.priceLabel, '$19 / month')
+    assert.equal(v.priceLabel, 'A$19 / month')
   })
 
   test('the Organisation plan says talk to us, not free', () => {
@@ -130,7 +130,7 @@ describe('cancellation, stated factually', () => {
     )
     assert.match(v.statusNote ?? '', /Cancels on 1 Nov 2026\. Your plan continues until then\./)
     assert.ok(!/ended/i.test(v.statusNote ?? ''))
-    assert.equal(v.priceLabel, '$19 / month', 'still priced — it is still running')
+    assert.equal(v.priceLabel, 'A$19 / month', 'still priced — it is still running')
   })
 
   test('a scheduled cancellation with no date still does not claim it has ended', () => {
@@ -200,7 +200,7 @@ describe('the card renders from the data', () => {
     const src = client()
     assert.ok(!src.includes('Founding Creator Access'))
     assert.ok(!src.includes('14 days free'))
-    assert.ok(!src.includes('$19 / month'))
+    assert.ok(!src.includes('A$19 / month'))
   })
 
   test('every value comes from the summariser', () => {

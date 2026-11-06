@@ -1,5 +1,6 @@
 import type { CreatorPlanOut, CreatorSubscriptionOut } from '@/types/platform'
 import { describeCreatorAccess } from './creatorPlanAccess.ts'
+import { formatMoneyCents } from './formatMoney.ts'
 
 /**
  * What the "Your creator plan" card should say.
@@ -41,10 +42,11 @@ export interface CreatorPlanCardView {
   isUnknown: boolean
 }
 
+/** Delegates to the shared formatter so a creator reads an amount the
+ *  same way a member does. This was a fourth local copy of the
+ *  AUD/USD-ambiguous `$` rule. */
 function formatMoney(cents: number, currency: string): string {
-  const amount = cents / 100
-  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  return `${symbol}${Number.isInteger(amount) ? amount : amount.toFixed(2)}`
+  return formatMoneyCents(cents, currency)
 }
 
 function formatDate(iso: string | null | undefined): string | null {

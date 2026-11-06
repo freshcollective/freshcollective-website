@@ -66,12 +66,6 @@ function formatShortDate(iso: string): string {
   })
 }
 
-function formatMoney(cents: number, currency: string): string {
-  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  const dollars = cents / 100
-  return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`
-}
-
 // ---------------------------------------------------------------------------
 // Your access (member already holds a Series pass)
 // ---------------------------------------------------------------------------

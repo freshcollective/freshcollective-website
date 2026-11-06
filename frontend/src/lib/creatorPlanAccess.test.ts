@@ -236,7 +236,7 @@ describe('the plan card tells the same truth', () => {
     const card = buildCreatorPlanCard(
       plan(), sub({ source: 'stripe_paid', grant_reason: null }), 800, NOW,
     )
-    assert.equal(card.priceLabel, '$19 / month')
+    assert.equal(card.priceLabel, 'A$19 / month')
   })
 
   test('a scheduled cancellation still wins over the grant note', () => {

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import { formatMoneyCents } from '@/lib/formatMoney'
 
 /**
  * Payment Options index — one card per option.
@@ -77,10 +78,11 @@ export interface PaymentOptionRow {
   purchasability_notes: string[]
 }
 
+/** Delegates to the shared formatter so a creator reads an amount the
+ *  same way a member does. This was a fourth local copy of the
+ *  AUD/USD-ambiguous `$` rule. */
 function formatMoney(cents: number, currency: string): string {
-  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
-  const dollars = cents / 100
-  return `${symbol}${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}`
+  return formatMoneyCents(cents, currency)
 }
 
 function statusPill(status: PaymentOptionRow['status']) {
