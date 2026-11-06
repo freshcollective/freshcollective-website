@@ -875,35 +875,80 @@ def _purchase_needs_membership(
     )
 
 
-def check_option_fulfillable_or_raise(payment_option: PaymentOption) -> None:
-    """Refuse to take payment for options the fulfilment layer
-    cannot honour under the current grant-first rules.
+#: What a member is told when an Option cannot be fulfilled. Named
+#: once so the 400 and any surface that explains the refusal say the
+#: same thing.
+UNFULFILLABLE_GATHERING_GRANT_DETAIL = (
+    "This Payment Option grants a Gathering. Standalone "
+    "Gathering purchases still flow through the existing "
+    "ticket-hold system; PaymentOption-based fulfilment "
+    "for Gatherings is not yet available."
+)
 
-    Specifically: an option carrying any ``grant_kind='gathering'``
-    grant blocks — standalone Gathering PaymentOption fulfilment
-    is not yet activated, and the existing paid-Gathering
-    ticket-hold flow remains authoritative. Charging the member
-    would create a bundle we already know we can't apply.
+
+def unfulfillable_grant_reason(payment_option: PaymentOption) -> str | None:
+    """Why the fulfilment layer cannot honour this option, or ``None``.
+
+    **One rule, stated once.** This is the single source of truth for
+    "could a purchase of this Option be applied?", and it has two
+    readers that must never disagree:
+
+      * :func:`check_option_fulfillable_or_raise` — the authoritative
+        checkout guard, which raises;
+      * ``spaces.routes._schedule_is_member_checkoutable`` — the
+        member-facing flag, which hides.
+
+    They used to be two separate implementations of the same rule, and
+    they drifted exactly as you would expect: the finite-plan branch
+    consulted its own copy and the pay-in-full branch consulted
+    nothing, so an Option granting a Gathering was advertised as
+    purchasable and then refused at the till. Both now call this.
+
+    The rule itself: an option carrying any
+    ``grant_kind='gathering'`` grant cannot be fulfilled. Standalone
+    Gathering PaymentOption fulfilment is not activated, and the
+    paid-Gathering ticket-hold flow remains authoritative — see
+    ``services/purchase_fulfilment.resolve_intent_from_grants``, which
+    refuses the same shape. Charging the member would create a bundle
+    we already know we cannot apply.
 
     We deliberately do NOT block on "grant-ready = False" here.
     Non-grant-ready options (e.g. the pathway-attached term_pass
     EMBODY duplicates) still fulfil correctly through the legacy
     resolver — the dispatcher routes them there automatically.
     Blocking them here would break existing legacy purchases.
+
+    An option with no grants at all is fulfillable, for the same
+    reason: the legacy resolver handles Pathway / Series attachments
+    without needing grant rows.
     """
-    if any(
-        g.grant_kind == GRANT_KIND_GATHERING
-        for g in payment_option.grants
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "This Payment Option grants a Gathering. Standalone "
-                "Gathering purchases still flow through the existing "
-                "ticket-hold system; PaymentOption-based fulfilment "
-                "for Gatherings is not yet available."
-            ),
-        )
+    grants = list(getattr(payment_option, "grants", None) or [])
+    if any(g.grant_kind == GRANT_KIND_GATHERING for g in grants):
+        return UNFULFILLABLE_GATHERING_GRANT_DETAIL
+    return None
+
+
+def option_is_fulfillable(payment_option: PaymentOption | None) -> bool:
+    """Boolean twin of :func:`check_option_fulfillable_or_raise`.
+
+    For surfaces that need to hide a payment method rather than refuse
+    a request. ``None`` is **not** fulfillable: a caller that cannot
+    produce the option cannot have checked its grants either, and on a
+    money surface the safe direction is to show less rather than to
+    advertise what the till may refuse.
+    """
+    if payment_option is None:
+        return False
+    return unfulfillable_grant_reason(payment_option) is None
+
+
+def check_option_fulfillable_or_raise(payment_option: PaymentOption) -> None:
+    """Refuse to take payment for options the fulfilment layer cannot
+    honour. The rule, and the reasoning, live in
+    :func:`unfulfillable_grant_reason`."""
+    reason = unfulfillable_grant_reason(payment_option)
+    if reason is not None:
+        raise HTTPException(status_code=400, detail=reason)
 
 
 # ---------------------------------------------------------------------------
@@ -1513,8 +1558,11 @@ __all__ = [
     "FeeContext",
     "FreeCheckoutOutcome",
     "ResolvedOption",
+    "UNFULFILLABLE_GATHERING_GRANT_DETAIL",
     "check_option_fulfillable_or_raise",
     "check_same_option_not_active",
+    "option_is_fulfillable",
+    "unfulfillable_grant_reason",
     "option_grant_readiness",   # re-exported for wrappers/tests
     "orchestrate_free_checkout",
     "orchestrate_paid_checkout",

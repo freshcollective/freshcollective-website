@@ -238,6 +238,15 @@ def _derive_purchasability(opt: PaymentOption) -> tuple[str, list[str]]:
         ``settings.finite_plan_member_checkout_enabled`` gate is on
         AND the option's grant bundle is fulfillable by the finite
         pipeline. In both cases at least one grant must also exist.
+    unsupported_inclusion
+        The option includes an experience the fulfilment layer
+        cannot grant yet — today that means an individual Gathering.
+        Distinct from ``configured_not_yet_checkoutable``, where the
+        author's work is done and a platform gate is the only thing
+        missing: here the *inclusion* is the blocker, no payment
+        method can make it purchasable, and the creator needs
+        different advice. Reported for draft options too, so the
+        warning arrives before anybody publishes.
     configured_not_yet_checkoutable
         The option has published schedules, but none of them is
         currently checkoutable — typically because every published
@@ -272,6 +281,28 @@ def _derive_purchasability(opt: PaymentOption) -> tuple[str, list[str]]:
         return "archived", []
 
     notes: list[str] = []
+
+    # An unsupported inclusion outranks every other state, including
+    # draft. It is the one problem no amount of further authoring can
+    # fix, and the creator should hear about it the moment they add
+    # the Gathering rather than after they publish and wonder why
+    # nobody can buy.
+    #
+    # The same rule the till reads — see
+    # ``checkout_orchestration.unfulfillable_grant_reason`` — so this
+    # cannot claim an option is sellable that checkout would refuse,
+    # or warn about one it would accept.
+    from app.services.checkout_orchestration import unfulfillable_grant_reason
+
+    if unfulfillable_grant_reason(opt) is not None:
+        return "unsupported_inclusion", [
+            "This option includes an individual Gathering. Payments for "
+            "individual Gatherings through Payment Options are coming "
+            "soon \u2014 members cannot purchase this arrangement yet. "
+            "To sell a single Gathering now, set a ticket price in the "
+            "Gathering editor instead.",
+        ]
+
     has_grants = len(opt.grants) > 0
     if not has_grants:
         notes.append("No experiences included yet.")

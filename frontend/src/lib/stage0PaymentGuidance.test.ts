@@ -1,0 +1,199 @@
+import { strict as assert } from 'node:assert'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, it } from 'node:test'
+
+/**
+ * Stage 0 — what a creator is told about paid access.
+ *
+ * Three things the payment audit found, all of them about surfaces
+ * rather than payment logic:
+ *
+ *   1. A creator could add an individual Gathering to a Payment
+ *      Option, publish it, and have every purchase refused with a
+ *      400. Nothing warned them.
+ *   2. **New Pathway** offered "One-off payment" and "Monthly
+ *      subscription" with a price box, while **Pathway Settings**
+ *      called those legacy and refused to write them — so a creator
+ *      could create a $49 Pathway and then be told that is not how
+ *      paid Pathways work.
+ *   3. Nothing anywhere explained the difference between a direct
+ *      price and a Payment Option.
+ *
+ * Asserted against source, for the reason `gatheringPublicLocation.test.ts`
+ * gives: these are React components and the harness is node:test with
+ * no DOM. Absence checks read comment-stripped source — ban the use,
+ * not the word.
+ *
+ * The *behaviour* lives in the backend and is pinned by
+ * `backend/tests/test_stage0_unsupported_grant_safety.py`. This file
+ * only asserts that the creator can see it.
+ */
+
+const SRC = join(process.cwd(), 'src')
+const PO_INDEX = join(SRC, 'app', 'creator-studio', 'payment-options', 'PaymentOptionsIndexClient.tsx')
+const PO_EDITOR = join(SRC, 'app', 'creator-studio', 'payment-options', '[optionId]', 'PaymentOptionEditorClient.tsx')
+const PATHWAY_NEW = join(SRC, 'app', 'creator-studio', 'pathways', 'new', 'NewPathwayClient.tsx')
+const PATHWAY_SETTINGS = join(SRC, 'app', 'creator-studio', 'pathways', '[pathwaySlug]', 'PathwaySettingsClient.tsx')
+const GATHERING = join(SRC, 'app', 'creator', 'spaces', '[slug]', 'events', 'EventForm.tsx')
+
+const read = (p: string) => readFileSync(p, 'utf8')
+
+/** Source with comments removed, so an absence check reads the code. */
+function code(p: string): string {
+  return read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+}
+
+describe('an unsupported Gathering inclusion is visible to the creator', () => {
+  it('the new purchasability state is in the shared type', () => {
+    // Both the index and the editor read `PaymentOptionRow`, so one
+    // union covers both surfaces.
+    assert.match(read(PO_INDEX), /'unsupported_inclusion'/)
+  })
+
+  it('the Payment Options list badges it without calling it broken', () => {
+    const src = read(PO_INDEX)
+    const i = src.indexOf("row.purchasability === 'unsupported_inclusion'")
+    assert.ok(i > 0, 'the index has no branch for the new state')
+    const branch = src.slice(i, i + 700)
+    assert.match(branch, /Not purchasable yet/)
+    // Amber, not red: nothing is broken and nothing needs repairing.
+    assert.match(branch, /amber/)
+    assert.ok(!/\bred-\d/.test(branch), 'the badge reads as an error')
+  })
+
+  it('the editor explains it with the agreed wording', () => {
+    const src = read(PO_EDITOR)
+    const i = src.indexOf("option.purchasability === 'unsupported_inclusion'")
+    assert.ok(i > 0, 'the editor has no branch for the new state')
+    const branch = src.slice(i, i + 1400)
+    assert.match(branch, /Individual Gathering payments through Payment Options are/)
+    assert.match(branch, /coming soon/)
+    assert.match(branch, /cannot purchase it/)
+    // Says what to do instead.
+    assert.match(branch, /Gathering editor/)
+  })
+
+  it('and the grant row itself warns, before anybody publishes', () => {
+    // The banner is reachable only once the option is loaded; this is
+    // the warning attached to the thing the creator just added.
+    const src = read(PO_EDITOR)
+    const i = src.indexOf("grant.grant_kind === 'gathering'")
+    assert.ok(i > 0, 'the gathering grant row carries no warning')
+    const branch = src.slice(i, i + 900)
+    assert.match(branch, /Not purchasable yet/)
+    assert.match(branch, /coming soon/)
+    // The sharp edge worth naming: one Gathering blocks the whole
+    // option, not just its own line.
+    assert.match(branch, /no payment method on this option/)
+  })
+
+  it('nothing offers to enable Gathering payments', () => {
+    // Stage 0 removes a dead end; it must not advertise the feature
+    // as switchable-on, or offer a control for it.
+    const editor = code(PO_EDITOR)
+    assert.ok(!/enable.{0,24}Gathering payment/i.test(editor))
+  })
+})
+
+describe('the two Pathway surfaces agree', () => {
+  it('New Pathway offers only choices Settings can maintain', () => {
+    const src = code(PATHWAY_NEW)
+    const i = src.indexOf('ACCESS_OPTIONS')
+    const block = src.slice(i, src.indexOf(']', src.indexOf('[', i)))
+    for (const v of ["'free'", "'included'", "'included_with_offer'"]) {
+      assert.ok(block.includes(v), `New Pathway no longer offers ${v}`)
+    }
+    for (const v of ["'one_time'", "'subscription'"]) {
+      assert.ok(
+        !block.includes(v),
+        `New Pathway still offers ${v}, which Pathway Settings cannot maintain`,
+      )
+    }
+  })
+
+  it('both surfaces use the same three labels', () => {
+    for (const f of [PATHWAY_NEW, PATHWAY_SETTINGS]) {
+      const src = read(f)
+      assert.match(src, /label: 'Public'/)
+      assert.match(src, /label: 'Members only'/)
+      assert.match(src, /label: 'Payment Option access'/)
+    }
+  })
+
+  it('the direct-price control is kept, dormant, for Stage 2', () => {
+    // Deliberately not deleted: Stage 2 re-enables direct Pathway
+    // pricing and this is the control it re-enables. `isPaid` can no
+    // longer be true, so it never renders.
+    const src = read(PATHWAY_NEW)
+    assert.match(src, /const isPaid = accessType === 'one_time' \|\| accessType === 'subscription'/)
+    assert.match(src, /\{isPaid && \(/)
+    assert.match(src, /Stage 2/)
+  })
+
+  it('Settings tells a direct-priced Pathway that it keeps selling', () => {
+    // The old banner said only what was blocked. A creator whose
+    // Pathway is on a direct price needs to know their price and
+    // their sales are untouched.
+    const src = read(PATHWAY_SETTINGS)
+    assert.match(src, /untouched, and it keeps selling/)
+    assert.match(src, /Setting a price here alongside Payment\s*\n?\s*Options is coming/)
+  })
+
+  it('and still refuses to write a paid access type', () => {
+    // The protection the audit asked us not to weaken. `pricing_mode`
+    // is set to 'legacy' and the access type comes from CHOICES, none
+    // of which is a paid value.
+    const src = code(PATHWAY_SETTINGS)
+    assert.match(src, /function handleChoiceClick/)
+    const i = src.indexOf('function handleChoiceClick')
+    const fn = src.slice(i, i + 260)
+    assert.match(fn, /setPricingMode\('legacy'\)/)
+  })
+})
+
+describe('creators are told what a direct price is for, and what Payment Options are for', () => {
+  it('New Pathway explains Payment Options when that choice is made', () => {
+    const src = read(PATHWAY_NEW)
+    assert.match(src, /How paid access works/)
+    assert.match(src, /single\s*\n?\s*payment or a payment plan/)
+  })
+
+  it('Pathway Settings says the same thing', () => {
+    const src = read(PATHWAY_SETTINGS)
+    assert.match(src, /How paid access works/)
+    assert.match(src, /single\s*\n?\s*payment or a payment plan/)
+  })
+
+  it('the Gathering editor names its ticket a one-time purchase', () => {
+    const src = read(GATHERING)
+    assert.match(src, /one-time purchase/)
+    assert.match(src, /pay\s*\n?\s*once for this Gathering/)
+  })
+
+  it('and is honest that Gathering instalments are not available', () => {
+    // §4: do not introduce controls for purchasing methods that
+    // aren't operational. So the Gathering editor explains where
+    // Payment Options apply today and does not offer them here.
+    const src = read(GATHERING)
+    assert.match(src, /covers Pathways and Gathering Series today/)
+    assert.match(src, /Instalments for an individual Gathering are coming/)
+    assert.match(src, /a ticket price here is how a single Gathering is sold/)
+  })
+
+  it('the Payment Options editor points single sales back to the experience', () => {
+    const src = read(PO_EDITOR)
+    assert.match(src, /bundles, payment plans and other arrangements live/)
+    assert.match(src, /set a price in that/)
+  })
+
+  it('the distinction is drawn by scope, not by payment count', () => {
+    // A Payment Option can be a single payment too, so "one-time vs
+    // instalments" would be the wrong line. What separates them is
+    // how many experiences one arrangement can cover.
+    assert.match(read(PATHWAY_NEW), /One Option can cover several experiences/)
+    assert.match(read(PATHWAY_SETTINGS), /One Option can cover several experiences/)
+  })
+})

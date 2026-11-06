@@ -262,6 +262,26 @@ function PurchasabilityBanner({ option }: { option: PaymentOptionRow }) {
       </div>
     )
   }
+  if (option.purchasability === 'unsupported_inclusion') {
+    // The inclusion is the blocker, so the advice is about the
+    // inclusion — not about adding a payment method, which cannot
+    // help. The note itself comes from the server so the editor and
+    // the Payment Options list say the same thing.
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+        <strong>Individual Gathering payments through Payment Options are
+        coming soon.</strong>{' '}
+        You can configure this arrangement, but members cannot purchase it
+        yet. For now, use the Gathering editor to set up a one-time ticket
+        purchase.
+        {option.purchasability_notes.length > 0 && (
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {option.purchasability_notes.map((n, i) => <li key={i}>{n}</li>)}
+          </ul>
+        )}
+      </div>
+    )
+  }
   if (option.purchasability === 'configured_not_yet_checkoutable') {
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
@@ -410,6 +430,12 @@ function IncludedSection({
             Pick one or more experiences from this Collective. Members who buy
             this Payment Option get access to all of them.
           </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+            This is where bundles, payment plans and other arrangements live.
+            To sell a single experience in one payment, set a price in that
+            experience&rsquo;s own editor instead \u2014 a Gathering&rsquo;s
+            ticket price, or an Offering&rsquo;s price.
+          </p>
         </div>
         <button
           type="button"
@@ -487,6 +513,16 @@ function GrantRow({
           Remove
         </button>
       </div>
+
+      {grant.grant_kind === 'gathering' && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-900">
+          <strong>Not purchasable yet.</strong> Payments for individual
+          Gatherings through Payment Options are coming soon. This inclusion
+          is saved, but members cannot buy this arrangement \u2014 and while
+          it is here, no payment method on this option can be purchased. To
+          sell this Gathering now, set a ticket price in the Gathering editor.
+        </p>
+      )}
 
       {grant.grant_kind === 'event_series' && (
         <div className="mt-4">

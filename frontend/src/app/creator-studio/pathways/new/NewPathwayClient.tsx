@@ -9,26 +9,40 @@ import { apiUrl } from '@/lib/api'
 // Access / Pricing selector
 // ---------------------------------------------------------------------------
 
+/**
+ * The three choices Pathway Settings can also maintain.
+ *
+ * "One-off payment" and "Monthly subscription" used to be offered
+ * here, with a price box. They worked — ``Pathway.price_cents`` and
+ * the option-less checkout door are both live — but the Settings
+ * editor treats those states as legacy and refuses to write them, so
+ * a creator could create a $49 Pathway and then be told that is not
+ * how paid Pathways work. Offering a choice one surface cannot
+ * maintain is the worse half of that inconsistency, so it is the half
+ * that goes.
+ *
+ * Nothing is removed from the product: Pathways already on a direct
+ * price keep selling through that door, and the API still accepts
+ * ``access_type='one_time'``. Direct pricing returns to this form in
+ * Stage 2, once the unified purchase-arrangement resolver can say
+ * which price is the price when an Option also grants the Pathway —
+ * the ambiguity ``Pathway.pricing_mode`` currently prevents.
+ */
 const ACCESS_OPTIONS = [
   {
     value: 'free',
-    label: 'Free',
-    description: 'Anyone with access to the collective can begin this pathway.',
+    label: 'Public',
+    description: 'Anyone can find and preview this pathway. Members can begin it immediately.',
   },
   {
     value: 'included',
-    label: 'Included in collective access',
-    description: 'Available to members who already have access to this collective.',
+    label: 'Members only',
+    description: 'Only signed-in members of this collective can see or begin this pathway.',
   },
   {
-    value: 'one_time',
-    label: 'One-off payment',
-    description: 'People pay once to access this pathway.',
-  },
-  {
-    value: 'subscription',
-    label: 'Monthly subscription',
-    description: 'People pay monthly for ongoing access to this pathway.',
+    value: 'included_with_offer',
+    label: 'Payment Option access',
+    description: 'Only members whose Payment Option includes this pathway can access it. Set the price in Commerce \u2192 Payment Options.',
   },
 ]
 
@@ -92,7 +106,15 @@ function AccessPricingSection({
         })}
       </div>
 
-      {/* Price fields for paid options */}
+      {/* Price fields — currently unreachable, deliberately.
+          ``isPaid`` reads ``one_time``/``subscription``, and neither is
+          offered above any more (see ACCESS_OPTIONS). Kept rather than
+          deleted because Stage 2 re-enables direct Pathway pricing and
+          this is the control it re-enables; deleting and rewriting it
+          would be the same work twice, and the stale "Stripe will be
+          wired later" note below is now wrong in a way worth keeping
+          visible to whoever restores it — Stripe is wired, and
+          ``POST /api/checkout/pathway`` sells these today. */}
       {isPaid && (
         <div className="mt-3 flex gap-3">
           <div className="flex-1">
@@ -136,11 +158,29 @@ function AccessPricingSection({
         </div>
       )}
 
-      {/* TODO: Connect pathway pricing to payment/checkout flow when Stripe is wired. */}
       {isPaid && (
         <p className="mt-2 text-[11px] text-black">
           Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
         </p>
+      )}
+
+      {accessType === 'included_with_offer' && (
+        <div
+          className="mt-3 rounded-xl px-4 py-3 text-[12px] leading-relaxed text-black"
+          style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
+        >
+          <p className="font-semibold text-navy-900">How paid access works</p>
+          <p className="mt-1">
+            <strong>Payment Options</strong> are how you charge for a Pathway.
+            One Option can cover several experiences, and can offer a single
+            payment or a payment plan \u2014 so it handles bundles and
+            instalments as well as a straightforward purchase.
+          </p>
+          <p className="mt-1">
+            Create the Pathway first, then add it to an Option in
+            Commerce \u2192 Payment Options.
+          </p>
+        </div>
       )}
     </div>
   )

@@ -93,11 +93,14 @@ function AccessPricingSection({
 
       {legacyPaid && (
         <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] leading-relaxed text-teal-900">
-          <strong>Paid access is now managed in Commerce → Payment Options.</strong>{' '}
-          This Pathway is on a legacy paid access mode. Payment Options that
-          include this Pathway are shown below. To take this Pathway off paid
-          access, choose <em>Public</em>, <em>Members only</em>, or <em>Payment
-          Option access</em>.
+          <strong>Paid access is managed in Commerce → Payment Options.</strong>{' '}
+          This Pathway is on a direct-price access mode that this editor
+          cannot change. Its existing price and any completed purchases are
+          untouched, and it keeps selling. Payment Options that include this
+          Pathway are shown below. Setting a price here alongside Payment
+          Options is coming \u2014 until then, to move this Pathway off its
+          direct price, choose <em>Public</em>, <em>Members only</em>, or
+          <em>Payment Option access</em>.
         </div>
       )}
 
@@ -130,6 +133,21 @@ function AccessPricingSection({
           )
         })}
       </div>
+
+      {accessType === 'included_with_offer' && (
+        <div
+          className="mt-3 rounded-xl px-4 py-3 text-[12px] leading-relaxed text-black"
+          style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
+        >
+          <p className="font-semibold text-navy-900">How paid access works</p>
+          <p className="mt-1">
+            <strong>Payment Options</strong> are how you charge for a Pathway.
+            One Option can cover several experiences, and can offer a single
+            payment or a payment plan \u2014 so it handles bundles and
+            instalments as well as a straightforward purchase.
+          </p>
+        </div>
+      )}
 
       {showEmptyGrantWarning && (
         <div

@@ -1025,9 +1025,16 @@ export default function EventForm({
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#38A09E' }}>
               TICKET DETAILS
             </p>
-            <p className="mb-4 text-[13px] leading-relaxed text-black">
-              Members and visitors will purchase a ticket for this Gathering
-              through Stripe. A ticket grants access to this Gathering only.
+            <p className="mb-2 text-[13px] leading-relaxed text-black">
+              A <strong>one-time purchase</strong>: members and visitors pay
+              once for this Gathering, through Stripe. A ticket grants access
+              to this Gathering only.
+            </p>
+            <p className="mb-4 text-[12px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
+              Payment plans and bundles are set up in Commerce &rarr; Payment
+              Options, which covers Pathways and Gathering Series today.
+              Instalments for an individual Gathering are coming \u2014 for now,
+              a ticket price here is how a single Gathering is sold.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-[1fr_140px]">

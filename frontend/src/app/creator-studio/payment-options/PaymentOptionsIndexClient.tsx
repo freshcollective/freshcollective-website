@@ -68,6 +68,7 @@ export interface PaymentOptionRow {
   schedules: Schedule[]
   purchasability:
     | 'ready'
+    | 'unsupported_inclusion'
     | 'configured_not_yet_checkoutable'
     | 'needs_attention'
     | 'draft'
@@ -103,6 +104,18 @@ function purchasabilityBadge(row: PaymentOptionRow) {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200">
         <span aria-hidden>●</span> Ready to sell
+      </span>
+    )
+  }
+  if (row.purchasability === 'unsupported_inclusion') {
+    // An included experience the fulfilment layer cannot grant yet —
+    // today, an individual Gathering. Amber rather than red: nothing
+    // is broken and nothing needs repairing, the arrangement simply
+    // cannot be sold yet. The reason arrives in
+    // ``purchasability_notes`` below the row.
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
+        Not purchasable yet
       </span>
     )
   }

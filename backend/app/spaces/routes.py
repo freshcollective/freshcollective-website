@@ -123,67 +123,71 @@ from app.services import pathway_payment_options as pathway_options  # noqa: E40
 
 
 def _option_supports_finite_member_checkout(option) -> bool:
-    """FIP4A — is this PaymentOption's grant bundle fulfillable by
-    the current finite-plan checkout path?
+    """Is this PaymentOption's grant bundle fulfillable at all?
 
-    Currently supported grant kinds inside a finite-plan bundle:
-      * ``pathway``
-      * ``event_series``
-    Unsupported:
-      * ``gathering`` — standalone-Gathering PaymentOption
-        fulfilment is not yet activated in the shared
-        ``apply_intent`` path (see
-        ``services/purchase_fulfilment.py::resolve_intent_from_grants``).
-        A member selecting such a plan would 4xx at
-        ``/api/checkout`` — a member-visible dead-end. Hide it.
+    Thin delegate to
+    ``services.checkout_orchestration.option_is_fulfillable`` — the
+    one place the rule lives, and the same function the authoritative
+    checkout guard reads. See that module for the rule and why it
+    exists.
 
-    Legacy pre-grants options (no ``PaymentOptionGrant`` rows) are
-    treated as supported: the legacy resolver handles Pathway /
-    Series attachments without needing grant rows. A pathway- or
-    series-attached option with no grants still fulfills cleanly.
+    **The name is now narrower than the behaviour, deliberately.** It
+    was written for FIP4A, when only the finite-plan branch consulted
+    it; it is kept because several tests and docstrings name it, and
+    because the answer it gives has not changed for a finite plan.
+    What changed is that pay-in-full asks the question too — see
+    :func:`_schedule_is_member_checkoutable`.
 
-    Called from :func:`_schedule_is_member_checkoutable` for
-    ``recurring_installments`` only. Pay-in-full has never been
-    gated on grant-kind because its resolver is broader; leaving
-    that unchanged.
+    Note the ``None`` difference: this helper takes an option that
+    callers already hold, so a missing one is a programming error
+    rather than a state, and ``option_is_fulfillable`` fails closed on
+    it. Legacy pre-grants options (no ``PaymentOptionGrant`` rows)
+    remain supported — the legacy resolver handles Pathway / Series
+    attachments without needing grant rows.
     """
-    from app.models.payment_option_grant import GRANT_KIND_GATHERING
-    grants = list(getattr(option, "grants", []) or [])
-    if not grants:
-        return True
-    for g in grants:
-        if getattr(g, "grant_kind", None) == GRANT_KIND_GATHERING:
-            return False
-    return True
+    from app.services.checkout_orchestration import option_is_fulfillable
+
+    return option_is_fulfillable(option)
 
 
 def _schedule_is_member_checkoutable(schedule, option=None) -> bool:
     """Single source of truth for "can a member complete unified
     checkout for this PaymentOptionSchedule today?"
 
-    Pay-in-full (``schedule_type == 'pay_in_full'`` +
-    ``status == 'published'``) is always checkoutable — that path
-    is proven and always live.
+    Two questions, in this order, and the order is the fix.
 
-    Recurring instalments (``schedule_type == 'recurring_installments'``)
-    are checkoutable when ALL of:
+    **First, about the Option.** Can a purchase of it be applied at
+    all? Asked for *every* schedule type via
+    ``checkout_orchestration.option_is_fulfillable`` — the same
+    function the authoritative checkout guard reads, so the two cannot
+    give different answers.
 
-      * ``status == 'published'``
-      * ``settings.finite_plan_member_checkout_enabled`` is True
-        (production-safety gate; see ``core/config.py``)
-      * the schedule row passes
-        ``validate_recurring_installments_row`` (structurally
-        valid — amount, count, cadence, currency, total-vs-per-
-        instalment consistency; see
-        ``services/schedule_validation.py``)
-      * the PaymentOption's grant bundle is fulfillable by the
-        current finite-plan path
-        (:func:`_option_supports_finite_member_checkout`). ``option``
-        must be passed when the schedule is a finite plan; a caller
-        that omits it will fail-closed and the schedule will hide.
-        This lets FIP4A refuse to surface a Payment Option that
-        would 4xx at ``/api/checkout`` — no member-visible dead
-        ends.
+    This used to be asked only on the finite-plan branch. Pay-in-full
+    was documented as "always checkoutable", which was true of the
+    payment path and false of the bundle: an Option granting a
+    standalone Gathering was advertised as purchasable and then
+    refused with a 400 at ``/api/checkout`` — the member-visible dead
+    end the last paragraph of this docstring promises not to produce.
+    A Gathering grant now hides every payment method on the Option,
+    not just its plans.
+
+    ``option`` must therefore be passed. A caller that omits it
+    fail-closes and the schedule hides: a caller that cannot produce
+    the Option has not checked its grants either, and on a money
+    surface showing less is safer than advertising what the till may
+    refuse. Every caller in the codebase passes it.
+
+    **Second, about the schedule.**
+
+    * ``pay_in_full`` + ``status == 'published'`` → checkoutable. That
+      payment path is proven and always live.
+    * ``recurring_installments`` additionally needs
+      ``settings.finite_plan_member_checkout_enabled`` True
+      (production-safety gate; see ``core/config.py``) and a row that
+      passes ``validate_recurring_installments_row`` — amount, count,
+      cadence, currency, total-vs-per-instalment consistency; see
+      ``services/schedule_validation.py``.
+    * Anything else (``manual``, unknown) → not checkoutable.
 
     Not checked here (evaluated later, at the unified
     ``POST /api/checkout`` boundary):
@@ -202,6 +206,12 @@ def _schedule_is_member_checkoutable(schedule, option=None) -> bool:
     """
     if getattr(schedule, "status", None) != "published":
         return False
+
+    # The Option question, for every schedule type. Fail-closed on a
+    # missing option — ``option_is_fulfillable(None)`` is False.
+    if not _option_supports_finite_member_checkout(option):
+        return False
+
     schedule_type = getattr(schedule, "schedule_type", None)
     if schedule_type == "pay_in_full":
         return True
@@ -219,13 +229,6 @@ def _schedule_is_member_checkoutable(schedule, option=None) -> bool:
         try:
             validate_recurring_installments_row(schedule)
         except ScheduleValidationError:
-            return False
-        # Fail-closed on grant-bundle: if the caller didn't pass
-        # the option, we cannot verify grant support and MUST NOT
-        # advertise a plan that could 4xx at checkout.
-        if option is None:
-            return False
-        if not _option_supports_finite_member_checkout(option):
             return False
         return True
     return False
