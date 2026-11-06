@@ -339,6 +339,25 @@ services:
       # ``backend/app/core/config.py:creator_plan_guard_enabled``).
       - key: CREATOR_PLAN_GUARD_ENABLED
         sync: false
+      # Stage 1B.2A — purchase-arrangement shadow comparison.
+      # Dashboard-managed, same reason as the two flags above, and
+      # declared here without a ``value:`` so a Blueprint sync can
+      # never switch it on or off behind the Dashboard.
+      #
+      # When true, the member Series ways-to-join endpoint also asks
+      # the new resolver the question it just answered and logs any
+      # disagreement. The existing projection stays authoritative: the
+      # comparison runs after the response is built, cannot alter it,
+      # and swallows its own errors. Application default when the env
+      # var is absent is False (see
+      # ``backend/app/core/config.py:purchase_arrangements_shadow``).
+      #
+      # Flip to "true" only for a bounded observation window, and read
+      # the result from the fc-api logs: lines are prefixed
+      # ``purchase_arrangements_shadow`` and a disagreement is logged
+      # at WARNING.
+      - key: PURCHASE_ARRANGEMENTS_SHADOW
+        sync: false
       # ── Offerings rollout ────────────────────────────────────────
       # Two switches, both Dashboard-managed, for the same reason as
       # the two flags above: the Dashboard is the operational source
