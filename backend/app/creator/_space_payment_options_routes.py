@@ -1981,3 +1981,133 @@ def _parse_notes_body(notes: str | None) -> str | None:
     # re-edit doesn't accumulate it.
     tail = tail.split(" \u00b7 cancelled by correction")[0].strip()
     return tail or None
+
+
+# ---------------------------------------------------------------------------
+# Purchase preview — Stage 1B.1
+# ---------------------------------------------------------------------------
+#
+# "How can members buy this?", answered for one experience from the
+# Stage 1A resolver. Read-only, creator-only, and not a checkout path:
+# the response carries no arrangement identifier, so nothing a member
+# could act on round-trips through it.
+#
+# One endpoint for both kinds rather than one per kind. The ownership
+# check, the cross-Collective refusal and the kind validation are the
+# security-relevant parts, and having a single implementation of them
+# means a single set of tests covers every kind rather than a set per
+# kind that can drift apart.
+#
+# Deliberately NOT folded into ``GET .../pathways/{slug}`` or
+# ``GET .../events/{id}``: those responses are read by list pages and
+# several other callers, and a preview costs an Option/grant/schedule
+# query that those callers would then pay for on every row.
+
+
+class PurchasePreviewIncludedOut(BaseModel):
+    """One experience an arrangement grants.
+
+    ``kind`` is the grant vocabulary and is mapped to a label by the
+    client — a creator never reads ``event_series``.
+    """
+
+    kind: str
+    title: str | None = None
+
+
+class PurchasePreviewArrangementOut(BaseModel):
+    """One way to buy one experience.
+
+    Price field names deliberately match the shared frontend schedule
+    formatters (``frontend/src/lib/paymentPlan.ts``) so creator copy
+    and member copy stay one implementation.
+    """
+
+    source: str
+    name: str
+    schedule_name: str | None = None
+    schedule_type: str
+    currency: str
+    total_amount_cents: int | None = None
+    upfront_amount_cents: int | None = None
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    is_bundle: bool = False
+    is_free: bool = False
+    included: list[PurchasePreviewIncludedOut] = []
+    #: Present so the preview can link to the Option editor; absent on
+    #: a direct price, which has no Option behind it.
+    payment_option_id: str | None = None
+    #: After the live-platform overlay. What a member could complete.
+    available_for_new_purchase: bool = False
+    unavailable_reason: str | None = None
+    #: Before the overlay. Whether the creator's own configuration is
+    #: complete. The two differ for a configured arrangement the
+    #: platform is not selling yet, and the client words that case
+    #: differently — see ``creator_purchase_preview``.
+    configured_available: bool = False
+    blocked_by_platform: bool = False
+    is_historical_source: bool = False
+
+
+class PurchasePreviewOut(BaseModel):
+    experience_kind: str
+    experience_id: str
+    title: str | None = None
+    access_type: str | None = None
+    has_purchasable_arrangement: bool = False
+    arrangements: list[PurchasePreviewArrangementOut] = []
+
+
+#: The kinds this endpoint serves. Gathering Series is omitted on
+#: purpose: its editor already presents its Payment Options and
+#: schedules clearly, and a second presentation there would be the
+#: duplication Stage 1B.1 was told to avoid. Offerings are omitted
+#: because their price is an auto-provisioned Option already shown on
+#: their Pricing tab.
+PURCHASE_PREVIEW_KINDS: dict[str, type] = {
+    "pathway": Pathway,
+    "gathering": Event,
+}
+
+
+@router.get(
+    "/spaces/{slug}/purchase-preview/{kind}/{experience_id}",
+    response_model=PurchasePreviewOut,
+)
+def purchase_preview(
+    slug: str,
+    kind: str,
+    experience_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """How members can currently buy one experience.
+
+    Creator-only, and scoped twice: ``_get_managed_space`` proves the
+    caller may manage this Collective, then the row must belong to that
+    Collective. An id belonging to somebody else's Collective is a 404
+    — the same answer as an id that does not exist, so the endpoint
+    cannot be used to discover which ids are real.
+    """
+    space = _get_managed_space(slug, current_user, db)
+
+    model = PURCHASE_PREVIEW_KINDS.get(kind)
+    if model is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No purchase preview is available for that kind.",
+        )
+
+    row = (
+        db.query(model)
+        .filter(model.id == experience_id, model.space_id == space.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+
+    from app.services.creator_purchase_preview import build_preview
+
+    return build_preview(db, kind=kind, experience_row=row).as_dict()

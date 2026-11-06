@@ -16,6 +16,7 @@ import {
   normaliseAccessType,
   type AccessTypeValue,
 } from '@/lib/gatheringTypes'
+import PurchasePreviewSection from '@/components/creator/PurchasePreviewSection'
 
 // Access types that imply "booking is required" — invitation_only
 // funnels every attendee through a caretaker add; paid_separately is
@@ -1121,6 +1122,25 @@ export default function EventForm({
           </div>
         )}
       </Section>
+
+      {/* ─────────── HOW MEMBERS CAN BOOK THIS (Stage 1B.1) ───────────
+           Read-only, and only for a Gathering that exists: a new one
+           has no row to resolve arrangements from, and the controls
+           above are where its price is set in the first place.
+
+           Deliberately placed directly below the access and ticket
+           controls it describes, so a creator reads "this is how
+           access works" and then "this is what a member could
+           actually do" in one pass. ── */}
+      {event?.id && (
+        <PurchasePreviewSection
+          spaceSlug={spaceSlug}
+          kind="gathering"
+          experienceId={event.id}
+          heading="How members can book this Gathering"
+          helperText="How members can currently book this Gathering. A ticket price set above is how a single Gathering is sold today — Payment Options cover Pathways and Gathering Series."
+        />
+      )}
 
       {/* ─────────── AVAILABILITY ─────────── */}
       <Section title="AVAILABILITY" subtitle="How many people can join?">

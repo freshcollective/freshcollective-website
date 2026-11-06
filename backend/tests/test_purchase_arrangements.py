@@ -976,9 +976,28 @@ def _mentions_resolver(path: pathlib.Path) -> bool:
     return False
 
 
+#: Modules authorised to call the resolver, newest last.
+#:
+#: Stage 1A's defining property was that this list was empty — a
+#: tested, unused service. Stage 1B integrates it one surface at a
+#: time, and each entry here is a deliberate authorisation rather than
+#: a relaxation: the protected modules below stay protected, and a
+#: caller appearing anywhere else still fails.
+AUTHORISED_CALLERS: frozenset[str] = frozenset({
+    # Stage 1B.1 — the creator-facing, read-only purchase preview.
+    # Reads arrangements for one experience the caller already manages.
+    # Buys nothing, writes nothing, and is not reachable by a member.
+    "services/creator_purchase_preview.py",
+})
+
+
 class TestTheResolverHasNoProductionCallers:
-    """Stage 1A's defining property. A tested, unused service is the
-    intended outcome; integration is Stage 1B's to authorise."""
+    """Who may call the resolver, and who may not.
+
+    The list of permitted callers is explicit and short. Everything
+    that carries a continuing payment obligation is on the protected
+    list and must never appear on it.
+    """
 
     @pytest.mark.parametrize(
         "area,rel",
@@ -994,16 +1013,72 @@ class TestTheResolverHasNoProductionCallers:
             "payment behaviour."
         )
 
-    def test_nothing_anywhere_in_the_app_calls_it(self):
-        """Broader than the list above: no module in ``app/`` may call
-        it yet. The list exists so a failure names the area at risk;
-        this catches anywhere else."""
-        callers = [
+    def test_only_authorised_modules_call_it(self):
+        """Broader than the list above: every module in ``app/`` that
+        calls the resolver must be a named, authorised caller.
+
+        The protected list names the areas worth a specific failure
+        message; this catches a caller appearing anywhere else at all —
+        which is how an unreviewed integration would arrive.
+        """
+        callers = {
             p.relative_to(APP_ROOT).as_posix()
             for p in APP_ROOT.rglob("*.py")
             if p.name != "purchase_arrangements.py" and _mentions_resolver(p)
-        ]
-        assert callers == [], f"unexpected resolver callers: {callers}"
+        }
+        unexpected = sorted(callers - AUTHORISED_CALLERS)
+        assert unexpected == [], (
+            f"unauthorised resolver callers: {unexpected}. Integration is "
+            "staged deliberately — add the module to AUTHORISED_CALLERS "
+            "only as part of a stage that authorises it."
+        )
+
+    def test_every_authorised_caller_still_exists(self):
+        """A stale entry would silently widen the permission above."""
+        missing = sorted(
+            rel for rel in AUTHORISED_CALLERS if not (APP_ROOT / rel).exists()
+        )
+        assert missing == [], f"AUTHORISED_CALLERS is stale: {missing}"
+
+    def test_the_authorised_caller_is_not_a_payment_path(self):
+        """The preview is allowed to read arrangements; it is not
+        allowed to become a way to buy one. Asserted on the AST rather
+        than by trusting the docstring: no session mutation, and no
+        Stripe."""
+        path = APP_ROOT / "services" / "creator_purchase_preview.py"
+        tree = ast.parse(path.read_text())
+        banned = {
+            "commit", "flush", "add", "add_all", "delete", "merge",
+            "with_for_update", "rollback", "bulk_save_objects",
+        }
+        found = sorted({
+            n.attr for n in ast.walk(tree)
+            if isinstance(n, ast.Attribute)
+            and n.attr in banned
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "db"
+        })
+        assert found == [], f"the preview may mutate the session: {found}"
+
+        # No Stripe, asserted on identifiers rather than on the text:
+        # the module's docstring explains the two-key *Stripe live
+        # mode* guard at length, and a substring check on the source
+        # flags that explanation. Ban the use, not the word.
+        identifiers = {
+            n.id.lower() for n in ast.walk(tree) if isinstance(n, ast.Name)
+        } | {
+            n.attr.lower() for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+        } | {
+            alias.name.lower()
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.Import, ast.ImportFrom))
+            for alias in n.names
+        } | {
+            (n.module or "").lower()
+            for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+        }
+        stripe_refs = sorted(i for i in identifiers if "stripe" in i)
+        assert stripe_refs == [], f"the preview touches Stripe: {stripe_refs}"
 
     def test_the_resolver_writes_nothing(self):
         """No commit, flush, add, delete or lock on the session. A

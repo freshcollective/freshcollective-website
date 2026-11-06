@@ -6,7 +6,7 @@ import type { CreatorMediaAsset, CreatorPathway } from '@/types/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
 import { apiUrl } from '@/lib/api'
 import { formatDisplayDate } from '@/lib/dateTime'
-import PathwayPaymentOptionsReference from './PathwayPaymentOptionsReference'
+import PurchasePreviewSection from '@/components/creator/PurchasePreviewSection'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1486,28 +1486,27 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
 
       </div>
 
-      {/* ── 3. Payment options — reference block (U1).
-             Payment Option CRUD moved to Creator Studio →
-             Commerce → Payment Options. This section reads back
-             the Options that grant access to this Pathway so the
-             Creator can navigate to them without re-authoring here.
+      {/* ── 3. How members can access this Pathway (Stage 1B.1).
+             Supersedes the Payment Options reference block, which
+             listed Option names and statuses but no prices, schedules
+             or purchasability — so a creator could read it and still
+             not know what a member would pay.
 
-             Display-only guard: only render when Access is set to
-             Payment Option access. For Public / Members-only /
-             legacy paid modes the section is hidden so it doesn't
-             misleadingly suggest Payment Options are controlling
-             access. PaymentOptionGrant rows are NEVER mutated
-             when the section is hidden or when the Creator
-             switches access mode — existing relationships remain
-             intact and re-appear if Payment Option access is
-             chosen again. ── */}
-      {accessType === 'included_with_offer' && (
-        <PathwayPaymentOptionsReference
-          spaceSlug={spaceSlug}
-          pathwaySlug={pathway.slug}
-          accessType={accessType}
-        />
-      )}
+             Rendered for every access type, not only Payment Option
+             access: a legacy directly-priced Pathway is exactly the
+             case that needed explaining, and a free one gets a plain
+             "nothing to purchase" rather than an empty list that
+             reads as something missing.
+
+             Read-only. It offers no control that writes, and
+             PaymentOptionGrant rows are never touched by viewing it. ── */}
+      <PurchasePreviewSection
+        spaceSlug={spaceSlug}
+        kind="pathway"
+        experienceId={pathway.id}
+        heading="How members can access this Pathway"
+        helperText="How members can currently access or purchase this Pathway. To create bundles or payment plans, set them up in Payment Options."
+      />
 
       {/* Sticky page-level save bar. Surfaces only when the settings
           form is dirty relative to the last save. Uses the same
