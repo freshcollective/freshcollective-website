@@ -550,7 +550,7 @@ function renderBlockPreviewInner({
           style={{ maxHeight: 520 }}
         />
         {block.caption && (
-          <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
+          <figcaption className="mx-auto mt-3 max-w-md whitespace-pre-wrap break-words text-center text-[13px] italic leading-relaxed text-slate-500">
             {block.caption}
           </figcaption>
         )}
@@ -573,7 +573,7 @@ function renderBlockPreviewInner({
             />
           </div>
           {block.caption && (
-            <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
+            <figcaption className="mx-auto mt-3 max-w-md whitespace-pre-wrap break-words text-center text-[13px] italic leading-relaxed text-slate-500">
               {block.caption}
             </figcaption>
           )}
@@ -597,7 +597,7 @@ function renderBlockPreviewInner({
           <MediaBlockHeading heading={block.heading} />
           <audio controls className="w-full" src={resolveAssetUrl(asset.file_url)} />
           {block.caption && (
-            <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
+            <figcaption className="mx-auto mt-3 max-w-md whitespace-pre-wrap break-words text-center text-[13px] italic leading-relaxed text-slate-500">
               {block.caption}
             </figcaption>
           )}
@@ -665,7 +665,7 @@ function renderBlockPreviewInner({
           : <span className="not-italic text-slate-400">Ask the reader a question…</span>}
       </div>
       {block.caption && (
-        <p className="mt-3 text-[14px] leading-[1.7] text-navy-900/[0.75]">{block.caption}</p>
+        <p className="mt-3 whitespace-pre-wrap break-words text-[14px] leading-[1.7] text-navy-900/[0.75]">{block.caption}</p>
       )}
     </div>
   )
@@ -755,7 +755,12 @@ function renderBlockPreviewInner({
         {check?.ok
           ? <span className="text-black">· {check.provider.name}</span>
           : <span className="italic text-black">— no URL set</span>}
-        {block.caption && <span className="text-black">· {block.caption}</span>}
+        {/* The collapsed summary row. Captions can now be
+            paragraphs, so this truncates rather than growing the row
+            to the height of a transcript. */}
+        {block.caption && (
+          <span className="min-w-0 truncate text-black">· {block.caption}</span>
+        )}
       </div>
     )
   }
@@ -829,6 +834,89 @@ function renderBlockPreviewInner({
 // ---------------------------------------------------------------------------
 // BlockEditForm
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CaptionField — the one control for every free-text caption
+// ---------------------------------------------------------------------------
+
+/** Roughly three lines. Enough to read as "write a paragraph here"
+ *  without a short image caption sitting in a tall empty box. */
+const CAPTION_MIN_HEIGHT_PX = 76
+
+/**
+ * A caption is prose, so it gets a textarea.
+ *
+ * Every free-text caption on a block used a single-line ``<input>``,
+ * which quietly told creators this was a label-sized field while the
+ * column allowed 500 characters and the editor allowed any number. A
+ * creator writing instructions for an audio practice got neither a
+ * roomy box nor a length warning — just an HTTP 500 on save
+ * (Sentry FC-API-M).
+ *
+ * Grows with its content, following the autosizing pattern the
+ * reflection-prompt editor in this file already uses: set the height
+ * to ``auto``, then to ``scrollHeight``, with a floor. Resizable by
+ * hand as well, because a transcript is longer than any sensible
+ * automatic ceiling.
+ *
+ * Plain text on purpose — no rich-text editor. Captions are rendered
+ * as text with their line breaks preserved, and the dedicated text
+ * block is where formatting belongs.
+ *
+ * Deliberately NOT used for the two block types that also store
+ * something in ``caption``: a ``callout``'s palette token and a
+ * ``button``'s encoded style. Those are picker values that happen to
+ * share the column, and a textarea would be the wrong control and an
+ * invitation to corrupt them.
+ */
+function CaptionField({
+  value, onChange, label = 'Caption', optional = true, placeholder,
+  helperText, id,
+}: {
+  value: string
+  onChange: (v: string) => void
+  label?: string
+  optional?: boolean
+  placeholder?: string
+  helperText?: string
+  id?: string
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const ta = ref.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.max(ta.scrollHeight, CAPTION_MIN_HEIGHT_PX)}px`
+  }, [value])
+
+  return (
+    <div>
+      <label className="field-label" htmlFor={id}>
+        {label}{' '}
+        {optional && <span className="text-slate-500">(optional)</span>}
+      </label>
+      <textarea
+        id={id}
+        ref={ref}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="field-input"
+        // Overrides the 120px floor `textarea.field-input` sets for
+        // full-height editors; a caption starts compact and grows.
+        style={{ minHeight: `${CAPTION_MIN_HEIGHT_PX}px`, resize: 'vertical' }}
+        rows={3}
+        placeholder={placeholder}
+      />
+      {helperText && (
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+          {helperText}
+        </p>
+      )}
+    </div>
+  )
+}
+
 
 export function BlockEditForm({
   block,
@@ -1231,12 +1319,16 @@ export function BlockEditForm({
               maxLength={300}
             />
           </div>
-          <div>
-            <label className="field-label">Caption (optional)</label>
-            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Video description…" />
-          </div>
+          <CaptionField
+            id="block-caption-video"
+            value={caption}
+            onChange={setCaption}
+            placeholder="Video description, transcript or what to watch for…"
+            helperText="Add a caption, transcript or instructions to accompany this video."
+          />
         </>
       )}
+
 
       {t === 'audio' && (
         <>
@@ -1263,10 +1355,13 @@ export function BlockEditForm({
               maxLength={300}
             />
           </div>
-          <div>
-            <label className="field-label">Caption (optional)</label>
-            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Audio description…" />
-          </div>
+          <CaptionField
+            id="block-caption-audio"
+            value={caption}
+            onChange={setCaption}
+            placeholder="Audio description, transcript or practice instructions…"
+            helperText="Add a caption, transcript or instructions to accompany this audio."
+          />
         </>
       )}
 
@@ -1309,10 +1404,13 @@ export function BlockEditForm({
             <label className="field-label">Link label</label>
             <input value={label} onChange={e => setLabel(e.target.value)} className="field-input" placeholder="Visit resource" />
           </div>
-          <div>
-            <label className="field-label">Description (optional)</label>
-            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Short description…" />
-          </div>
+          <CaptionField
+            id="block-caption-link"
+            value={caption}
+            onChange={setCaption}
+            label="Description"
+            placeholder="What will they find at the other end of this link?"
+          />
         </>
       )}
 
@@ -1562,15 +1660,13 @@ function EmbedFields({
         />
       </div>
 
-      <div>
-        <label className="field-label">Caption (optional)</label>
-        <input
-          value={caption}
-          onChange={e => onCaptionChange(e.target.value)}
-          className="field-input"
-          placeholder="Pick a time that works for you"
-        />
-      </div>
+      <CaptionField
+        id="block-caption-embed"
+        value={caption}
+        onChange={onCaptionChange}
+        placeholder="Pick a time that works for you"
+        helperText="Add a caption or instructions to accompany this embed."
+      />
     </>
   )
 }
@@ -2086,16 +2182,13 @@ function ImageBlockFields({
       )}
 
       <div>
-        <label className="field-label">Caption <span className="text-slate-500">(optional)</span></label>
-        <input
+        <CaptionField
+          id="block-caption-image"
           value={caption}
-          onChange={(e) => onCaptionChange(e.target.value)}
-          className="field-input"
-          placeholder="A short caption shown beneath the image"
+          onChange={onCaptionChange}
+          placeholder="A caption shown beneath the image"
+          helperText="Caption is visible to every reader. Alt text is for screen readers — the two are not interchangeable."
         />
-        <p className="mt-1 text-[11px] text-slate-500">
-          Caption is visible to every reader. Alt text is for screen readers — the two are not interchangeable.
-        </p>
       </div>
 
       <div>
@@ -2406,21 +2499,17 @@ function ResourceFields({
         />
       </div>
 
-      <div>
-        <label className="field-label">
-          Description for this step <span className="text-black">(optional)</span>
-        </label>
-        <input
-          value={descriptionOverride}
-          onChange={e => onDescriptionOverrideChange(e.target.value)}
-          className="field-input"
-          placeholder={
-            selectedAsset?.description
-              ?? selectedResource?.description
-              ?? 'Leave blank to use the Library item description'
-          }
-        />
-      </div>
+      <CaptionField
+        id="block-caption-resource"
+        value={descriptionOverride}
+        onChange={onDescriptionOverrideChange}
+        label="Description for this step"
+        placeholder={
+          selectedAsset?.description
+            ?? selectedResource?.description
+            ?? 'Leave blank to use the Library item description'
+        }
+      />
     </>
   )
 }
@@ -2825,11 +2914,19 @@ function PromptEditor({
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           Supporting context (optional)
         </label>
-        <input
+        {/* A textarea rather than an input, for the same reason as
+            every other caption: it is free text in a column that no
+            longer caps it at 500 characters. Keeps this editor's own
+            styling rather than adopting `CaptionField` — the
+            reflection-prompt card is deliberately its own visual
+            thing, and the fix here is the control type, not a
+            redesign. */}
+        <textarea
           value={caption}
           onChange={(e) => onCaptionChange(e.target.value)}
-          className="block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] text-black outline-none focus:border-teal-400"
-          placeholder="A short note to give this prompt context."
+          rows={2}
+          className="block w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] leading-relaxed text-black outline-none focus:border-teal-400"
+          placeholder="A note to give this prompt context."
         />
       </div>
       <div className="mt-5 flex items-center">

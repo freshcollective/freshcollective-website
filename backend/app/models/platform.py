@@ -2484,8 +2484,19 @@ class PathwayStepBlock(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Short label/title (callout style, link label, file download label)
     label: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    # Caption shown below media or link blocks
-    caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Caption shown below media or link blocks.
+    #
+    # ``Text``, not a sized string. On a media block this is the
+    # figcaption and creators legitimately use it for practice
+    # instructions or a transcript, which went past the old
+    # ``VARCHAR(500)`` and returned an HTTP 500 (Sentry FC-API-M). See
+    # migration 182.
+    #
+    # Overloaded on two block types, both writing short values through
+    # a picker: ``callout`` stores its palette token here and
+    # ``button`` its encoded style. Those are validated where they are
+    # written, not by the column width.
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Optional creator-supplied title for media blocks (video, audio,
     # file download). Deliberately its own column: ``label`` is the

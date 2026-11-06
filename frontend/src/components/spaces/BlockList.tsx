@@ -217,7 +217,7 @@ export function renderBlocks(
             alt={alt}
             className="w-full rounded-xl shadow-[0_1px_3px_rgba(15,30,55,0.08),0_2px_8px_rgba(15,30,55,0.04)]"
           />
-          {block.caption && <figcaption className="mt-2 text-center text-[12px] text-black">{block.caption}</figcaption>}
+          {block.caption && <figcaption className="mt-2 whitespace-pre-wrap break-words text-center text-[12px] text-black">{block.caption}</figcaption>}
         </figure>,
         block, id,
       )
@@ -258,7 +258,7 @@ export function renderBlocks(
             </p>
           )}
           {embedSrc && block.caption && (
-            <figcaption className="mt-2 text-center text-[12px] text-black">{block.caption}</figcaption>
+            <figcaption className="mt-2 whitespace-pre-wrap break-words text-center text-[12px] text-black">{block.caption}</figcaption>
           )}
         </figure>,
         block, id,
@@ -283,7 +283,7 @@ export function renderBlocks(
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-black">Audio</p>
           )}
           <audio controls className="w-full" src={resolveUrl(asset.file_url)} />
-          {block.caption && <figcaption className="mt-2 text-[12px] text-black">{block.caption}</figcaption>}
+          {block.caption && <figcaption className="mt-2 whitespace-pre-wrap break-words text-[12px] text-black">{block.caption}</figcaption>}
         </figure>,
         block, id,
       )
@@ -317,7 +317,7 @@ export function renderBlocks(
               <p className="text-[14px] font-medium text-navy-900">
                 {block.label || block.embed_url}
               </p>
-              {block.caption && <p className="mt-0.5 text-[12px] text-black">{block.caption}</p>}
+              {block.caption && <p className="mt-0.5 whitespace-pre-wrap break-words text-[12px] text-black">{block.caption}</p>}
             </div>
           </div>
         )
@@ -334,7 +334,7 @@ export function renderBlocks(
               <p className="text-[14px] font-medium text-navy-900 group-hover:underline underline-offset-2">
                 {block.label || block.embed_url}
               </p>
-              {block.caption && <p className="mt-0.5 text-[12px] text-black">{block.caption}</p>}
+              {block.caption && <p className="mt-0.5 whitespace-pre-wrap break-words text-[12px] text-black">{block.caption}</p>}
             </div>
             <span className="shrink-0 text-[12px] text-black">↗</span>
           </a>
@@ -484,7 +484,7 @@ export function renderBlocks(
           )}
           <EmbedRenderer url={block.embed_url} title={block.label ?? undefined} />
           {block.caption && (
-            <figcaption className="mt-2 text-center text-[12px] text-black">
+            <figcaption className="mt-2 whitespace-pre-wrap break-words text-center text-[12px] text-black">
               {block.caption}
             </figcaption>
           )}
