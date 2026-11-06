@@ -53,6 +53,17 @@ export default function CreatorSupportForm({ spaces }: Props) {
           setSubmitting(false)
           return
         }
+        if (res.status === 503) {
+          // Same reasoning as the member report modal: the creator
+          // reads what they can do, not what our deployment is doing.
+          setError(
+            'Creator support requests aren\u2019t available just yet. '
+            + 'Please email support@freshcollective.au and we\u2019ll '
+            + 'pick it up from there.',
+          )
+          setSubmitting(false)
+          return
+        }
         const body = (await res.json().catch(() => ({}))) as Partial<ApiError>
         setError(
           body.detail

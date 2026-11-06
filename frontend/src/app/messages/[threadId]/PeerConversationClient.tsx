@@ -54,6 +54,8 @@ export default function PeerConversationClient({
   // the hand-rolled panel did.
   const [confirmBlock, setConfirmBlock] = useState(false)
   const [reporting, setReporting] = useState(previewOpen === 'report')
+  // Shown instead of the report form while Community Care is disabled.
+  const [contacting, setContacting] = useState(false)
   const [reportCategory, setReportCategory] = useState<string>('')
   const [reportNote, setReportNote] = useState('')
   const [caseNumber, setCaseNumber] = useState<string | null>(null)
@@ -187,28 +189,47 @@ export default function PeerConversationClient({
             triggerLabel="More"
             ariaLabel="Conversation options"
             defaultOpen={previewOpen === 'menu'}
-            items={
-              thread.blocked_by_me
-                // Already blocked: offering Block again says nothing.
-                // Unblock lives in the conversation body, where the
-                // blocked state explains itself.
-                ? [
-                    {
-                      label: `Report ${firstName}`,
-                      onClick: () => { setReporting(true); setConfirmBlock(false) },
-                    },
-                  ]
+            items={[
+              // Blocking is unaffected by Community Care and stays
+              // exactly where it was. Already blocked: offering Block
+              // again says nothing, and Unblock lives in the
+              // conversation body where the blocked state explains
+              // itself.
+              ...(thread.blocked_by_me
+                ? []
                 : [
                     {
                       label: `Block ${firstName}`,
-                      onClick: () => { setConfirmBlock(true); setReporting(false) },
+                      onClick: () => {
+                        setConfirmBlock(true)
+                        setReporting(false)
+                        setContacting(false)
+                      },
                     },
-                    {
-                      label: `Report ${firstName}`,
-                      onClick: () => { setReporting(true); setConfirmBlock(false) },
+                  ]),
+              // Reporting, or an honest alternative. While Community
+              // Care is disabled the endpoint refuses, so offering a
+              // report form would be offering a door that is shut —
+              // and a member trying to report somebody is the last
+              // person who should discover that by submitting a form.
+              thread.can_report
+                ? {
+                    label: `Report ${firstName}`,
+                    onClick: () => {
+                      setReporting(true)
+                      setConfirmBlock(false)
+                      setContacting(false)
                     },
-                  ]
-            }
+                  }
+                : {
+                    label: 'Contact Fresh Collective',
+                    onClick: () => {
+                      setContacting(true)
+                      setReporting(false)
+                      setConfirmBlock(false)
+                    },
+                  },
+            ]}
           />
         </div>
       </div>
@@ -248,6 +269,42 @@ export default function PeerConversationClient({
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {contacting && (
+        /* The honest alternative. Not a second reporting system — no
+           form, no category list, no case number. Just the address,
+           so somebody who needs to raise something can, and knows a
+           person will read it. The address is shown rather than only
+           linked, because a mailto: can be blocked and an address can
+           be copied. */
+        <div
+          className="mt-3 rounded-xl p-4"
+          style={{ background: 'rgba(12,24,38,0.03)', border: '1px solid rgba(12,24,38,0.08)' }}
+        >
+          <p className="text-[14px] leading-relaxed text-navy-900">
+            Reporting from a conversation isn&rsquo;t available just yet.
+            If something here needs our attention, please email us at{' '}
+            <a
+              href="mailto:support@freshcollective.au"
+              className="font-medium underline underline-offset-2"
+            >
+              support@freshcollective.au
+            </a>{' '}
+            and tell us what happened. We&rsquo;ll read it.
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-navy-900/70">
+            You can also block {firstName} at any time — that works now
+            and takes effect immediately.
+          </p>
+          <button
+            type="button"
+            onClick={() => setContacting(false)}
+            className="mt-3 text-[13px] font-medium text-navy-900 underline underline-offset-2"
+          >
+            Close
+          </button>
         </div>
       )}
 

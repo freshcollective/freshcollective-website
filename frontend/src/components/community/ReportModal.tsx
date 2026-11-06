@@ -73,6 +73,18 @@ export default function ReportModal({ kind, targetId, onClose, onSubmitted }: Pr
           setSubmitting(false)
           return
         }
+        if (res.status === 503) {
+          // Community Care is disabled on this deployment. The member
+          // must never read that sentence — it is about our
+          // infrastructure, not about them or what they are reporting.
+          setError(
+            'Reporting isn\u2019t available just yet. Please email '
+            + 'support@freshcollective.au and tell us what happened \u2014 '
+            + 'we\u2019ll read it.',
+          )
+          setSubmitting(false)
+          return
+        }
         const body = (await res.json().catch(() => ({}))) as Partial<ApiError>
         setError(
           body.detail

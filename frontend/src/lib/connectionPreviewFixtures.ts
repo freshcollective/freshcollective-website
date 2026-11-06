@@ -423,5 +423,9 @@ export function previewConversation(
     // preview-only branch.
     blocked_by_me: blocked,
     can_send: !blocked,
+    // The preview shows the designed-for state, where reporting is
+    // available. The disabled state is the live one today and is
+    // covered by tests rather than by a design preview.
+    can_report: true,
   }
 }

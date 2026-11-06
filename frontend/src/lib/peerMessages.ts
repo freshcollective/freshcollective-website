@@ -47,6 +47,10 @@ export interface PeerThreadDetail {
   /** Whether a message may be sent right now — false while a block
    *  stands in either direction. */
   can_send: boolean
+  /** Whether reporting is available. False while Community Care is
+   *  disabled — the backend's answer, not a mirrored flag, so the
+   *  client cannot offer a door the API would shut. */
+  can_report: boolean
 }
 
 /** Why a member is reporting. Mirrors the backend's REPORT_CATEGORIES. */

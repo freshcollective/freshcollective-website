@@ -469,6 +469,17 @@ class TestBlockAuthorisation:
 
 
 class TestReport:
+    @pytest.fixture(autouse=True)
+    def care_enabled(self, monkeypatch):
+        """Reporting is a Community Care intake, so these tests describe
+        the enabled state.
+
+        Autouse and class-scoped because every test below asserts what
+        happens when a report *is* accepted. The disabled state has its
+        own class — see ``TestReportingWhileCommunityCareIsDisabled``.
+        """
+        monkeypatch.setattr(settings, "community_care_enabled", True)
+
     def test_a_participant_can_report_the_other(self, client, db, connected):
         a, b = connected()
         tid = _thread(client, a, b)
@@ -646,6 +657,17 @@ class TestReport:
 
 
 class TestReportPrivacy:
+    @pytest.fixture(autouse=True)
+    def care_enabled(self, monkeypatch):
+        """Reporting is a Community Care intake, so these tests describe
+        the enabled state.
+
+        Autouse and class-scoped because every test below asserts what
+        happens when a report *is* accepted. The disabled state has its
+        own class — see ``TestReportingWhileCommunityCareIsDisabled``.
+        """
+        monkeypatch.setattr(settings, "community_care_enabled", True)
+
     def test_the_reported_person_is_not_notified(self, client, db, connected):
         from app.models.notification import Notification
 

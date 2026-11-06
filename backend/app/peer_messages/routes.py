@@ -25,6 +25,8 @@ from app.models.peer_messages import PeerThread
 from app.models.platform import CreatorProfile
 from app.models.user import User
 from app.community_care.peer_reports import REPORT_CATEGORIES, submit_peer_report
+from app.community_care.shared import ensure_flag_on
+from app.core.config import settings
 from app.peer_messages import service
 from app.services import member_block_service
 from app.services.member_identity import optional_display_name
@@ -84,6 +86,17 @@ class PeerThreadDetail(BaseModel):
     #: closed composer without being told why, and without being told by
     #: whom.
     can_send: bool = True
+    #: Whether reporting is available. False while Community Care is
+    #: disabled, so the client can offer the support address instead of
+    #: a form whose endpoint would refuse it.
+    #:
+    #: Answered here rather than mirrored into a frontend env var,
+    #: because the backend flag is the only thing that actually decides
+    #: it — the same reason ``can_send`` is a server answer rather than
+    #: the client re-deriving a block. A mirrored flag would be a second
+    #: source of truth that can lag, which is exactly how a member ends
+    #: up being offered a door that is shut.
+    can_report: bool = True
 
 
 class SendPeerMessageRequest(BaseModel):
@@ -340,6 +353,7 @@ def _detail(db: Session, thread: PeerThread, viewer_id: str) -> PeerThreadDetail
         other=person,
         blocked_by_me=member_block_service.has_blocked(db, viewer_id, other_id),
         can_send=service.may_interact(db, viewer_id, other_id),
+        can_report=settings.community_care_enabled,
         messages=[
             PeerMessageOut(
                 id=m.id,
@@ -456,7 +470,22 @@ def report_peer(
     withdrawing and withdraw without reporting.
 
     The reported person is not notified.
+
+    Refuses while Community Care is disabled, through the same
+    ``ensure_flag_on`` every other Community Care route uses. This was
+    the one intake path without that guard: it could open a real case
+    while the whole admin review surface answered 503, so a member
+    could be handed a case number for a report nobody was able to
+    read. Accepting a report is a promise to look at it, and the
+    promise has to be refused honestly rather than kept on paper.
+
+    First statement in the body on purpose — ahead of thread lookup,
+    category validation and the snapshot — so a refusal allocates no
+    case number, writes no case, no report and no event, and sends no
+    notification.
     """
+    ensure_flag_on()
+
     try:
         thread = service.thread_for_participant(db, thread_id, current_user.id)
     except service.NotAParticipant:

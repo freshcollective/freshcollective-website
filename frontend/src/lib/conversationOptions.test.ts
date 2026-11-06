@@ -75,17 +75,26 @@ describe('what the menu offers depends on the state', () => {
   })
 
   test('blocked: block is not offered again', () => {
-    // The first branch of the conditional is the blocked one.
+    // Same two properties as before, read off the spread form the menu
+    // now uses: Block sits inside a `blocked_by_me ? [] : [...]`
+    // spread, and the report row sits outside it so somebody who has
+    // already blocked can still raise something.
     const props = menuProps()
-    const blocked = props.slice(props.indexOf('?'), props.indexOf(': ['))
+    const spread = props.slice(
+      props.indexOf('...(thread.blocked_by_me'),
+      props.indexOf('thread.can_report'),
+    )
+    assert.ok(spread.length > 0, 'the blocked branch is gone')
     assert.ok(
-      blocked.includes('Report '),
+      spread.includes('Block '),
+      'Block must be the item withheld while blocked',
+    )
+    assert.ok(
+      !spread.includes('Report '),
       'report must stay available to somebody already blocked',
     )
-    assert.ok(
-      !blocked.includes('Block '),
-      'offering Block to somebody already blocked says nothing',
-    )
+    // And the empty arm is the blocked one — Block is withheld, not added.
+    assert.match(spread, /\?\s*\[\]/)
   })
 
   test('the first name is derived, not the full display name', () => {
@@ -157,11 +166,14 @@ describe('the preview still mutates nothing', () => {
   })
 
   test('opening the menu only sets local state', () => {
-    // Both rows flip a panel open. Neither reaches the network.
+    // Every row flips a panel open. None reaches the network. Matched
+    // on the setters rather than on one-line handler text, since the
+    // handlers are now multi-line and there is a third row.
     const props = menuProps()
-    assert.match(props, /onClick: \(\) => \{ setConfirmBlock\(true\); setReporting\(false\) \}/)
-    assert.match(props, /onClick: \(\) => \{ setReporting\(true\); setConfirmBlock\(false\) \}/)
-    for (const call of ['blockPeer(', 'reportPeer(', 'unblockPeer(']) {
+    assert.match(props, /setConfirmBlock\(true\)/)
+    assert.match(props, /setReporting\(true\)/)
+    assert.match(props, /setContacting\(true\)/)
+    for (const call of ['blockPeer(', 'reportPeer(', 'unblockPeer(', 'fetch(']) {
       assert.ok(!props.includes(call), `menu must not call ${call}`)
     }
   })
