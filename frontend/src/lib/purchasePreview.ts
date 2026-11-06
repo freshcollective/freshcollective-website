@@ -286,6 +286,16 @@ export function accessExplanation(
         isGap: true,
       }
     }
+    if (access === 'subscription') {
+      // A legacy per-Pathway subscription. Nothing sells one — the
+      // checkout door accepts only one-time Pathway access — so the
+      // resolver emits no arrangement for it. Saying "nothing is set
+      // up" would be wrong: something is set up, and it is retired.
+      return {
+        text: 'This Pathway is on a legacy monthly subscription, which is no longer sold. Ongoing access is set up through Payment Options.',
+        isGap: true,
+      }
+    }
     return {
       text: 'No purchase arrangement is set up for this Pathway yet.',
       isGap: true,

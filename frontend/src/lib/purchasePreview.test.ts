@@ -350,6 +350,18 @@ describe('empty states say what is true', () => {
     assert.match(text, /no one can reach it/)
   })
 
+  it('a legacy subscription Pathway is retired, not unconfigured', () => {
+    // Nothing sells a per-Pathway subscription, so the resolver emits
+    // no arrangement. "Nothing is set up" would be the wrong reading:
+    // something is set up and it is retired.
+    const { text, isGap } = accessExplanation(
+      preview({ access_type: 'subscription' }),
+    )
+    assert.equal(isGap, true)
+    assert.match(text, /no longer sold/)
+    assert.match(text, /Payment Options/)
+  })
+
   it('a ticketed Gathering with no price is a real gap', () => {
     const { text, isGap } = accessExplanation(
       preview({ experience_kind: 'gathering', access_type: 'paid_separately' }),

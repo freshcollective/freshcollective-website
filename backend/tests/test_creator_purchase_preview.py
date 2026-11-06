@@ -465,6 +465,23 @@ class TestPathwayPreview:
         assert body["arrangements"] == []
         assert body["access_type"] == "included"
 
+    def test_a_legacy_subscription_pathway_offers_no_arrangement(self, client_as, make_user, make_space, db):
+        """Nothing sells a per-Pathway subscription — the checkout door
+        accepts only ``one_time`` — so the resolver emits no
+        arrangement for one. Pinned here because the creator copy for
+        this state depends on the list being empty rather than
+        containing something unavailable."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(
+            db, space, access_type="subscription", price_cents=2000,
+        )
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        assert body["arrangements"] == []
+        assert body["access_type"] == "subscription"
+        assert body["has_purchasable_arrangement"] is False
+
     def test_a_draft_pathway_is_not_purchasable(
         self, client_as, make_user, make_space, db,
     ):
