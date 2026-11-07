@@ -2032,3 +2032,117 @@ class TestCreatorCanSeeWhatFundedABooking:
         txn = _txn(db, space, buyer, None, cents=4500)
         b = _booking(db, ev, buyer, txn_id=txn.id)
         assert tickets.booking_access_source_label(b) == "Paid"
+
+
+class TestTurningTheFlagOffDoesNotStrandEstablishedPurchases:
+    """§14 — disabling the feature must stop new purchases without
+    invalidating ones already made.
+
+    This works because fulfilment does not re-resolve. Both paths
+    prefer the intent snapshot taken at checkout — ``txn
+    .snapshot_grants_json`` for pay-in-full, ``plan
+    .snapshot_grants_json`` for a plan — and the snapshot already
+    contains the BookingIntents. The flag is consulted when the intent
+    is *resolved*, not when it is applied, so a purchase made while the
+    feature was on keeps fulfilling after it is turned off.
+
+    Worth asserting rather than assuming: moving the gate into
+    ``apply_intent`` at some later point would look harmless and would
+    strand every plan mid-flight.
+    """
+
+    def test_a_snapshot_round_trips_its_bookings(self, db, space, stage3_on):
+        from app.services.purchase_fulfilment import (
+            deserialise_intent, resolve_intent_from_grants, serialise_intent,
+        )
+
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+
+        res = resolve_intent_from_grants(db, payment_option=opt)
+        blob = serialise_intent(res.intent)
+        restored = deserialise_intent(blob)
+        assert [b.event_id for b in restored.bookings] == [ev.id]
+
+    def test_a_snapshotted_booking_still_applies_with_the_flag_off(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The purchase was made while the feature was on. The seat is
+        held. Turning the flag off must not leave the member paid-up
+        and unbooked."""
+        from app.services.purchase_fulfilment import (
+            apply_intent, deserialise_intent, resolve_intent_from_grants,
+            serialise_intent,
+        )
+
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+        buyer = make_user()
+        tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+        )
+        snapshot = serialise_intent(
+            resolve_intent_from_grants(db, payment_option=opt).intent
+        )
+
+        # The flag goes off between checkout and the webhook.
+        with patch(
+            "app.core.config.settings"
+            ".standalone_gathering_payment_options_enabled", False,
+        ):
+            result = apply_intent(
+                db, intent=deserialise_intent(snapshot), txn=None,
+                payer_user_id=buyer.id, space_id=space.id,
+                payment_option_id=opt.id, payment_option_schedule_id=None,
+                session_id=None, payment_intent_id=None,
+                now=datetime.utcnow(),
+            )
+
+        assert result.booking_errors == []
+        booking = db.query(EventBooking).filter(
+            EventBooking.event_id == ev.id,
+            EventBooking.user_id == buyer.id,
+        ).one()
+        assert booking.status == BookingStatus.confirmed
+
+    def test_but_a_new_purchase_is_refused(self, db, space):
+        """The other half: off means off for anything not already
+        agreed."""
+        from app.services.checkout_orchestration import option_is_fulfillable
+
+        opt = _option(db, space)
+        _grant(db, opt, event=_event(db, space))
+        db.refresh(opt)
+        assert option_is_fulfillable(opt) is False
+
+    def test_and_a_held_seat_can_still_be_released(
+        self, db, space, make_user, stage3_on,
+    ):
+        """Recovery for an in-flight purchase must keep working too,
+        or a seat held when the flag flipped would never come back."""
+        from app.models.purchase_plan import PurchasePlanStatus
+
+        ev = _event(db, space, capacity=5)
+        opt = _option(db, space)
+        sch = _schedule(db, opt)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+        buyer = make_user()
+        plan = _plan(db, space, opt, sch, buyer,
+                     status=PurchasePlanStatus.cancelled)
+        [held] = tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+            purchase_plan_id=plan.id,
+        )
+
+        with patch(
+            "app.core.config.settings"
+            ".standalone_gathering_payment_options_enabled", False,
+        ):
+            verdict = tickets._plan_hold_verdict(db, held, plan)
+        assert verdict == tickets.VERIFY_CANCELLED
+        assert tickets.capacity_used(db, ev.id) == 0
