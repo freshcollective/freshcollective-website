@@ -3737,6 +3737,14 @@ def update_pathway(
     pathway = _get_pathway(space, pathway_slug, db)
 
     updates = body.model_dump(exclude_unset=True)
+    # Captured before the loop, because the currency guard below must
+    # ask "did this Pathway have a price *before* this request" rather
+    # than "does it have one by the time I reach the currency field".
+    # Those differ: ``model_dump`` yields fields in schema-declaration
+    # order, so ``price_cents`` is applied first, and a request that
+    # legitimately sets a price and a currency together would have been
+    # refused by its own other half.
+    _had_price_before_update = pathway.price_cents is not None
     for field, val in updates.items():
         if field == "title" and val is not None:
             pathway.title = val.strip()
@@ -3753,7 +3761,48 @@ def update_pathway(
         elif field in ("price_cents", "billing_interval"):
             setattr(pathway, field, val)
         elif field == "currency" and val is not None:
-            pathway.currency = val
+            # Stage 2A — currency is fixed once set.
+            #
+            # A creator may edit the price within the currency they
+            # chose; they may not re-denominate a Pathway that has
+            # already sold. Existing PaymentTransactions are recorded
+            # in the original currency, and silently changing the
+            # column would make a creator's own earnings unreadable
+            # without converting anything.
+            #
+            # Enforced here rather than only in the form, because the
+            # form was the thing getting it wrong: Pathway Settings
+            # sent ``currency: 'AUD'`` on every save where the Pathway
+            # was not a legacy paid one, which silently reset a stored
+            # USD Pathway to AUD.
+            #
+            # Keyed on whether a price exists, not merely on the
+            # column being populated. ``pathways.currency`` is NOT NULL
+            # with a server default of ``'AUD'``, so *every* row has a
+            # currency from the moment it is created — including a free
+            # Pathway whose creator never chose one. Refusing on the
+            # column alone would trap a free Pathway in AUD forever and
+            # make it unsellable in any other currency, which protects
+            # nothing: with no price, there is no amount denominated in
+            # it and no transaction recorded against it.
+            #
+            # Once an amount exists, the currency is the creator's
+            # decision and is fixed. That is the case the requirement
+            # is about — "creators may edit the price within the
+            # established currency".
+            incoming = val.upper()
+            existing = (pathway.currency or "").upper()
+            if existing and _had_price_before_update and incoming != existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"This Pathway's price is set in {existing} and "
+                        f"its currency cannot be changed. Edit the "
+                        f"amount instead, or create a new Pathway to "
+                        f"sell in a different currency."
+                    ),
+                )
+            pathway.currency = incoming
         elif field == "cover_image_url":
             pathway.cover_image_url = _normalise_banner_image(val)
         elif field == "pathway_type" and val is not None:

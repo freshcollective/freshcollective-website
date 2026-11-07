@@ -100,18 +100,23 @@ describe('an unsupported Gathering inclusion is visible to the creator', () => {
 
 describe('the two Pathway surfaces agree', () => {
   it('New Pathway offers only choices Settings can maintain', () => {
+    // Stage 2A moved `one_time` across this line. Stage 0 removed it
+    // because Settings could not maintain a direct price; Settings now
+    // can, so offering it at creation is no longer a trap.
+    //
+    // `subscription` stays out, and this is the assertion that keeps it
+    // out: `POST /api/checkout/pathway` refuses anything but
+    // `one_time`, so a subscription Pathway is unsellable by any door.
     const src = code(PATHWAY_NEW)
     const i = src.indexOf('ACCESS_OPTIONS')
     const block = src.slice(i, src.indexOf(']', src.indexOf('[', i)))
-    for (const v of ["'free'", "'included'", "'included_with_offer'"]) {
+    for (const v of ["'free'", "'included'", "'included_with_offer'", "'one_time'"]) {
       assert.ok(block.includes(v), `New Pathway no longer offers ${v}`)
     }
-    for (const v of ["'one_time'", "'subscription'"]) {
-      assert.ok(
-        !block.includes(v),
-        `New Pathway still offers ${v}, which Pathway Settings cannot maintain`,
-      )
-    }
+    assert.ok(
+      !block.includes("'subscription'"),
+      'New Pathway offers subscription again, which checkout refuses to sell',
+    )
   })
 
   it('both surfaces use the same three labels', () => {
@@ -123,23 +128,57 @@ describe('the two Pathway surfaces agree', () => {
     }
   })
 
-  it('the direct-price control is kept, dormant, for Stage 2', () => {
-    // Deliberately not deleted: Stage 2 re-enables direct Pathway
-    // pricing and this is the control it re-enables. `isPaid` can no
-    // longer be true, so it never renders.
-    const src = read(PATHWAY_NEW)
-    assert.match(src, /const isPaid = accessType === 'one_time' \|\| accessType === 'subscription'/)
+  it('the direct-price control is live again, and only for one_time', () => {
+    // Stage 0 kept this control dormant for Stage 2. Stage 2 is here:
+    // it renders, and the condition that renders it must not readmit
+    // `subscription` by the back door.
+    const src = code(PATHWAY_NEW)
     assert.match(src, /\{isPaid && \(/)
-    assert.match(src, /Stage 2/)
+    const i = src.indexOf('const isPaid')
+    const decl = src.slice(i, src.indexOf('\n', i))
+    assert.match(decl, /accessType === 'one_time'/)
+    assert.ok(
+      !decl.includes("'subscription'"),
+      'the price box renders for subscription, which cannot be sold',
+    )
   })
 
-  it('Settings tells a direct-priced Pathway that it keeps selling', () => {
-    // The old banner said only what was blocked. A creator whose
-    // Pathway is on a direct price needs to know their price and
-    // their sales are untouched.
+  it('Settings lets a direct-priced Pathway edit its price', () => {
+    // Stage 0's banner explained why the price could not be edited
+    // here. Stage 2A replaced the banner with the control, so the
+    // contract is now the control itself: an editable amount, bound to
+    // the price state, rendered only for `one_time`.
+    const src = code(PATHWAY_SETTINGS)
+    assert.match(src, /id="pathway-price"/)
+    assert.match(src, /value=\{priceDollars\}/)
+    assert.match(src, /onChange=\{\(e\) => setPriceDollars\(e\.target\.value\)\}/)
+    const i = src.indexOf('const showPrice')
+    const decl = src.slice(i, src.indexOf('\n', i))
+    assert.match(decl, /accessType === 'one_time'/)
+    assert.match(decl, /!isPaymentOptionsMode/)
+  })
+
+  it('and still explains itself when an Option prices the Pathway', () => {
+    // The one case where a direct price is withheld: an Option
+    // already answers "what does this cost". Showing both is the
+    // conflict `pricing_mode` exists to prevent, so the creator is
+    // told why the box is absent and how to get it back.
     const src = read(PATHWAY_SETTINGS)
-    assert.match(src, /untouched, and it keeps selling/)
-    assert.match(src, /Setting a price here alongside Payment\s*\n?\s*Options is coming/)
+    assert.match(src, /A Payment Option prices this Pathway/)
+    assert.match(src, /completed purchases are\s*\n?\s*untouched/)
+  })
+
+  it('and the currency is not editable once a price exists', () => {
+    // Enforced server-side in `update_pathway`; this is the matching
+    // creator-facing half, so the field a creator can see agrees with
+    // what the API will accept.
+    const src = code(PATHWAY_SETTINGS)
+    assert.match(src, /setCurrency: _setCurrency/)
+    assert.match(src, /currencyLabel/)
+    assert.ok(
+      !/onChange=\{\(e\) => setCurrency\(/.test(src),
+      'Pathway Settings writes a currency again',
+    )
   })
 
   it('and still refuses to write a paid access type', () => {

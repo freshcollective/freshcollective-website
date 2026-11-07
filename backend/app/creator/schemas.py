@@ -592,7 +592,16 @@ class PathwayCreateRequest(BaseModel):
     @field_validator("access_type")
     @classmethod
     def validate_access_type(cls, v: str) -> str:
-        if v not in ("free", "included", "one_time", "subscription"):
+        # ``included_with_offer`` was missing here while the update
+        # validator accepted it, so a creator choosing "Payment Option
+        # access" on a *new* Pathway got a 422 from a choice the form
+        # offered them. Live since Stage 0 (50dc1db), and invisible
+        # because every test for that access type builds the row
+        # directly instead of posting to this route.
+        if v not in (
+            "free", "included", "included_with_offer",
+            "one_time", "subscription",
+        ):
             raise ValueError("Invalid access type.")
         return v
 

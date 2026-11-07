@@ -10,23 +10,24 @@ import { apiUrl } from '@/lib/api'
 // ---------------------------------------------------------------------------
 
 /**
- * The three choices Pathway Settings can also maintain.
+ * The four choices Pathway Settings can also maintain.
  *
- * "One-off payment" and "Monthly subscription" used to be offered
- * here, with a price box. They worked — ``Pathway.price_cents`` and
- * the option-less checkout door are both live — but the Settings
- * editor treats those states as legacy and refuses to write them, so
- * a creator could create a $49 Pathway and then be told that is not
- * how paid Pathways work. Offering a choice one surface cannot
- * maintain is the worse half of that inconsistency, so it is the half
- * that goes.
+ * "One-time purchase" is back (Stage 2A). Stage 0 removed it because
+ * Pathway Settings treated a direct price as legacy and refused to
+ * write one, so a creator could create a $49 Pathway and then be told
+ * that is not how paid Pathways work. Offering a choice one surface
+ * cannot maintain was the worse half of that inconsistency, so it was
+ * the half that went. Settings can now maintain it, so it returns.
  *
- * Nothing is removed from the product: Pathways already on a direct
- * price keep selling through that door, and the API still accepts
- * ``access_type='one_time'``. Direct pricing returns to this form in
- * Stage 2, once the unified purchase-arrangement resolver can say
- * which price is the price when an Option also grants the Pathway —
- * the ambiguity ``Pathway.pricing_mode`` currently prevents.
+ * **"Monthly subscription" is deliberately not here.** The column
+ * still accepts ``access_type='subscription'`` and the row is
+ * settable, but ``POST /api/checkout/pathway`` refuses anything but
+ * ``one_time`` — so a subscription Pathway is unsellable by any door.
+ * Ongoing member-paid access is configured through Payment Options.
+ * Do not add it back without a checkout that can sell it.
+ *
+ * Simultaneous direct *and* Payment Option pricing on one Pathway is
+ * Stage 2B, behind its own activation gate.
  */
 const ACCESS_OPTIONS = [
   {
@@ -38,6 +39,11 @@ const ACCESS_OPTIONS = [
     value: 'included',
     label: 'Members only',
     description: 'Only signed-in members of this collective can see or begin this pathway.',
+  },
+  {
+    value: 'one_time',
+    label: 'One-time purchase',
+    description: 'Members buy this Pathway on its own, for a single price you set here.',
   },
   {
     value: 'included_with_offer',
@@ -63,7 +69,10 @@ function AccessPricingSection({
   setCurrency: (v: string) => void
   priceError: string | null
 }) {
-  const isPaid = accessType === 'one_time' || accessType === 'subscription'
+  // `one_time` only. `subscription` is not offered in ACCESS_OPTIONS
+  // and checkout refuses to sell it, so admitting it here would only
+  // ever show a price box for an arrangement nobody can buy.
+  const isPaid = accessType === 'one_time'
 
   return (
     <div>
@@ -106,20 +115,17 @@ function AccessPricingSection({
         })}
       </div>
 
-      {/* Price fields — currently unreachable, deliberately.
-          ``isPaid`` reads ``one_time``/``subscription``, and neither is
-          offered above any more (see ACCESS_OPTIONS). Kept rather than
-          deleted because Stage 2 re-enables direct Pathway pricing and
-          this is the control it re-enables; deleting and rewriting it
-          would be the same work twice, and the stale "Stripe will be
-          wired later" note below is now wrong in a way worth keeping
-          visible to whoever restores it — Stripe is wired, and
-          ``POST /api/checkout/pathway`` sells these today. */}
+      {/* Price fields — live again as of Stage 2A, for `one_time`.
+          The currency select is editable *here only*: this is the one
+          moment it can be chosen, because once the Pathway has a price
+          `update_pathway` refuses to change it (purchases are recorded
+          in it, and re-denominating would misstate a creator's own
+          earnings). Pathway Settings shows it read-only. */}
       {isPaid && (
         <div className="mt-3 flex gap-3">
           <div className="flex-1">
             <label className="mb-1 block text-[12px] font-semibold text-black">
-              {accessType === 'subscription' ? 'Monthly price' : 'Price'}
+              Price
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-black">
@@ -160,7 +166,9 @@ function AccessPricingSection({
 
       {isPaid && (
         <p className="mt-2 text-[11px] text-black">
-          Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
+          Members pay this once for lifetime access to this Pathway. You
+          can change the amount later in the Pathway&rsquo;s settings;
+          the currency is fixed once set.
         </p>
       )}
 
@@ -203,7 +211,10 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
   const [error, setError]               = useState<string | null>(null)
   const [priceError, setPriceError]     = useState<string | null>(null)
 
-  const isPaid = accessType === 'one_time' || accessType === 'subscription'
+  // `one_time` only. `subscription` is not offered in ACCESS_OPTIONS
+  // and checkout refuses to sell it, so admitting it here would only
+  // ever show a price box for an arrangement nobody can buy.
+  const isPaid = accessType === 'one_time'
 
   function validate(): boolean {
     if (!title.trim()) {

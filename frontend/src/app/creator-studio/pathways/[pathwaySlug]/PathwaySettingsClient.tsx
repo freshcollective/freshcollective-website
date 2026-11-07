@@ -40,9 +40,12 @@ function AccessPricingSection({
   accessType, setAccessType, pricingMode, setPricingMode,
   // Legacy commerce props — preserved for compatibility with the
   // parent form; unused by the simplified UI. See docstring.
-  priceDollars: _priceDollars, setPriceDollars: _setPriceDollars,
-  currency: _currency, setCurrency: _setCurrency,
-  priceError: _priceError,
+  priceDollars, setPriceDollars,
+  currency,
+  // Fixed after creation — see the read-only display below and the
+  // server-side guard in ``update_pathway``.
+  setCurrency: _setCurrency,
+  priceError,
   spaceSlug: _spaceSlug,
   unlockOptionIds, setUnlockOptionIds: _setUnlockOptionIds,
 }: {
@@ -59,24 +62,39 @@ function AccessPricingSection({
   unlockOptionIds: string[]
   setUnlockOptionIds: (ids: string[]) => void
 }) {
-  // Legacy paid states that pre-date Commerce → Payment Options.
-  // ``one_time`` / ``subscription`` remain read-only banners: those
-  // predate ``PaymentOptionGrant`` and are being phased out.
-  // ``included_with_offer`` is NOT legacy — it's the third first-class
-  // choice below (Payment Option access).
   const isPaymentOptionsMode = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
-  const legacyPaid = isPaymentOptionsMode
-    || accessType === 'one_time'
-    || accessType === 'subscription'
 
-  // Three first-class choices for who can access this Pathway.
-  // ``included_with_offer`` (Payment Option access) derives its
-  // unlock set from ``PaymentOptionGrant`` — the same Options that
-  // list this Pathway in Commerce → Payment Options are the ones
-  // that unlock it. No separate unlock checklist to maintain.
+  // States this editor still cannot maintain.
+  //
+  // Stage 2A removed ``one_time`` from this set — a direct price is now
+  // editable below, which is what Stage 0 removed it for. Two remain:
+  //
+  // ``subscription`` — settable on the row, and unsellable by any
+  //   door, because ``POST /api/checkout/pathway`` refuses anything but
+  //   ``one_time``. Ongoing paid access belongs to Payment Options.
+  // ``payment_options`` mode — an Option already prices this Pathway.
+  //   Offering a direct price *alongside* it is Stage 2B, behind its own
+  //   gate; until then showing both is the $5/$2 conflict
+  //   ``pricing_mode`` exists to prevent.
+  const unmaintainable = isPaymentOptionsMode || accessType === 'subscription'
+
+  // ``included_with_offer`` (Payment Option access) derives its unlock
+  // set from ``PaymentOptionGrant`` — the same Options that list this
+  // Pathway in Commerce → Payment Options are the ones that unlock it.
+  // No separate unlock checklist to maintain.
   const CHOICES: { value: string; label: string; description: string }[] = [
     { value: 'free',                label: 'Public',      description: 'Anyone can find and preview this Pathway on your Collective\u2019s public pages. Members can begin it immediately.' },
     { value: 'included',            label: 'Members only', description: 'Only signed-in members of this Collective can see or begin this Pathway. Non-members are prompted to join.' },
+    // Offered only while an Option is not already pricing this
+    // Pathway. In ``payment_options`` mode a direct price would be a
+    // second answer to "what does this cost".
+    ...(isPaymentOptionsMode
+      ? []
+      : [{
+          value: 'one_time',
+          label: 'One-time purchase',
+          description: 'Members buy this Pathway on its own, for a single price you set below.',
+        }]),
     { value: 'included_with_offer', label: 'Payment Option access', description: 'Only members whose current Payment Option includes this Pathway can access it.' },
   ]
 
@@ -85,28 +103,46 @@ function AccessPricingSection({
     setAccessType(value)
   }
 
+  // The direct price, editable. Shown for the access type that
+  // actually sells one, and only while no Option is pricing this
+  // Pathway.
+  const showPrice = accessType === 'one_time' && !isPaymentOptionsMode
+  // Fixed after creation. Null on legacy rows, which the checkout
+  // already reads as AUD.
+  const currencyLabel = (currency || 'AUD').toUpperCase()
+
   const showEmptyGrantWarning = accessType === 'included_with_offer' && unlockOptionIds.length === 0
 
   return (
     <div>
       <label className="mb-2 block text-[12px] font-semibold text-black">Access</label>
 
-      {legacyPaid && (
+      {isPaymentOptionsMode && (
         <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] leading-relaxed text-teal-900">
-          <strong>Paid access is managed in Commerce → Payment Options.</strong>{' '}
-          This Pathway is on a direct-price access mode that this editor
-          cannot change. Its existing price and any completed purchases are
-          untouched, and it keeps selling. Payment Options that include this
-          Pathway are shown below. Setting a price here alongside Payment
-          Options is coming \u2014 until then, to move this Pathway off its
-          direct price, choose <em>Public</em>, <em>Members only</em>, or
-          <em>Payment Option access</em>.
+          <strong>A Payment Option prices this Pathway.</strong>{' '}
+          Members buy it through the Options listed below, so there is no
+          separate price to set here. Any completed purchases are
+          untouched. Offering an individual price <em>alongside</em>
+          Payment Options is coming — until then, to move this Pathway
+          back to its own price choose <em>Public</em> or{' '}
+          <em>Members only</em> first.
+        </div>
+      )}
+
+      {accessType === 'subscription' && !isPaymentOptionsMode && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] leading-relaxed text-amber-900">
+          <strong>This Pathway is on a monthly subscription.</strong>{' '}
+          That arrangement is no longer sold — checkout accepts one-time
+          Pathway purchases only, so nobody can currently buy it. Choose{' '}
+          <em>One-time purchase</em> to sell it for a single price, or set
+          up ongoing access through Payment Options. Existing members keep
+          their access either way.
         </div>
       )}
 
       <div className="space-y-2">
         {CHOICES.map((opt) => {
-          const selected = !legacyPaid && accessType === opt.value
+          const selected = !unmaintainable && accessType === opt.value
           return (
             <button
               key={opt.value}
@@ -133,6 +169,67 @@ function AccessPricingSection({
           )
         })}
       </div>
+
+      {showPrice && (
+        <div
+          className="mt-3 rounded-xl px-4 py-4"
+          style={{ background: 'rgba(56,160,158,0.04)', border: '1px solid rgba(56,160,158,0.22)' }}
+        >
+          <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+            <div>
+              <label htmlFor="pathway-price" className="mb-1.5 block text-[12px] font-semibold text-navy-900">
+                Price
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-500">
+                  $
+                </span>
+                <input
+                  id="pathway-price"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="49.00"
+                  value={priceDollars}
+                  onChange={(e) => setPriceDollars(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-white py-2.5 pl-7 pr-3 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                />
+              </div>
+              {priceError && (
+                <p className="mt-1 text-[12px] text-red-600">{priceError}</p>
+              )}
+              <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                Enter a normal amount like 49 or 49.00. We store cents.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold text-navy-900">
+                Currency
+              </label>
+              {/* Read-only on purpose. Existing purchases are recorded
+                  in this currency, and re-denominating a Pathway that
+                  has sold would make a creator's own earnings
+                  unreadable without converting anything. The server
+                  refuses a change too. */}
+              <div
+                className="flex h-[42px] items-center rounded-lg border border-border px-3 text-[14px] text-navy-900"
+                style={{ background: 'rgba(12,24,38,0.03)' }}
+              >
+                {currencyLabel}
+              </div>
+              <p className="mt-1 text-[12px]" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                Set when created.
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-[12px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.68)' }}>
+            Changing the price applies to new purchases only. Anyone who
+            has already bought this Pathway keeps their access, and what
+            they paid stays on their receipt.
+          </p>
+        </div>
+      )}
 
       {accessType === 'included_with_offer' && (
         <div
@@ -1202,6 +1299,13 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
       const dollars = parseFloat(priceDollars)
       if (!priceDollars.trim() || isNaN(dollars)) { setPriceError('Enter a price for this paid pathway.'); return false }
       if (dollars <= 0) { setPriceError('Price must be greater than 0.'); return false }
+      // Money has two decimal places. ``49.999`` would round to
+      // ``$50.00`` on save and the creator would never be told, so it
+      // is refused rather than silently corrected.
+      if (Math.round(dollars * 100) !== Number((dollars * 100).toFixed(4))) {
+        setPriceError('Use at most two decimal places, like 49 or 49.50.')
+        return false
+      }
     }
     return true
   }
@@ -1211,8 +1315,35 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
     setPriceError(null)
     setSaved(false)
     if (!validate()) return
-    const priceCents = needsSinglePrice ? Math.round(parseFloat(priceDollars) * 100) : null
     setLoading(true)
+
+    // Stage 2A — what is *omitted* matters as much as what is sent.
+    //
+    // ``update_pathway`` applies ``model_dump(exclude_unset=True)``, so
+    // a field left out of this body keeps its stored value. That is how
+    // an inactive direct price is preserved: previously this sent
+    // ``price_cents: null`` whenever the Pathway was not a legacy paid
+    // one, so moving a $49 Pathway to Members only destroyed the price
+    // with no warning and no way back through the UI.
+    //
+    // ``currency`` is never sent from this surface at all, and for a
+    // sharper reason: it used to send the literal ``'AUD'`` on every
+    // non-paid save, which silently re-denominated a stored USD
+    // Pathway. The currency is chosen once, on the New Pathway form,
+    // and ``update_pathway`` refuses to change it once a price exists.
+    // Omitting it is what keeps the stored value intact.
+    const body: Record<string, unknown> = {
+      title: title.trim(),
+      description: description.trim() || null,
+      status,
+      access_type: accessType,
+      pricing_mode: pricingMode,
+      billing_interval: accessType === 'subscription' ? 'month' : null,
+    }
+    if (needsSinglePrice) {
+      body.price_cents = Math.round(parseFloat(priceDollars) * 100)
+    }
+
     try {
       const res = await fetch(
         apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}`),
@@ -1220,16 +1351,7 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({
-            title: title.trim(),
-            description: description.trim() || null,
-            status,
-            access_type: accessType,
-            pricing_mode: pricingMode,
-            price_cents: priceCents,
-            currency: needsSinglePrice ? currency : 'AUD',
-            billing_interval: accessType === 'subscription' ? 'month' : null,
-          }),
+          body: JSON.stringify(body),
         },
       )
       if (!res.ok) {
