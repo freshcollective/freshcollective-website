@@ -789,3 +789,70 @@ class TestTheTill:
         db.flush()
 
         assert compute_pathway_access(buyer, p, space, db, as_member=True)
+
+
+# ===========================================================================
+# The Collective headline — "Pathways from $X"
+# ===========================================================================
+
+
+class TestTheCollectiveHeadline:
+    """The ``Pathways from $X`` figure on Explore and the public About
+    page. It keyed each Pathway by ``pricing_mode``, which was right
+    while the two were exclusive and wrong once they are not: a Pathway
+    with a live A$49 price and a cheaper A$29 bundle would have
+    advertised whichever one its mode happened to name.
+    """
+
+    def _min(self, db, space):
+        from app.spaces.pathway_pricing import min_paid_price_cents_for_space
+        return min_paid_price_cents_for_space(db, space.id)
+
+    def test_shut_a_legacy_pathway_advertises_its_own_price(
+        self, db, space, instalments_sellable,
+    ):
+        p = _pathway(db, space, price_cents=4900)
+        opt = _option(db, space)
+        _pay_in_full(db, opt, cents=2900)
+        _grant_pathway(db, opt, p)
+        # Unchanged: the Option was ignored at the till in legacy mode,
+        # so advertising A$29 would have been a promise nothing kept.
+        assert self._min(db, space) == 4900
+
+    def test_shut_an_option_pathway_advertises_the_option(
+        self, db, space, instalments_sellable,
+    ):
+        p = _pathway(db, space, pricing_mode="payment_options",
+                     access_type="one_time", price_cents=4900)
+        opt = _option(db, space)
+        _pay_in_full(db, opt, cents=2900)
+        _grant_pathway(db, opt, p)
+        assert self._min(db, space) == 2900
+
+    def test_open_the_cheaper_of_two_live_doors_wins(
+        self, db, space, gate_open,
+    ):
+        p = _pathway(db, space, price_cents=4900, direct=True)
+        opt = _option(db, space)
+        _pay_in_full(db, opt, cents=2900)
+        _grant_pathway(db, opt, p)
+        assert self._min(db, space) == 2900, (
+            "the headline missed a cheaper live bundle"
+        )
+
+    def test_open_a_dormant_price_is_not_advertised(
+        self, db, space, gate_open,
+    ):
+        """The direct price is off; only the Option may be quoted."""
+        p = _pathway(db, space, access_type="one_time", price_cents=500,
+                     pricing_mode="payment_options", direct=False)
+        opt = _option(db, space)
+        _pay_in_full(db, opt, cents=2900)
+        _grant_pathway(db, opt, p)
+        assert self._min(db, space) == 2900
+
+    def test_open_a_direct_only_pathway_still_advertises_its_price(
+        self, db, space, gate_open,
+    ):
+        _pathway(db, space, price_cents=4900, direct=True)
+        assert self._min(db, space) == 4900

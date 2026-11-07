@@ -57,7 +57,7 @@ generic copy — correctly, because nobody can buy it yet.
 
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, true as sa_true
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.payment_option import PaymentOption
@@ -75,6 +75,31 @@ from app.spaces.purchase_schedule_view import (
 PAID_ACCESS_TYPES = ("one_time", "subscription")
 
 
+def _direct_on_sale():
+    """Filter for "this Pathway's own price is an active offer"."""
+    from app.core.config import settings
+
+    if settings.pathway_multiple_purchase_options_enabled:
+        return Pathway.direct_purchase_enabled.is_(True)
+    return Pathway.pricing_mode == "legacy"
+
+
+def _option_pathways_in_scope():
+    """Filter for "an Option's price counts for this Pathway".
+
+    With the gate shut only ``payment_options`` Pathways are priced by
+    their Options — a legacy Pathway's Option was ignored at the till,
+    so advertising its price would have been a promise nothing kept.
+    With the gate open both doors are real, so every active Pathway an
+    Option sells is in scope.
+    """
+    from app.core.config import settings
+
+    if settings.pathway_multiple_purchase_options_enabled:
+        return sa_true()
+    return Pathway.pricing_mode == "payment_options"
+
+
 def _legacy_minimums(db: Session, space_ids: list[str]) -> dict[str, int]:
     """Cheapest legacy-priced Pathway per space, from ``price_cents``."""
     out: dict[str, int] = {}
@@ -84,7 +109,13 @@ def _legacy_minimums(db: Session, space_ids: list[str]) -> dict[str, int]:
             Pathway.space_id.in_(space_ids),
             Pathway.status == "active",
             Pathway.access_type.in_(PAID_ACCESS_TYPES),
-            Pathway.pricing_mode == "legacy",
+            # Stage 2B — which column means "this Pathway's own price is
+            # on sale". Shut: ``pricing_mode``, unchanged. Open:
+            # ``direct_purchase_enabled``, because a Pathway may now
+            # have a live direct price *and* an Option, and keying on
+            # the mode would drop the direct price of every such
+            # Pathway from the headline.
+            _direct_on_sale(),
             Pathway.price_cents.isnot(None),
             Pathway.price_cents > 0,
         )
@@ -122,7 +153,11 @@ def _payment_option_minimums(
         .filter(
             Pathway.space_id.in_(space_ids),
             Pathway.status == "active",
-            Pathway.pricing_mode == "payment_options",
+            # Stage 2B — with the gate open an Option prices the
+            # Pathways it sells whatever mode they are in, so the
+            # restriction to payment_options Pathways is what would
+            # hide a cheaper bundle behind a dearer direct price.
+            _option_pathways_in_scope(),
             PaymentOption.status == "published",
         )
         # ``_schedule_is_member_checkoutable`` reads ``option.grants``
