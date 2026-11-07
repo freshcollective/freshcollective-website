@@ -39,6 +39,15 @@ class PathwaySummary(BaseModel):
     user_has_access: bool = False
     step_count: int = 0
     unlock_offer_names: list[str] = []
+    # Stage 2B — whether the Pathway's own price is on sale, decided by
+    # the same rule the till applies. A card must not advertise a
+    # stored-but-dormant price, and from the card's own fields that is
+    # not derivable: ``price_cents`` survives a creator taking the
+    # offer down, by design.
+    direct_purchase_available: bool = False
+    # Stage 2B gate, mirrored so the card keeps branching on
+    # ``pricing_mode`` while it is off.
+    multiple_purchase_options_enabled: bool = False
 
 
 class SpaceResponse(BaseModel):

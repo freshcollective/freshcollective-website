@@ -2180,6 +2180,12 @@ def list_pathways(
             position=p.position,
             access_type=p.access_type.value if hasattr(p.access_type, "value") else str(p.access_type or "free"),
             pricing_mode=getattr(p, "pricing_mode", "legacy") or "legacy",
+            direct_purchase_available=(
+                _direct_offer.direct_purchase_is_available(p)
+            ),
+            multiple_purchase_options_enabled=(
+                settings.pathway_multiple_purchase_options_enabled
+            ),
             price_cents=p.price_cents,
             currency=p.currency,
             billing_interval=p.billing_interval,
@@ -3842,6 +3848,12 @@ def get_pathway(
         position=p.position,
         access_type=p.access_type.value if hasattr(p.access_type, "value") else str(p.access_type or "free"),
         pricing_mode=getattr(p, "pricing_mode", "legacy") or "legacy",
+        direct_purchase_available=(
+            _direct_offer.direct_purchase_is_available(p)
+        ),
+        multiple_purchase_options_enabled=(
+            settings.pathway_multiple_purchase_options_enabled
+        ),
         price_cents=p.price_cents,
         currency=p.currency,
         billing_interval=p.billing_interval,

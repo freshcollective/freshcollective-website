@@ -17,6 +17,12 @@ export interface PathwaySummary {
   user_has_access: boolean
   step_count: number
   unlock_offer_names: string[]
+  /** Stage 2B — whether the Pathway's own price is on sale. Not
+   *  derivable from `price_cents`, which survives a creator taking
+   *  the offer down. */
+  direct_purchase_available?: boolean
+  /** Stage 2B gate. */
+  multiple_purchase_options_enabled?: boolean
 }
 
 export interface SpaceResponse {

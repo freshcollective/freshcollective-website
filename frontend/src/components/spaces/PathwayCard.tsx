@@ -32,10 +32,20 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
   const offerLabel = isIncludedWithOffer && locked && pathway.unlock_offer_names?.length
     ? `Included with ${pathway.unlock_offer_names[0]}`
     : null
+  // Stage 2B — the card must not advertise a price nobody may pay.
+  //
+  // Gate shut: unchanged, ``pricing_mode`` decides. Gate open: the
+  // backend decides, because a stored ``price_cents`` outlives the
+  // offer behind it — Stage 2A made preserving a price the default,
+  // so "an amount is set" stopped meaning "it is for sale".
+  const simultaneousPurchasing = pathway.multiple_purchase_options_enabled === true
+  const directAvailable = simultaneousPurchasing
+    ? pathway.direct_purchase_available === true
+    : pathway.pricing_mode !== 'payment_options'
   const priceLabel = locked && !isIncludedWithOffer
-    ? (pathway.pricing_mode === 'payment_options'
-        ? 'Payment options'
-        : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
+    ? (directAvailable
+        ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
+        : 'Payment options')
     : null
   // "5 sections" for a Knowledge Guide, "5 steps" for a Guided
   // Experience. Derived from ``pathway_type``, never from the title.
