@@ -476,6 +476,9 @@ function IncludedSection({
         experiences={experiences}
         alreadyGrantedIds={alreadyGranted}
         onAdd={addGrant}
+        gatheringsEnabled={
+          option.standalone_gathering_payment_options_enabled === true
+        }
       />
     </section>
   )

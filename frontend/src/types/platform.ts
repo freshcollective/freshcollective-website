@@ -1093,6 +1093,11 @@ export interface TicketSalesSummary {
   has_completed_ticket_sales: boolean
   has_active_payment_holds: boolean
   sales_enabled: boolean
+  /** Stage 3 — whether this Gathering may be included in a Payment
+   *  Option. A different question from `sales_enabled`, which is about
+   *  its own ticket, and answered by the backend rather than derived
+   *  here. */
+  payment_option_gatherings_enabled?: boolean
   stripe_mode: 'test' | 'live'
 }
 

@@ -47,6 +47,12 @@ interface Props {
     exp: Experience,
     extras?: { sessions_per_week?: number; total_sessions?: number },
   ) => Promise<void>
+  /** Stage 3 — may a standalone Gathering be bundled into a Payment
+   *  Option? From the Payment Option payload, which mirrors the
+   *  setting the till reads. Defaults false so an older payload
+   *  without the field keeps the pre-Stage-3 behaviour rather than
+   *  offering something checkout would refuse. */
+  gatheringsEnabled?: boolean
 }
 
 type Step = 'pick' | 'series-allowance'
@@ -61,6 +67,7 @@ const KIND_ORDER: Experience['kind'][] = ['pathway', 'event_series', 'gathering'
 
 export default function ExperiencePickerModal({
   open, onClose, experiences, alreadyGrantedIds, onAdd,
+  gatheringsEnabled = false,
 }: Props) {
   const [q, setQ] = useState('')
   const [step, setStep] = useState<Step>('pick')
@@ -179,7 +186,18 @@ export default function ExperiencePickerModal({
               // Add so a Creator can't author a grant fulfilment
               // would immediately reject. Historical Gathering
               // grants on existing Payment Options are untouched.
-              const kindUnsupported = kind === 'gathering'
+              // Stage 3 — the backend decides, not this file.
+              //
+              // This used to read ``kind === 'gathering'`` outright,
+              // which was true when standalone Gathering fulfilment
+              // did not exist. It stayed true after it did: the
+              // feature shipped, the flag went on, and the picker went
+              // on refusing because nothing here ever asked. The
+              // capability now comes from the Payment Option payload,
+              // which mirrors the same setting the till reads, so
+              // there is one answer rather than a copy that can go
+              // stale.
+              const kindUnsupported = kind === 'gathering' && !gatheringsEnabled
               return (
                 <section key={kind}>
                   <div className="mb-2 flex items-center gap-2">
@@ -198,6 +216,16 @@ export default function ExperiencePickerModal({
                       Option yet — use a Gathering Series if you need to grant
                       Gathering access. This section will re-open once payment-option
                       Gathering fulfilment is enabled.
+                    </p>
+                  )}
+                  {kind === 'gathering' && gatheringsEnabled && (
+                    <p className="mb-2 text-[11.5px] leading-relaxed text-slate-500">
+                      Including a Gathering books the member in when they
+                      buy. If it has a capacity and is full, the option
+                      can&rsquo;t be purchased until a place opens — so
+                      nobody is charged for a Gathering they can&rsquo;t
+                      attend. Its own ticket price, if it has one, keeps
+                      selling alongside.
                     </p>
                   )}
                   <ul className="space-y-1">

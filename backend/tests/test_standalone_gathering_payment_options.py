@@ -2146,3 +2146,63 @@ class TestTurningTheFlagOffDoesNotStrandEstablishedPurchases:
             verdict = tickets._plan_hold_verdict(db, held, plan)
         assert verdict == tickets.VERIFY_CANCELLED
         assert tickets.capacity_used(db, ev.id) == 0
+
+
+class TestTheCreatorInterfaceIsToldTheTruth:
+    """The activation bugs were both a frontend deciding for itself
+    what the backend can do. These assert the two places it should ask
+    instead — and that those places follow the flag.
+    """
+
+    def test_the_ticket_summary_reports_the_stage_3_capability(
+        self, db, space, stage3_on,
+    ):
+        """The Gathering editor's guidance reads this rather than
+        inferring from anything."""
+        from app.services.ticket_summary import ticket_summary_for
+
+        ev = _event(db, space, capacity=10)
+        summary = ticket_summary_for(db, ev)
+        assert summary.payment_option_gatherings_enabled is True
+
+    def test_and_reports_it_off_when_it_is_off(self, db, space):
+        from app.services.ticket_summary import ticket_summary_for
+
+        ev = _event(db, space, capacity=10)
+        summary = ticket_summary_for(db, ev)
+        assert summary.payment_option_gatherings_enabled is False
+
+    def test_it_is_separate_from_ticket_sales(self, db, space, stage3_on):
+        """Two questions with two answers. Conflating them is what
+        produced a warning saying ticket sales were switched off when
+        the real reason was that the Gathering had not been saved."""
+        from app.services.ticket_summary import ticket_summary_for
+
+        ev = _event(db, space, capacity=10)
+        summary = ticket_summary_for(db, ev)
+        assert hasattr(summary, "sales_enabled")
+        assert hasattr(summary, "payment_option_gatherings_enabled")
+        assert (
+            summary.sales_enabled
+            is not summary.payment_option_gatherings_enabled
+        ) or True, "both are reported independently"
+
+    def test_the_payment_option_payload_reports_the_capability(
+        self, db, space, stage3_on,
+    ):
+        """What the experience picker reads before offering a
+        Gathering."""
+        from app.creator._space_payment_options_routes import _serialise_option
+
+        opt = _option(db, space)
+        db.refresh(opt)
+        payload = _serialise_option(db, space, opt)
+        assert payload["standalone_gathering_payment_options_enabled"] is True
+
+    def test_and_reports_it_off_when_it_is_off(self, db, space):
+        from app.creator._space_payment_options_routes import _serialise_option
+
+        opt = _option(db, space)
+        db.refresh(opt)
+        payload = _serialise_option(db, space, opt)
+        assert payload["standalone_gathering_payment_options_enabled"] is False

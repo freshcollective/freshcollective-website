@@ -200,7 +200,21 @@ export default function EventForm({
 
   // Backend read-only summary; edit-lock indicators live here.
   const ticketSales = event?.ticket_sales ?? null
+  // ``ticket_sales`` only exists once the Gathering does — it is a
+  // summary of a saved row. So for a Gathering being created there is
+  // no answer here, and the old ``?? false`` turned "we don't know
+  // yet" into "ticket sales are switched off", which is a different
+  // statement and was not true. The warning below now needs the
+  // summary to actually say so.
+  const salesKnown = ticketSales != null
   const salesEnabled = ticketSales?.sales_enabled ?? false
+  const salesExplicitlyOff = salesKnown && !salesEnabled
+  // Stage 3 — a separate question with a separate answer: may this
+  // Gathering be bundled into a Payment Option? Taken from the same
+  // backend summary rather than re-derived, so there is one source
+  // for both. Unknown until the Gathering is saved, same as above.
+  const paymentOptionGatheringsEnabled =
+    ticketSales?.payment_option_gatherings_enabled ?? false
   const hasCompletedSales = ticketSales?.has_completed_ticket_sales ?? false
   const hasActiveHolds = ticketSales?.has_active_payment_holds ?? false
   const accessTypeLocked = hasCompletedSales || hasActiveHolds
@@ -1032,10 +1046,23 @@ export default function EventForm({
               to this Gathering only.
             </p>
             <p className="mb-4 text-[12px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
-              Payment plans and bundles are set up in Commerce &rarr; Payment
-              Options, which covers Pathways and Gathering Series today.
-              Instalments for an individual Gathering are coming \u2014 for now,
-              a ticket price here is how a single Gathering is sold.
+              {paymentOptionGatheringsEnabled ? (
+                <>
+                  Payment plans and bundles are set up in Commerce &rarr;
+                  Payment Options. You can include this Gathering in one —
+                  on its own, or alongside Pathways — and offer a single
+                  payment or a payment plan. A ticket price here keeps
+                  selling alongside any Option that includes it.
+                </>
+              ) : (
+                <>
+                  Payment plans and bundles are set up in Commerce &rarr;
+                  Payment Options, which covers Pathways and Gathering
+                  Series today. Including an individual Gathering is
+                  coming &mdash; for now, a ticket price here is how a
+                  single Gathering is sold.
+                </>
+              )}
             </p>
 
             <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
@@ -1086,7 +1113,7 @@ export default function EventForm({
               </div>
             </div>
 
-            {!salesEnabled && (
+            {salesExplicitlyOff && (
               /*
                 Accurate rather than reassuring. The whole paid-ticket
                 flow is built and works end to end — checkout, capacity
@@ -1138,7 +1165,11 @@ export default function EventForm({
           kind="gathering"
           experienceId={event.id}
           heading="How members can book this Gathering"
-          helperText="How members can currently book this Gathering. A ticket price set above is how a single Gathering is sold today — Payment Options cover Pathways and Gathering Series."
+          helperText={
+            paymentOptionGatheringsEnabled
+              ? 'How members can currently book this Gathering. A ticket price set above sells it on its own; a Payment Option can also include it, and both can be offered at once.'
+              : 'How members can currently book this Gathering. A ticket price set above is how a single Gathering is sold today — Payment Options cover Pathways and Gathering Series.'
+          }
         />
       )}
 

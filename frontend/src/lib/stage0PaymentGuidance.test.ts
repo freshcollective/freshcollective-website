@@ -218,14 +218,22 @@ describe('creators are told what a direct price is for, and what Payment Options
     assert.match(src, /pay\s*\n?\s*once for this Gathering/)
   })
 
-  it('and is honest that Gathering instalments are not available', () => {
-    // §4: do not introduce controls for purchasing methods that
-    // aren't operational. So the Gathering editor explains where
-    // Payment Options apply today and does not offer them here.
+  it('and is honest about whether Gathering Payment Options exist yet', () => {
+    // §4's rule was: do not introduce controls for purchasing methods
+    // that aren't operational. Stage 3 made standalone Gatherings
+    // operational behind a flag, so "honest" stopped meaning one fixed
+    // sentence and started meaning two, chosen by the backend.
+    //
+    // Both branches are asserted. The flag-off copy is the original,
+    // unchanged — that is the half this test was written to protect.
     const src = read(GATHERING)
-    assert.match(src, /covers Pathways and Gathering Series today/)
-    assert.match(src, /Instalments for an individual Gathering are coming/)
-    assert.match(src, /a ticket price here is how a single Gathering is sold/)
+    assert.match(src, /paymentOptionGatheringsEnabled/)
+    assert.match(src, /covers Pathways and Gathering\s+Series today/)
+    assert.match(
+      src,
+      /a ticket price here is how a\s+single Gathering is sold/,
+    )
+    assert.match(src, /a Payment Option can also include it/)
   })
 
   it('the Payment Options editor points single sales back to the experience', () => {

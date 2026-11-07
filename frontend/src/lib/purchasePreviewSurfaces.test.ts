@@ -114,13 +114,18 @@ describe('the Gathering editor shows the preview', () => {
     )
   })
 
-  it('with helper text that does not promise Gathering Payment Options', () => {
+  it('with helper text that follows the actual capability', () => {
+    // Stage 3 made this conditional rather than fixed. The old copy —
+    // "Payment Options cover Pathways and Gathering Series" — was
+    // correct until standalone Gathering fulfilment shipped, and then
+    // went on being displayed because nothing asked. Both branches are
+    // asserted so neither can quietly become the only one.
     const src = read(EVENT_FORM)
     const i = src.indexOf('helperText=')
-    const helper = src.slice(i, i + 320)
+    const helper = src.slice(i, i + 700)
+    assert.match(helper, /paymentOptionGatheringsEnabled/)
     assert.match(helper, /Payment Options cover Pathways and Gathering Series/)
-    // Must not imply an individual Gathering can be bought through one.
-    assert.ok(!/manage additional payment arrangements through Payment Options/i.test(helper))
+    assert.match(helper, /a Payment Option can also include it/)
   })
 
   it('and the existing ticket controls are untouched', () => {
@@ -128,9 +133,12 @@ describe('the Gathering editor shows the preview', () => {
     assert.match(src, /id="ticket-price"/)
     assert.match(src, /id="ticket-currency"/)
     assert.match(src, /setTicketPriceInput/)
-    // The Stage 0 warning beside the price stays.
+    // The Stage 0 warning still exists — but is now shown only when
+    // the backend actually says sales are off, rather than whenever
+    // the answer is unknown. See ``salesExplicitlyOff``.
     assert.match(src, /Ticket sales are switched off on this environment/)
-    assert.match(src, /a ticket price here is how a single Gathering is sold/)
+    assert.match(src, /salesExplicitlyOff && \(/)
+    assert.match(src, /a ticket price here is how a\s+single Gathering is sold/)
   })
 })
 

@@ -1169,6 +1169,10 @@ class TicketSalesSummaryOut(BaseModel):
     has_completed_ticket_sales: bool = False
     has_active_payment_holds: bool = False
     sales_enabled: bool = False
+    # Stage 3 — whether this Gathering may be included in a Payment
+    # Option. Distinct from ``sales_enabled``, which is about its own
+    # ticket; the editor shows different guidance for each.
+    payment_option_gatherings_enabled: bool = False
     stripe_mode: str = "test"
 
 

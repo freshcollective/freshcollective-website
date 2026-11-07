@@ -43,7 +43,12 @@ class TicketSalesSummary:
     has_completed_ticket_sales: bool           # edit-lock signal
     has_active_payment_holds: bool             # edit-lock signal (temporary)
     sales_enabled: bool                        # environment-level flag mirror
-    stripe_mode: str                           # 'test' | 'live'
+    # Stage 3 — whether a standalone Gathering may be bundled into a
+    # Payment Option yet. Mirrored here beside ``sales_enabled`` so the
+    # Gathering editor reads one authoritative answer for both
+    # questions instead of inferring either.
+    payment_option_gatherings_enabled: bool = False
+    stripe_mode: str = "test"                  # 'test' | 'live'
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -176,6 +181,9 @@ def ticket_summary_for(db: Session, event: Event) -> TicketSalesSummary:
         has_completed_ticket_sales=int(row["paid"]) > 0,
         has_active_payment_holds=active_holds > 0,
         sales_enabled=bool(settings.standalone_gathering_sales_enabled),
+        payment_option_gatherings_enabled=bool(
+            settings.standalone_gathering_payment_options_enabled
+        ),
         stripe_mode=settings.stripe_mode,
     )
 
@@ -280,6 +288,9 @@ def bulk_ticket_summaries(
             has_completed_ticket_sales=int(b["paid"]) > 0,
             has_active_payment_holds=active_holds > 0,
             sales_enabled=bool(settings.standalone_gathering_sales_enabled),
+        payment_option_gatherings_enabled=bool(
+            settings.standalone_gathering_payment_options_enabled
+        ),
             stripe_mode=settings.stripe_mode,
         )
     return out
