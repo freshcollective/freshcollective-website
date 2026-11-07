@@ -142,6 +142,47 @@ def _booking(db, event, user, *, status=BookingStatus.confirmed,
     return b
 
 
+def _plan(db, space, option, schedule, buyer, *, status=None):
+    """A minimal real PurchasePlan — the booking FK needs one."""
+    from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+
+    pl = PurchasePlan(
+        id=_uid("pp"), member_user_id=buyer.id,
+        payment_option_id=option.id, payment_option_schedule_id=schedule.id,
+        space_id=space.id, creator_user_id=space.creator_id,
+        status=status or PurchasePlanStatus.pending_setup,
+        currency="AUD", installment_amount_cents=3200,
+        installments_expected=3, total_expected_cents=9600,
+        platform_fee_basis_points=0, payout_model="manual",
+        stripe_interval="month", stripe_interval_count=1,
+        stripe_mode="test", created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(pl)
+    db.flush()
+    return pl
+
+
+def _txn(db, space, buyer, option=None, *, cents=8900, status=None):
+    from app.models.payment import (
+        PaymentTransaction, PaymentTransactionStatus,
+        PaymentTransactionType, PaymentProvider,
+    )
+    t = PaymentTransaction(
+        id=_uid("txn"),
+        transaction_type=PaymentTransactionType.member_pathway_purchase,
+        status=status or PaymentTransactionStatus.succeeded,
+        payment_provider=PaymentProvider.stripe,
+        payer_user_id=buyer.id, space_id=space.id, currency="AUD",
+        gross_amount_cents=cents, platform_fee_basis_points=0,
+        platform_fee_cents=0, net_creator_amount_cents=cents,
+        payment_option_id=option.id if option is not None else None,
+    )
+    db.add(t)
+    db.flush()
+    return t
+
+
 def _hold(db, option, buyer, *, ttl=30):
     return tickets.hold_option_seats_or_raise(
         db, payment_option=option, buyer=buyer, hold_ttl_minutes=ttl,
@@ -802,83 +843,38 @@ class TestTheGatheringWaysToJoinCards:
         )
 
 
-class TestInstalmentPlansAreNotOfferedForSeats:
-    """The gap §7 asks to be reported rather than papered over.
+class TestInstalmentPlansReserveTheirSeats:
+    """Decision A — a member reserves their place when they establish
+    the plan, not when the first instalment lands.
 
-    Pay-in-full holds every seat at checkout, before Stripe. A finite
-    payment plan does not go that way: ``start_finite_plan_setup`` is
-    its own entry point and opens a Stripe *setup* Session, so nothing
-    is charged — and nothing held — until the first invoice succeeds,
-    which can be days later. The booking would be taken at that point,
-    by which time the Gathering may be full, leaving a member on a plan
-    with no seat.
-
-    Holding the seat for the whole setup window would fix it and is not
-    obviously right either: it removes a place from circulation for
-    days on the strength of an unconfirmed plan, and how long that may
-    last is a product decision. So the combination is not offered.
-    Pay-in-full is unaffected.
+    The earlier Stage 3 report withheld this combination because
+    ``start_finite_plan_setup`` is its own entry point and held
+    nothing, so a plan could reach its first invoice to find the
+    Gathering full. It now holds seats in the same transaction as the
+    plan row, by the same capacity rule the pay-in-full path uses —
+    which is what makes the schedule safe to offer.
     """
 
     def _plan_schedule(self, db, option):
         s = PaymentOptionSchedule(
             id=_uid("pos"), payment_option_id=option.id,
-            name="Weekly payments", schedule_type="recurring_installments",
-            status="published", total_amount_cents=7900,
-            installment_amount_cents=1975, installment_count=4,
-            interval="week", stripe_interval="week", stripe_interval_count=1,
-            currency="AUD", position=1,
+            name="Monthly payments", schedule_type="recurring_installments",
+            status="published", total_amount_cents=9600,
+            installment_amount_cents=3200, installment_count=3,
+            interval="month", stripe_interval="month",
+            stripe_interval_count=1, currency="AUD", position=1,
         )
         db.add(s)
         db.flush()
         return s
 
-    def test_a_plan_is_refused_when_the_option_books_a_seat(
-        self, db, space, stage3_on,
-    ):
-        from app.services.checkout_orchestration import (
-            gathering_seat_unheld_on_plan,
-        )
-        opt = _option(db, space)
-        sch = self._plan_schedule(db, opt)
-        _grant(db, opt, event=_event(db, space, capacity=10))
-        db.refresh(opt)
-        assert gathering_seat_unheld_on_plan(opt, sch) is not None
-
-    def test_pay_in_full_on_the_same_option_is_fine(
-        self, db, space, stage3_on,
-    ):
-        from app.services.checkout_orchestration import (
-            gathering_seat_unheld_on_plan,
-        )
-        opt = _option(db, space)
-        pif = _schedule(db, opt)
-        _grant(db, opt, event=_event(db, space, capacity=10))
-        db.refresh(opt)
-        assert gathering_seat_unheld_on_plan(opt, pif) is None
-
-    def test_a_plan_without_gatherings_is_untouched(
-        self, db, space, stage3_on,
-    ):
-        """Existing instalment plans on Pathway and Series bundles must
-        not be affected by any of this."""
-        from app.services.checkout_orchestration import (
-            gathering_seat_unheld_on_plan,
-        )
-        opt = _option(db, space)
-        sch = self._plan_schedule(db, opt)
-        _grant(db, opt, pathway=_pathway(db, space))
-        db.refresh(opt)
-        assert gathering_seat_unheld_on_plan(opt, sch) is None
-
-    def test_members_are_not_shown_the_plan(self, db, space, stage3_on):
-        """Hidden as well as refused — a member should not pick a
-        schedule the till will reject."""
+    def test_the_plan_schedule_is_offered(self, db, space, stage3_on):
+        """Members can now choose it — the blocker is gone."""
         from app.services.purchase_arrangements import arrangements_for
 
         ev = _event(db, space, capacity=10)
         opt = _option(db, space)
-        _schedule(db, opt, cents=7900)
+        _schedule(db, opt, cents=8900)
         self._plan_schedule(db, opt)
         _grant(db, opt, event=ev)
         db.refresh(opt)
@@ -893,4 +889,465 @@ class TestInstalmentPlansAreNotOfferedForSeats:
                 if a.source == "payment_option"
                 and a.available_for_new_purchase
             ]
-        assert [a.schedule_type for a in sellable] == ["pay_in_full"]
+        assert sorted(a.schedule_type for a in sellable) == [
+            "pay_in_full", "recurring_installments",
+        ]
+
+    def test_the_plan_arrangement_states_its_shape(
+        self, db, space, stage3_on,
+    ):
+        """§11 — the instalment amount, the count, the frequency and
+        the total, each from the schedule's own rows."""
+        from app.services.purchase_arrangements import arrangements_for
+
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        self._plan_schedule(db, opt)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+
+        with patch(
+            "app.core.config.settings.finite_plan_member_checkout_enabled",
+            True,
+        ):
+            found = arrangements_for(db, kind="gathering", experience_id=ev.id)
+            [plan] = [
+                a for a in found.arrangements
+                if a.schedule_type == "recurring_installments"
+            ]
+        assert plan.installment_amount_cents == 3200
+        assert plan.installment_count == 3
+        assert plan.interval == "month"
+        assert plan.total_amount_cents == 9600
+        assert plan.upfront_amount_cents == 3200, "the first payment"
+        assert plan.currency == "AUD"
+
+    def test_a_seat_is_held_against_the_plan(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The link that makes the rest possible: a plan has no
+        transaction yet, so the seat records the plan."""
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+        buyer = make_user()
+        sch = self._plan_schedule(db, opt)
+        plan_id = _plan(db, space, opt, sch, buyer).id
+
+        [held] = tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+            purchase_plan_id=plan_id,
+        )
+        assert held.status == BookingStatus.pending_payment
+        assert held.purchase_plan_id == plan_id
+        assert held.payment_transaction_id is None
+        assert tickets.capacity_used(db, ev.id) == 1
+
+    def test_a_sold_out_gathering_refuses_before_the_plan_exists(
+        self, db, space, make_user, stage3_on,
+    ):
+        """Decision A's non-negotiable: never charge a first instalment
+        for a Gathering that cannot be fulfilled."""
+        ev = _event(db, space, capacity=1)
+        _booking(db, ev, make_user())
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+
+        with pytest.raises(tickets.SoldOut):
+            sch = self._plan_schedule(db, opt)
+            other = make_user()
+            tickets.hold_option_seats_or_raise(
+                db, payment_option=opt, buyer=other,
+                hold_ttl_minutes=30,
+                purchase_plan_id=_plan(db, space, opt, sch, other).id,
+            )
+
+    def test_the_first_payment_confirms_and_keeps_both_links(
+        self, db, space, make_user, stage3_on,
+    ):
+        """§4 Step 3 — booking identity, transaction linkage, Payment
+        Option identity and plan linkage all survive."""
+        from app.services.purchase_fulfilment import (
+            apply_intent, resolve_intent_from_grants,
+        )
+
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+        buyer = make_user()
+        sch = self._plan_schedule(db, opt)
+        plan_id = _plan(db, space, opt, sch, buyer).id
+        [held] = tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+            purchase_plan_id=plan_id,
+        )
+        held_id = held.id
+
+        res = resolve_intent_from_grants(db, payment_option=opt)
+        apply_intent(
+            db, intent=res.intent, txn=None, payer_user_id=buyer.id,
+            space_id=space.id, payment_option_id=opt.id,
+            payment_option_schedule_id=None, session_id=None,
+            payment_intent_id=None, now=datetime.utcnow(),
+            purchase_plan_id=plan_id,
+        )
+        db.refresh(held)
+        assert held.id == held_id, "the booking identity changed"
+        assert held.status == BookingStatus.confirmed
+        assert held.purchase_plan_id == plan_id
+        assert held.hold_expires_at is None
+        assert tickets.capacity_used(db, ev.id) == 1
+
+
+class TestAPlanHoldIsReleasedOnlyWhenItIsSafe:
+    """§4 Step 5 and §5 — a seat is never freed because a row is old.
+
+    The existing ladder asks Stripe what became of the checkout and
+    leaves the seat held when it cannot get an answer. A plan-held seat
+    adds one question in front of that: what does the *agreement* say?
+    Because a plan can settle the matter without Stripe, and because a
+    live agreement must never lose its place to a clock.
+    """
+
+    def _plan_schedule(self, db, option):
+        s = PaymentOptionSchedule(
+            id=_uid("pos"), payment_option_id=option.id,
+            name="Monthly payments", schedule_type="recurring_installments",
+            status="published", total_amount_cents=9600,
+            installment_amount_cents=3200, installment_count=3,
+            interval="month", stripe_interval="month",
+            stripe_interval_count=1, currency="AUD", position=1,
+        )
+        db.add(s)
+        db.flush()
+        return s
+
+    def _held(self, db, space, make_user, *, status=None, opened=None):
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+        buyer = make_user()
+        sch = self._plan_schedule(db, opt)
+        plan = _plan(db, space, opt, sch, buyer, status=status)
+        if opened is not None:
+            plan.created_at = opened
+            db.flush()
+        [held] = tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+            purchase_plan_id=plan.id,
+        )
+        return ev, plan, held
+
+    def _verdict(self, db, booking, plan):
+        return tickets._plan_hold_verdict(db, booking, plan)
+
+    def test_a_live_plan_never_loses_its_seat(
+        self, db, space, make_user, stage3_on,
+    ):
+        """Decision A: once the plan is running, a clock does not get
+        to release the place. A later failed instalment is
+        ``payment_problem`` and has its own recovery process."""
+        from app.models.purchase_plan import PurchasePlanStatus
+
+        for status in (
+            PurchasePlanStatus.active,
+            PurchasePlanStatus.payment_problem,
+            PurchasePlanStatus.suspended,
+            PurchasePlanStatus.completed,
+        ):
+            ev, plan, held = self._held(
+                db, space, make_user, status=status,
+                opened=datetime.utcnow() - timedelta(days=30),
+            )
+            assert self._verdict(db, held, plan) == tickets.VERIFY_UNKNOWN, (
+                f"a {status.value} plan lost its seat"
+            )
+            db.refresh(held)
+            assert held.status == BookingStatus.pending_payment
+
+    def test_a_cancelled_plan_returns_its_seat(
+        self, db, space, make_user, stage3_on,
+    ):
+        from app.models.purchase_plan import PurchasePlanStatus
+
+        ev, plan, held = self._held(
+            db, space, make_user, status=PurchasePlanStatus.cancelled,
+        )
+        assert self._verdict(db, held, plan) == tickets.VERIFY_CANCELLED
+        db.refresh(held)
+        assert held.status == BookingStatus.cancelled
+        assert tickets.capacity_used(db, ev.id) == 0
+
+    def test_a_failed_plan_returns_its_seat(
+        self, db, space, make_user, stage3_on,
+    ):
+        from app.models.purchase_plan import PurchasePlanStatus
+
+        ev, plan, held = self._held(
+            db, space, make_user, status=PurchasePlanStatus.failed,
+        )
+        assert self._verdict(db, held, plan) == tickets.VERIFY_CANCELLED
+        assert tickets.capacity_used(db, ev.id) == 0
+
+    def test_a_fresh_pending_plan_falls_through_to_stripe(
+        self, db, space, make_user, stage3_on,
+    ):
+        """Inside the deadline the agreement says nothing either way,
+        so the ordinary ladder asks Stripe — which is the only thing
+        that knows whether this checkout can still succeed."""
+        ev, plan, held = self._held(db, space, make_user)
+        assert self._verdict(db, held, plan) is None
+        db.refresh(held)
+        assert held.status == BookingStatus.pending_payment
+
+    def test_an_unpaid_plan_past_the_deadline_returns_its_seat(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The alternative is a seat reserved for ever: an abandoned
+        plan has no transaction, no completed Session and no end."""
+        ev, plan, held = self._held(
+            db, space, make_user,
+            opened=datetime.utcnow() - timedelta(hours=49),
+        )
+        with patch(
+            "app.core.config.settings.gathering_plan_initial_payment_hours",
+            24,
+        ):
+            assert self._verdict(db, held, plan) == tickets.VERIFY_CANCELLED
+        assert tickets.capacity_used(db, ev.id) == 0
+
+    def test_the_deadline_is_not_a_later_instalment_rule(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The distinction §5 insists on. Same age, same deadline — the
+        only difference is that this plan has started paying, and that
+        is enough."""
+        from app.models.purchase_plan import PurchasePlanStatus
+
+        ev, plan, held = self._held(
+            db, space, make_user, status=PurchasePlanStatus.payment_problem,
+            opened=datetime.utcnow() - timedelta(hours=49),
+        )
+        with patch(
+            "app.core.config.settings.gathering_plan_initial_payment_hours",
+            24,
+        ):
+            assert self._verdict(db, held, plan) == tickets.VERIFY_UNKNOWN
+        assert tickets.capacity_used(db, ev.id) == 1
+
+    def test_a_plan_hold_is_not_cancelled_for_having_no_transaction(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The trap this had to avoid. ``verify_stale_hold`` cancels a
+        hold with no Session on the theory that nothing can charge the
+        buyer — true for a ticket, false for a plan, whose Session
+        lives on the plan row."""
+        ev, plan, held = self._held(db, space, make_user)
+        assert held.payment_transaction_id is None
+        plan.provider_setup_session_id = None
+        db.flush()
+
+        # No session anywhere and the plan still pending: the ladder
+        # may release it, but only via the plan's own verdict — never
+        # by mistaking a plan for a ticket.
+        assert self._verdict(db, held, plan) is None
+
+
+class TestCancellationAndRefundCompatibility:
+    """§7, §8 — Decision B: creators control their own arrangements.
+
+    Fresh Collective supplies the booking, payment and refund tools and
+    declines to invent a commercial remedy. These tests exist because
+    "we changed nothing" is a claim about behaviour, and behaviour with
+    a new purchase type in it needs checking rather than asserting.
+    """
+
+    def _bundle_booking(self, db, space, make_user):
+        """A confirmed booking that came from a bundle, plus a Pathway
+        entitlement from the same purchase."""
+        from app.services.purchase_fulfilment import (
+            apply_intent, resolve_intent_from_grants,
+        )
+
+        ev = _event(db, space, capacity=10)
+        pw = _pathway(db, space, title="Guided Reflection")
+        opt = _option(db, space)
+        _grant(db, opt, event=ev)
+        _grant(db, opt, pathway=pw)
+        db.refresh(opt)
+        buyer = make_user()
+        tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+        )
+        purchase = _txn(db, space, buyer, opt)
+        res = resolve_intent_from_grants(db, payment_option=opt)
+        apply_intent(
+            db, intent=res.intent, txn=purchase, payer_user_id=buyer.id,
+            space_id=space.id, payment_option_id=opt.id,
+            payment_option_schedule_id=None, session_id=None,
+            payment_intent_id=None, now=datetime.utcnow(),
+        )
+        booking = db.query(EventBooking).filter(
+            EventBooking.event_id == ev.id,
+            EventBooking.user_id == buyer.id,
+        ).one()
+        return ev, pw, opt, buyer, booking
+
+    def test_member_cancellation_refunds_nothing(
+        self, db, space, make_user, stage3_on,
+    ):
+        """§7: the creator's published terms apply, and cancelling is
+        not itself a refund. Nothing here reaches Stripe."""
+        from app.spaces.routes import cancel_booking
+        from app.models.payment import PaymentTransaction
+
+        ev, pw, opt, buyer, booking = self._bundle_booking(
+            db, space, make_user,
+        )
+        before = db.query(PaymentTransaction).count()
+
+        cancel_booking(space.slug, ev.id, db=db, current_user=buyer)
+
+        db.refresh(booking)
+        assert booking.status == BookingStatus.cancelled
+        assert db.query(PaymentTransaction).count() == before, (
+            "cancelling a booking created a payment record"
+        )
+
+    def test_and_releases_the_seat(self, db, space, make_user, stage3_on):
+        from app.spaces.routes import cancel_booking
+
+        ev, _pw, _opt, buyer, _b = self._bundle_booking(db, space, make_user)
+        assert tickets.capacity_used(db, ev.id) == 1
+        cancel_booking(space.slug, ev.id, db=db, current_user=buyer)
+        assert tickets.capacity_used(db, ev.id) == 0
+
+    def test_and_leaves_the_rest_of_the_bundle_alone(
+        self, db, space, make_user, stage3_on,
+    ):
+        """§7: unrelated Pathway access remains intact. The member gave
+        up a seat, not the programme they bought it with."""
+        from app.spaces.routes import cancel_booking
+        from app.models.platform import PathwayEntitlement, EntitlementStatus
+
+        ev, pw, _opt, buyer, _b = self._bundle_booking(db, space, make_user)
+        cancel_booking(space.slug, ev.id, db=db, current_user=buyer)
+
+        ent = db.query(PathwayEntitlement).filter(
+            PathwayEntitlement.user_id == buyer.id,
+            PathwayEntitlement.pathway_id == pw.id,
+        ).one()
+        assert ent.status == EntitlementStatus.active
+
+    def test_the_other_gatherings_in_the_bundle_are_untouched(
+        self, db, space, make_user, stage3_on,
+    ):
+        from app.spaces.routes import cancel_booking
+        from app.services.purchase_fulfilment import (
+            apply_intent, resolve_intent_from_grants,
+        )
+
+        a = _event(db, space, title="November", capacity=10)
+        b = _event(db, space, title="December", capacity=10)
+        opt = _option(db, space)
+        _grant(db, opt, event=a)
+        _grant(db, opt, event=b)
+        db.refresh(opt)
+        buyer = make_user()
+        tickets.hold_option_seats_or_raise(
+            db, payment_option=opt, buyer=buyer, hold_ttl_minutes=30,
+        )
+        purchase = _txn(db, space, buyer, opt)
+        res = resolve_intent_from_grants(db, payment_option=opt)
+        apply_intent(
+            db, intent=res.intent, txn=purchase, payer_user_id=buyer.id,
+            space_id=space.id, payment_option_id=opt.id,
+            payment_option_schedule_id=None, session_id=None,
+            payment_intent_id=None, now=datetime.utcnow(),
+        )
+
+        cancel_booking(space.slug, a.id, db=db, current_user=buyer)
+        assert tickets.capacity_used(db, a.id) == 0
+        assert tickets.capacity_used(db, b.id) == 1, (
+            "cancelling one Gathering released another"
+        )
+
+    def test_the_ticket_refund_reconciliation_does_not_touch_a_bundle(
+        self, db, space, make_user, stage3_on,
+    ):
+        """The one place a bundle could have been caught by a rule
+        written for single tickets.
+
+        ``reconcile_fully_refunded_ticket`` releases the seat behind a
+        fully refunded ticket. It is scoped to
+        ``gathering_ticket_purchase``, so a Payment Option purchase
+        falls straight through — which is the right default: what a
+        bundle refund should do to each component is a creator's
+        decision, and §8 forbids manufacturing an allocation rule.
+        """
+        from app.models.payment import (
+            PaymentTransaction, PaymentTransactionStatus,
+            PaymentTransactionType, PaymentProvider,
+        )
+        from app.services.gathering_refund_reconciliation import (
+            reconcile_fully_refunded_ticket,
+        )
+
+        ev, _pw, opt, buyer, booking = self._bundle_booking(
+            db, space, make_user,
+        )
+        txn = PaymentTransaction(
+            id=_uid("txn"),
+            transaction_type=PaymentTransactionType.member_pathway_purchase,
+            status=PaymentTransactionStatus.refunded,
+            payment_provider=PaymentProvider.stripe,
+            payer_user_id=buyer.id, space_id=space.id, currency="AUD",
+            gross_amount_cents=8900, platform_fee_basis_points=0,
+            platform_fee_cents=0, net_creator_amount_cents=8900,
+            payment_option_id=opt.id,
+        )
+        db.add(txn)
+        booking.payment_transaction_id = txn.id
+        db.flush()
+
+        outcome = reconcile_fully_refunded_ticket(db, txn=txn)
+        db.refresh(booking)
+        assert booking.status == BookingStatus.confirmed, (
+            "a bundle refund silently cancelled a booking"
+        )
+        assert outcome.skipped_reason == "not_a_gathering_ticket", (
+            "the ticket rule claimed a bundle"
+        )
+
+    def test_a_cancelled_booking_can_be_replaced_without_a_second_charge(
+        self, db, space, make_user, stage3_on,
+    ):
+        """§9 — the creator offers another Gathering. The existing
+        booking tools already do this: cancel one, create the other.
+        No transfer or credit system is needed, and no second charge
+        occurs because no checkout is involved."""
+        from app.spaces.routes import cancel_booking
+        from app.models.payment import PaymentTransaction
+
+        ev, _pw, _opt, buyer, booking = self._bundle_booking(
+            db, space, make_user,
+        )
+        replacement = _event(db, space, title="Rescheduled", capacity=10)
+        before = db.query(PaymentTransaction).count()
+
+        cancel_booking(space.slug, ev.id, db=db, current_user=buyer)
+        db.add(EventBooking(
+            id=_uid("bk"), event_id=replacement.id, user_id=buyer.id,
+            status=BookingStatus.confirmed, booked_at=datetime.utcnow(),
+            source="creator_manual",
+            payment_transaction_id=booking.payment_transaction_id,
+        ))
+        db.flush()
+
+        assert tickets.capacity_used(db, ev.id) == 0
+        assert tickets.capacity_used(db, replacement.id) == 1
+        assert db.query(PaymentTransaction).count() == before

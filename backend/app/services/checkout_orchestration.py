@@ -992,46 +992,6 @@ def unfulfillable_grant_reason(payment_option: PaymentOption) -> str | None:
     return None
 
 
-#: Why an instalment plan cannot be sold for an Option that includes a
-#: standalone Gathering. Surfaced to creators; members never see the
-#: schedule at all.
-UNHELD_SEAT_ON_PLAN_DETAIL = (
-    "Payment plans are not available for options that include an "
-    "individual Gathering yet. Offer a single payment instead."
-)
-
-
-def gathering_seat_unheld_on_plan(payment_option, schedule) -> str | None:
-    """Stage 3 — refuse an instalment plan on an Option that books a
-    seat, and say why.
-
-    The pay-in-full path holds every seat at checkout, under the Event
-    row lock, before Stripe. A finite payment plan does not go that
-    way: ``start_finite_plan_setup`` is its own entry point and opens a
-    Stripe *setup* Session, so there is no charge — and no hold — until
-    the first invoice succeeds, which can be days later. The booking
-    would then be taken at first invoice, and the Gathering may have
-    filled in the meantime, leaving a member on a plan with no seat.
-
-    Holding the seat across the whole setup window would fix that and
-    is not obviously right either: it takes a place out of circulation
-    for days on the strength of an unconfirmed plan, and how long a
-    seat may be held for an unpaid plan is a product decision rather
-    than an implementation detail.
-
-    So the arrangement is simply not offered — §7's instruction when a
-    combination cannot be guaranteed safely. Pay-in-full is unaffected
-    and fully supported.
-    """
-    schedule_type = getattr(schedule, "schedule_type", None)
-    if schedule_type != "recurring_installments":
-        return None
-    grants = list(getattr(payment_option, "grants", None) or [])
-    if any(g.grant_kind == GRANT_KIND_GATHERING for g in grants):
-        return UNHELD_SEAT_ON_PLAN_DETAIL
-    return None
-
-
 def option_is_fulfillable(payment_option: PaymentOption | None) -> bool:
     """Boolean twin of :func:`check_option_fulfillable_or_raise`.
 

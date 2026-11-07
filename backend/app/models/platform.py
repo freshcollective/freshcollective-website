@@ -1504,6 +1504,19 @@ class EventBooking(Base):
         nullable=True,
         index=True,
     )
+    # Stage 3 — the payment plan holding this seat, when one is.
+    #
+    # A pay-in-full hold points at its pending PaymentTransaction. A
+    # plan has no transaction until its first invoice is paid, which is
+    # exactly what the hold is waiting for, so it points at the plan
+    # instead. Both are how an abandoned checkout is later resolved:
+    # each gives the sweep a Stripe object to ask about.
+    purchase_plan_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("purchase_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

@@ -1297,6 +1297,7 @@ def _apply_booking(
     txn: PaymentTransaction | None,
     payer_user_id: str,
     now: datetime,
+    purchase_plan_id: str | None = None,
 ) -> tuple[EventBooking | None, str | None]:
     """Confirm the seat this purchase paid for.
 
@@ -1352,6 +1353,11 @@ def _apply_booking(
         booking.booked_at = booking.booked_at or now
         if txn is not None:
             booking.payment_transaction_id = txn.id
+        # Both links are kept. The plan is how the seat was held and
+        # how its lifecycle is followed; the transaction is the
+        # instalment that confirmed it.
+        if purchase_plan_id is not None:
+            booking.purchase_plan_id = purchase_plan_id
         # Flushed explicitly rather than left to the caller's commit:
         # a later BookingIntent in the same bundle reads capacity, and
         # an unflushed confirmation would not be counted.
@@ -1386,6 +1392,7 @@ def _apply_booking(
             booked_at=now,
             source="payment_option",
             payment_transaction_id=txn.id if txn is not None else None,
+            purchase_plan_id=purchase_plan_id,
         )
         db.add(booking)
     else:
@@ -1396,6 +1403,8 @@ def _apply_booking(
         booking.source = "payment_option"
         if txn is not None:
             booking.payment_transaction_id = txn.id
+        if purchase_plan_id is not None:
+            booking.purchase_plan_id = purchase_plan_id
     db.flush()
     return booking, None
 
@@ -1595,6 +1604,7 @@ def apply_intent(
             txn=txn,
             payer_user_id=payer_user_id,
             now=now,
+            purchase_plan_id=purchase_plan_id,
         )
         if error is not None:
             logger.error(

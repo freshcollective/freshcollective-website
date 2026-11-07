@@ -955,6 +955,70 @@ def stale_holds_for_event(db: Session, event_id: str) -> list[EventBooking]:
     )
 
 
+#: Returned when a plan-held seat must stay reserved: the agreement is
+#: live and nothing a clock knows may release it.
+def _plan_hold_verdict(db: Session, booking: EventBooking, plan) -> str | None:
+    """What to do about a seat held by a payment plan, or ``None`` to
+    carry on with the ordinary Stripe ladder.
+
+    A plan-held seat is a different question from a ticket hold,
+    because the thing that will eventually pay for it is an agreement
+    rather than a single Session.
+
+      * The plan is over (``cancelled`` / ``failed``) → nothing will
+        charge this member, so the seat returns.
+      * The plan is live (``active``, ``completed``, ``payment_problem``,
+        ``suspended``) → leave it alone, always. By then the booking
+        should be confirmed; if it is still pending the webhook is
+        merely behind, and releasing would sell a seat somebody is
+        paying for. A later failed instalment is ``payment_problem``
+        and has its own recovery process — Decision A is explicit that
+        it must not cancel a confirmed booking, and it does not get to
+        release a held one either.
+      * The plan is still ``pending_setup`` → the member has not paid
+        anything yet. Past the initial-payment deadline the seat
+        returns; before it, fall through and ask Stripe about the
+        setup Session, which is the same question a ticket hold asks.
+
+    The deadline exists because the alternative is a seat reserved
+    for ever: a plan that is opened and abandoned has no transaction,
+    no completed Session and no end. It is measured from when the plan
+    was created, applies only while nothing has been paid, and is
+    deliberately not the rule for any later instalment.
+    """
+    from app.core.config import settings
+    from app.models.purchase_plan import PurchasePlanStatus
+
+    status = getattr(plan.status, "value", plan.status)
+
+    if status in (
+        PurchasePlanStatus.cancelled.value, PurchasePlanStatus.failed.value,
+    ):
+        _cancel_hold(db, booking=booking, txn=None,
+                     reason=CANCEL_VERIFIED_EXPIRED)
+        return VERIFY_CANCELLED
+
+    if status != PurchasePlanStatus.pending_setup.value:
+        # Live agreement. Never released here.
+        return VERIFY_UNKNOWN
+
+    opened = plan.created_at
+    deadline_hours = settings.gathering_plan_initial_payment_hours
+    if opened is not None and datetime.utcnow() > opened + timedelta(
+        hours=deadline_hours,
+    ):
+        logger.info(
+            "gathering plan hold past initial-payment deadline: booking=%s "
+            "plan=%s opened=%s hours=%s — seat returns.",
+            booking.id, plan.id, opened, deadline_hours,
+        )
+        _cancel_hold(db, booking=booking, txn=None,
+                     reason=CANCEL_VERIFIED_EXPIRED)
+        return VERIFY_CANCELLED
+
+    return None
+
+
 def verify_stale_hold(db: Session, *, booking_id: str) -> str:
     """Ask Stripe what became of one stale hold, and act on the answer.
 
@@ -989,7 +1053,21 @@ def verify_stale_hold(db: Session, *, booking_id: str) -> str:
         db.get(PaymentTransaction, booking.payment_transaction_id)
         if booking.payment_transaction_id else None
     )
+
+    # Stage 3 — a seat held by a payment plan asks a different question
+    # first. Its Session lives on the plan, not on a transaction, and
+    # the plan's own status can settle the matter without Stripe.
     session_id = getattr(txn, "provider_checkout_session_id", None)
+    if booking.purchase_plan_id:
+        from app.models.purchase_plan import PurchasePlan
+
+        plan = db.get(PurchasePlan, booking.purchase_plan_id)
+        if plan is not None:
+            verdict = _plan_hold_verdict(db, booking, plan)
+            if verdict is not None:
+                return verdict
+            session_id = plan.provider_setup_session_id or session_id
+
     if not session_id:
         # No Session was ever recorded against this hold. The endpoint
         # commits the Session id in the same transaction as the hold and
@@ -1113,6 +1191,7 @@ def hold_option_seats_or_raise(
     buyer: User,
     hold_ttl_minutes: int,
     now: datetime | None = None,
+    purchase_plan_id: str | None = None,
 ) -> list[EventBooking]:
     """Hold a seat on every standalone Gathering a Payment Option grants.
 
@@ -1120,6 +1199,13 @@ def hold_option_seats_or_raise(
     refuses the purchase instead of taking the money and discovering
     the problem at fulfilment. Returns the hold rows so the caller can
     link them to its PaymentTransaction once that exists.
+
+    ``purchase_plan_id`` is the finite-plan caller's linkage instead.
+    A plan has no transaction at this point — the ledger row is written
+    when its first invoice is paid, which is what the hold is waiting
+    for — so the seat records the plan, and the sweep resolves it
+    through ``plan.provider_setup_session_id`` rather than through a
+    transaction's session.
 
     All or nothing
     --------------
@@ -1220,6 +1306,7 @@ def hold_option_seats_or_raise(
                 booked_at=at,
                 source="payment_option",
                 hold_expires_at=expiry,
+                purchase_plan_id=purchase_plan_id,
             )
             db.add(booking)
             held.append(booking)
@@ -1232,6 +1319,7 @@ def hold_option_seats_or_raise(
             existing.booked_at = at
             existing.source = "payment_option"
             existing.hold_expires_at = expiry
+            existing.purchase_plan_id = purchase_plan_id
             held.append(existing)
 
     db.flush()

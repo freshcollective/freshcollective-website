@@ -60,6 +60,7 @@ from app.services.schedule_validation import (
     validate_recurring_installments_row,
     ScheduleValidationError,
 )
+from app.services import gathering_tickets as _gathering_tickets
 from app.services import stripe_finite_plan
 
 
@@ -361,6 +362,36 @@ def start_finite_plan_setup(
         updated_at=now,
     )
     db.add(plan)
+    db.flush()
+
+    # ── Seats, before Stripe ──────────────────────────────────────
+    #
+    # Decision A: a member must not establish a payment plan and then
+    # discover at the first instalment that the Gathering sold out. So
+    # the places are reserved here, in the same transaction as the
+    # plan, under the Event row lock and by the same capacity rule the
+    # pay-in-full path uses.
+    #
+    # Held against the *plan* rather than a transaction, because there
+    # is no transaction yet — the ledger row arrives with the first
+    # invoice, which is what these seats are waiting for. The plan's
+    # ``provider_setup_session_id``, written a few lines below, is what
+    # later lets the sweep ask Stripe whether this checkout can still
+    # succeed.
+    #
+    # A sold-out Gathering raises before the commit and before Stripe,
+    # so no plan row and no Session survive the refusal.
+    #
+    # No-op unless the Stage 3 flag is on.
+    _gathering_tickets.hold_option_seats_or_raise(
+        db,
+        payment_option=resolved.payment_option,
+        buyer=payer,
+        hold_ttl_minutes=settings.gathering_checkout_expiry_minutes,
+        now=now,
+        purchase_plan_id=plan.id,
+    )
+
     db.commit()
     db.refresh(plan)
 

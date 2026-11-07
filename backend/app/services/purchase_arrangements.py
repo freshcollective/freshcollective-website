@@ -671,16 +671,6 @@ def _option_unavailable_reason(
     if schedule_type == "recurring_installments":
         if not settings.finite_plan_member_checkout_enabled:
             return REASON_INSTALMENTS_NOT_ENABLED
-        # Stage 3 — a plan cannot hold a Gathering seat, so it is not
-        # offered for an Option that books one. Reused from
-        # ``checkout_orchestration`` rather than restated, like the
-        # fulfilment rule above: this function adds no rule of its own.
-        from app.services.checkout_orchestration import (
-            gathering_seat_unheld_on_plan,
-        )
-
-        if gathering_seat_unheld_on_plan(option, schedule) is not None:
-            return REASON_UNSUPPORTED_INCLUSION
         from app.services.schedule_validation import (
             ScheduleValidationError,
             validate_recurring_installments_row,

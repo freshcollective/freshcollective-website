@@ -263,6 +263,25 @@ class Settings(BaseSettings):
     # route to the same seat, and the decision to open it is separate.
     standalone_gathering_payment_options_enabled: bool = False
 
+    # Stage 3 — how long a seat may stay reserved for a payment plan
+    # that has never taken its first payment.
+    #
+    # Deliberately distinct from every later-instalment rule. A plan
+    # that has paid once and then failed is ``payment_problem``, and
+    # that has its own recovery process which this never touches — a
+    # confirmed booking is never released by a clock. This governs
+    # only the window between opening a plan and its first successful
+    # payment, where no money has moved and somebody else may want the
+    # place.
+    #
+    # Generous on purpose. Stripe bills a subscription schedule when
+    # it activates, so the normal gap between completed setup and the
+    # first invoice is minutes; a day means something is wrong. And
+    # the deadline is never the sole reason a seat is released — the
+    # sweep still asks Stripe what became of the session first, and an
+    # unanswered question leaves the seat held.
+    gathering_plan_initial_payment_hours: int = 24
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every
