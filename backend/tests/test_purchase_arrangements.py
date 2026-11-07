@@ -1010,6 +1010,24 @@ AUTHORISED_CALLERS: frozenset[str] = frozenset({
     # logs, and swallows its own failures. The authoritative checkout
     # decides in both flag states.
     "services/checkout_arrangement_shadow.py",
+    # Stage 2C — the member Pathway "Ways to join" cards. The second
+    # caller a member can read, and the first with no flag of its own:
+    # it is authorised by ``PATHWAY_MULTIPLE_PURCHASE_OPTIONS_ENABLED``
+    # being on, which was the decision Stage 2B gated.
+    #
+    # Display only, and narrower than it looks. It reads arrangements,
+    # drops the unbuyable ones, and passes through the same
+    # ``payment_option_id`` / ``payment_option_schedule_id`` the legacy
+    # payload carried — so the member hands back identifiers, never a
+    # price, and both checkout doors stay authoritative. It prices
+    # nothing and writes nothing.
+    #
+    # One thing it deliberately does *not* take from the resolver: the
+    # direct door's availability. The resolver ignores the Stage 2B
+    # gate when that gate is shut, by design, so it calls a dormant
+    # price "available"; this module asks ``pathway_direct_offer``
+    # instead, which is the rule the till applies.
+    "spaces/pathway_arrangement_display.py",
 })
 
 

@@ -367,6 +367,48 @@ class PaymentOptionSummary(BaseModel):
     schedules: list[PaymentOptionScheduleSummary] = []
 
 
+class WaysToJoinScheduleOut(BaseModel):
+    """One way to pay for one Payment Option.
+
+    Deliberately the same field names as
+    ``PaymentOptionScheduleSummary`` so the frontend's existing
+    ``ScheduleChoice`` component renders it with no adapter.
+    """
+
+    id: str
+    name: str
+    schedule_type: str
+    total_amount_cents: int
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    currency: str
+    is_member_checkoutable: bool = False
+
+
+class WaysToJoinArrangementOut(BaseModel):
+    """One purchase card — the Pathway's own price, or one Option.
+
+    Stage 2C. Built from the shared resolver in
+    ``spaces.pathway_arrangement_display``, so the cards a member reads
+    and the prices the till charges come from one place.
+
+    ``source`` decides which checkout the button calls. The direct card
+    carries no Option identifiers at all, which makes substituting one
+    arrangement for another inexpressible rather than merely forbidden.
+    """
+
+    source: str
+    name: str | None = None
+    description: str | None = None
+    price_cents: int | None = None
+    currency: str | None = None
+    payment_option_id: str | None = None
+    schedules: list[WaysToJoinScheduleOut] = []
+    included_titles: list[str] = []
+    is_bundle: bool = False
+
+
 class PathwayWithSteps(BaseModel):
     """Pathway overview with ordered steps and progress summary."""
 
@@ -406,6 +448,12 @@ class PathwayWithSteps(BaseModel):
     # the two halves of the gate cannot disagree about which era they
     # are in.
     multiple_purchase_options_enabled: bool = False
+    # Stage 2C — every arrangement a member could buy this Pathway
+    # through, in the resolver's order, unavailable ones already
+    # dropped. Empty for a free or members-only Pathway, and for one
+    # whose only arrangements cannot be sold: the surface then renders
+    # no purchase section rather than an empty one.
+    ways_to_join: list[WaysToJoinArrangementOut] = []
     # FIP4B1 — non-null when the viewer has a finite payment plan
     # granting this pathway that needs their attention
     # (``payment_problem`` or ``suspended``). Frontend uses this to

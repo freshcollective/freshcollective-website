@@ -55,6 +55,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.services import pathway_direct_offer as _direct_offer
+
 from app.services.purchase_arrangements import (
     KIND_GATHERING,
     KIND_OFFERING,
@@ -70,6 +72,10 @@ logger = logging.getLogger(__name__)
 
 #: The one-way switch installed after the $5/$2 mispricing incident.
 #: Read here to *report* it; never to work around it.
+# Kept exported for callers, but no longer consulted here: Stage 2C
+# moved the direct-door question to ``pathway_direct_offer``, which
+# is the rule the till applies. A mode could only ever describe one
+# door, and a Pathway may now have two.
 PRICING_MODE_PAYMENT_OPTIONS = "payment_options"
 
 # ---------------------------------------------------------------------------
@@ -180,8 +186,38 @@ def platform_block_reason(
     """
     if arrangement.source == SOURCE_DIRECT:
         if arrangement.experience_kind == KIND_PATHWAY:
-            mode = getattr(experience_row, "pricing_mode", "legacy") or "legacy"
-            if mode == PRICING_MODE_PAYMENT_OPTIONS:
+            # Stage 2C — asked of the shared rule rather than read off
+            # ``pricing_mode`` directly.
+            #
+            # This branch used to test the mode alone, which was right
+            # while a direct price and a Payment Option were mutually
+            # exclusive. Once Stage 2B is on they are not, and a
+            # creator may deliberately re-enable individual purchase on
+            # a Pathway that previously adopted Option pricing. The
+            # mode still reads ``payment_options`` on such a row — it
+            # is deliberately left alone, because that is what makes
+            # the Stage 2B gate reversible — so this reported the
+            # direct price as withdrawn while the member surface
+            # offered it and the till charged it. The creator was told
+            # their live price was not being sold.
+            #
+            # ``pathway_direct_offer`` is the rule the till itself
+            # applies, so the preview now agrees with checkout by
+            # construction instead of by coincidence. It is also
+            # gate-aware, which keeps the old answer exactly while the
+            # gate is shut.
+            # Only ``REASON_REQUIRES_OPTION`` is handled here, and
+            # that is all this overlay has to handle. The gate-open
+            # case — a saved price the creator has not switched on —
+            # is already reported by the resolver itself, which marks
+            # that arrangement unavailable before this function is
+            # reached (``build_preview`` consults the overlay only for
+            # arrangements the resolver found available). The mode is
+            # the one rule the resolver deliberately declines to read.
+            block = _direct_offer.direct_purchase_block_reason(
+                experience_row, check_status=False,
+            )
+            if block == _direct_offer.REASON_REQUIRES_OPTION:
                 return REASON_PATHWAY_REQUIRES_OPTION
         elif arrangement.experience_kind == KIND_GATHERING:
             if _gathering_sales_blocked():

@@ -27,6 +27,20 @@ interface CheckoutButtonProps {
    *  page shows no amount and labels its button "Save". */
   schedule?: AnyPaymentSchedule | null
   optionName?: string | null
+  /** Stage 2C — matches this button to `PurchaseScheduleButton` so a
+   *  direct purchase and a Payment Option sitting side by side in Ways
+   *  to join do not look like a primary and a secondary choice.
+   *
+   *  `'pill'` is the default and is every pre-existing caller's
+   *  appearance, unchanged. `'card'` is the Ways to join treatment:
+   *  `rounded-xl`, the Collective's primary rather than the platform
+   *  gradient, and the same type scale. Opt-in rather than a rewrite,
+   *  because the pill is correct on the single-price checkout panel
+   *  where it is the only action on screen. */
+  appearance?: 'pill' | 'card'
+  /** Collective primary, used by `appearance='card'` so the CTA is
+   *  branded the same way the schedule buttons beside it are. */
+  accentHex?: string | null
 }
 
 export function CheckoutButton({
@@ -38,6 +52,8 @@ export function CheckoutButton({
   useFinitePlanSuccessPage = false,
   schedule,
   optionName,
+  appearance = 'pill',
+  accentHex,
 }: CheckoutButtonProps) {
   const pathname = usePathname()
   const [loading, setLoading] = useState(false)
@@ -135,8 +151,16 @@ export function CheckoutButton({
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="w-full rounded-full px-5 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        className={
+          appearance === 'card'
+            ? 'inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
+            : 'w-full rounded-full px-5 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
+        }
+        style={{
+          background: appearance === 'card'
+            ? (accentHex ?? '#0f766e')
+            : 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+        }}
       >
         {loading ? 'Redirecting to checkout…' : label}
       </button>

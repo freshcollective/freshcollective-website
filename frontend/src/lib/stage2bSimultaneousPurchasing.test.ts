@@ -26,6 +26,7 @@ const SRC = join(process.cwd(), 'src')
 const CHECKOUT = join(SRC, 'app', 'spaces', '[slug]', 'pathways', '[pathway-slug]', 'checkout', 'page.tsx')
 const ABOUT = join(SRC, 'app', 'spaces', '[slug]', 'pathways', '[pathway-slug]', 'about', 'page.tsx')
 const SETTINGS = join(SRC, 'app', 'creator-studio', 'pathways', '[pathwaySlug]', 'PathwaySettingsClient.tsx')
+const WAYS_TO_JOIN = join(SRC, 'components', 'commerce', 'PathwayWaysToJoin.tsx')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 /** Comment-stripped, so a rule named in prose is not mistaken for one
@@ -64,23 +65,27 @@ describe('the gate is what decides, on every surface', () => {
     }
   })
 
-  it('both doors are only shown together when both are genuinely open', () => {
-    const src = code(CHECKOUT)
-    const i = src.indexOf('const showsBothDoors')
-    assert.ok(i > -1, 'the dual-arrangement case is not expressed')
-    const decl = src.slice(i, src.indexOf('\n\n', i))
-    assert.match(decl, /simultaneousPurchasing/)
-    assert.match(decl, /directAvailable/)
-    assert.match(decl, /payment_options\.length > 0/)
+  it('both surfaces render the arrangements the backend resolved', () => {
+    // Stage 2C moved the dual-door decision off these pages. They
+    // used to each work out whether to show both doors from the
+    // payload's loose fields; now the backend resolves the list and
+    // both pages render it with one component, which is what stops
+    // them disagreeing about a price or an availability.
+    for (const file of [CHECKOUT, ABOUT]) {
+      const src = code(file)
+      assert.match(src, /ways_to_join/)
+      assert.match(src, /PathwayWaysToJoin/)
+    }
   })
 
   it('the member sees each arrangement priced separately', () => {
     // §15: a bundle may include more than this Pathway, and must not
-    // be presented as though it were the same purchase.
-    const src = read(CHECKOUT)
+    // be presented as though it were the same purchase. The copy now
+    // lives in the shared component — one wording for both surfaces.
+    const src = read(WAYS_TO_JOIN)
     assert.match(src, /Purchase this Pathway/)
-    assert.match(src, /Other ways to access this Pathway/)
-    assert.match(src, /may include more than this Pathway/)
+    assert.match(src, /Also includes/)
+    assert.match(src, /Access to this Pathway only/)
   })
 })
 

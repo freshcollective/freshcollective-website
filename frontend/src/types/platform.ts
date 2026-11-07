@@ -289,9 +289,46 @@ export interface PathwayWithSteps {
   /** Stage 2B gate. While false this surface keeps branching on
    *  `pricing_mode` exactly as it did before the flag existed. */
   multiple_purchase_options_enabled?: boolean
+  /** Stage 2C — every arrangement a member could buy this Pathway
+   *  through, in the resolver's order, with unavailable ones already
+   *  dropped by the backend. Empty for a free or members-only Pathway.
+   *  A surface renders these and never derives a price of its own. */
+  ways_to_join?: WaysToJoinArrangement[]
   /** FIP4B1 — surfaces the plan-recovery banner and suppresses
    *  standard purchase CTAs when present. */
   member_plan_state?: MemberPlanState | null
+}
+
+/** One row inside a Payment Option card. Field-compatible with
+ *  `PaymentOptionScheduleSummary` so `ScheduleChoice` renders it
+ *  without an adapter. */
+export interface WaysToJoinSchedule {
+  id: string
+  name: string
+  schedule_type: string
+  total_amount_cents: number
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  currency: string
+  is_member_checkoutable: boolean
+}
+
+/** One purchase card: the Pathway's own price, or one Payment Option.
+ *
+ *  `source` decides which checkout the button calls. A `'direct'`
+ *  arrangement carries no Option identifiers at all, so substituting
+ *  one arrangement's price for another's is not expressible. */
+export interface WaysToJoinArrangement {
+  source: 'direct' | 'payment_option'
+  name: string | null
+  description: string | null
+  price_cents: number | null
+  currency: string | null
+  payment_option_id: string | null
+  schedules: WaysToJoinSchedule[]
+  included_titles: string[]
+  is_bundle: boolean
 }
 
 /** Knowledge Guide continuous-document payload — returned by

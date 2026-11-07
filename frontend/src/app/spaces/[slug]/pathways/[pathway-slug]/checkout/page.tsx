@@ -7,6 +7,8 @@ import { isPathwayLocked, formatPathwayPrice } from '@/lib/pathwayAccess'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { PaymentOptionSelector } from '@/components/checkout/PaymentOptionSelector'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
+import PathwayWaysToJoin from '@/components/commerce/PathwayWaysToJoin'
+import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { PathwayWithSteps } from '@/types/platform'
 import { includedLines, paymentCardCopy } from '@/lib/pathwayCheckoutCopy'
 
@@ -68,6 +70,12 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   // both. ``direct_purchase_available`` is the till's own answer, so a
   // price is never shown that checkout would refuse — nor hidden when
   // checkout would accept it.
+  // Stage 2C — the arrangements the backend says are buyable, shared
+  // with the About page so the two cannot disagree.
+  const waysToJoin = pathway.ways_to_join ?? []
+  const collectivePalette: CollectivePaletteMeta | null =
+    (space as { colour_palette?: CollectivePaletteMeta | null } | null)
+      ?.colour_palette ?? null
   const simultaneousPurchasing = pathway.multiple_purchase_options_enabled === true
   const directAvailable = simultaneousPurchasing
     ? pathway.direct_purchase_available === true
@@ -75,9 +83,13 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   const priceLabel = directAvailable
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
     : null
-  // Both doors open at once — the arrangement Stage 2B exists for.
-  const showsBothDoors =
-    simultaneousPurchasing && directAvailable && pathway.payment_options.length > 0
+  // Stage 2C note: the dual-door *rendering* moved into
+  // ``PathwayWaysToJoin``, driven by ``ways_to_join`` from the
+  // backend, so this page no longer decides it. ``priceLabel`` and
+  // ``directAvailable`` survive for the fallback panel below, which
+  // still matters: fc-web and fc-api deploy independently and in no
+  // guaranteed order, so for a short window this page can be served a
+  // payload with no ``ways_to_join`` at all.
 
   // ── Access already granted (after successful purchase or admin grant) ──
   if (pathway.user_has_access && locked) {
@@ -340,58 +352,32 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             className="rounded-2xl bg-white p-6"
             style={{ border: '1px solid #E2E8F0' }}
           >
-            <p className="mb-4 text-[13px] font-semibold text-black uppercase tracking-wide">
-              {showsBothDoors
-                ? 'Purchase this Pathway'
-                : pathway.payment_options.length > 0
-                  ? 'Choose your option'
-                  : 'Payment summary'}
-            </p>
+            {/* Stage 2C — the same component the About page renders.
+                §11: the two surfaces must not be able to disagree
+                about a price or an availability, and the only way to
+                guarantee that is for them to be one implementation
+                over one payload. This page keeps its URL, its
+                success/cancel handling and its already-have-access
+                branch, so existing links and bookmarks still work —
+                it simply stops being the only place the choices can
+                be seen.
 
-            {/* Stage 2B — the Pathway's own price, shown *alongside*
-                the Options rather than instead of them. Its own block
-                with its own button, because the two are different
-                purchases: this one buys this Pathway at this price,
-                and the Options below may buy more than it for more. */}
-            {showsBothDoors && (
-              <div className="mb-6">
-                <div
-                  className="rounded-xl px-4 py-4"
-                  style={{
-                    background: 'var(--fc-accent-soft, rgba(56,160,158,0.06))',
-                    border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.22))',
-                  }}
-                >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-[14px] font-semibold text-navy-900">
-                      {priceLabel}
-                    </span>
-                    <span className="text-[12px] text-black">
-                      one-time payment
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[12px] leading-relaxed text-black">
-                    Buy {pathway.title} on its own. Yours for good.
-                  </p>
-                  <div className="mt-4">
-                    <CheckoutButton
-                      pathwayId={pathway.id}
-                      label={`Purchase for ${priceLabel}`}
-                      isAuthenticated={isAuthenticated}
-                    />
-                  </div>
-                </div>
-                <p className="mt-6 mb-3 text-[13px] font-semibold uppercase tracking-wide text-black">
-                  Other ways to access this Pathway
-                </p>
-                <p className="mb-3 text-[12px] leading-relaxed text-black">
-                  These may include more than this Pathway. Check what each
-                  one covers before you choose.
-                </p>
-              </div>
-            )}
-
-            {pathway.payment_options.length > 0 ? (
+                It also replaces a radio-style selector that
+                preselected the first Option and offered one button.
+                Each arrangement now carries its own action, which is
+                both the Gathering Series pattern and the thing that
+                makes substituting one for another impossible. */}
+            {waysToJoin.length > 0 ? (
+              <PathwayWaysToJoin
+                spaceSlug={slug}
+                pathwaySlug={pathwaySlug}
+                pathwayId={pathway.id}
+                arrangements={waysToJoin}
+                palette={collectivePalette}
+                isAuthenticated={isAuthenticated}
+                heading="Ways to join"
+              />
+            ) : pathway.payment_options.length > 0 ? (
               <PaymentOptionSelector
                 pathwayId={pathway.id}
                 options={pathway.payment_options}

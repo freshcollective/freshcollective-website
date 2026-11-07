@@ -1223,3 +1223,125 @@ class TestTheFirstChargeIsWhatStripeCollects:
             "billing now reads upfront_amount_cents — the resolver's "
             f"presentation correction needs revisiting: {readers}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Stage 2C — the preview agrees with the till about the direct door
+# ---------------------------------------------------------------------------
+
+
+class TestStage2CDirectOfferAgreement:
+    """The preview used to read ``pricing_mode`` directly here.
+
+    That was right while a direct price and a Payment Option were
+    mutually exclusive. Once Stage 2B is on they are not, and a creator
+    may deliberately re-enable individual purchase on a Pathway that
+    previously adopted Option pricing. The mode still reads
+    ``payment_options`` on such a row — it is left alone on purpose,
+    because that is what makes the gate reversible — so the preview
+    reported the direct price as withdrawn while the member surface
+    offered it and the till charged it. The creator was told their live
+    price was not being sold.
+
+    It now asks ``pathway_direct_offer``, the rule the till itself
+    applies, so the two agree by construction.
+    """
+
+    @pytest.fixture
+    def gate_open(self):
+        with patch(
+            "app.core.config.settings"
+            ".pathway_multiple_purchase_options_enabled", True,
+        ):
+            yield
+
+    def _direct(self, body):
+        return next(
+            a for a in body["arrangements"] if a["source"] == "direct"
+        )
+
+    def test_the_bug_direct_re_enabled_on_an_option_priced_pathway(
+        self, client_as, make_user, make_space, db, gate_open,
+    ):
+        """The exact shape that misreported: mode says
+        ``payment_options``, the creator has switched individual
+        purchase back on, and the gate is open."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(
+            db, space, price_cents=5900, pricing_mode="payment_options",
+        )
+        pathway.direct_purchase_enabled = True
+        db.flush()
+
+        a = self._direct(
+            _get(client_as(creator), space, "pathway", pathway.id).json()
+        )
+        assert a["total_amount_cents"] == 5900
+        assert a["available_for_new_purchase"] is True, (
+            "the preview still reports a live direct price as withdrawn"
+        )
+        assert a["unavailable_reason"] is None
+        assert a["blocked_by_platform"] is False
+
+    def test_a_dormant_price_is_explained_not_hidden(
+        self, client_as, make_user, make_space, db, gate_open,
+    ):
+        """Switched off rather than taken over. The creator can act on
+        this one, so it gets its own reason rather than the
+        'an Option prices this' message."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, price_cents=5900)
+        pathway.direct_purchase_enabled = False
+        db.flush()
+
+        a = self._direct(
+            _get(client_as(creator), space, "pathway", pathway.id).json()
+        )
+        assert a["total_amount_cents"] == 5900, "the amount is still shown"
+        assert a["available_for_new_purchase"] is False
+        assert a["unavailable_reason"] == "direct_purchase_not_offered"
+
+    def test_a_live_direct_price_and_an_option_are_both_available(
+        self, client_as, make_user, make_space, db, gate_open,
+    ):
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(db, space, price_cents=5900)
+        pathway.direct_purchase_enabled = True
+        opt = _option(db, space, name="Test pathway bundle")
+        _pay_in_full(db, opt, cents=2900)
+        _grant(db, opt, "pathway", pathway.id)
+        db.flush()
+
+        body = _get(client_as(creator), space, "pathway", pathway.id).json()
+        by_source = {}
+        for a in body["arrangements"]:
+            by_source.setdefault(a["source"], []).append(a)
+
+        assert by_source["direct"][0]["available_for_new_purchase"] is True
+        assert by_source["direct"][0]["total_amount_cents"] == 5900
+        assert by_source["payment_option"][0][
+            "available_for_new_purchase"
+        ] is True
+        assert by_source["payment_option"][0]["total_amount_cents"] == 2900
+
+    def test_with_the_gate_shut_the_old_answer_is_unchanged(
+        self, client_as, make_user, make_space, db,
+    ):
+        """No gate fixture — the mode is authoritative again, and the
+        message is the one it always was."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _pathway(
+            db, space, price_cents=4900, pricing_mode="payment_options",
+        )
+        pathway.direct_purchase_enabled = True  # ignored while shut
+        db.flush()
+
+        a = self._direct(
+            _get(client_as(creator), space, "pathway", pathway.id).json()
+        )
+        assert a["available_for_new_purchase"] is False
+        assert a["unavailable_reason"] == REASON_PATHWAY_REQUIRES_OPTION

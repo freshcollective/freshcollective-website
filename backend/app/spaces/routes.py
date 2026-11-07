@@ -15,6 +15,7 @@ from app.core.public_url import public_app_url
 from app.services.rich_text import rich_text_to_plain
 from app.services import collective_header_image as _header_image
 from app.services import pathway_direct_offer as _direct_offer
+from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
@@ -76,6 +77,7 @@ from app.spaces.schemas import (
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
+    WaysToJoinArrangementOut,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
     PublicSpaceCard,
@@ -4041,6 +4043,13 @@ def get_pathway_overview(
         multiple_purchase_options_enabled=(
             settings.pathway_multiple_purchase_options_enabled
         ),
+        # Stage 2C — the Ways to join cards, from the resolver.
+        ways_to_join=[
+            WaysToJoinArrangementOut(**a.as_payload())
+            for a in _pathway_ways_to_join.build_ways_to_join(
+                db, pathway=pathway,
+            )
+        ],
         member_plan_state=_pathway_member_plan_state(current_user, pathway.id, db),
     )
 

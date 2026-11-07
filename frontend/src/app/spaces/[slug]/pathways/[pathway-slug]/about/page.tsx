@@ -1,7 +1,7 @@
 import React from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getPathwayOverview, getPathwayAboutBlocks, getSpace } from '@/lib/serverApi'
+import { getPathwayOverview, getPathwayAboutBlocks, getSpace, getMe } from '@/lib/serverApi'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl, apiUrl } from '@/lib/api'
@@ -9,6 +9,7 @@ import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathw
 import { formatMoneyCents } from '@/lib/formatMoney'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
+import PathwayWaysToJoin from '@/components/commerce/PathwayWaysToJoin'
 import type { PathwayWithSteps, PathwayAboutBlock, PaymentOptionSummary, SpaceResponse } from '@/types/platform'
 import {
   isKnowledgeGuide,
@@ -26,14 +27,19 @@ interface Props {
 export default async function PathwayAboutPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug } = await params
 
-  const [pathway, aboutBlocks, space]: [
+  const [pathway, aboutBlocks, space, me]: [
     PathwayWithSteps | null,
     PathwayAboutBlock[],
     (SpaceResponse & { colour_palette?: CollectivePaletteMeta | null }) | null,
+    unknown,
   ] = await Promise.all([
     getPathwayOverview(slug, pathwaySlug),
     getPathwayAboutBlocks(slug, pathwaySlug),
     getSpace(slug),
+    // Stage 2C — the purchase cards need to know whether the viewer is
+    // signed in, so an anonymous visitor is offered an account rather
+    // than a checkout that would 401.
+    getMe(),
   ])
 
   if (!pathway) notFound()
@@ -77,6 +83,15 @@ export default async function PathwayAboutPage({ params }: Props) {
         ? Math.min(lowestOptionPrice, pathway.price_cents)
         : lowestOptionPrice ?? pathway.price_cents)
     : lowestOptionPrice
+
+  const isAuthenticated = me !== null
+  // Stage 2C — the arrangements the backend says are buyable today.
+  // When there is at least one, this section replaces the headline
+  // price and the "See ways to join" hop: a single amount could only
+  // ever describe one arrangement, and with two live it was wrong
+  // whichever one it named.
+  const waysToJoin = pathway.ways_to_join ?? []
+  const showWaysToJoin = locked && !isComingSoon && waysToJoin.length > 0
 
   const priceLabel = locked
     ? (showsBothDoors
@@ -215,10 +230,49 @@ export default async function PathwayAboutPage({ params }: Props) {
             />
           )}
 
+          {/* Stage 2C — Ways to join, in place of the headline price.
+              Rendered for a locked Pathway that has at least one
+              buyable arrangement, which is where a single amount used
+              to stand in for several. Every other state — coming
+              soon, access already held, progress, continue — keeps
+              the CTA card below unchanged.
+
+              Suppressed for a suspended plan for the same reason the
+              CTA card is: that member cannot buy a duplicate, and the
+              recovery banner above is the only action that helps. */}
+          {showWaysToJoin && pathway.member_plan_state?.status !== 'suspended' && (
+            <div>
+              {pathway.step_count > 0 && (
+                <p className="mb-3 text-[13px] text-black">
+                  {unitCountLabel(pathway, pathway.step_count)}
+                </p>
+              )}
+              <PathwayWaysToJoin
+                spaceSlug={slug}
+                pathwaySlug={pathwaySlug}
+                pathwayId={pathway.id}
+                arrangements={waysToJoin}
+                palette={collectivePalette}
+                isAuthenticated={isAuthenticated}
+              />
+              <p className="mt-3 text-center text-[11px] text-black">
+                Secure checkout via Stripe
+              </p>
+              <Link
+                href={`/spaces/${slug}/pathways/${pathwaySlug}`}
+                className="mt-3 block text-center text-[12px] text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
+              >
+                {viewAllLabel(pathway)} &rarr;
+              </Link>
+            </div>
+          )}
+
           {/* CTA card — suppressed for suspended plans; a
               payment_problem member still sees their normal
-              "Continue" flow because access is live during grace. */}
-          {pathway.member_plan_state?.status !== 'suspended' && (
+              "Continue" flow because access is live during grace.
+              Also suppressed once Ways to join is showing, which
+              already carries the purchase actions. */}
+          {!showWaysToJoin && pathway.member_plan_state?.status !== 'suspended' && (
           <div className="rounded-2xl border border-border bg-white p-6">
             <div className="mb-4 space-y-2">
               {/* Access badge */}
