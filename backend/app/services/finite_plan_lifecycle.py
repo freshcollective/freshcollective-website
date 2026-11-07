@@ -44,6 +44,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -1103,14 +1104,29 @@ def _release_future_plan_bookings(
         .filter(AccessPass.purchase_plan_id == plan.id)
         .all()
     ]
-    if not plan_pass_ids:
-        return []
+
+    # Two ways a booking can belong to a plan, and both must be found.
+    #
+    # A Series pass anchors its bookings through ``access_pass_id``:
+    # the pass carries the credits, the bookings spend them, and that
+    # is the relationship this function was written for.
+    #
+    # A Stage 3 standalone-Gathering booking has no pass at all. It is
+    # confirmed straight from a ``BookingIntent`` and carries
+    # ``purchase_plan_id`` itself — the column migration 184 added for
+    # exactly this. Looking only at passes would leave such a booking
+    # confirmed and its seat occupied after the plan was cancelled,
+    # which is the failure this whole step exists to prevent.
+    anchors = []
+    if plan_pass_ids:
+        anchors.append(EventBooking.access_pass_id.in_(plan_pass_ids))
+    anchors.append(EventBooking.purchase_plan_id == plan.id)
 
     rows = (
         db.query(EventBooking, Event)
         .join(Event, Event.id == EventBooking.event_id)
         .filter(
-            EventBooking.access_pass_id.in_(plan_pass_ids),
+            or_(*anchors),
             EventBooking.status == BookingStatus.confirmed,
             Event.starts_at > now,
         )

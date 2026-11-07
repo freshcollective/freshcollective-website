@@ -361,6 +361,13 @@ def start_finite_plan_setup(
         created_at=now,
         updated_at=now,
     )
+    # Decision 2 — stale-hold recovery before anything is written, so
+    # the commits inside it cannot carry this function's own work with
+    # them, and before any Event lock is taken.
+    _gathering_tickets.sweep_option_seats(
+        db, payment_option=resolved.payment_option,
+    )
+
     db.add(plan)
     db.flush()
 

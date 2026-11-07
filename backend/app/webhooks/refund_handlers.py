@@ -141,6 +141,93 @@ def _find_txn_for_charge(
     return None
 
 
+
+def _cancel_plan_for_full_refund(db, *, txn) -> None:
+    """Stop a payment plan that has had every payment returned.
+
+    Stage 3 / Decision 1's other half: a full refund must not leave a
+    plan collecting future instalments for a purchase that has been
+    given back.
+
+    When this fires, and when it does not
+    -------------------------------------
+    Not on one invoice. §5 is explicit that an individual invoice
+    refund is not proof the whole Payment Option has been refunded, and
+    a plan's invoices each carry their own transaction. The test is
+    therefore across the plan: **every** transaction it has ever
+    collected must have reached ``refunded``. One still ``succeeded``,
+    or sitting at ``partially_refunded``, means money is still with the
+    creator and the agreement stands.
+
+    That is a judgement about intent, and it is the conservative one
+    available: refunding every payment a member has made is an
+    unambiguous unwinding, and continuing to charge them afterwards
+    would be indefensible. A creator making a goodwill adjustment
+    issues a partial refund, which can never reach here.
+
+    Provider first
+    --------------
+    Delegated whole to ``cancel_plan_by_admin``, which releases the
+    Stripe schedule *before* touching anything local and propagates
+    transient errors. Inside this webhook's transaction that is the
+    behaviour to want: if Stripe cannot be reached, the ledger write
+    rolls back with it and the event is retried, rather than the
+    purchase being recorded as settled while future charges remain
+    possible. It also revokes plan-funded access and releases the
+    plan's own future bookings, so there is one implementation of
+    "this plan is over" rather than a second one here.
+    """
+    from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+    from app.services.finite_plan_lifecycle import cancel_plan_by_admin
+
+    plan_id = getattr(txn, "purchase_plan_id", None)
+    if plan_id is None:
+        return
+    if txn.status != PaymentTransactionStatus.refunded:
+        return
+
+    plan = db.get(PurchasePlan, plan_id)
+    if plan is None:
+        return
+    if plan.status in (
+        PurchasePlanStatus.cancelled, PurchasePlanStatus.failed,
+    ):
+        # Already stopped. Calling again would be harmless but would
+        # also reach Stripe for nothing.
+        return
+
+    outstanding = (
+        db.query(PaymentTransaction.id)
+        .filter(
+            PaymentTransaction.purchase_plan_id == plan.id,
+            PaymentTransaction.status.in_((
+                PaymentTransactionStatus.succeeded,
+                PaymentTransactionStatus.partially_refunded,
+            )),
+        )
+        .first()
+    )
+    if outstanding is not None:
+        logger.info(
+            "charge.refunded: plan=%s keeps collecting — not every payment "
+            "has been refunded", plan.id,
+        )
+        return
+
+    logger.warning(
+        "charge.refunded: every payment on plan=%s has been refunded — "
+        "cancelling the plan so nothing further is collected", plan.id,
+    )
+    cancel_plan_by_admin(
+        db,
+        plan=plan,
+        admin_user_id=plan.cancelled_by_user_id or plan.member_user_id,
+        reason="purchase_fully_refunded",
+        note="every instalment collected on this plan was refunded",
+        now=datetime.utcnow(),
+    )
+
+
 def _do_charge_refunded(
     db: Session, *, charge: dict, event_created: datetime | None,
     provider_event_id: str | None = None,
@@ -282,6 +369,7 @@ def _do_charge_refunded(
     # cannot be released the ledger write should roll back with it and
     # let Stripe retry the whole event.
     from app.services.gathering_refund_reconciliation import (
+        reconcile_fully_refunded_option,
         reconcile_fully_refunded_ticket,
     )
 
@@ -291,6 +379,25 @@ def _do_charge_refunded(
             "charge.refunded: released seat booking=%s on event=%s for txn=%s",
             _seat.booking_id, _seat.event_id, txn.id,
         )
+
+    # Stage 3 — the same question for a Payment Option purchase, which
+    # can fund several seats at once. The two are mutually exclusive by
+    # transaction type, so exactly one of them ever does anything; both
+    # are called rather than branched here so neither becomes the
+    # other's special case.
+    _option_seats = reconcile_fully_refunded_option(db, txn=txn)
+    if _option_seats.applied:
+        logger.info(
+            "charge.refunded: released Payment Option seats for txn=%s "
+            "option=%s", txn.id, txn.payment_option_id,
+        )
+
+    # And the plan behind it, when there is one. A fully refunded
+    # instalment purchase must not keep collecting: cancelling the plan
+    # releases the Stripe schedule, revokes plan-funded access and
+    # releases the plan's own future bookings, all through the existing
+    # admin cancellation path rather than a second implementation.
+    _cancel_plan_for_full_refund(db, txn=txn)
 
     # Comms — member-facing refund confirmation. Stripe fires
     # ``charge.refunded`` only after a refund has actually succeeded, so

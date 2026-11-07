@@ -908,6 +908,15 @@ def booking_access_source_label(booking: EventBooking) -> str:
         return "Paid"
     if booking.source == "creator_manual":
         return "Creator added"
+    # Stage 3 — a Payment Option booking is paid for, whether by one
+    # payment or by a plan. Falling through to "Complimentary" told a
+    # creator the opposite of the truth about somebody who had paid.
+    if booking.source == "payment_option":
+        return (
+            "Paid (payment plan)"
+            if getattr(booking, "purchase_plan_id", None)
+            else "Paid (Payment Option)"
+        )
     return "Complimentary"
 
 
@@ -1324,3 +1333,56 @@ def hold_option_seats_or_raise(
 
     db.flush()
     return held
+
+
+def sweep_option_seats(db: Session, *, payment_option) -> int:
+    """Give stale holds a chance to resolve before an Option purchase
+    is refused for capacity. Returns how many seats were recovered.
+
+    Decision 2. The direct-ticket path has always done this: refused
+    for capacity, it sweeps that Gathering and tries once more, so an
+    abandoned checkout does not keep a place out of circulation. The
+    Payment Option path refused without trying, which could block a
+    genuinely available seat behind somebody else's abandoned plan.
+
+    **Call this before beginning your own writes.** ``verify_stale_hold``
+    commits — it must, because each answer from Stripe has to survive
+    whatever happens to the next one — so anything uncommitted in the
+    caller's transaction would be committed along with it.
+
+    Also called with no Event lock held, for the reason the ticket path
+    documents: these are external Stripe calls, and making them under a
+    row lock is how a checkout turns into a deadlock. The caller takes
+    its locks afterwards and recounts, so nothing here is trusted — a
+    swept seat still has to be won under the lock.
+
+    Only Gatherings that are *currently* full are swept. A Gathering
+    with room needs no recovery, and asking Stripe about holds nobody
+    is waiting on would make every purchase pay for the rare case.
+    """
+    from app.core.config import settings
+    from app.services.checkout_orchestration import GRANT_KIND_GATHERING
+
+    if not settings.standalone_gathering_payment_options_enabled:
+        return 0
+
+    grants = list(getattr(payment_option, "grants", None) or [])
+    event_ids = sorted({
+        g.event_id for g in grants
+        if g.grant_kind == GRANT_KIND_GATHERING and g.event_id
+    })
+
+    recovered = 0
+    for event_id in event_ids:
+        event = db.get(Event, event_id)
+        if event is None or event.capacity is None:
+            continue
+        if capacity_used(db, event_id) < event.capacity:
+            continue
+        recovered += sweep_stale_holds(db, event_id=event_id)
+    if recovered:
+        logger.info(
+            "payment option seat recovery: %d stale hold(s) released across "
+            "option=%s", recovered, getattr(payment_option, "id", "-"),
+        )
+    return recovered

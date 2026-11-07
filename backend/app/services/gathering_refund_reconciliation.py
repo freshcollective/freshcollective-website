@@ -79,7 +79,7 @@ from app.models.payment import (
     PaymentTransactionStatus,
     PaymentTransactionType,
 )
-from app.models.platform import BookingStatus, EventBooking
+from app.models.platform import BookingStatus, Event, EventBooking
 
 logger = logging.getLogger(__name__)
 
@@ -206,8 +206,126 @@ def reconcile_fully_refunded_ticket(
     )
 
 
+# ---------------------------------------------------------------------------
+# Stage 3 — a fully refunded Payment Option purchase
+# ---------------------------------------------------------------------------
+
+
+def reconcile_fully_refunded_option(
+    db: Session, *, txn: PaymentTransaction,
+) -> ReconcileOutcome:
+    """Release the future Gathering seats behind a fully refunded
+    Payment Option purchase.
+
+    Decision 1. The sibling above does this for a single ticket; a
+    Payment Option can fund several seats at once, and only the ones
+    that have not happened yet are released.
+
+    What is deliberately *not* touched
+    ----------------------------------
+    * **Past Gatherings.** A Gathering that has already run is
+      history. The booking stays, attendance stays, and no capacity is
+      returned — there is no seat to give back, and rewriting the
+      record of who was in the room to match a later refund would be a
+      lie about the past.
+    * **Pathway and Offering access.** Fresh Collective's established
+      position is that acquired access survives a refund; Offering
+      ownership says so explicitly. A bundle refund releases seats
+      because a seat is a scarce place somebody else could use, not
+      because refunding revokes things.
+    * **Anything proportional.** Nothing here reads an amount. The
+      trigger is the refund handler's own ``refunded`` status, which is
+      Stripe's "this charge is fully returned" — so there is no
+      allocation to invent and no partial case to get wrong.
+
+    Called from the same ``charge.refunded`` handler and inside its
+    transaction, for the reason the sibling gives: a recorded refund
+    whose seats stayed sold is the inconsistency being fixed, so a
+    half-applied reconciliation is worse than a retried one.
+    """
+    if txn.transaction_type == PaymentTransactionType.gathering_ticket_purchase:
+        # The single-ticket path owns this one.
+        return _skip("is_a_gathering_ticket")
+
+    if txn.payment_option_id is None:
+        return _skip("not_a_payment_option_purchase")
+
+    # The refund handler owns this status and has already applied its
+    # monotonic guard. A partial refund never reaches the branch below,
+    # which is Decision 1's other half.
+    if txn.status != PaymentTransactionStatus.refunded:
+        return _skip("not_fully_refunded")
+
+    now = datetime.utcnow()
+
+    # Seats funded by this transaction. For an instalment plan the
+    # bookings are anchored to the plan rather than to one invoice's
+    # transaction, and releasing them belongs to plan cancellation —
+    # see ``finite_plan_lifecycle._release_future_plan_bookings``,
+    # which this deliberately does not duplicate.
+    bookings = (
+        db.query(EventBooking)
+        .filter(
+            EventBooking.payment_transaction_id == txn.id,
+            EventBooking.status == BookingStatus.confirmed,
+        )
+        .all()
+    )
+    if not bookings:
+        return _skip("no_bookings")
+
+    # Locked in sorted event order, the same ordering every other
+    # multi-seat operation uses, so a refund landing while somebody is
+    # buying the last place serialises with them instead of
+    # deadlocking against them.
+    released: list[str] = []
+    preserved_past = 0
+    for booking in sorted(bookings, key=lambda b: b.event_id):
+        db.execute(
+            text("SELECT id FROM events WHERE id = :id FOR UPDATE"),
+            {"id": booking.event_id},
+        )
+        event = db.get(Event, booking.event_id)
+        if event is None:  # pragma: no cover — FK guarantees it
+            continue
+        if event.starts_at is not None and event.starts_at <= now:
+            preserved_past += 1
+            continue
+
+        db.execute(
+            text("SELECT id FROM event_bookings WHERE id = :id FOR UPDATE"),
+            {"id": booking.id},
+        )
+        db.refresh(booking)
+        if booking.status != BookingStatus.confirmed:
+            # A redelivered event, or a member who cancelled first.
+            # The earlier cancellation is the true one.
+            continue
+
+        booking.status = BookingStatus.cancelled
+        booking.cancelled_at = now
+        booking.hold_expires_at = None
+        booking.note = f"{booking.note or ''}\n[{CANCELLATION_NOTE}]".strip()
+        released.append(booking.id)
+
+    db.flush()
+
+    logger.info(
+        "payment option refund reconciled: txn=%s option=%s released=%d "
+        "past_preserved=%d",
+        txn.id, txn.payment_option_id, len(released), preserved_past,
+    )
+    if not released:
+        return _skip("nothing_future_to_release")
+    return ReconcileOutcome(
+        applied=True, booking_id=released[0],
+        event_id=None, access_pass_id=None,
+    )
+
+
 __all__ = [
     "CANCELLATION_NOTE",
     "ReconcileOutcome",
     "reconcile_fully_refunded_ticket",
+    "reconcile_fully_refunded_option",
 ]

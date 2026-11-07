@@ -1168,6 +1168,14 @@ def _create_stripe_session_and_txn(
     # before checkout gets here.
     from app.services import gathering_tickets as _gathering_tickets
 
+    # Decision 2 — before refusing for capacity, let the existing
+    # recovery resolve anything stale. Runs before any write in this
+    # function (there are none above it) and with no lock held, which
+    # is what keeps the Stripe calls inside it out of a lock.
+    _gathering_tickets.sweep_option_seats(
+        db, payment_option=resolved.payment_option,
+    )
+
     option_seat_holds = _gathering_tickets.hold_option_seats_or_raise(
         db,
         payment_option=resolved.payment_option,

@@ -413,6 +413,80 @@ class AttendanceReopenResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+
+def _option_name(db, *, payment_option_id: str | None) -> str | None:
+    """The Payment Option's member-facing name, or None."""
+    if db is None or not payment_option_id:
+        return None
+    from app.models.payment_option import PaymentOption
+
+    row = (
+        db.query(PaymentOption.name)
+        .filter(PaymentOption.id == payment_option_id)
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _option_name_suffix(booking: EventBooking) -> str:
+    """" · Women's Circle Experience", when the Option can be found.
+
+    Resolved through whichever link the booking actually has: a plan
+    knows its Option, and so does the transaction that paid. Returns an
+    empty string rather than guessing when neither is available — a
+    label that invents a name is worse than a shorter one.
+    """
+    db = Session.object_session(booking)
+    if db is None:
+        return ""
+    option_id = None
+    if getattr(booking, "purchase_plan_id", None):
+        from app.models.purchase_plan import PurchasePlan
+
+        row = (
+            db.query(PurchasePlan.payment_option_id)
+            .filter(PurchasePlan.id == booking.purchase_plan_id)
+            .first()
+        )
+        option_id = row[0] if row else None
+    if option_id is None and getattr(booking, "payment_transaction_id", None):
+        row = (
+            db.query(PaymentTransaction.payment_option_id)
+            .filter(PaymentTransaction.id == booking.payment_transaction_id)
+            .first()
+        )
+        option_id = row[0] if row else None
+    name = _option_name(db, payment_option_id=option_id)
+    return f" · {name}" if name else ""
+
+
+def _option_purchase_suffix(db, booking: EventBooking, tx) -> str:
+    """Distinguish a bundle from a ticket, and a plan from a payment.
+
+    An instalment booking's transaction is *one invoice*, so the amount
+    beside it is not what the member committed to. Saying so is the
+    difference between a creator reading the label correctly and
+    refunding the wrong figure.
+    """
+    if getattr(booking, "purchase_plan_id", None):
+        return f" (instalment){_option_name_suffix(booking)}"
+    if tx is not None and tx.payment_option_id:
+        return f" (Payment Option){_option_name_suffix(booking)}"
+    return ""
+
+
+def _refund_suffix(tx) -> str:
+    """ " · Refunded" / " · Partially refunded", when the ledger says so."""
+    from app.models.payment import PaymentTransactionStatus
+
+    status = getattr(tx, "status", None)
+    if status == PaymentTransactionStatus.refunded:
+        return " · Refunded"
+    if status == PaymentTransactionStatus.partially_refunded:
+        return " · Partially refunded"
+    return ""
+
+
 def _payment_label(booking: EventBooking) -> str:
     """Human-readable payment / entitlement descriptor. Uses ONLY the
     data already on EventBooking + PaymentTransaction — never invents a
@@ -448,9 +522,24 @@ def _payment_label(booking: EventBooking) -> str:
             if tx and tx.gross_amount_cents is not None:
                 cur = (tx.currency or "AUD").upper()
                 amount = tx.gross_amount_cents / 100
-                return f"{cur} {amount:.2f} · Paid"
+                paid = f"{cur} {amount:.2f} · Paid"
+                # Stage 3 — say which purchase this was, and whether it
+                # is still paid. A creator deciding on a remedy needs
+                # both: the amount alone reads as a ticket price, and
+                # for an instalment booking it is one instalment rather
+                # than what the member committed to.
+                extra = _option_purchase_suffix(db, booking, tx)
+                refunded = _refund_suffix(tx)
+                return f"{paid}{extra}{refunded}"
+    # Stage 3 — a plan-funded booking before its first invoice is
+    # linked. It is not complimentary and it is not included with the
+    # Collective; somebody has agreed to pay for it.
+    if getattr(booking, "purchase_plan_id", None):
+        return f"Payment plan{_option_name_suffix(booking)}"
     if booking.source == "creator_manual":
         return "Complimentary (creator added)"
+    if getattr(booking, "source", None) == "payment_option":
+        return f"Payment Option{_option_name_suffix(booking)}"
     return "Included with collective"
 
 
