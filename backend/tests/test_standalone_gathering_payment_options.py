@@ -800,3 +800,97 @@ class TestTheGatheringWaysToJoinCards:
         assert all(c["source"] == "payment_option" for c in cards), (
             "the individual ticket leaked into the Ways to join cards"
         )
+
+
+class TestInstalmentPlansAreNotOfferedForSeats:
+    """The gap §7 asks to be reported rather than papered over.
+
+    Pay-in-full holds every seat at checkout, before Stripe. A finite
+    payment plan does not go that way: ``start_finite_plan_setup`` is
+    its own entry point and opens a Stripe *setup* Session, so nothing
+    is charged — and nothing held — until the first invoice succeeds,
+    which can be days later. The booking would be taken at that point,
+    by which time the Gathering may be full, leaving a member on a plan
+    with no seat.
+
+    Holding the seat for the whole setup window would fix it and is not
+    obviously right either: it removes a place from circulation for
+    days on the strength of an unconfirmed plan, and how long that may
+    last is a product decision. So the combination is not offered.
+    Pay-in-full is unaffected.
+    """
+
+    def _plan_schedule(self, db, option):
+        s = PaymentOptionSchedule(
+            id=_uid("pos"), payment_option_id=option.id,
+            name="Weekly payments", schedule_type="recurring_installments",
+            status="published", total_amount_cents=7900,
+            installment_amount_cents=1975, installment_count=4,
+            interval="week", stripe_interval="week", stripe_interval_count=1,
+            currency="AUD", position=1,
+        )
+        db.add(s)
+        db.flush()
+        return s
+
+    def test_a_plan_is_refused_when_the_option_books_a_seat(
+        self, db, space, stage3_on,
+    ):
+        from app.services.checkout_orchestration import (
+            gathering_seat_unheld_on_plan,
+        )
+        opt = _option(db, space)
+        sch = self._plan_schedule(db, opt)
+        _grant(db, opt, event=_event(db, space, capacity=10))
+        db.refresh(opt)
+        assert gathering_seat_unheld_on_plan(opt, sch) is not None
+
+    def test_pay_in_full_on_the_same_option_is_fine(
+        self, db, space, stage3_on,
+    ):
+        from app.services.checkout_orchestration import (
+            gathering_seat_unheld_on_plan,
+        )
+        opt = _option(db, space)
+        pif = _schedule(db, opt)
+        _grant(db, opt, event=_event(db, space, capacity=10))
+        db.refresh(opt)
+        assert gathering_seat_unheld_on_plan(opt, pif) is None
+
+    def test_a_plan_without_gatherings_is_untouched(
+        self, db, space, stage3_on,
+    ):
+        """Existing instalment plans on Pathway and Series bundles must
+        not be affected by any of this."""
+        from app.services.checkout_orchestration import (
+            gathering_seat_unheld_on_plan,
+        )
+        opt = _option(db, space)
+        sch = self._plan_schedule(db, opt)
+        _grant(db, opt, pathway=_pathway(db, space))
+        db.refresh(opt)
+        assert gathering_seat_unheld_on_plan(opt, sch) is None
+
+    def test_members_are_not_shown_the_plan(self, db, space, stage3_on):
+        """Hidden as well as refused — a member should not pick a
+        schedule the till will reject."""
+        from app.services.purchase_arrangements import arrangements_for
+
+        ev = _event(db, space, capacity=10)
+        opt = _option(db, space)
+        _schedule(db, opt, cents=7900)
+        self._plan_schedule(db, opt)
+        _grant(db, opt, event=ev)
+        db.refresh(opt)
+
+        with patch(
+            "app.core.config.settings.finite_plan_member_checkout_enabled",
+            True,
+        ):
+            found = arrangements_for(db, kind="gathering", experience_id=ev.id)
+            sellable = [
+                a for a in found.arrangements
+                if a.source == "payment_option"
+                and a.available_for_new_purchase
+            ]
+        assert [a.schedule_type for a in sellable] == ["pay_in_full"]

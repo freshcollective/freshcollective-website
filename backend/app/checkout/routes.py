@@ -486,6 +486,7 @@ def create_unified_checkout_session(
             payment_option_schedule_id=body.payment_option_schedule_id,
         )
         check_option_fulfillable_or_raise(recurring_resolved.payment_option)
+        _check_plan_can_hold_its_seats(recurring_resolved)
         _pathway_commerce.check_sellable_or_raise(
             db, recurring_resolved.payment_option,
         )
@@ -713,6 +714,30 @@ def create_unified_checkout_session(
 # ---------------------------------------------------------------------------
 
 
+
+def _check_plan_can_hold_its_seats(recurring_resolved) -> None:
+    """Stage 3 — refuse an instalment plan that would book a seat it
+    never held.
+
+    The rule and the reasoning are in
+    ``checkout_orchestration.gathering_seat_unheld_on_plan``; this is
+    the till's half, and the member-facing half is
+    ``_schedule_is_member_checkoutable``, so the schedule is not
+    offered in the first place. Refused here too because a hidden
+    option is not a guard.
+    """
+    from app.services.checkout_orchestration import (
+        gathering_seat_unheld_on_plan,
+    )
+
+    detail = gathering_seat_unheld_on_plan(
+        recurring_resolved.payment_option,
+        recurring_resolved.payment_schedule,
+    )
+    if detail is not None:
+        raise HTTPException(status_code=400, detail=detail)
+
+
 @router.post("/pathway", response_model=PathwayCheckoutResponse)
 def create_pathway_checkout_session(
     body: PathwayCheckoutRequest,
@@ -868,6 +893,7 @@ def create_pathway_checkout_session(
                 payment_option_schedule_id=body.payment_option_schedule_id,
             )
             check_option_fulfillable_or_raise(recurring_resolved.payment_option)
+            _check_plan_can_hold_its_seats(recurring_resolved)
             check_same_option_not_active(
                 db, user=current_user,
                 payment_option=recurring_resolved.payment_option, now=now,

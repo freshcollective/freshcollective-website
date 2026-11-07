@@ -219,6 +219,16 @@ def _schedule_is_member_checkoutable(schedule, option=None) -> bool:
     if schedule_type == "pay_in_full":
         return True
     if schedule_type == "recurring_installments":
+        # Stage 3 — an instalment plan cannot hold a Gathering seat, so
+        # it is not offered for an Option that books one. The rule and
+        # the reasoning live in ``checkout_orchestration``; both
+        # readers call it rather than restating it.
+        from app.services.checkout_orchestration import (
+            gathering_seat_unheld_on_plan,
+        )
+
+        if gathering_seat_unheld_on_plan(option, schedule) is not None:
+            return False
         from app.core.config import settings
         if not settings.finite_plan_member_checkout_enabled:
             return False
