@@ -466,3 +466,96 @@ class TestTheGateIsStillHonoured:
     def test_shut_a_legacy_direct_price_still_shows(self, db, space):
         p = _pathway(db, space, price_cents=5900)
         assert [c.source for c in _cards(db, p)] == ["direct"]
+
+
+class TestWhereCreatorPlanEligibilityIsDecided:
+    """A deliberate boundary, recorded so it is not mistaken for a
+    missing check.
+
+    §8 asks that nothing be advertised that checkout would reject, and
+    a Collective with no creator plan is one such case. This builder
+    does not test for it, and that is a considered choice rather than an
+    oversight:
+
+    * ``_schedule_is_member_checkoutable`` — the predicate the till
+      agrees with — does not consult the creator plan either, and
+      neither does the Gathering Series display. Adding it here only
+      would make the two surfaces disagree, which §2 forbids.
+    * The condition is Collective-wide, not per-arrangement. It cannot
+      make one card misleading while another is honest; it would block
+      every arrangement equally.
+    * The creator *preview* does report it, which is the surface whose
+      job is telling a creator why nothing is selling.
+
+    So the gap is real, pre-existing, shared with the Series, and worth
+    fixing for both surfaces at once rather than for Pathways alone.
+    """
+
+    def test_the_cards_do_not_consult_the_creator_plan(
+        self, db, space, gate_open,
+    ):
+        """No plan is set up on this Collective and the card still
+        renders. If this ever starts failing, the gap has been closed
+        somewhere — delete this test and the one below rather than
+        making them pass."""
+        p = _pathway(db, space, price_cents=5900)
+        [card] = _cards(db, p)
+        assert card.source == "direct"
+        assert card.price_cents == 5900
+
+    def test_the_till_is_where_it_is_enforced(self):
+        """Named rather than asserted here: the enforcement lives in
+        ``checkout_orchestration.resolve_fee_context_or_raise_http``
+        and is exercised by the creator-plan checkout tests. This test
+        exists so the boundary is written down beside the display."""
+        from app.services import checkout_orchestration
+
+        assert hasattr(checkout_orchestration, "resolve_fee_context_or_raise_http")
+
+
+class TestTheDerivedFieldsAreTruthfulOnEveryPath:
+    """``PathwaySummary`` is serialised two ways, and one of them lied.
+
+    ``list_pathways`` passes ``direct_purchase_available`` and
+    ``multiple_purchase_options_enabled`` explicitly. The ``pathways``
+    array nested in the public Collective payload does not — it is
+    serialised by ``from_attributes`` off the ORM row — so both fields
+    fell back to their schema default of ``False`` there, present in
+    the response and permanently wrong.
+
+    That is a bad failure mode for a field about whether something is
+    for sale, and it is not hypothetical: it is the field I misread
+    while verifying the Stage 2B deployment, and I reported a flag
+    state from it that it could not have told me. Model properties make
+    every serialisation path agree.
+    """
+
+    def test_a_live_direct_price_reads_as_available(
+        self, db, space, gate_open,
+    ):
+        p = _pathway(db, space, price_cents=5900, direct=True)
+        assert p.direct_purchase_available is True
+        assert p.multiple_purchase_options_enabled is True
+
+    def test_a_dormant_price_reads_as_unavailable(
+        self, db, space, gate_open,
+    ):
+        p = _pathway(db, space, price_cents=500,
+                     pricing_mode="payment_options", direct=False)
+        assert p.direct_purchase_available is False
+
+    def test_the_gate_property_follows_the_setting(self, db, space):
+        p = _pathway(db, space, price_cents=5900)
+        assert p.multiple_purchase_options_enabled is False
+
+    def test_the_nested_collective_payload_agrees_with_the_list(
+        self, db, space, gate_open,
+    ):
+        """The specific bug: the same Pathway, serialised both ways,
+        must answer the same."""
+        from app.spaces.schemas import PathwaySummary
+
+        p = _pathway(db, space, price_cents=5900, direct=True)
+        from_orm = PathwaySummary.model_validate(p)
+        assert from_orm.direct_purchase_available is True
+        assert from_orm.multiple_purchase_options_enabled is True

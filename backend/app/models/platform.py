@@ -773,6 +773,37 @@ class Pathway(Base):
     direct_purchase_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false",
     )
+
+    @property
+    def direct_purchase_available(self) -> bool:
+        """Is this Pathway's own price on sale, as the till decides it?
+
+        A read-only derived value, defined here because
+        ``PathwaySummary`` is serialised by ``from_attributes`` on some
+        paths and by explicit keyword on others. Without it the
+        ``from_attributes`` paths silently fell back to the schema
+        default of ``False`` — so the field was present in the public
+        Collective payload and always said "not for sale", regardless
+        of the truth. It misled me while verifying a deployment, which
+        is a good indication of how it would read to anyone else.
+
+        Imported inside the body: ``services`` imports ``models``, so a
+        module-level import here would be circular.
+        """
+        from app.services.pathway_direct_offer import (
+            direct_purchase_is_available,
+        )
+
+        return direct_purchase_is_available(self)
+
+    @property
+    def multiple_purchase_options_enabled(self) -> bool:
+        """The Stage 2B gate, mirrored for the same reason — so every
+        serialisation path reports the real value rather than a
+        default."""
+        from app.core.config import settings
+
+        return settings.pathway_multiple_purchase_options_enabled
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AUD", server_default="AUD")
     billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Narrative description of what learners will practise
