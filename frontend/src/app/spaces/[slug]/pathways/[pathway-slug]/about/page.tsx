@@ -242,11 +242,11 @@ export default async function PathwayAboutPage({ params }: Props) {
               recovery banner above is the only action that helps. */}
           {showWaysToJoin && pathway.member_plan_state?.status !== 'suspended' && (
             <div>
-              {pathway.step_count > 0 && (
-                <p className="mb-3 text-[13px] text-black">
-                  {unitCountLabel(pathway, pathway.step_count)}
-                </p>
-              )}
+              {/* No step count here. The CTA card this replaces showed
+                  one, but the main column already says "18 steps in
+                  this pathway" a few lines away — and once the columns
+                  stack on mobile the two sit almost on top of each
+                  other. Checked at 390px. */}
               <PathwayWaysToJoin
                 spaceSlug={slug}
                 pathwaySlug={pathwaySlug}
