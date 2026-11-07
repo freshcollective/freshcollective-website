@@ -849,7 +849,11 @@ class TestItIsOnlyAPreview:
         assert platform_reasons.isdisjoint(resolver_reasons), (
             "a platform reason is shadowing a resolver reason"
         )
-        assert len(resolver_reasons | platform_reasons) == 14
+        # 15 as of Stage 2B's ``direct_purchase_not_offered``. Bump
+        # this only together with the copy in
+        # ``frontend/src/lib/purchasePreview.ts`` — the count is the
+        # thing that makes a missing case impossible to ship quietly.
+        assert len(resolver_reasons | platform_reasons) == 15
 
 
 # ---------------------------------------------------------------------------

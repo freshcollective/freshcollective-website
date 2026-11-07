@@ -358,6 +358,30 @@ services:
       # at WARNING.
       - key: PURCHASE_ARRANGEMENTS_SHADOW
         sync: false
+      # Stage 2B — individual Pathway purchase alongside Payment
+      # Options. Dashboard-managed, ``sync: false`` for the same
+      # load-bearing reason as every flag above: this file must not be
+      # able to revert an operational decision.
+      #
+      # When false, ``Pathway.pricing_mode`` stays authoritative and
+      # every surface behaves as it did before Stage 2B — a Pathway
+      # priced by a published Option refuses its own price at the till
+      # and does not show it. When true, ``direct_purchase_enabled``
+      # becomes authoritative for the direct door, and a Payment
+      # Option no longer takes that door off sale.
+      #
+      # Switching it on puts no dormant price back on sale by itself.
+      # Migration 183 backfilled ``direct_purchase_enabled`` from the
+      # rule the till already applied, and ``sync_direct_offer_flag``
+      # keeps it true to that rule on every creator write while the
+      # flag is off — so flipping it swaps one expression for an equal
+      # one. ``tests/test_pathway_simultaneous_purchasing.py``
+      # ``TestTheMirrorInvariant`` asserts that equality directly.
+      #
+      # Application default when the env var is absent is False (see
+      # ``config.py:pathway_multiple_purchase_options_enabled``).
+      - key: PATHWAY_MULTIPLE_PURCHASE_OPTIONS_ENABLED
+        sync: false
       # ── Offerings rollout ────────────────────────────────────────
       # Two switches, both Dashboard-managed, for the same reason as
       # the two flags above: the Dashboard is the operational source

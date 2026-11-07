@@ -217,6 +217,31 @@ class Settings(BaseSettings):
     # separate.
     purchase_arrangements_checkout_shadow: bool = False
 
+    # Stage 2B — simultaneous direct and Payment Option purchasing for
+    # one Pathway. Hard-off by default, and off is the only value it
+    # should hold without an explicit product decision.
+    #
+    # Flag OFF (today): ``Pathway.pricing_mode`` stays authoritative.
+    # A Pathway in ``payment_options`` mode refuses the direct door; a
+    # ``legacy`` Pathway sells its own price. Member display, creator
+    # controls and both checkout doors behave exactly as they did
+    # before this flag existed, and ``direct_purchase_enabled`` is
+    # read by nothing.
+    #
+    # Flag ON: ``direct_purchase_enabled`` becomes authoritative for
+    # the direct door, and a Payment Option granting the Pathway no
+    # longer takes that door off sale. The member must name which
+    # arrangement they are buying — which they already do, because the
+    # direct door and the Option door are different requests carrying
+    # different identifiers — and each is priced from its own rows.
+    #
+    # Turning it on does not put any dormant price back on sale: the
+    # 183 backfill set ``direct_purchase_enabled`` true only for the
+    # Pathways the direct door already sold, so a Pathway whose price
+    # went dormant behind an Option stays dormant until a creator says
+    # otherwise.
+    pathway_multiple_purchase_options_enabled: bool = False
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every

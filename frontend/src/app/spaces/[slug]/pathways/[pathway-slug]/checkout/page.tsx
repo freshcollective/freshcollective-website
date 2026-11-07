@@ -58,9 +58,26 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   const aboutHref = `/spaces/${slug}/pathways/${pathwaySlug}/about`
   const cs = getPathwayCoverStyle(pathwaySlug)
   const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
-  const priceLabel = locked && !isPaymentOptionsMode
+  // Stage 2B — can the member buy this Pathway at its own price?
+  //
+  // Gate shut: unchanged. ``pricing_mode`` decides, and a Pathway in
+  // payment_options mode shows no direct price.
+  //
+  // Gate open: the backend decides, because a direct price and a
+  // Payment Option may now both be live and a mode cannot express
+  // both. ``direct_purchase_available`` is the till's own answer, so a
+  // price is never shown that checkout would refuse — nor hidden when
+  // checkout would accept it.
+  const simultaneousPurchasing = pathway.multiple_purchase_options_enabled === true
+  const directAvailable = simultaneousPurchasing
+    ? pathway.direct_purchase_available === true
+    : locked && !isPaymentOptionsMode
+  const priceLabel = directAvailable
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
     : null
+  // Both doors open at once — the arrangement Stage 2B exists for.
+  const showsBothDoors =
+    simultaneousPurchasing && directAvailable && pathway.payment_options.length > 0
 
   // ── Access already granted (after successful purchase or admin grant) ──
   if (pathway.user_has_access && locked) {
@@ -324,8 +341,55 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             style={{ border: '1px solid #E2E8F0' }}
           >
             <p className="mb-4 text-[13px] font-semibold text-black uppercase tracking-wide">
-              {pathway.payment_options.length > 0 ? 'Choose your option' : 'Payment summary'}
+              {showsBothDoors
+                ? 'Purchase this Pathway'
+                : pathway.payment_options.length > 0
+                  ? 'Choose your option'
+                  : 'Payment summary'}
             </p>
+
+            {/* Stage 2B — the Pathway's own price, shown *alongside*
+                the Options rather than instead of them. Its own block
+                with its own button, because the two are different
+                purchases: this one buys this Pathway at this price,
+                and the Options below may buy more than it for more. */}
+            {showsBothDoors && (
+              <div className="mb-6">
+                <div
+                  className="rounded-xl px-4 py-4"
+                  style={{
+                    background: 'var(--fc-accent-soft, rgba(56,160,158,0.06))',
+                    border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.22))',
+                  }}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-[14px] font-semibold text-navy-900">
+                      {priceLabel}
+                    </span>
+                    <span className="text-[12px] text-black">
+                      one-time payment
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-black">
+                    Buy {pathway.title} on its own. Yours for good.
+                  </p>
+                  <div className="mt-4">
+                    <CheckoutButton
+                      pathwayId={pathway.id}
+                      label={`Purchase for ${priceLabel}`}
+                      isAuthenticated={isAuthenticated}
+                    />
+                  </div>
+                </div>
+                <p className="mt-6 mb-3 text-[13px] font-semibold uppercase tracking-wide text-black">
+                  Other ways to access this Pathway
+                </p>
+                <p className="mb-3 text-[12px] leading-relaxed text-black">
+                  These may include more than this Pathway. Check what each
+                  one covers before you choose.
+                </p>
+              </div>
+            )}
 
             {pathway.payment_options.length > 0 ? (
               <PaymentOptionSelector

@@ -260,6 +260,11 @@ export function arrangementExplanation(
         : 'This Pathway is not active yet, so nobody can purchase it.'
     case 'pathway_requires_payment_option':
       return 'This Pathway now sells through Payment Options, so its own price is no longer offered at checkout. Members purchase through the Options listed here.'
+    case 'direct_purchase_not_offered':
+      // Stage 2B. Distinct from the reason above: there, an Option had
+      // taken over and the creator had no say; here the price is
+      // simply not switched on, which they can change themselves.
+      return 'This Pathway has a price saved but is not currently sold on its own. Turn on individual purchase in its settings to offer it.'
     case 'creator_plan_not_configured':
       return 'Your Collective does not have a Fresh Collective plan assigned yet, so paid checkout is unavailable. Contact us and we will sort it out — your setup here is fine.'
     case 'creator_plan_forbids_paid_offers':

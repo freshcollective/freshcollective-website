@@ -761,6 +761,18 @@ class Pathway(Base):
     # pricing_mode: legacy (single price_cents) | payment_options (multiple PaymentOption rows)
     pricing_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="legacy", server_default="legacy")
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Stage 2B — is ``price_cents`` an *active offer*, or merely stored?
+    #
+    # Separate from ``price_cents`` because a price can be preserved
+    # without being for sale (Stage 2A), and separate from
+    # ``pricing_mode`` because a direct price and a Payment Option may
+    # both price the same Pathway once the Stage 2B gate is open. The
+    # pricing mode could only ever express one of them.
+    #
+    # Default False: a row written without an opinion is not on sale.
+    direct_purchase_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AUD", server_default="AUD")
     billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Narrative description of what learners will practise

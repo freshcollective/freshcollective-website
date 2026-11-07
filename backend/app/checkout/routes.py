@@ -51,6 +51,7 @@ from app.checkout.schemas import (
     UnifiedCheckoutResponse,
 )
 from app.core.config import settings
+from app.services import pathway_direct_offer as _direct_offer
 from app.core.database import get_db
 from app.services.connect_payout_model import (
     resolve_payout_model as _resolve_payout_model,
@@ -913,9 +914,42 @@ def create_pathway_checkout_session(
         )
         return PathwayCheckoutResponse(checkout_url=session.url)
 
-    # ── Option-less legacy path (pathway.price_cents source) ──────
-    pathway_pricing_mode = getattr(pathway, "pricing_mode", "legacy") or "legacy"
-    if pathway_pricing_mode == "payment_options":
+    # ── Option-less direct path (pathway.price_cents source) ──────
+    #
+    # The member did not name a Payment Option, so this request is a
+    # direct purchase and nothing else. It is priced from
+    # ``pathway.price_cents`` and can never reach an Option's price —
+    # the two doors are separate requests with separate identifiers,
+    # which is why "charge the arrangement the member selected" needs
+    # no arbitration here.
+    #
+    # What *is* decided here is whether the direct door is open at all,
+    # and the Stage 2B gate changes which column answers that:
+    #
+    #   Gate shut (today) — ``pricing_mode``. A Pathway moved to
+    #     ``payment_options`` refuses, because that mode means "an
+    #     Option prices this now" and the stale ``price_cents`` beside
+    #     it is dormant by design.
+    #
+    #   Gate open — ``direct_purchase_enabled``. A mode cannot describe
+    #     two simultaneous doors, so the question becomes a property of
+    #     this door alone. Still an explicit refusal, and still refused
+    #     by default: migration 183 switched the column on only for the
+    #     Pathways this door already sold, so opening the gate puts
+    #     nothing new on sale by itself.
+    #
+    # Neither branch infers an offer from the presence of a price.
+    #
+    # The rule itself lives in ``pathway_direct_offer`` because the
+    # member payload must reach the same answer — a price shown and
+    # then refused, or a live offer rendered invisible, are the two
+    # failures that matter here. The wording stays local: these
+    # messages are the till's, and are more specific than a shared
+    # reason code could be.
+    block = _direct_offer.direct_purchase_block_reason(
+        pathway, check_status=False,  # already refused above, for every shape
+    )
+    if block == _direct_offer.REASON_REQUIRES_OPTION:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -923,16 +957,20 @@ def create_pathway_checkout_session(
                 "choose one and try again."
             ),
         )
-    access_type = (
-        pathway.access_type.value if hasattr(pathway.access_type, "value")
-        else str(pathway.access_type or "free")
-    )
-    if access_type != "one_time":
+    if block == _direct_offer.REASON_NOT_OFFERED:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This pathway is not sold individually. Please choose one "
+                "of its payment options and try again."
+            ),
+        )
+    if block == _direct_offer.REASON_NOT_ONE_TIME:
         raise HTTPException(
             status_code=400,
             detail="Only one-time purchase pathways can be checked out via this endpoint.",
         )
-    if not pathway.price_cents or pathway.price_cents <= 0:
+    if block == _direct_offer.REASON_NO_PRICE:
         raise HTTPException(status_code=400, detail="Pathway has no valid price.")
 
     # Rule F — the legacy single-Pathway door. It does not go through

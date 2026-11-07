@@ -257,6 +257,7 @@ from app.services.pathway_announcement import (
     is_member_visible,
 )
 from app.services import activity_producers
+from app.services import pathway_direct_offer as _direct_offer
 from app.services.schedule_validation import (
     apply_recurring_derivations,
     apply_recurring_update_derivations,
@@ -3631,6 +3632,12 @@ def get_pathway(
         "access_type": pathway.access_type,
         "pricing_mode": getattr(pathway, "pricing_mode", "legacy") or "legacy",
         "price_cents": pathway.price_cents,
+        "direct_purchase_enabled": bool(
+            getattr(pathway, "direct_purchase_enabled", False)
+        ),
+        "multiple_purchase_options_enabled": (
+            settings.pathway_multiple_purchase_options_enabled
+        ),
         "currency": pathway.currency,
         "billing_interval": pathway.billing_interval,
         "is_sequential": pathway.is_sequential,
@@ -3707,6 +3714,12 @@ def create_pathway(
         db, pathway, actor_user_id=current_user.id,
     )
 
+    # Stage 2B — keep ``direct_purchase_enabled`` a true mirror of what
+    # the direct door sells while the gate is shut, so opening the gate
+    # changes no Pathway's behaviour. No-op once it is open: the
+    # creator's own control owns the column from then on.
+    _direct_offer.sync_direct_offer_flag(pathway)
+
     db.commit()
     db.refresh(pathway)
     if announcement is not None:
@@ -3760,6 +3773,28 @@ def update_pathway(
             pathway.pricing_mode = val
         elif field in ("price_cents", "billing_interval"):
             setattr(pathway, field, val)
+        elif field == "direct_purchase_enabled" and val is not None:
+            # Stage 2B — the creator's own say over whether their saved
+            # price is on sale. Separate from ``price_cents`` because
+            # Stage 2A made a preserved price the default: storing an
+            # amount and offering it are different acts.
+            #
+            # Refused while the gate is shut rather than ignored. With
+            # the gate shut this column is a maintained mirror (see
+            # ``sync_direct_offer_flag``, which runs a few lines below
+            # and would overwrite anything written here), so accepting
+            # the field would tell a creator their choice was saved
+            # when it was about to be discarded. ``pricing_mode`` is
+            # the control that works today.
+            if not settings.pathway_multiple_purchase_options_enabled:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Individual purchase alongside Payment Options is "
+                        "not enabled yet."
+                    ),
+                )
+            pathway.direct_purchase_enabled = bool(val)
         elif field == "currency" and val is not None:
             # Stage 2A — currency is fixed once set.
             #
@@ -3824,6 +3859,12 @@ def update_pathway(
     activity_producers.record_pathway_published(
         db, pathway, actor_user_id=current_user.id,
     )
+
+    # Stage 2B — keep ``direct_purchase_enabled`` a true mirror of what
+    # the direct door sells while the gate is shut, so opening the gate
+    # changes no Pathway's behaviour. No-op once it is open: the
+    # creator's own control owns the column from then on.
+    _direct_offer.sync_direct_offer_flag(pathway)
 
     db.commit()
     db.refresh(pathway)

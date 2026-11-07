@@ -616,6 +616,12 @@ class PathwayUpdateRequest(BaseModel):
     pricing_mode: str | None = None
     price_cents: int | None = None
     currency: str | None = None
+    # Stage 2B — is the saved price an active offer? Accepted only
+    # while the Stage 2B gate is open; with the gate shut the column is
+    # a maintained mirror of pricing_mode + access_type + price, so
+    # honouring a creator's value here would be overwritten moments
+    # later and is refused instead of silently ignored.
+    direct_purchase_enabled: bool | None = None
     billing_interval: str | None = None
     cover_image_url: str | None = None
     pathway_type: str | None = None
@@ -663,6 +669,14 @@ class PathwayResponse(BaseModel):
     access_type: str = "free"
     pricing_mode: str = "legacy"
     price_cents: int | None = None
+    # Stage 2B — whether the saved price is an active offer. While the
+    # gate is shut this is a mirror of the three columns above, so the
+    # editor can read it without branching on the gate.
+    direct_purchase_enabled: bool = False
+    # Stage 2B gate, mirrored so the editor knows whether the control
+    # above is live. With it off the editor keeps presenting access as
+    # a single exclusive choice, which is what the API still enforces.
+    multiple_purchase_options_enabled: bool = False
     currency: str = "AUD"
     billing_interval: str | None = None
     is_sequential: bool

@@ -6,6 +6,7 @@ import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl, apiUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathwayAccess'
+import { formatMoneyCents } from '@/lib/formatMoney'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayWithSteps, PathwayAboutBlock, PaymentOptionSummary, SpaceResponse } from '@/types/platform'
@@ -56,15 +57,46 @@ export default async function PathwayAboutPage({ params }: Props) {
       ? o.effective_price_cents : min,
     null as number | null)
 
+  // Stage 2B — the direct price may now be live beside the Options, so
+  // the headline is the cheapest *open* door rather than whichever
+  // ``pricing_mode`` happened to name. Gate shut: unchanged.
+  const simultaneousPurchasing = pathway.multiple_purchase_options_enabled === true
+  const directAvailable = simultaneousPurchasing
+    ? pathway.direct_purchase_available === true
+    : !isPaymentOptionsMode
+  const showsBothDoors =
+    simultaneousPurchasing && directAvailable && publishedOptions.length > 0
+
+  // Currency comes from the row rather than a literal. This read
+  // "From $5 AUD" for every Collective, including those selling in
+  // USD — ``formatMoneyCents`` disambiguates (A$5 / US$5) and is the
+  // same helper every other purchase surface uses.
+  const optionCurrency = publishedOptions[0]?.currency ?? pathway.currency
+  const lowestOpenPrice = showsBothDoors
+    ? (lowestOptionPrice != null && pathway.price_cents != null
+        ? Math.min(lowestOptionPrice, pathway.price_cents)
+        : lowestOptionPrice ?? pathway.price_cents)
+    : lowestOptionPrice
+
   const priceLabel = locked
-    ? (isPaymentOptionsMode
-        ? (lowestOptionPrice != null
-            ? `From $${(lowestOptionPrice / 100).toFixed(0)} AUD`
-            : publishedOptions.length > 0 ? `${publishedOptions.length} options available` : 'Multiple options')
-        : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
+    ? (showsBothDoors
+        ? (lowestOpenPrice != null
+            ? `From ${formatMoneyCents(lowestOpenPrice, pathway.currency ?? optionCurrency)}`
+            : 'Several ways to join')
+        : isPaymentOptionsMode
+          ? (lowestOptionPrice != null
+              ? `From ${formatMoneyCents(lowestOptionPrice, optionCurrency)}`
+              : publishedOptions.length > 0 ? `${publishedOptions.length} options available` : 'Multiple options')
+          : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
   const unlockLabel = locked
-    ? (isPaymentOptionsMode ? 'Choose your option' : unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval))
+    ? (showsBothDoors
+        // Both doors open, so neither "Choose your option" nor a bare
+        // price is the whole truth. The checkout page states both.
+        ? 'See ways to join'
+        : isPaymentOptionsMode
+          ? 'Choose your option'
+          : unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
 
   const nextIncomplete = pathway.steps.find(s => !s.is_completed)

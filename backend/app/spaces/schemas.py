@@ -382,6 +382,21 @@ class PathwayWithSteps(BaseModel):
     pathway_type: str = 'guided_experience'
     user_has_access: bool = False
     payment_options: list[PaymentOptionSummary] = []
+    # Stage 2B — is the Pathway's own price on sale right now?
+    #
+    # Decided server-side, by the same rule the till applies, so the
+    # member UI never has to infer an offer from the presence of a
+    # price. ``price_cents`` can be set on a Pathway nobody may buy
+    # individually: a creator may have preserved it while selling only
+    # through a Payment Option, and Stage 2A made preserving it the
+    # default rather than destroying it.
+    direct_purchase_available: bool = False
+    # Stage 2B gate, mirrored for the member UI the way
+    # ``EventSummary.sales_enabled`` mirrors its own flag. With it off
+    # the UI keeps branching on ``pricing_mode`` exactly as before, so
+    # the two halves of the gate cannot disagree about which era they
+    # are in.
+    multiple_purchase_options_enabled: bool = False
     # FIP4B1 — non-null when the viewer has a finite payment plan
     # granting this pathway that needs their attention
     # (``payment_problem`` or ``suspended``). Frontend uses this to

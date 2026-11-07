@@ -155,7 +155,13 @@ describe('the two Pathway surfaces agree', () => {
     const i = src.indexOf('const showPrice')
     const decl = src.slice(i, src.indexOf('\n', i))
     assert.match(decl, /accessType === 'one_time'/)
-    assert.match(decl, /!isPaymentOptionsMode/)
+    // Withheld while an Option prices the Pathway — but only while the
+    // Stage 2B gate is shut, which is what `optionsBlockDirect` means.
+    // Stage 2B's whole purpose is that both can be live at once.
+    assert.match(decl, /!optionsBlockDirect/)
+    const j = src.indexOf('const optionsBlockDirect')
+    const gate = src.slice(j, src.indexOf('\n', j))
+    assert.match(gate, /isPaymentOptionsMode && !simultaneousPurchasing/)
   })
 
   it('and still explains itself when an Option prices the Pathway', () => {

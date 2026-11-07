@@ -134,6 +134,10 @@ REASON_SCHEDULE_UNSUPPORTED = "schedule_type_unsupported"
 REASON_PRICE_NOT_SET = "price_not_set"
 REASON_PRICE_INVALID = "price_invalid"
 REASON_EXPERIENCE_UNAVAILABLE = "experience_unavailable"
+#: Stage 2B — the Pathway has a price, and the creator has not put it
+#: on sale. A stored price is not an offer; see
+#: ``Pathway.direct_purchase_enabled``.
+REASON_DIRECT_PURCHASE_OFF = "direct_purchase_not_offered"
 
 
 class ArrangementError(Exception):
@@ -399,6 +403,29 @@ def _base_direct(
     )
 
 
+def _direct_offer_is_on(pathway) -> bool:
+    """Is the Pathway's own price an active offer?
+
+    Consulted only once the Stage 2B gate is open. While it is shut
+    this returns True unconditionally, so every answer this module
+    gives is byte-identical to the one it gave before the column
+    existed — ``pricing_mode`` is still the thing the live routes
+    enforce, and §20 requires flag-off behaviour to be unchanged.
+
+    This is not the ``pricing_mode`` rule the module docstring declines
+    to read, and it is not a mode. ``direct_purchase_enabled`` is a
+    fact about one arrangement — whether *this* price is for sale —
+    which is exactly the shape of answer an arrangement carries. A mode
+    could only ever describe one door at a time, which is the
+    assumption Stage 2B removes.
+    """
+    from app.core.config import settings
+
+    if not settings.pathway_multiple_purchase_options_enabled:
+        return True
+    return bool(getattr(pathway, "direct_purchase_enabled", False))
+
+
 def _direct_pathway(exp: _Experience) -> Arrangement | None:
     """``Pathway.price_cents``, the price the option-less checkout door
     reads. Only ``one_time`` is offered: ``access_type='subscription'``
@@ -418,6 +445,8 @@ def _direct_pathway(exp: _Experience) -> Arrangement | None:
         reason = REASON_PRICE_NOT_SET
     elif p.price_cents <= 0:
         reason = REASON_PRICE_INVALID
+    elif not _direct_offer_is_on(p):
+        reason = REASON_DIRECT_PURCHASE_OFF
 
     return _base_direct(
         exp,

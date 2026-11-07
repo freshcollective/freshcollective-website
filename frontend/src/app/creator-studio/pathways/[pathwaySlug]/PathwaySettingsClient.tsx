@@ -48,6 +48,7 @@ function AccessPricingSection({
   priceError,
   spaceSlug: _spaceSlug,
   unlockOptionIds, setUnlockOptionIds: _setUnlockOptionIds,
+  simultaneousPurchasing, directPurchase, setDirectPurchase,
 }: {
   accessType: string
   setAccessType: (v: string) => void
@@ -61,6 +62,9 @@ function AccessPricingSection({
   spaceSlug: string
   unlockOptionIds: string[]
   setUnlockOptionIds: (ids: string[]) => void
+  simultaneousPurchasing: boolean
+  directPurchase: boolean
+  setDirectPurchase: (v: boolean) => void
 }) {
   const isPaymentOptionsMode = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
 
@@ -76,7 +80,12 @@ function AccessPricingSection({
   //   Offering a direct price *alongside* it is Stage 2B, behind its own
   //   gate; until then showing both is the $5/$2 conflict
   //   ``pricing_mode`` exists to prevent.
-  const unmaintainable = isPaymentOptionsMode || accessType === 'subscription'
+  // Stage 2B opens the one case this editor could not express: a
+  // direct price *and* an Option pricing the same Pathway. With the
+  // gate open, payment_options mode is no longer a blocker — only
+  // `subscription` remains, because checkout still cannot sell it.
+  const optionsBlockDirect = isPaymentOptionsMode && !simultaneousPurchasing
+  const unmaintainable = optionsBlockDirect || accessType === 'subscription'
 
   // ``included_with_offer`` (Payment Option access) derives its unlock
   // set from ``PaymentOptionGrant`` — the same Options that list this
@@ -88,7 +97,7 @@ function AccessPricingSection({
     // Offered only while an Option is not already pricing this
     // Pathway. In ``payment_options`` mode a direct price would be a
     // second answer to "what does this cost".
-    ...(isPaymentOptionsMode
+    ...(optionsBlockDirect
       ? []
       : [{
           value: 'one_time',
@@ -106,7 +115,7 @@ function AccessPricingSection({
   // The direct price, editable. Shown for the access type that
   // actually sells one, and only while no Option is pricing this
   // Pathway.
-  const showPrice = accessType === 'one_time' && !isPaymentOptionsMode
+  const showPrice = accessType === 'one_time' && !optionsBlockDirect
   // Fixed after creation. Null on legacy rows, which the checkout
   // already reads as AUD.
   const currencyLabel = (currency || 'AUD').toUpperCase()
@@ -117,7 +126,7 @@ function AccessPricingSection({
     <div>
       <label className="mb-2 block text-[12px] font-semibold text-black">Access</label>
 
-      {isPaymentOptionsMode && (
+      {optionsBlockDirect && (
         <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] leading-relaxed text-teal-900">
           <strong>A Payment Option prices this Pathway.</strong>{' '}
           Members buy it through the Options listed below, so there is no
@@ -129,7 +138,7 @@ function AccessPricingSection({
         </div>
       )}
 
-      {accessType === 'subscription' && !isPaymentOptionsMode && (
+      {accessType === 'subscription' && !optionsBlockDirect && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] leading-relaxed text-amber-900">
           <strong>This Pathway is on a monthly subscription.</strong>{' '}
           That arrangement is no longer sold — checkout accepts one-time
@@ -228,6 +237,38 @@ function AccessPricingSection({
             has already bought this Pathway keeps their access, and what
             they paid stays on their receipt.
           </p>
+
+          {/* Stage 2B — storing a price and offering it are different
+              acts, and this is the second one. It matters most when a
+              Payment Option also includes this Pathway: a creator
+              building a bundle can keep their individual price on sale,
+              or set it aside without losing the amount. */}
+          {simultaneousPurchasing && (
+            <div
+              className="mt-3 border-t pt-3"
+              style={{ borderColor: 'rgba(56,160,158,0.22)' }}
+            >
+              <label htmlFor="pathway-direct-purchase" className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  id="pathway-direct-purchase"
+                  type="checkbox"
+                  checked={directPurchase}
+                  onChange={(e) => setDirectPurchase(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                />
+                <span>
+                  <span className="block text-[13px] font-semibold text-navy-900">
+                    Sell this Pathway on its own
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.68)' }}>
+                    {directPurchase
+                      ? 'Members can buy it individually at the price above, as well as through any Payment Option that includes it.'
+                      : 'The price above is kept but not offered. Members can only reach this Pathway through a Payment Option that includes it.'}
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
         </div>
       )}
 
@@ -1156,6 +1197,13 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
   const [status, setStatus]             = useState<string>(pathway.status)
   const [accessType, setAccessType]     = useState<string>(pathway.access_type ?? 'free')
   const [pricingMode, setPricingMode]   = useState<string>(pathway.pricing_mode ?? 'legacy')
+  // Stage 2B — whether the saved price is actually on sale. Only
+  // meaningful, and only writable, once the gate is open; with it shut
+  // the server maintains this column itself and refuses the field.
+  const simultaneousPurchasing = pathway.multiple_purchase_options_enabled === true
+  const [directPurchase, setDirectPurchase] = useState<boolean>(
+    pathway.direct_purchase_enabled !== false,
+  )
   const [priceDollars, setPriceDollars] = useState(centsToDisplay(pathway.price_cents))
   const [currency, setCurrency]         = useState(pathway.currency ?? 'AUD')
   const [pathwayType, setPathwayType]   = useState<'guided_experience' | 'knowledge_guide'>(
@@ -1342,6 +1390,13 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
     }
     if (needsSinglePrice) {
       body.price_cents = Math.round(parseFloat(priceDollars) * 100)
+    }
+    // Sent only while the gate is open. With it shut the API refuses
+    // the field — deliberately, because the column is a maintained
+    // mirror there and accepting a value would report a choice as
+    // saved moments before overwriting it.
+    if (simultaneousPurchasing && needsSinglePrice) {
+      body.direct_purchase_enabled = directPurchase
     }
 
     try {
@@ -1587,6 +1642,9 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
             priceError={priceError}
             spaceSlug={spaceSlug}
             unlockOptionIds={unlockOptionIds}
+        simultaneousPurchasing={simultaneousPurchasing}
+        directPurchase={directPurchase}
+        setDirectPurchase={setDirectPurchase}
             setUnlockOptionIds={setUnlockOptionIds}
           />
         </div>

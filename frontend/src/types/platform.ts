@@ -272,6 +272,17 @@ export interface PathwayWithSteps {
   pathway_type?: 'guided_experience' | 'knowledge_guide'
   user_has_access: boolean
   payment_options: PaymentOptionSummary[]
+  /** Stage 2B — whether the Pathway's own price is on sale right now,
+   *  decided by the backend using the same rule the till applies.
+   *
+   *  Not derivable here: `price_cents` may be set on a Pathway nobody
+   *  may buy individually, because Stage 2A made preserving a price
+   *  the default rather than destroying it. Never infer an offer from
+   *  the presence of an amount. */
+  direct_purchase_available?: boolean
+  /** Stage 2B gate. While false this surface keeps branching on
+   *  `pricing_mode` exactly as it did before the flag existed. */
+  multiple_purchase_options_enabled?: boolean
   /** FIP4B1 — surfaces the plan-recovery banner and suppresses
    *  standard purchase CTAs when present. */
   member_plan_state?: MemberPlanState | null
@@ -923,6 +934,14 @@ export interface CreatorPathway {
   access_type: 'free' | 'included' | 'one_time' | 'subscription' | 'included_with_offer'
   pricing_mode: 'legacy' | 'payment_options'
   price_cents: number | null
+  /** Stage 2B — whether the saved price is an active offer. While the
+   *  gate below is off this is a mirror of pricing_mode + access_type
+   *  + price, maintained server-side, and the API refuses writes to
+   *  it. */
+  direct_purchase_enabled?: boolean
+  /** Stage 2B gate — whether individual purchase can run alongside
+   *  Payment Options yet. */
+  multiple_purchase_options_enabled?: boolean
   currency: string | null
   billing_interval: string | null
   is_sequential: boolean

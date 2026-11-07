@@ -88,6 +88,8 @@ from uuid import uuid4
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.services import pathway_direct_offer as _direct_offer
 from app.core.database import get_db
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.creator.routes import (
@@ -510,8 +512,33 @@ def _adopt_payment_options_pricing(
     Pathway settings, where choosing any Access option already writes
     ``pricing_mode='legacy'``.
 
+    Stage 2B
+    --------
+    Once ``pathway_multiple_purchase_options_enabled`` is on, this
+    function stops doing anything at all. Its whole purpose was to make
+    one price win when two existed, and §11 reverses that: *"A Payment
+    Option granting access to a Pathway must not automatically disable
+    the Pathway's direct purchase offer."* A creator building a bundle
+    should not have to notice that doing so quietly took their
+    individual price off sale.
+
+    Nothing is lost by stopping. The reason this existed — that the
+    till read ``pricing_mode`` and so ignored the Option — does not
+    apply to the direct door under the gate, which reads
+    ``direct_purchase_enabled`` instead; and the Option door never read
+    ``pricing_mode`` at all, so an Option has always been sellable
+    regardless of the mode. Each door prices itself from its own rows.
+
+    ``pricing_mode`` is deliberately left exactly as it is rather than
+    migrated or reset: with the gate open nothing reads it for the
+    direct door, and with the gate shut it must still be correct. That
+    is what makes the gate reversible.
+
     Returns the ids of the Pathways actually changed, for logging.
     """
+    if settings.pathway_multiple_purchase_options_enabled:
+        return []
+
     if _option_status(opt) != "published":
         return []
 
@@ -541,6 +568,11 @@ def _adopt_payment_options_pricing(
     )
     for pathway in rows:
         pathway.pricing_mode = PRICING_MODE_PAYMENT_OPTIONS
+        # The mode just moved, so the mirror moves with it — otherwise
+        # a Pathway taken off direct sale here would still read as
+        # "sold individually" the day the Stage 2B gate opened, putting
+        # a price back on sale that this very function retired.
+        _direct_offer.sync_direct_offer_flag(pathway)
     if rows:
         logger.info(
             "payment-options: pathways %s now priced by Option %s",

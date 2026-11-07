@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.public_url import public_app_url
 from app.services.rich_text import rich_text_to_plain
 from app.services import collective_header_image as _header_image
+from app.services import pathway_direct_offer as _direct_offer
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
@@ -4020,6 +4021,14 @@ def get_pathway_overview(
         ),
         user_has_access=user_has_access,
         payment_options=option_summaries,
+        # Stage 2B — the till's own answer, not the UI's guess. See
+        # ``services.pathway_direct_offer``.
+        direct_purchase_available=_direct_offer.direct_purchase_is_available(
+            pathway,
+        ),
+        multiple_purchase_options_enabled=(
+            settings.pathway_multiple_purchase_options_enabled
+        ),
         member_plan_state=_pathway_member_plan_state(current_user, pathway.id, db),
     )
 
