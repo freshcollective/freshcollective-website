@@ -76,6 +76,11 @@ export interface PaymentOptionRow {
     | 'archived'
     | 'unknown'
   purchasability_notes: string[]
+  /** Stage 3 — whether a standalone Gathering inclusion can be sold
+   *  yet. Mirrored from the backend so the editor's copy beside a
+   *  Gathering grant agrees with `purchasability`, which is derived
+   *  from the same shared rule. */
+  standalone_gathering_payment_options_enabled?: boolean
 }
 
 /** Delegates to the shared formatter so a creator reads an amount the

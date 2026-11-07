@@ -10,6 +10,7 @@ import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { countdownLabel, formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 import GatheringBookingClient from '@/components/spaces/GatheringBookingClient'
+import PathwayWaysToJoin from '@/components/commerce/PathwayWaysToJoin'
 import { GatheringRecognition } from '@/components/connections/InContextRecognition'
 import GatheringTicketPurchaseClient from '@/components/spaces/GatheringTicketPurchaseClient'
 import {
@@ -817,6 +818,29 @@ export default async function EventDetailPage({ params }: Props) {
                     ? 'All places taken'
                     : 'Open to everyone in this Collective'}
               </p>
+            )}
+
+            {/* Stage 3 — Payment Options that include this Gathering.
+                Rendered beneath the booking control rather than
+                instead of it: the individual ticket already has an
+                established affordance here and §9 asks not to
+                redesign one to make room for the other. Both choices
+                are visible, each priced from its own rows.
+
+                Empty while the feature is off, so this renders
+                nothing at all today — an Option carrying a Gathering
+                grant is unfulfillable and the backend drops it. */}
+            {!isPast && !isCancelled
+              && (event.payment_option_ways_to_join?.length ?? 0) > 0 && (
+              <div className="mt-5 border-t border-slate-200 pt-5">
+                <PathwayWaysToJoin
+                  spaceSlug={slug}
+                  arrangements={event.payment_option_ways_to_join ?? []}
+                  isAuthenticated={isAuthenticated}
+                  heading="Other ways to join"
+                  returnBase={`/spaces/${slug}/events/${event.id}`}
+                />
+              </div>
             )}
 
             {/* Series linkage in the booking panel — for members

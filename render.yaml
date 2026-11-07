@@ -382,6 +382,33 @@ services:
       # ``config.py:pathway_multiple_purchase_options_enabled``).
       - key: PATHWAY_MULTIPLE_PURCHASE_OPTIONS_ENABLED
         sync: false
+      # Stage 3 — standalone Gatherings inside a Payment Option.
+      # Dashboard-managed, ``sync: false`` for the same load-bearing
+      # reason as every flag above: this file must not be able to
+      # revert an operational decision.
+      #
+      # When false, an Option carrying any ``grant_kind='gathering'``
+      # grant is unfulfillable — hidden from members, refused at the
+      # till, and labelled as such in the creator editor. Unchanged
+      # since Stage 0.
+      #
+      # When true, such an Option becomes sellable: buying it holds a
+      # seat on every Gathering it grants, under the same Event row
+      # lock the ticket flow uses, *before* Stripe is contacted, and
+      # confirms those bookings on payment. A sold-out Gathering
+      # refuses the whole purchase rather than charging for a bundle
+      # that cannot be honoured.
+      #
+      # Do not enable without working through the activation
+      # checklist: the lifecycle branches for a failed later
+      # instalment and for partial refunds of a bundle are not
+      # implemented, and are recorded as product decisions rather
+      # than guessed at.
+      #
+      # Application default when the env var is absent is False (see
+      # ``config.py:standalone_gathering_payment_options_enabled``).
+      - key: STANDALONE_GATHERING_PAYMENT_OPTIONS_ENABLED
+        sync: false
       # ── Offerings rollout ────────────────────────────────────────
       # Two switches, both Dashboard-managed, for the same reason as
       # the two flags above: the Dashboard is the operational source

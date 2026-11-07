@@ -3435,6 +3435,20 @@ def get_event(
         "my_booking_status": my_booking_status,
         "can_book": can_book,
         "can_cancel_booking": can_cancel_booking,
+        # Stage 3 — Payment Options that include this Gathering, as
+        # Ways to join cards. Empty while
+        # ``standalone_gathering_payment_options_enabled`` is off:
+        # such an Option is unfulfillable, so the builder drops it and
+        # this surface shows the ticket alone, exactly as it does
+        # today. The direct ticket is excluded here — it has its own
+        # established booking control, which §9 says not to redesign.
+        "payment_option_ways_to_join": [
+            a.as_payload()
+            for a in _pathway_ways_to_join.build_gathering_ways_to_join(
+                db, event=event,
+            )
+            if a.source != "direct"
+        ],
         "recurrence_series_id": event.recurrence_series_id,
         "recurrence_label": event.recurrence_label,
         "recurrence_index": event.recurrence_index,

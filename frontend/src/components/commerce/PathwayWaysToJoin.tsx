@@ -47,14 +47,22 @@ export default function PathwayWaysToJoin({
   palette,
   isAuthenticated,
   heading = 'Ways to join',
+  returnBase,
 }: {
   spaceSlug: string
-  pathwaySlug: string
-  pathwayId: string
+  /** Only needed when the list can contain a direct card — a
+   *  Gathering's individual ticket keeps its own booking control, so
+   *  that surface passes neither of these. */
+  pathwaySlug?: string
+  pathwayId?: string
   arrangements: WaysToJoinArrangement[]
   palette?: CollectivePaletteMeta | null
   isAuthenticated: boolean
   heading?: string
+  /** Where Stripe returns the buyer. Defaults to the Pathway checkout
+   *  page; a Gathering passes its own page, because that is where the
+   *  purchase started and where the booking will show up. */
+  returnBase?: string
 }) {
   const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
 
@@ -80,7 +88,7 @@ export default function PathwayWaysToJoin({
           >
             {a.source === 'direct' ? (
               <DirectCard
-                pathwayId={pathwayId}
+                pathwayId={pathwayId ?? ''}
                 arrangement={a}
                 palette={palette}
                 isAuthenticated={isAuthenticated}
@@ -88,8 +96,10 @@ export default function PathwayWaysToJoin({
               />
             ) : (
               <OptionCard
-                spaceSlug={spaceSlug}
-                pathwaySlug={pathwaySlug}
+                returnBase={
+                  returnBase
+                  ?? `/spaces/${spaceSlug}/pathways/${pathwaySlug}/checkout`
+                }
                 arrangement={a}
                 palette={palette}
               />
@@ -163,10 +173,9 @@ function DirectCard({
 // ---------------------------------------------------------------------------
 
 function OptionCard({
-  spaceSlug, pathwaySlug, arrangement, palette,
+  returnBase, arrangement, palette,
 }: {
-  spaceSlug: string
-  pathwaySlug: string
+  returnBase: string
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
 }) {
@@ -210,7 +219,7 @@ function OptionCard({
             optionName={optionName}
             schedule={s}
             paymentOptionId={arrangement.payment_option_id ?? ''}
-            returnBase={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/checkout`}
+            returnBase={returnBase}
             palette={palette}
             withDivider={i > 0}
             ctaLabel={

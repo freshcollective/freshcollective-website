@@ -972,7 +972,23 @@ def unfulfillable_grant_reason(payment_option: PaymentOption) -> str | None:
     """
     grants = list(getattr(payment_option, "grants", None) or [])
     if any(g.grant_kind == GRANT_KIND_GATHERING for g in grants):
-        return UNFULFILLABLE_GATHERING_GRANT_DETAIL
+        # Stage 3 — the one rule stays one rule, and the flag moves it
+        # rather than adding a second opinion beside it. Both readers
+        # above still call this, so the member surface and the till
+        # cannot end up on different sides of the gate.
+        #
+        # Off: unchanged since Stage 0 — hidden, refused, and said so
+        # in the creator editor.
+        #
+        # On: fulfilment can honour it. ``purchase_fulfilment``
+        # resolves a ``BookingIntent`` per granted Gathering and the
+        # applier confirms the seat held at checkout; the capacity
+        # lock, hold expiry and duplicate-booking rules are the
+        # ticket flow's own.
+        from app.core.config import settings
+
+        if not settings.standalone_gathering_payment_options_enabled:
+            return UNFULFILLABLE_GATHERING_GRANT_DETAIL
     return None
 
 
@@ -1134,6 +1150,32 @@ def _create_stripe_session_and_txn(
         )
     snapshot = serialise_intent(snapshot_resolution.intent)
 
+    # ── Stage 3 — seats, before Stripe ────────────────────────────
+    #
+    # A Payment Option granting standalone Gatherings holds a seat on
+    # each of them now, under the Event row lock, using the ticket
+    # flow's own capacity rule. Deliberately here rather than at
+    # fulfilment: capacity has to be able to *refuse*, and refusing
+    # after the member has paid is not a refusal, it is a problem.
+    #
+    # Inside the caller's transaction, so if Stripe then fails, or the
+    # transaction insert below does, the rollback releases every seat
+    # taken here. A sold-out Gathering raises before any Stripe object
+    # exists at all.
+    #
+    # No-op unless the Stage 3 flag is on, and unreachable while it is
+    # off — ``unfulfillable_grant_reason`` refuses these Options long
+    # before checkout gets here.
+    from app.services import gathering_tickets as _gathering_tickets
+
+    option_seat_holds = _gathering_tickets.hold_option_seats_or_raise(
+        db,
+        payment_option=resolved.payment_option,
+        buyer=payer,
+        hold_ttl_minutes=settings.gathering_checkout_expiry_minutes,
+        now=now,
+    )
+
     # What is actually charged. When a discount applies, every downstream
     # figure — the Stripe line item, the ledger's gross, and the platform
     # fee derived from it — comes from this one number, so there is no
@@ -1252,6 +1294,13 @@ def _create_stripe_session_and_txn(
         updated_at=now,
     )
     db.add(txn)
+    db.flush()
+    # Link the seats to the purchase that is paying for them. Done
+    # after the insert because the transaction id does not exist until
+    # now; the webhook finds the holds by it, and so does
+    # ``release_hold_for_transaction`` when the member walks away.
+    for _hold in option_seat_holds:
+        _hold.payment_transaction_id = txn.id
     db.commit()
     return txn, session
 

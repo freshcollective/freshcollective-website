@@ -186,6 +186,11 @@ class SpacePaymentOptionRead(PaymentOptionResponse):
     # ``_derive_purchasability`` for the exact rule.
     purchasability: str = "unknown"
     purchasability_notes: list[str] = []
+    # Stage 3 — whether a standalone Gathering inclusion can be sold
+    # yet. Mirrored so the editor's own copy beside a Gathering grant
+    # agrees with the purchasability state above, which is derived
+    # from the same shared rule.
+    standalone_gathering_payment_options_enabled: bool = False
 
 
 class PaymentOptionReferenceOut(BaseModel):
@@ -450,6 +455,9 @@ def _serialise_option(db: Session, space: Space, opt: PaymentOption) -> dict:
         "schedules": schedules_payload,
         "purchasability": state,
         "purchasability_notes": notes,
+        "standalone_gathering_payment_options_enabled": (
+            settings.standalone_gathering_payment_options_enabled
+        ),
     }
 
 

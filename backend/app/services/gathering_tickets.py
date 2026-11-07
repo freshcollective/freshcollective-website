@@ -858,16 +858,31 @@ def release_hold_for_transaction(
     if txn.payout_model != PayoutModel.connect.value:
         txn.payout_status = PayoutStatus.not_applicable
 
-    booking = (
+    # ``.all()``, not ``.first()``. A direct ticket purchase holds one
+    # seat, but a Stage 3 Payment Option can hold several against the
+    # same transaction — and releasing only the first would strand the
+    # rest, each still consuming capacity until the stale-hold sweep
+    # happened to reach it. Unchanged for the single-booking case.
+    bookings = (
         db.query(EventBooking)
         .filter(EventBooking.payment_transaction_id == transaction_id)
-        .first()
+        .all()
     )
-    if booking is not None and booking.status == BookingStatus.pending_payment:
+    released = 0
+    for booking in bookings:
+        if booking.status != BookingStatus.pending_payment:
+            continue
         booking.status = BookingStatus.cancelled
         booking.cancelled_at = datetime.utcnow()
         booking.hold_expires_at = None
         booking.note = (booking.note or "") + f"\n[{reason}]"
+        released += 1
+
+    if released > 1:
+        logger.info(
+            "release_hold_for_transaction: released %d seats for txn=%s (%s)",
+            released, transaction_id, reason,
+        )
 
     db.flush()
 
@@ -1084,3 +1099,140 @@ def sweep_stale_holds(db: Session, *, event_id: str) -> int:
         if outcome == VERIFY_CANCELLED:
             resolved += 1
     return resolved
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — seats held for a Payment Option purchase
+# ---------------------------------------------------------------------------
+
+
+def hold_option_seats_or_raise(
+    db: Session,
+    *,
+    payment_option,
+    buyer: User,
+    hold_ttl_minutes: int,
+    now: datetime | None = None,
+) -> list[EventBooking]:
+    """Hold a seat on every standalone Gathering a Payment Option grants.
+
+    Called at checkout, **before Stripe**, so a sold-out Gathering
+    refuses the purchase instead of taking the money and discovering
+    the problem at fulfilment. Returns the hold rows so the caller can
+    link them to its PaymentTransaction once that exists.
+
+    All or nothing
+    --------------
+    A bundle that cannot be fully honoured is not sold. The caller runs
+    this inside its own transaction, so a ``SoldOut`` part-way through
+    rolls back the holds already taken here — §7's "partial fulfilment
+    must not leave the member charged for an incomplete purchase",
+    enforced by refusing before the charge rather than compensating
+    after it.
+
+    Deadlocks
+    ---------
+    Events are locked in sorted id order. Two members buying overlapping
+    bundles concurrently therefore take the same locks in the same
+    sequence, which is what stops them deadlocking against each other.
+    Nothing else in this module locks more than one Event at a time, so
+    this ordering is the whole of the protocol.
+
+    Already booked
+    --------------
+    A Gathering the buyer already holds a confirmed booking for is
+    skipped, not refused and not double-booked. They keep the booking
+    they have, the bundle still sells, and no second seat is consumed —
+    the purchase simply grants less than its full list to this
+    particular member, which is the correct reading of "handle
+    overlapping access".
+
+    This reuses the ticket flow's capacity rule rather than restating
+    it: the same ``capacity_used``, the same row lock, the same
+    ``pending_payment`` hold that counts against capacity until it is
+    confirmed or swept.
+    """
+    from app.core.config import settings
+    from app.services.checkout_orchestration import GRANT_KIND_GATHERING
+
+    if not settings.standalone_gathering_payment_options_enabled:
+        # Defensive. ``unfulfillable_grant_reason`` already refuses
+        # these Options upstream while the flag is off, so reaching
+        # here would mean that guard had been bypassed.
+        return []
+
+    at = now or datetime.utcnow()
+
+    grants = list(getattr(payment_option, "grants", None) or [])
+    event_ids = sorted({
+        g.event_id for g in grants
+        if g.grant_kind == GRANT_KIND_GATHERING and g.event_id
+    })
+    if not event_ids:
+        return []
+
+    # Rule F — a banned person buys nothing here either. Before any
+    # seat is locked, so a refusal consumes no capacity.
+    from app.services.checkout_orchestration import check_not_banned_or_raise
+
+    space = getattr(payment_option, "space", None)
+    if space is not None:
+        check_not_banned_or_raise(db, user=buyer, space=space)
+
+    held: list[EventBooking] = []
+    for event_id in event_ids:
+        db.execute(
+            text("SELECT id FROM events WHERE id = :id FOR UPDATE"),
+            {"id": event_id},
+        )
+        event = db.get(Event, event_id)
+        if event is None:
+            raise GatheringUnavailable(
+                "One of the Gatherings in this option is no longer available."
+            )
+
+        existing = (
+            db.query(EventBooking)
+            .filter(
+                EventBooking.event_id == event_id,
+                EventBooking.user_id == buyer.id,
+            )
+            .first()
+        )
+        if existing is not None and existing.status == BookingStatus.confirmed:
+            continue
+
+        if existing is None or existing.status == BookingStatus.cancelled:
+            used = capacity_used(db, event_id)
+            if event.capacity is not None and used >= event.capacity:
+                raise SoldOut(
+                    f"“{event.title}” is sold out, so this option "
+                    "cannot be purchased right now."
+                )
+
+        expiry = at + timedelta(minutes=hold_ttl_minutes)
+        if existing is None:
+            booking = EventBooking(
+                id=str(uuid.uuid4()),
+                event_id=event_id,
+                user_id=buyer.id,
+                status=BookingStatus.pending_payment,
+                booked_at=at,
+                source="payment_option",
+                hold_expires_at=expiry,
+            )
+            db.add(booking)
+            held.append(booking)
+        else:
+            # An expired hold, or a cancelled row, reused in place —
+            # ``(event_id, user_id)`` is unique, so there is no second
+            # row to insert.
+            existing.status = BookingStatus.pending_payment
+            existing.cancelled_at = None
+            existing.booked_at = at
+            existing.source = "payment_option"
+            existing.hold_expires_at = expiry
+            held.append(existing)
+
+    db.flush()
+    return held

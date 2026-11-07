@@ -74,6 +74,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.access_pass import (
@@ -97,9 +98,11 @@ from app.models.offering import (
     OfferingEntitlementStatus,
 )
 from app.models.platform import (
+    BookingStatus,
     EntitlementSource,
     EntitlementStatus,
     Event,
+    EventBooking,
     EventSeries,
     Pathway,
     PathwayEntitlement,
@@ -288,6 +291,12 @@ class FulfilmentResult:
     entitlements: list[PathwayEntitlement] = field(default_factory=list)
     access_passes: list[AccessPass] = field(default_factory=list)
     offering_entitlements: list[OfferingEntitlement] = field(default_factory=list)
+    #: Stage 3 — EventBookings confirmed by this purchase.
+    bookings: list[EventBooking] = field(default_factory=list)
+    #: Why a seat could not be confirmed. Non-empty forces ``status``
+    #: to BLOCKED: somebody has paid and is not booked, which a human
+    #: must resolve. Never silently discarded.
+    booking_errors: list[str] = field(default_factory=list)
     membership_created: bool = False
     # True when this purchase produced a FIRST-TIME membership — not a
     # reactivation, and not an existing member buying again.
@@ -545,20 +554,37 @@ def resolve_intent_from_grants(
     """
     grants = list(payment_option.grants)
 
-    # ── Unsupported: Gathering grants ─────────────────────────────
+    # ── Gathering grants ──────────────────────────────────────────
+    #
+    # Stage 3. Behind ``standalone_gathering_payment_options_enabled``;
+    # with the flag off this is the Stage 0 refusal, unchanged, and the
+    # webhook marks the purchase ``blocked`` rather than pretending a
+    # bundle it cannot apply was applied.
+    #
+    # With the flag on each grant becomes one ``BookingIntent``. The
+    # intent carries only the event id: the *seat* was already secured
+    # at checkout by ``gathering_tickets``' capacity lock, so there is
+    # nothing to decide here — the applier confirms a hold that exists
+    # rather than booking afresh. That split is deliberate. Capacity
+    # must be refused before the member is charged, and fulfilment runs
+    # after; a fulfilment-time booking would be the one place an
+    # oversell could still happen.
     gathering_grants = [
         g for g in grants if g.grant_kind == GRANT_KIND_GATHERING
     ]
     if gathering_grants:
-        return FulfilmentResolution(
-            fatal_error=(
-                f"PaymentOption {payment_option.id!r} carries "
-                f"{len(gathering_grants)} grant(s) of kind='gathering'; "
-                "standalone Gathering PaymentOption fulfilment is not "
-                "yet activated. The existing paid-Gathering ticket-hold "
-                "flow remains authoritative for those purchases."
-            ),
-        )
+        from app.core.config import settings
+
+        if not settings.standalone_gathering_payment_options_enabled:
+            return FulfilmentResolution(
+                fatal_error=(
+                    f"PaymentOption {payment_option.id!r} carries "
+                    f"{len(gathering_grants)} grant(s) of kind='gathering'; "
+                    "standalone Gathering PaymentOption fulfilment is not "
+                    "yet activated. The existing paid-Gathering ticket-hold "
+                    "flow remains authoritative for those purchases."
+                ),
+            )
 
     pathway_grants = [
         g for g in grants if g.grant_kind == GRANT_KIND_PATHWAY
@@ -669,11 +695,23 @@ def resolve_intent_from_grants(
                 space_id=space_by_offering.get(og.offering_id or "", ""),
             ))
 
+    # Stage 3 — one BookingIntent per granted Gathering, deduplicated
+    # on event id. A creator can add the same Gathering twice through
+    # two grant rows; the booking table's unique ``(event_id, user_id)``
+    # makes the second a no-op anyway, but emitting it once keeps the
+    # intent an honest description of what the purchase produces.
+    seen_events: set[str] = set()
+    bookings: list[BookingIntent] = []
+    for g in gathering_grants:
+        if g.event_id and g.event_id not in seen_events:
+            seen_events.add(g.event_id)
+            bookings.append(BookingIntent(event_id=g.event_id))
+
     return FulfilmentResolution(
         intent=FulfilmentIntent(
             entitlements=tuple(entitlements),
             access_passes=tuple(access_passes),
-            bookings=(),
+            bookings=tuple(bookings),
             offerings=tuple(offerings),
         ),
     )
@@ -1252,6 +1290,116 @@ def _link_singular_entitlement(
         txn.entitlement_id = entitlements[0].id
 
 
+def _apply_booking(
+    db: Session,
+    *,
+    intent: "BookingIntent",
+    txn: PaymentTransaction | None,
+    payer_user_id: str,
+    now: datetime,
+) -> tuple[EventBooking | None, str | None]:
+    """Confirm the seat this purchase paid for.
+
+    Returns ``(booking, error)``. A non-None error means the purchase
+    cannot be fulfilled and the caller must mark it blocked rather than
+    report success.
+
+    The seat was already secured
+    ----------------------------
+    Capacity is decided at checkout, under the Event row lock, before
+    Stripe is contacted — see
+    ``gathering_tickets.hold_option_seats_or_raise``. So the normal
+    path here is to flip an existing ``pending_payment`` hold to
+    ``confirmed``, not to book afresh. That split is the whole safety
+    argument: an oversell must be refused before the member is charged,
+    and this function runs after.
+
+    Idempotency
+    -----------
+    Stripe retries webhooks, and ``(event_id, user_id)`` is unique on
+    the booking table, so there is exactly one row to find. An already
+    ``confirmed`` row is returned untouched — which also covers the
+    member who already held a ticket for this Gathering by some other
+    route and then bought a bundle containing it. They are not booked
+    twice and they do not lose the booking they had.
+
+    When the hold is missing
+    ------------------------
+    It should not be, but the honest answer is not to pretend. A seat
+    is taken here under the same row lock and the same capacity rule,
+    and if the Gathering is genuinely full the purchase is reported
+    blocked so a human resolves it. Silently dropping the booking would
+    leave somebody charged for a Gathering they are not booked into,
+    with nothing anywhere saying so.
+    """
+    booking = (
+        db.query(EventBooking)
+        .filter(
+            EventBooking.event_id == intent.event_id,
+            EventBooking.user_id == payer_user_id,
+        )
+        .with_for_update()
+        .first()
+    )
+
+    if booking is not None and booking.status == BookingStatus.confirmed:
+        # Already done — a retried webhook, or a seat they already had.
+        return booking, None
+
+    if booking is not None and booking.status == BookingStatus.pending_payment:
+        booking.status = BookingStatus.confirmed
+        booking.hold_expires_at = None
+        booking.booked_at = booking.booked_at or now
+        if txn is not None:
+            booking.payment_transaction_id = txn.id
+        # Flushed explicitly rather than left to the caller's commit:
+        # a later BookingIntent in the same bundle reads capacity, and
+        # an unflushed confirmation would not be counted.
+        db.flush()
+        return booking, None
+
+    # No usable row: either none at all, or a cancelled one to revive.
+    # Both need a seat, so both take the lock and the capacity rule.
+    from app.services.gathering_tickets import capacity_used
+
+    db.execute(
+        text("SELECT id FROM events WHERE id = :id FOR UPDATE"),
+        {"id": intent.event_id},
+    )
+    event = db.get(Event, intent.event_id)
+    if event is None:  # pragma: no cover — validate_intent checked
+        return None, f"event {intent.event_id!r} no longer exists"
+
+    used = capacity_used(db, intent.event_id)
+    if event.capacity is not None and used >= event.capacity:
+        return None, (
+            f"event {intent.event_id!r} is at capacity; the seat this "
+            "purchase paid for was not held"
+        )
+
+    if booking is None:
+        booking = EventBooking(
+            id=str(uuid4()),
+            event_id=intent.event_id,
+            user_id=payer_user_id,
+            status=BookingStatus.confirmed,
+            booked_at=now,
+            source="payment_option",
+            payment_transaction_id=txn.id if txn is not None else None,
+        )
+        db.add(booking)
+    else:
+        booking.status = BookingStatus.confirmed
+        booking.cancelled_at = None
+        booking.hold_expires_at = None
+        booking.booked_at = now
+        booking.source = "payment_option"
+        if txn is not None:
+            booking.payment_transaction_id = txn.id
+    db.flush()
+    return booking, None
+
+
 def apply_intent(
     db: Session,
     *,
@@ -1434,13 +1582,30 @@ def apply_intent(
                 granted_at=now,
             )
 
-    # ── Bookings (reserved for future standalone-Gathering path) ──
-    if intent.bookings:  # pragma: no cover — resolver doesn't produce these yet
-        logger.warning(
-            "purchase_fulfilment: BookingIntents present but standalone-Gathering "
-            "PaymentOption fulfilment is not yet activated; ignoring %d booking(s)",
-            len(intent.bookings),
+    # ── Bookings ──────────────────────────────────────────────────
+    #
+    # Stage 3. Applied last, after access, for the same reason the
+    # ordering above exists: nothing here depends on a booking, and a
+    # booking failure is the one outcome that must stop the purchase
+    # being reported as fulfilled.
+    for b_intent in intent.bookings:
+        booking, error = _apply_booking(
+            db,
+            intent=b_intent,
+            txn=txn,
+            payer_user_id=payer_user_id,
+            now=now,
         )
+        if error is not None:
+            logger.error(
+                "purchase_fulfilment: booking blocked txn=%s event=%s: %s",
+                txn.id if txn is not None else "-", b_intent.event_id, error,
+            )
+            result.status = FulfilmentStatus.BLOCKED
+            result.booking_errors.append(error)
+            continue
+        if booking is not None:
+            result.bookings.append(booking)
 
     return result
 

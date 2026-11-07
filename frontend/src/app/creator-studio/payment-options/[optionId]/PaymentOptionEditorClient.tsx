@@ -452,7 +452,16 @@ function IncludedSection({
       {option.grants.length > 0 ? (
         <ul className="mt-5 space-y-3">
           {option.grants.map((g) => (
-            <GrantRow key={g.id} grant={g} onSave={updateGrant} onRemove={removeGrant} busy={busy} />
+            <GrantRow
+              key={g.id}
+              grant={g}
+              onSave={updateGrant}
+              onRemove={removeGrant}
+              busy={busy}
+              gatheringsPurchasable={
+                option.standalone_gathering_payment_options_enabled === true
+              }
+            />
           ))}
         </ul>
       ) : (
@@ -473,12 +482,14 @@ function IncludedSection({
 }
 
 function GrantRow({
-  grant, onSave, onRemove, busy,
+  grant, onSave, onRemove, busy, gatheringsPurchasable,
 }: {
   grant: Grant
   onSave: (grantId: string, patch: Partial<Grant>) => Promise<void>
   onRemove: (grantId: string) => Promise<void>
   busy: boolean
+  /** Stage 3 gate, from the server. */
+  gatheringsPurchasable: boolean
 }) {
   const [spw, setSpw] = useState<string>(grant.sessions_per_week?.toString() ?? '')
   const [tot, setTot] = useState<string>(grant.total_sessions?.toString() ?? '')
@@ -516,13 +527,27 @@ function GrantRow({
         </button>
       </div>
 
-      {grant.grant_kind === 'gathering' && (
+      {grant.grant_kind === 'gathering' && !gatheringsPurchasable && (
         <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-900">
           <strong>Not purchasable yet.</strong> Payments for individual
           Gatherings through Payment Options are coming soon. This inclusion
           is saved, but members cannot buy this arrangement \u2014 and while
           it is here, no payment method on this option can be purchased. To
           sell this Gathering now, set a ticket price in the Gathering editor.
+        </p>
+      )}
+
+      {/* Stage 3 — once Gathering inclusions can be sold, the note
+          stops being a warning and becomes the thing a creator needs
+          to know: buying this option books the member in, and a
+          Gathering with a capacity can run out. */}
+      {grant.grant_kind === 'gathering' && gatheringsPurchasable && (
+        <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11.5px] leading-relaxed text-slate-700">
+          Buying this option books the member into this Gathering. If it
+          has a capacity and is full, the option cannot be purchased
+          until a place opens \u2014 so members are never charged for a
+          Gathering they cannot attend. Its own ticket price, if it has
+          one, keeps selling alongside this.
         </p>
       )}
 

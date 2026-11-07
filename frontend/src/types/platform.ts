@@ -472,6 +472,10 @@ export interface EventSummary {
 }
 
 export interface EventDetail extends EventSummary {
+  /** Stage 3 — Payment Options that include this Gathering, as Ways to
+   *  join cards. Empty while the feature is off, and never contains
+   *  the individual ticket: that keeps its own booking control. */
+  payment_option_ways_to_join?: WaysToJoinArrangement[]
   location_url: string | null
   // recording_url inherited from EventSummary
   /** Full venue address + arrival instructions — the server scrubs

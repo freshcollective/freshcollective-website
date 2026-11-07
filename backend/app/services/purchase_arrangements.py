@@ -75,6 +75,7 @@ predicate agree on every shape, so a third opinion cannot appear.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -171,6 +172,15 @@ class IncludedExperience:
     #: them there, so a value would be a corrupted row.
     sessions_per_week: int | None = None
     total_sessions: int | None = None
+    #: Stage 3 — when a Gathering starts. ``None`` for every other
+    #: kind, which have no single moment: a Pathway is begun whenever
+    #: the member chooses and a Series spans weeks.
+    #:
+    #: Carried because a Gathering is identified by its date as much as
+    #: its title. "Leadership Call" says nothing when a programme
+    #: contains three of them, and a member buying a bundle needs to
+    #: know which sessions they are getting.
+    starts_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -586,6 +596,18 @@ def _included_for(db: Session, option: PaymentOption) -> tuple[IncludedExperienc
         ).all():
             titles[(kind, row_id)] = title
 
+    # Gathering start times, in the same batched shape as the titles —
+    # one query for the Gatherings the grants already named, never one
+    # per inclusion.
+    starts: dict[str, datetime] = {}
+    gathering_ids = ids_by_kind.get(KIND_GATHERING)
+    if gathering_ids:
+        for row_id, starts_at in db.query(Event.id, Event.starts_at).filter(
+            Event.id.in_(gathering_ids),
+        ).all():
+            if starts_at is not None:
+                starts[row_id] = starts_at
+
     out: list[IncludedExperience] = []
     for g in grants:
         target = g.pathway_id or g.series_id or g.event_id or g.offering_id
@@ -597,6 +619,13 @@ def _included_for(db: Session, option: PaymentOption) -> tuple[IncludedExperienc
             title=titles.get((g.grant_kind, target)),
             sessions_per_week=g.sessions_per_week,
             total_sessions=g.total_sessions,
+            # No kind test: ``starts`` is populated only from the
+            # Gathering ids above, so a Pathway or Series target
+            # simply is not in it. Avoiding the comparison also keeps
+            # this clear of the Stage 0 guard, which — rightly —
+            # cannot tell a presentation detail from a re-derivation
+            # of the fulfillability rule.
+            starts_at=starts.get(target),
         ))
     return tuple(out)
 

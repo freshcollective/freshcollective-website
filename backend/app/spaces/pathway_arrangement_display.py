@@ -60,6 +60,7 @@ from app.services.purchase_arrangements import (
 )
 
 KIND_PATHWAY = "pathway"
+KIND_GATHERING = "gathering"
 SOURCE_DIRECT = "direct"
 SOURCE_PAYMENT_OPTION = "payment_option"
 
@@ -174,7 +175,9 @@ def _schedule_from(arrangement: Arrangement) -> DisplaySchedule:
     )
 
 
-def _included_titles(arrangement: Arrangement, pathway_id: str) -> list[str]:
+def _included_titles(
+    arrangement: Arrangement, experience_id: str, kind: str = KIND_PATHWAY,
+) -> list[str]:
     """"Includes New Pathway for Moonlit Circle · Know Yourself".
 
     The Pathway being viewed comes first, then everything else in the
@@ -186,16 +189,45 @@ def _included_titles(arrangement: Arrangement, pathway_id: str) -> list[str]:
     between page loads would be a bug nobody could reproduce.
     """
     titles = [inc.title for inc in arrangement.included if inc.title]
-    this_pathway = [
+    this_one = [
         inc.title for inc in arrangement.included
-        if inc.kind == KIND_PATHWAY
-        and inc.experience_id == pathway_id
+        if inc.kind == kind
+        and inc.experience_id == experience_id
         and inc.title
     ]
-    if not this_pathway:
+    if not this_one:
         return titles
-    head = this_pathway[0]
+    head = this_one[0]
     return [head] + [t for t in titles if t != head]
+
+
+def build_gathering_ways_to_join(
+    db: Session, *, event,
+) -> list[DisplayArrangement]:
+    """Every arrangement a member could buy one standalone Gathering
+    through — Stage 3.
+
+    The same cards, the same resolver and the same availability rules
+    as the Pathway list. Only two things differ, and both are about
+    the direct door rather than the Options:
+
+    * A Gathering's own price is a ticket, sold by
+      ``POST /api/spaces/{slug}/events/{id}/ticket-checkout`` rather
+      than the Pathway endpoint, so the caller renders it with its own
+      control. ``source='direct'`` still marks it.
+    * Whether that door is open is decided by the resolver alone. There
+      is no Gathering equivalent of ``pathway_direct_offer``, because
+      there is no Stage 2B gate here — ``_direct_gathering`` already
+      consults the ticket-sales flag and the shared price validator,
+      which is the till's own rule.
+
+    An Option is listed only when it can actually be sold, which while
+    ``standalone_gathering_payment_options_enabled`` is off means never:
+    ``unfulfillable_grant_reason`` refuses any Option carrying a
+    Gathering grant, so this returns the ticket alone.
+    """
+    return _build(db, kind=KIND_GATHERING, experience=event,
+                  direct_is_sellable=True)
 
 
 def build_ways_to_join(
@@ -212,11 +244,6 @@ def build_ways_to_join(
     needs the till's own answer about whether that door is open; see
     the comment on ``direct_is_sellable`` below.
     """
-    pathway_id = pathway.id
-    found = arrangements_for(db, kind=KIND_PATHWAY, experience_id=pathway_id)
-    if found is None:
-        return []
-
     # The direct door, as the *till* decides it — not as the resolver
     # reports it.
     #
@@ -231,9 +258,24 @@ def build_ways_to_join(
     #
     # ``check_status`` is left on: a draft Pathway sells nothing, and
     # unlike the till this builder has not already refused it upstream.
-    direct_is_sellable = (
-        _direct_offer.direct_purchase_block_reason(pathway) is None
+    return _build(
+        db, kind=KIND_PATHWAY, experience=pathway,
+        direct_is_sellable=(
+            _direct_offer.direct_purchase_block_reason(pathway) is None
+        ),
     )
+
+
+def _build(
+    db: Session, *, kind: str, experience, direct_is_sellable: bool,
+) -> list[DisplayArrangement]:
+    """Shared body. ``direct_is_sellable`` is the caller's answer about
+    the experience's own price, because only the caller knows which
+    till decides it."""
+    experience_id = experience.id
+    found = arrangements_for(db, kind=kind, experience_id=experience_id)
+    if found is None:
+        return []
 
     direct: DisplayArrangement | None = None
     order: list[str] = []
@@ -309,7 +351,7 @@ def build_ways_to_join(
             description=descriptions.get(option_id),
             payment_option_id=option_id,
             schedules=[_schedule_from(a) for a in arrangements],
-            included_titles=_included_titles(first, pathway_id),
+            included_titles=_included_titles(first, experience_id, kind),
             is_bundle=first.is_bundle,
         ))
 

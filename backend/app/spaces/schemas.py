@@ -638,6 +638,11 @@ class EventDetail(EventSummary):
     # ``venue_address`` (the full street address) stays behind the
     # attendee gate.
     venue_locality: str | None = None
+    # Stage 3 — Payment Options that include this Gathering, as Ways to
+    # join cards. The individual ticket is deliberately absent: it has
+    # its own booking control on this surface already, and §9 says not
+    # to redesign an established interface to make room for a sibling.
+    payment_option_ways_to_join: list[WaysToJoinArrangementOut] = []
 
 
 class SeriesBookingResponse(BaseModel):

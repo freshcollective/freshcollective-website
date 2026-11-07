@@ -242,6 +242,27 @@ class Settings(BaseSettings):
     # otherwise.
     pathway_multiple_purchase_options_enabled: bool = False
 
+    # Stage 3 — standalone Gatherings inside a Payment Option. Hard-off
+    # by default.
+    #
+    # Flag OFF: a Payment Option carrying any ``grant_kind='gathering'``
+    # grant is unfulfillable, exactly as it has been since Stage 0 — it
+    # is hidden from members, refused at the till, and the creator
+    # editor says so. Nothing about that changes.
+    #
+    # Flag ON: such an Option becomes sellable, and buying it holds a
+    # seat on every Gathering it grants before Stripe is contacted,
+    # then confirms those bookings on payment. The existing capacity
+    # lock, hold expiry and duplicate-booking rules are reused rather
+    # than restated — a second reservation system is the one thing
+    # §7 rules out.
+    #
+    # Deliberately its own flag rather than riding on
+    # ``standalone_gathering_sales_enabled``: that one governs direct
+    # ticket sales, which are live. This governs a different purchase
+    # route to the same seat, and the decision to open it is separate.
+    standalone_gathering_payment_options_enabled: bool = False
+
     # Creator Plan guard — when enabled, paid checkout against a
     # creator-owned Space with no active/trialing CreatorSubscription
     # raises NoActiveCreatorPlanError (translated to HTTP 409 by every
