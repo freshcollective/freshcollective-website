@@ -85,6 +85,15 @@ class ActivityType(str, enum.Enum):
     private_message_received = "private_message_received"
     booking_confirmed        = "booking_confirmed"
     payment_successful       = "payment_successful"
+    #: Stage 3E.2 — a purchase completed and its access is ready.
+    #:
+    #: Deliberately about the *purchase*, not about each thing it
+    #: granted. Somebody buying a four-Pathway programme gets one
+    #: entry saying their programme is ready, not four saying a
+    #: Pathway unlocked — and it is emphatically not the same event as
+    #: the creator having published any of them, which happened on its
+    #: own date for its own reasons.
+    purchase_fulfilled       = "purchase_fulfilled"
     payment_failed           = "payment_failed"
 
     # ── Conversations ─────────────────────────────────────────────────
@@ -130,6 +139,7 @@ CATEGORY_OF: dict[ActivityType, ActivityCategory] = {
     ActivityType.mention_received:         ActivityCategory.personal,
     ActivityType.private_message_received: ActivityCategory.personal,
     ActivityType.booking_confirmed:        ActivityCategory.personal,
+    ActivityType.purchase_fulfilled:       ActivityCategory.personal,
     ActivityType.payment_successful:       ActivityCategory.personal,
     ActivityType.payment_failed:           ActivityCategory.personal,
     # conversations
@@ -181,6 +191,7 @@ DEFAULT_PRIORITY_OF: dict[ActivityType, ActivityPriority] = {
     ActivityType.mention_received:         ActivityPriority.important,
     ActivityType.private_message_received: ActivityPriority.important,
     ActivityType.booking_confirmed:        ActivityPriority.important,
+    ActivityType.purchase_fulfilled:       ActivityPriority.important,
     ActivityType.payment_successful:       ActivityPriority.important,
     ActivityType.gathering_changed:        ActivityPriority.important,
     ActivityType.gathering_reminder:       ActivityPriority.important,
@@ -244,6 +255,8 @@ RECENT_MOMENTS: frozenset[ActivityType] = frozenset({
     ActivityType.reply_received,
     ActivityType.mention_received,
     ActivityType.booking_confirmed,
+    # ...and things you did that produced something to go and use.
+    ActivityType.purchase_fulfilled,
 
     # Conversations — community life
     ActivityType.conversation_created,

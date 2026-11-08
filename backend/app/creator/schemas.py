@@ -2327,6 +2327,19 @@ class CreatorPaymentTransactionOut(BaseModel):
     # had failed, or that one had.
     can_refund: bool = False
     refund_blocked_reason: str | None = None
+    # Stage 3E.2 — how many future Gathering places this payment is
+    # currently holding.
+    #
+    # The refund dialog used to say a refund "does not automatically
+    # change the member's access", which stopped being true once a
+    # full refund began releasing future seats. Saying it anyway would
+    # be wrong in the worst direction: a creator refunds believing the
+    # member keeps their place, and the place is gone.
+    #
+    # Counted from the bookings rather than guessed from the
+    # transaction's label, so a purchase with no future Gathering in
+    # it promises nothing about bookings at all.
+    future_gathering_booking_count: int = 0
     # Human-readable provider label — populated from the model row's
     # ``payment_provider`` enum. Frontend uses this to distinguish
     # Stripe purchases from manual (bank transfer / cash /

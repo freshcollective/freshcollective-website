@@ -274,3 +274,90 @@ def record_series_published(
         logger.exception(
             "activity: series published failed for %s", getattr(series, "id", "?"),
         )
+
+
+def record_purchase_fulfilled(
+    db: Session,
+    *,
+    member_user_id: str,
+    space_id: str | None,
+    option_name: str | None,
+    included: list[dict] | None,
+    dedupe_id: str,
+) -> None:
+    """A member's purchase completed and its access is ready.
+
+    One entry per purchase, not one per thing it granted. Somebody
+    buying a four-Pathway programme should see "your programme is
+    ready", not four separate unlock notices — the count belongs in
+    the sentence, not in the feed.
+
+    Not the same event as publication
+    ---------------------------------
+    A creator publishing a Pathway and a member gaining access to it
+    are different things that happen on different days for different
+    reasons. ``pathway_published`` is shared activity about the
+    Collective; this is personal activity about one purchase, carrying
+    its own timestamp. Neither is rewritten to look like the other,
+    which is why a Pathway published five days ago still says so while
+    today's purchase says today.
+
+    Private by construction. ``create_for_recipients`` writes
+    ``recipient_user_id``, and the feed query filters on it, so a
+    purchase is visible to the person who made it and to nobody else.
+
+    ``actor_user_id`` is deliberately left unset. The helper skips a
+    self-notify when the actor is also the recipient — correct for "X
+    replied to you", wrong here, where the member is precisely who
+    should be told.
+
+    ``dedupe_id`` is the payment transaction. Stripe redelivers, and a
+    second entry for one purchase is the failure mode to avoid.
+    """
+    try:
+        # Idempotency, explicitly. ``create_for_recipients`` has no
+        # dedupe key of its own — it is a fan-out helper — so a
+        # redelivered webhook would write a second entry for one
+        # purchase. The payment transaction is the stable identity.
+        from app.models.activity import Activity
+
+        dedupe_key = f"purchase_fulfilled:{dedupe_id}"
+        already = (
+            db.query(Activity.id)
+            .filter(Activity.dedupe_key == dedupe_key)
+            .first()
+        )
+        if already is not None:
+            return
+
+        counts: dict[str, int] = {}
+        for item in included or []:
+            kind = (item or {}).get("kind")
+            if kind:
+                counts[kind] = counts.get(kind, 0) + 1
+
+        rows = ActivityService.create_for_recipients(
+            db,
+            event_type=ActivityType.purchase_fulfilled,
+            recipient_user_ids=[member_user_id],
+            collective_id=space_id,
+            payload={
+                "title": option_name or "Your purchase",
+                "included": included or [],
+                "counts": counts,
+                # Where "Explore what's included" goes. The purchase
+                # summary names every experience with its own link;
+                # the Option itself has no page.
+                "url": "/your-world",
+            },
+        )
+        # The column carries a unique partial index, so it is the
+        # backstop behind the check above rather than a second
+        # mechanism: two concurrent deliveries cannot both land.
+        for row in rows:
+            row.dedupe_key = dedupe_key
+        db.flush()
+    except Exception:
+        logger.exception(
+            "activity: purchase_fulfilled failed for txn %s", dedupe_id,
+        )

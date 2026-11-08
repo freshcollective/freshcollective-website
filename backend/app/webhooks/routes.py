@@ -1089,6 +1089,35 @@ def _handle_checkout_completed(
                 # outcome, and the Option may be edited later.
                 fulfilment_result=result,
             )
+            # Stage 3E.2 — and the same purchase in Your World, as
+            # personal activity. One entry for the purchase, carrying
+            # its own timestamp: the Pathway's publication moment is a
+            # different event and stays where it is.
+            try:
+                from app.services import (
+                    activity_producers as _activity_producers,
+                )
+                from app.services.purchase_included_summary import (
+                    build_included_summary,
+                )
+
+                _included = build_included_summary(
+                    db, result=result, payer_user_id=payer_user_id,
+                ).as_payload()
+                _activity_producers.record_purchase_fulfilled(
+                    db,
+                    member_user_id=payer_user_id,
+                    space_id=txn.space_id,
+                    option_name=(
+                        payment_option.name if payment_option else None
+                    ),
+                    included=_included,
+                    dedupe_id=txn.id,
+                )
+            except Exception:  # pragma: no cover — never block fulfilment
+                logger.exception(
+                    "purchase activity failed for txn=%s", txn.id,
+                )
             # And the other side of it: the Collective's leaders hear that
             # a paid signup succeeded. One per purchase — this is the
             # fulfilment of the SALE, not of the entitlements or the

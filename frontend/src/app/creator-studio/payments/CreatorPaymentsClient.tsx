@@ -52,6 +52,9 @@ interface CreatorPaymentTransaction {
    *  now answers the question too. */
   can_refund?: boolean
   refund_blocked_reason?: string | null
+  /** Stage 3E.2 — future places this payment is holding, for the
+   *  refund dialog's guidance. */
+  future_gathering_booking_count?: number
   payment_provider: string | null
   payer_user_id: string | null
   payer_name: string | null
@@ -999,6 +1002,9 @@ export default function CreatorPaymentsClient({
       {refundingRow && (
         <RefundPaymentModal
           txnId={refundingRow.id}
+          futureGatheringBookingCount={
+            refundingRow.future_gathering_booking_count ?? 0
+          }
           memberLabel={
             refundingRow.payer_name
             || refundingRow.payer_email

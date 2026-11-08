@@ -797,6 +797,7 @@ export default async function EventDetailPage({ params }: Props) {
                 <WaysToJoinCard title="Individual ticket" palette={palette}>
                   <div className="mt-2">
                     <GatheringTicketPurchaseClient
+                      headingProvided
                       spaceSlug={slug}
                       eventId={event.id}
                       eventTitle={event.title}

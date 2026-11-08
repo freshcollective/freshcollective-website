@@ -54,6 +54,14 @@ const GENERIC_ERROR = 'We couldn\u2019t open checkout. Please try again.'
 // ---------------------------------------------------------------------------
 
 interface Props {
+  /** Stage 3E.2 — the surface already names this card.
+   *
+   *  Inside Ways to join the card carries the title "Individual
+   *  ticket", so this component's own "Buy your ticket" heading sat
+   *  above a button saying the same words. The state headings — sold
+   *  out, ended, not yet open — are kept either way: those say
+   *  something a label cannot. */
+  headingProvided?: boolean
   spaceSlug: string
   eventId: string
   eventTitle: string
@@ -74,6 +82,7 @@ export default function GatheringTicketPurchaseClient({
   spaceSlug, eventId, eventTitle, priceCents, currency,
   salesEnabled, isAuthenticated, isPast, isCancelled,
   initialMyBookingStatus, spotsRemaining, capacity,
+  headingProvided = false,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -235,36 +244,30 @@ export default function GatheringTicketPurchaseClient({
         <p className="mb-4 text-[15px] font-semibold text-navy-900">
           Ticket sales aren&rsquo;t open yet
         </p>
-      ) : (
+      ) : headingProvided ? null : (
         <p className="mb-4 text-[15px] font-semibold text-navy-900">
           Buy your ticket
         </p>
       )}
 
-      {/* Price + availability facts */}
-      <div className="mb-4 space-y-2 text-[13px] text-black">
+      {/* Price + availability.
+          Stated rather than tabulated: "Price | A$45" over
+          "Places | 5 of 10 remaining" was a two-column table for two
+          facts, which reads as a form. The facts are unchanged. */}
+      <div className="mb-4 space-y-1 text-[13px] text-black">
         {priceCents != null && currency && (
-          <div className="flex items-center justify-between">
-            <span>Price</span>
-            <span className="font-medium text-navy-800">
-              {formatMoneyCents(priceCents, currency)}
-            </span>
-          </div>
+          <p className="text-[15px] font-semibold text-navy-900">
+            {formatMoneyCents(priceCents, currency)} once
+          </p>
         )}
         {capacity == null ? (
-          <div className="flex items-center justify-between">
-            <span>Places</span>
-            <span className="font-medium text-navy-800">No capacity limit</span>
-          </div>
+          <p>No capacity limit</p>
         ) : spotsRemaining != null && (
-          <div className="flex items-center justify-between">
-            <span>Places</span>
-            <span className="font-medium text-navy-800">
-              {spotsRemaining === 0
-                ? 'Sold out'
-                : `${spotsRemaining} of ${capacity} remaining`}
-            </span>
-          </div>
+          <p>
+            {spotsRemaining === 0
+              ? 'Sold out'
+              : `${spotsRemaining} place${spotsRemaining === 1 ? '' : 's'} remaining`}
+          </p>
         )}
       </div>
 

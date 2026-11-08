@@ -42,6 +42,14 @@ interface Props {
   currency: string
   grossAmountCents: number
   alreadyRefundedCents: number
+  /** Stage 3E.2 — future Gathering places this payment is holding,
+   *  counted by the backend from the bookings themselves.
+   *
+   *  The guidance below used to say a refund never changes access.
+   *  That stopped being true when a full refund began releasing future
+   *  seats, and it was wrong in the worst direction: a creator refunds
+   *  believing the member keeps their place, and the place is gone. */
+  futureGatheringBookingCount?: number
   /** Current payout state — determines whether a pre-submit
    *  manual-recovery warning is shown. For non-admin creators the
    *  UI hides the button entirely when this is ``paid``/``held``;
@@ -77,6 +85,7 @@ function fmtMoney(cents: number, currency: string): string {
 export default function RefundPaymentModal({
   txnId, memberLabel, purchaseLabel, currency,
   grossAmountCents, alreadyRefundedCents, payoutStatus, advisory = 'none',
+  futureGatheringBookingCount = 0,
   onClose, onRefunded,
 }: Props) {
   const refundable = Math.max(0, grossAmountCents - alreadyRefundedCents)
@@ -312,11 +321,39 @@ export default function RefundPaymentModal({
           className="mt-4 rounded-xl px-4 py-3 text-[12.5px] leading-relaxed"
           style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', color: '#075985' }}
         >
-          <p>
-            Refunding this payment does not automatically change the
-            member&apos;s access. Use the separate Revoke access action
-            if access should also be removed.
-          </p>
+          {mode === 'partial' ? (
+            <p>
+              A partial refund changes the money only. Gathering
+              bookings stay confirmed and access stays as it is. Use
+              the separate Revoke access action if access should also
+              be removed.
+            </p>
+          ) : (futureGatheringBookingCount ?? 0) > 0 ? (
+            <>
+              <p>
+                This purchase is holding{' '}
+                {futureGatheringBookingCount === 1
+                  ? 'a place in a Gathering that hasn\u2019t happened yet'
+                  : `places in ${futureGatheringBookingCount} Gatherings that haven\u2019t happened yet`}
+                . A full refund will cancel{' '}
+                {futureGatheringBookingCount === 1 ? 'that booking' : 'those bookings'}{' '}
+                and return the{' '}
+                {futureGatheringBookingCount === 1 ? 'place' : 'places'} to
+                whoever wants {futureGatheringBookingCount === 1 ? 'it' : 'them'}.
+              </p>
+              <p className="mt-2">
+                Any Pathways or Offerings included stay with the member.
+                Use the separate Revoke access action if that should
+                change too.
+              </p>
+            </>
+          ) : (
+            <p>
+              Refunding this payment does not automatically change the
+              member&apos;s access. Use the separate Revoke access action
+              if access should also be removed.
+            </p>
+          )}
         </div>
 
         {error && (

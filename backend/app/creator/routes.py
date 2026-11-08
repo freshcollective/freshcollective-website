@@ -9215,6 +9215,31 @@ def list_creator_payments(
     # and the refund endpoint already make.
     viewer_is_admin = getattr(current_user, "role", None) == "admin"
 
+    # Stage 3E.2 — future places each payment is holding, for the
+    # refund dialog's guidance. One grouped query for the page rather
+    # than one per row, and counted from the bookings themselves: a
+    # transaction's type says nothing about whether a Gathering it
+    # funded is still to come.
+    from app.models.platform import BookingStatus as _BkStatus, Event as _Ev
+    from app.models.platform import EventBooking as _Bk
+
+    _txn_ids = [r.id for r in rows]
+    future_bookings_by_txn: dict[str, int] = {}
+    if _txn_ids:
+        _now = datetime.utcnow()
+        for _txn_id, _count in (
+            db.query(_Bk.payment_transaction_id, func.count(_Bk.id))
+            .join(_Ev, _Ev.id == _Bk.event_id)
+            .filter(
+                _Bk.payment_transaction_id.in_(_txn_ids),
+                _Bk.status == _BkStatus.confirmed,
+                _Ev.starts_at > _now,
+            )
+            .group_by(_Bk.payment_transaction_id)
+            .all()
+        ):
+            future_bookings_by_txn[_txn_id] = int(_count)
+
     out: list[CreatorPaymentTransactionOut] = []
     for r in rows:
         payer = users.get(r.payer_user_id) if r.payer_user_id else None
@@ -9257,6 +9282,7 @@ def list_creator_payments(
             connect=_connect_detail(r),
             can_refund=_refund_eligibility(r, viewer_is_admin)[0],
             refund_blocked_reason=_refund_blocked_copy(r, viewer_is_admin),
+            future_gathering_booking_count=future_bookings_by_txn.get(r.id, 0),
             # FIP4C — plan context. NULL on pay-in-full rows.
             purchase_plan_id=r.purchase_plan_id,
             installment_number=r.installment_number,
