@@ -283,14 +283,46 @@ def _purchase_state(txn) -> str:
     return "pending"
 
 
-def _live_pathway_status(db, *, user_id: str, pathway_id: str) -> str:
-    from app.services.pathway_access import has_active_pathway_entitlement
+def _live_pathway_status(
+    db, *, user_id: str, pathway_id: str, purchased_at=None,
+) -> str:
+    """What this member can say about this Pathway now.
 
-    if has_active_pathway_entitlement(
-        db, user_id=user_id, pathway_id=pathway_id,
+    Three answers, and the middle one is the point. A bundle may
+    include a Pathway somebody already owned — that is a perfectly
+    ordinary thing to buy, and telling them it has just been unlocked
+    would be wrong about their own collection. So an entitlement that
+    predates the purchase reads as already theirs.
+
+    ``created_at`` against the transaction's own timestamp, with a
+    minute of slack: the webhook writes the grant moments after the
+    charge, and a strict comparison would call genuinely new access
+    "already in your collection" whenever the clocks disagreed
+    slightly.
+    """
+    from datetime import timedelta
+
+    from app.models.platform import EntitlementStatus, PathwayEntitlement
+
+    ent = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id == pathway_id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .order_by(PathwayEntitlement.created_at.asc())
+        .first()
+    )
+    if ent is None:
+        return "No longer available"
+    if (
+        purchased_at is not None
+        and ent.created_at is not None
+        and ent.created_at < purchased_at - timedelta(minutes=1)
     ):
-        return "Your access is ready"
-    return "No longer available"
+        return "Already in your collection"
+    return "Your access is ready"
 
 
 def _live_booking_status(db, *, user_id: str, event_id: str) -> str:
@@ -369,6 +401,7 @@ def build_purchase_summary(db: Session, *, txn, user_id: str) -> PurchaseSummary
                     url=f"/spaces/{slug}/pathways/{pathway.slug}",
                     status=_live_pathway_status(
                         db, user_id=user_id, pathway_id=pathway.id,
+                        purchased_at=txn.created_at,
                     ),
                 ))
             for b in intent.bookings:

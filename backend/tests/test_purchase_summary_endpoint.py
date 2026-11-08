@@ -379,3 +379,156 @@ class TestPaymentArrangement:
         assert out.installments_paid == 1
         assert out.total_expected_cents == 9000
         assert out.interval == "month"
+
+
+class TestASeriesPurchase:
+    """Stage 3E.4 — Sophie's prepared test: a Series she does not have,
+    bundled with two Pathways she already owns.
+
+    The two things this must not do are claim she has booked the
+    Series' sessions, and announce Pathways she already had as newly
+    unlocked.
+    """
+
+    def _series(self, db, space, *, title="Sunday Slow Down"):
+        from app.models.platform import EventSeries
+
+        s = EventSeries(
+            id=_uid("es"), space_id=space.id,
+            slug=f"es-{uuid.uuid4().hex[:8]}", title=title,
+            starts_at=datetime.utcnow() + timedelta(days=7),
+            ends_at=datetime.utcnow() + timedelta(days=70),
+            status="published",
+        )
+        db.add(s); db.flush()
+        return s
+
+    def _purchase_with_series(
+        self, db, space, buyer, series, pathways, *, bought_at=None,
+    ):
+        """A transaction whose snapshot carries a Series pass and some
+        Pathway grants — the Sunday Slow Down Series shape."""
+        from app.services.purchase_fulfilment import AccessPassIntent
+
+        intent = FulfilmentIntent(
+            entitlements=tuple(
+                EntitlementIntent(
+                    pathway_id=p.id, starts_at=None, ends_at=None,
+                )
+                for p in pathways
+            ),
+            access_passes=(
+                AccessPassIntent(
+                    pass_type="term_pass",
+                    valid_from=None, valid_until=None,
+                    total_credits=None, credits_per_week=None,
+                    eligible_series_id=series.id,
+                    eligible_pathway_id=None,
+                ),
+            ),
+        )
+        t = PaymentTransaction(
+            id=_uid("txn"),
+            transaction_type=PaymentTransactionType.member_pathway_purchase,
+            status=PaymentTransactionStatus.succeeded,
+            fulfilment_status=PaymentFulfilmentStatus.applied,
+            payment_provider=PaymentProvider.stripe,
+            payer_user_id=buyer.id, space_id=space.id, currency="AUD",
+            gross_amount_cents=500, platform_fee_basis_points=0,
+            platform_fee_cents=0, net_creator_amount_cents=500,
+            payment_option_id=_option(db, space, name="Sunday Slow Down Series").id,
+            provider_checkout_session_id=_uid("cs"),
+            snapshot_grants_json=serialise_intent(intent),
+        )
+        if bought_at is not None:
+            t.created_at = bought_at
+        db.add(t); db.flush()
+        return t
+
+    def test_the_series_and_both_pathways_are_listed(
+        self, db, space, make_user,
+    ):
+        buyer = make_user()
+        series = self._series(db, space)
+        a = _pathway(db, space, title="A Little Guide to Slowing Down")
+        b = _pathway(db, space, title="A Quiet Evening Reset")
+        txn = self._purchase_with_series(db, space, buyer, series, [a, b])
+
+        out = _get(db, buyer, txn.provider_checkout_session_id)
+        assert out.option_name == "Sunday Slow Down Series"
+        titles = [i["title"] for i in out.items]
+        assert "Sunday Slow Down" in titles
+        assert "A Little Guide to Slowing Down" in titles
+        assert "A Quiet Evening Reset" in titles
+
+    def test_series_access_is_not_a_booking(
+        self, db, space, make_user,
+    ):
+        """§6: access to the Series and a confirmed place in each
+        session are different things."""
+        buyer = make_user()
+        series = self._series(db, space)
+        txn = self._purchase_with_series(db, space, buyer, series, [])
+
+        [item] = _get(db, buyer, txn.provider_checkout_session_id).items
+        assert item["kind"] == "event_series"
+        assert "book" in item["status"].lower()
+        assert "confirmed" not in item["status"].lower()
+        assert "attending" not in item["status"].lower()
+
+    def test_pathways_she_already_owned_say_so(
+        self, db, space, make_user,
+    ):
+        """§7: Sophie has both Pathways already. They belong in the
+        list because she bought them — but not as a first unlock."""
+        buyer = make_user()
+        series = self._series(db, space)
+        owned = _pathway(db, space, title="A Little Guide to Slowing Down")
+        # Granted well before the purchase.
+        ent = PathwayEntitlement(
+            id=_uid("pe"), user_id=buyer.id, pathway_id=owned.id,
+            space_id=space.id, source="one_time_purchase",
+            status=EntitlementStatus.active,
+        )
+        db.add(ent); db.flush()
+        ent.created_at = datetime.utcnow() - timedelta(days=30)
+        db.flush()
+
+        txn = self._purchase_with_series(
+            db, space, buyer, series, [owned],
+        )
+        out = _get(db, buyer, txn.provider_checkout_session_id)
+        pathway_item = next(i for i in out.items if i["kind"] == "pathway")
+        assert pathway_item["status"] == "Already in your collection"
+        assert pathway_item["url"], "it still needs a working link"
+
+    def test_access_granted_by_this_purchase_reads_as_new(
+        self, db, space, make_user,
+    ):
+        """The other side of the same distinction."""
+        buyer = make_user()
+        series = self._series(db, space)
+        fresh = _pathway(db, space, title="Brand New Pathway")
+        ent = PathwayEntitlement(
+            id=_uid("pe"), user_id=buyer.id, pathway_id=fresh.id,
+            space_id=space.id, source="included",
+            status=EntitlementStatus.active,
+        )
+        db.add(ent); db.flush()
+
+        txn = self._purchase_with_series(
+            db, space, buyer, series, [fresh],
+            bought_at=datetime.utcnow() - timedelta(seconds=5),
+        )
+        out = _get(db, buyer, txn.provider_checkout_session_id)
+        pathway_item = next(i for i in out.items if i["kind"] == "pathway")
+        assert pathway_item["status"] == "Your access is ready"
+
+    def test_a_series_only_purchase_lists_just_the_series(
+        self, db, space, make_user,
+    ):
+        buyer = make_user()
+        series = self._series(db, space)
+        txn = self._purchase_with_series(db, space, buyer, series, [])
+        out = _get(db, buyer, txn.provider_checkout_session_id)
+        assert len(out.items) == 1

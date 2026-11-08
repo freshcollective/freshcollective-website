@@ -15,6 +15,7 @@ import SeriesSchedule from './SeriesSchedule'
 import RegularSessions from './RegularSessions'
 import AccessPending from './AccessPending'
 import { SidebarWaysToJoin, SidebarYourAccess } from './SeriesSidebar'
+import PurchaseConfirmation from '@/components/commerce/PurchaseConfirmation'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayAboutBlock } from '@/types/platform'
 import { formatCalendarDate } from '@/lib/dateTime'
@@ -42,7 +43,7 @@ interface Props {
    *  ``returnBase`` in ``SeriesSidebar``). It is the moment "Reserve
    *  your regular sessions" is most useful, so the card opens expanded
    *  rather than waiting to be found. */
-  searchParams?: Promise<{ checkout?: string }>
+  searchParams?: Promise<{ checkout?: string; session_id?: string }>
 }
 
 interface AccessSummary {
@@ -128,7 +129,13 @@ export default async function MemberGatheringSeriesPage({
   params, searchParams,
 }: Props) {
   const { slug, 'series-slug': seriesSlug } = await params
-  const justPurchased = (await searchParams)?.checkout === 'success'
+  const _search = await searchParams
+  const justPurchased = _search?.checkout === 'success'
+  // Stage 3E.4 — present only when a purchase has just returned here.
+  // ``PurchaseScheduleButton`` already appends it for every Payment
+  // Option checkout, this page included, so nothing about the return
+  // routing changed to make this work.
+  const purchaseSessionId = _search?.session_id ?? null
 
   const [detail, aboutBlocks, options, space]: [
     SeriesDetail | null,
@@ -273,6 +280,17 @@ export default async function MemberGatheringSeriesPage({
             payment_problem, access is still live during grace so
             the access summary renders alongside the banner. */}
         <aside className="lg:col-start-2 lg:row-start-1 lg:row-end-3 lg:sticky lg:top-6 lg:self-start">
+          {/* Stage 3E.4 — what the member actually bought, above the
+              Series' own panels. A Series purchase can include
+              Pathways, and until now this page could only speak for
+              the Series. Temporary: it is here because a session id
+              came back, and it goes when they close it. */}
+          {purchaseSessionId && (
+            <PurchaseConfirmation
+              sessionId={purchaseSessionId}
+              palette={collectivePalette}
+            />
+          )}
           {detail.member_plan_state && (
             <div className="mb-4">
               <PlanRecoveryBanner

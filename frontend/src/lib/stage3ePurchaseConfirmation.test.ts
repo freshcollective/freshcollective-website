@@ -23,6 +23,8 @@ const CONF = join(SRC, 'components', 'commerce', 'PurchaseConfirmation.tsx')
 const SCHEDULE_BTN = join(SRC, 'components', 'commerce', 'PurchaseScheduleButton.tsx')
 const EVENT_PAGE = join(SRC, 'app', 'spaces', '[slug]', 'events', '[eventId]', 'page.tsx')
 const PATHWAY_CHECKOUT = join(SRC, 'app', 'spaces', '[slug]', 'pathways', '[pathway-slug]', 'checkout', 'page.tsx')
+const SERIES_PAGE = join(SRC, 'app', 'spaces', '[slug]', 'gathering-series', '[series-slug]', 'page.tsx')
+const SERIES_SIDEBAR = join(SRC, 'app', 'spaces', '[slug]', 'gathering-series', '[series-slug]', 'SeriesSidebar.tsx')
 const CHECKOUT_BTN = join(SRC, 'components', 'checkout', 'CheckoutButton.tsx')
 
 const read = (p: string) => readFileSync(p, 'utf8')
@@ -163,6 +165,7 @@ describe('one component, a small integration per surface', () => {
   for (const [label, file] of [
     ['the Gathering page', EVENT_PAGE],
     ['the Pathway checkout page', PATHWAY_CHECKOUT],
+    ['the Gathering Series page', SERIES_PAGE],
   ] as const) {
     it(`${label} renders it only when a session comes back`, () => {
       const src = code(file)
@@ -175,10 +178,32 @@ describe('one component, a small integration per surface', () => {
   it('and neither page gained a permanent purchase panel', () => {
     // §10: the confirmation is specific to a completed purchase, not
     // part of the page.
-    for (const file of [EVENT_PAGE, PATHWAY_CHECKOUT]) {
+    for (const file of [EVENT_PAGE, PATHWAY_CHECKOUT, SERIES_PAGE]) {
       const src = code(file)
       assert.match(src, /\{(purchaseSessionId|session_id) && \(/)
     }
+  })
+
+  it('the Series page keeps everything it already did', () => {
+    // §9: the confirmation sits above the Series' own panels; it
+    // replaces none of them.
+    const src = code(SERIES_PAGE)
+    assert.match(src, /<SidebarWaysToJoin/)
+    assert.match(src, /<SidebarYourAccess/)
+    assert.match(src, /justPurchased/)
+  })
+
+  it('and its Ways to join is untouched', () => {
+    const src = code(SERIES_SIDEBAR)
+    assert.match(src, /function CompactOptionCard/)
+    assert.ok(!/PurchaseConfirmation/.test(src))
+  })
+
+  it('the Series return already carried a session id', () => {
+    // No checkout routing changed for this: every Payment Option
+    // checkout has appended one since 3E.3, this page included.
+    const src = code(SCHEDULE_BTN)
+    assert.match(src, /session_id=\{CHECKOUT_SESSION_ID\}/)
   })
 })
 
