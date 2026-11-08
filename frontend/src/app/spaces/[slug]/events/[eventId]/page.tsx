@@ -11,6 +11,7 @@ import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { countdownLabel, formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 import GatheringBookingClient from '@/components/spaces/GatheringBookingClient'
 import PathwayWaysToJoin, { WaysToJoinCard } from '@/components/commerce/PathwayWaysToJoin'
+import PurchaseConfirmation from '@/components/commerce/PurchaseConfirmation'
 import { GatheringRecognition } from '@/components/connections/InContextRecognition'
 import GatheringTicketPurchaseClient from '@/components/spaces/GatheringTicketPurchaseClient'
 import {
@@ -27,6 +28,10 @@ import {
 
 interface Props {
   params: Promise<{ slug: string; eventId: string }>
+  /** Stage 3E.3 — `session_id` comes back from a Payment Option
+   *  checkout so the confirmation can ask which purchase it was. A
+   *  trigger to look it up, never proof of anything. */
+  searchParams?: Promise<{ session_id?: string }>
 }
 
 const LOCATION_LABEL: Record<string, string> = {
@@ -223,7 +228,7 @@ function DetailRow({
 
 // ---------------------------------------------------------------------------
 
-export default async function EventDetailPage({ params }: Props) {
+export default async function EventDetailPage({ params, searchParams }: Props) {
   const { slug, eventId } = await params
   const [space, event, aboutBlocks, me]: [
     Awaited<ReturnType<typeof getSpace>>,
@@ -338,6 +343,8 @@ export default async function EventDetailPage({ params }: Props) {
   // safe. Panel remains obviously "this Collective's colour" — just
   // deepened, not neutralised.
   const palette: CollectivePaletteMeta | null = space?.colour_palette ?? null
+  // Stage 3E.3 — present only when a purchase has just returned here.
+  const purchaseSessionId = (await searchParams)?.session_id ?? null
   // Stage 3D — are there Payment Options to show beside the ticket?
   // When there are, the panel becomes one "Ways to join" list; when
   // there aren't, every existing state renders exactly as before.
@@ -747,6 +754,16 @@ export default async function EventDetailPage({ params }: Props) {
             first on mobile so a phone visitor sees "can I attend"
             immediately after the hero. */}
         <aside className="order-1 lg:sticky lg:top-6 lg:order-2">
+          {/* Stage 3E.3 — what the member actually bought, above the
+              panel for the single experience they happened to return
+              to. Temporary: it is here because a session id came back
+              in the URL, and it goes when they close it. */}
+          {purchaseSessionId && (
+            <PurchaseConfirmation
+              sessionId={purchaseSessionId}
+              palette={palette}
+            />
+          )}
           {/* Clean white action surface — deliberately quieter than
               the palette panel on the left so the CTA reads as the
               member's action, not just more branding. Only the

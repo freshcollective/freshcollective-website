@@ -204,3 +204,233 @@ def build_included_summary(
 
 
 __all__ = ["IncludedItem", "IncludedSummary", "build_included_summary"]
+
+
+# ---------------------------------------------------------------------------
+# Stage 3E.3 — the same summary, rebuilt later from a transaction
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PurchaseSummary:
+    """A completed purchase, as its buyer should see it."""
+
+    transaction_id: str
+    option_name: str | None
+    space_name: str | None
+    space_slug: str | None
+    #: ``pending`` | ``fulfilling`` | ``fulfilled`` | ``failed`` | ``refunded``
+    state: str
+    amount_cents: int | None
+    currency: str | None
+    payment_mode: str
+    installments_paid: int | None = None
+    installments_expected: int | None = None
+    installment_amount_cents: int | None = None
+    total_expected_cents: int | None = None
+    interval: str | None = None
+    items: list[IncludedItem] = field(default_factory=list)
+
+    def as_payload(self) -> dict:
+        return {
+            "transaction_id": self.transaction_id,
+            "option_name": self.option_name,
+            "space_name": self.space_name,
+            "space_slug": self.space_slug,
+            "state": self.state,
+            "amount_cents": self.amount_cents,
+            "currency": self.currency,
+            "payment_mode": self.payment_mode,
+            "installments_paid": self.installments_paid,
+            "installments_expected": self.installments_expected,
+            "installment_amount_cents": self.installment_amount_cents,
+            "total_expected_cents": self.total_expected_cents,
+            "interval": self.interval,
+            "items": [i.as_payload() for i in self.items],
+        }
+
+
+def _purchase_state(txn) -> str:
+    """Where this purchase has got to, from the ledger alone.
+
+    The ``?checkout=success`` parameter in the return URL is a trigger
+    to ask, never an answer: a member can reach that URL by pressing
+    Back, by bookmarking it, or by editing it. Only these rows know.
+    """
+    from app.models.payment import (
+        PaymentFulfilmentStatus, PaymentTransactionStatus,
+    )
+
+    status = txn.status
+    if status in (
+        PaymentTransactionStatus.refunded,
+        PaymentTransactionStatus.partially_refunded,
+    ):
+        return "refunded"
+    if status in (
+        PaymentTransactionStatus.failed, PaymentTransactionStatus.cancelled,
+    ):
+        return "failed"
+    if status == PaymentTransactionStatus.pending:
+        return "pending"
+    if status == PaymentTransactionStatus.succeeded:
+        # Paid, but the grants may still be landing — the webhook does
+        # both in one transaction, so this is a narrow window, and
+        # saying "ready" during it would be a promise we cannot keep.
+        if txn.fulfilment_status == PaymentFulfilmentStatus.applied:
+            return "fulfilled"
+        return "fulfilling"
+    return "pending"
+
+
+def _live_pathway_status(db, *, user_id: str, pathway_id: str) -> str:
+    from app.services.pathway_access import has_active_pathway_entitlement
+
+    if has_active_pathway_entitlement(
+        db, user_id=user_id, pathway_id=pathway_id,
+    ):
+        return "Your access is ready"
+    return "No longer available"
+
+
+def _live_booking_status(db, *, user_id: str, event_id: str) -> str:
+    booking = (
+        db.query(EventBooking)
+        .filter(
+            EventBooking.event_id == event_id,
+            EventBooking.user_id == user_id,
+        )
+        .first()
+    )
+    if booking is None:
+        return "No place reserved"
+    if booking.status == BookingStatus.confirmed:
+        return "Your place is confirmed"
+    if booking.status == BookingStatus.cancelled:
+        # A refunded purchase, or a member who cancelled. Saying
+        # "confirmed" here is the specific thing §12 rules out.
+        return "This booking was cancelled"
+    return "Your place is being confirmed"
+
+
+def build_purchase_summary(db: Session, *, txn, user_id: str) -> PurchaseSummary:
+    """Rebuild a purchase for its buyer, later.
+
+    Two different sources, deliberately.
+
+    **What was purchased** comes from ``txn.snapshot_grants_json`` —
+    the intent serialised when the price was agreed. A creator may have
+    edited the Payment Option since, and the member bought what they
+    bought.
+
+    **What is true now** comes from live rows. A refunded purchase
+    whose Gathering booking was cancelled must not keep saying the
+    place is confirmed, however the purchase looked on the day. So the
+    contents are historical and the statuses are current, which is the
+    only combination that stays honest.
+    """
+    from app.models.payment_option import PaymentOption
+    from app.models.purchase_plan import PurchasePlan
+    from app.services.purchase_fulfilment import deserialise_intent
+
+    option = (
+        db.query(PaymentOption)
+        .filter(PaymentOption.id == txn.payment_option_id)
+        .first()
+        if txn.payment_option_id else None
+    )
+    space = db.query(Space).filter(Space.id == txn.space_id).first()
+
+    plan = (
+        db.query(PurchasePlan)
+        .filter(PurchasePlan.id == txn.purchase_plan_id)
+        .first()
+        if getattr(txn, "purchase_plan_id", None) else None
+    )
+
+    items: list[IncludedItem] = []
+    snapshot = getattr(txn, "snapshot_grants_json", None)
+    if snapshot:
+        try:
+            intent = deserialise_intent(snapshot)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("purchase summary: snapshot unreadable")
+            intent = None
+        if intent is not None:
+            for ent in intent.entitlements:
+                pathway = db.get(Pathway, ent.pathway_id)
+                if pathway is None:
+                    continue
+                slug = _space_slug(db, pathway.space_id)
+                if not slug:
+                    continue
+                items.append(IncludedItem(
+                    kind=KIND_PATHWAY, title=pathway.title,
+                    url=f"/spaces/{slug}/pathways/{pathway.slug}",
+                    status=_live_pathway_status(
+                        db, user_id=user_id, pathway_id=pathway.id,
+                    ),
+                ))
+            for b in intent.bookings:
+                event = db.get(Event, b.event_id)
+                if event is None:
+                    continue
+                slug = _space_slug(db, event.space_id)
+                if not slug:
+                    continue
+                items.append(IncludedItem(
+                    kind=KIND_GATHERING, title=event.title,
+                    url=f"/spaces/{slug}/events/{event.id}",
+                    status=_live_booking_status(
+                        db, user_id=user_id, event_id=event.id,
+                    ),
+                    starts_at=event.starts_at,
+                ))
+            for ap in intent.access_passes:
+                series_id = getattr(ap, "eligible_series_id", None)
+                if not series_id:
+                    continue
+                series = db.get(EventSeries, series_id)
+                if series is None:
+                    continue
+                slug = _space_slug(db, series.space_id)
+                if not slug:
+                    continue
+                items.append(IncludedItem(
+                    kind=KIND_SERIES, title=series.title,
+                    url=f"/spaces/{slug}/gathering-series/{series.slug}",
+                    status="Your pass is active — book the sessions you want",
+                ))
+            for off in intent.offerings:
+                from app.models.offering import Offering
+
+                offering = db.get(Offering, off.offering_id)
+                if offering is None:
+                    continue
+                slug = _space_slug(db, offering.space_id)
+                if not slug:
+                    continue
+                items.append(IncludedItem(
+                    kind=KIND_OFFERING, title=offering.title,
+                    url=f"/spaces/{slug}/offerings/{offering.slug}",
+                    status="Ready to open",
+                ))
+
+    return PurchaseSummary(
+        transaction_id=txn.id,
+        option_name=(option.name if option else None),
+        space_name=(space.name if space else None),
+        space_slug=(space.slug if space else None),
+        state=_purchase_state(txn),
+        amount_cents=txn.gross_amount_cents,
+        currency=txn.currency,
+        payment_mode="plan" if plan is not None else "single",
+        installments_paid=(plan.installments_paid if plan else None),
+        installments_expected=(plan.installments_expected if plan else None),
+        installment_amount_cents=(
+            plan.installment_amount_cents if plan else None
+        ),
+        total_expected_cents=(plan.total_expected_cents if plan else None),
+        interval=(plan.stripe_interval if plan else None),
+        items=items,
+    )

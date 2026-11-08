@@ -37,6 +37,8 @@ from slowapi import Limiter
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.checkout.schemas import (
     DiscountPreviewRequest,
@@ -58,7 +60,7 @@ from app.services.connect_payout_model import (
 )
 from app.core.rate_limit import client_ip_for_rate_limit
 from app.models.access_pass import AccessPass, AccessPassStatus
-from app.models.payment import PaymentTransactionType
+from app.models.payment import PaymentTransaction, PaymentTransactionType
 from app.models.payment_option import PaymentOption
 from app.models.platform import (
     EntitlementStatus,
@@ -1380,3 +1382,80 @@ def create_offering_checkout_session(
         transaction_id=unified.transaction_id,
         free=unified.free,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage 3E.3 — what did I just buy?
+# ---------------------------------------------------------------------------
+
+
+class PurchaseSummaryResponse(BaseModel):
+    """One member's view of one purchase. Read-only."""
+
+    transaction_id: str
+    option_name: str | None = None
+    space_name: str | None = None
+    space_slug: str | None = None
+    state: str
+    amount_cents: int | None = None
+    currency: str | None = None
+    payment_mode: str = "single"
+    installments_paid: int | None = None
+    installments_expected: int | None = None
+    installment_amount_cents: int | None = None
+    total_expected_cents: int | None = None
+    interval: str | None = None
+    items: list[dict] = []
+
+
+@router.get("/purchase-summary", response_model=PurchaseSummaryResponse)
+def get_purchase_summary(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PurchaseSummaryResponse:
+    """The purchase behind a Stripe Checkout Session, for its buyer.
+
+    Why this exists
+    ---------------
+    A member returning from checkout lands back on whichever page they
+    started from, and that page can only tell them about itself. Buying
+    a bundle containing a Gathering and a Pathway, they saw "You're in"
+    on the Gathering and no sign the Pathway existed.
+
+    Read-only, and deliberately so. Nothing here grants, books, writes
+    or retries: fulfilment belongs to the webhook, and a confirmation
+    screen that could complete a purchase would be a second way to
+    fulfil one. Revisiting an old success URL therefore does nothing at
+    all beyond reading.
+
+    Ownership, not possession of a link
+    -----------------------------------
+    A Stripe session id is long and unguessable but it is still only a
+    string in a URL — shoulder-surfed, pasted into a chat, left in a
+    browser history. So the check is that the requester *is the payer*,
+    and a transaction belonging to somebody else answers 404 rather
+    than 403: a different status would confirm the purchase exists.
+
+    The state comes from the ledger rather than from the
+    ``?checkout=success`` parameter that brought them here. That
+    parameter is a trigger to ask a question, never its answer.
+    """
+    from app.services.purchase_included_summary import build_purchase_summary
+
+    if not session_id or "{" in session_id:
+        # An un-substituted ``{CHECKOUT_SESSION_ID}`` template: the
+        # free-purchase path returns our own success_url without
+        # passing through Stripe, so the placeholder arrives intact.
+        raise HTTPException(status_code=404, detail="Purchase not found.")
+
+    txn = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.provider_checkout_session_id == session_id)
+        .first()
+    )
+    if txn is None or txn.payer_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Purchase not found.")
+
+    summary = build_purchase_summary(db, txn=txn, user_id=current_user.id)
+    return PurchaseSummaryResponse(**summary.as_payload())

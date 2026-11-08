@@ -25,7 +25,7 @@ import {
  *
  * Calls ``POST /api/checkout`` with:
  *   payment_option_id, payment_option_schedule_id,
- *   success_url = returnBase + ?checkout=success,
+ *   success_url = returnBase + ?checkout=success&session_id=…,
  *   cancel_url  = returnBase + ?checkout=cancel.
  *
  * ``payment_option_schedule_id`` is required by the endpoint. A caller
@@ -102,7 +102,17 @@ export default function PurchaseScheduleButton({
         body: JSON.stringify({
           payment_option_id: paymentOptionId,
           payment_option_schedule_id: paymentOptionScheduleId,
-          success_url: `${base}?checkout=success`,
+          // Stage 3E.3 — the session id comes back with them, so the
+          // confirmation can ask the backend *which* purchase this
+          // was. `{CHECKOUT_SESSION_ID}` is Stripe's own template
+          // variable, substituted at redirect; the same convention
+          // `CheckoutButton` and `AcquireOffering` already use.
+          //
+          // A free Option never reaches Stripe and returns our own
+          // success_url, so the placeholder arrives literally — the
+          // endpoint treats that as "no reference" rather than
+          // looking anything up.
+          success_url: `${base}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${base}?checkout=cancel`,
           ...(discountCode ? { discount_code: discountCode } : {}),
         }),

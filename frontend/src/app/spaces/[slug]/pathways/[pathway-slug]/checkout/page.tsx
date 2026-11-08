@@ -8,6 +8,7 @@ import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { PaymentOptionSelector } from '@/components/checkout/PaymentOptionSelector'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import PathwayWaysToJoin from '@/components/commerce/PathwayWaysToJoin'
+import PurchaseConfirmation from '@/components/commerce/PurchaseConfirmation'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { PathwayWithSteps } from '@/types/platform'
 import { includedLines, paymentCardCopy } from '@/lib/pathwayCheckoutCopy'
@@ -31,7 +32,7 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function PathwayCheckoutPage({ params, searchParams }: Props) {
   const { slug, 'pathway-slug': pathwaySlug } = await params
-  const { success, cancelled, payment_option_id, payment_option_schedule_id } = await searchParams
+  const { success, cancelled, session_id, payment_option_id, payment_option_schedule_id } = await searchParams
 
   // Typed rather than left as untyped JSON: an untyped ``pathway`` is
   // why five lines of invented copy could sit here claiming to be data.
@@ -347,6 +348,15 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               timezone={space.timezone ?? null}
             />
           )}
+          {/* Stage 3E.3 — the same confirmation as every other return
+              surface. One component, a small integration here. */}
+          {session_id && (
+            <PurchaseConfirmation
+              sessionId={session_id}
+              palette={collectivePalette}
+            />
+          )}
+
           {!pathway.member_plan_state && (
           <div
             className="rounded-2xl bg-white p-6"
