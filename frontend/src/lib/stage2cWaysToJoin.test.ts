@@ -35,17 +35,23 @@ const code = (p: string) =>
 
 describe('neither arrangement is the default', () => {
   it('both card kinds share one container', () => {
-    // The structural half of equal treatment: a single helper produces
-    // the container for both, so they cannot drift into a primary and
-    // a secondary card.
+    // The structural half of equal treatment. Stage 3D took this
+    // further: the container is now a single exported component that
+    // both cards render, rather than two copies of the same markup,
+    // so they cannot drift into a primary and a secondary card even
+    // by accident.
     const src = code(WTJ)
-    assert.match(src, /function cardStyle/)
+    assert.match(src, /export function WaysToJoinCard/)
+    assert.match(src, /rounded-2xl border p-4/)
+    assert.match(src, /style=\{cardStyle\(primary\)\}/)
+    // And exactly one definition of each.
+    assert.equal(src.split('rounded-2xl border p-4').length - 1, 1)
+
     const direct = src.slice(src.indexOf('function DirectCard'), src.indexOf('function OptionCard'))
     const option = src.slice(src.indexOf('function OptionCard'))
     for (const [name, body] of [['direct', direct], ['option', option]] as const) {
-      assert.match(body, /rounded-2xl border p-4/, `${name} card container`)
-      assert.match(body, /style=\{cardStyle\(primary\)\}/, `${name} card style`)
-      assert.match(body, /font-serif text-\[16px\] text-navy-900/, `${name} heading`)
+      assert.match(body, /<WaysToJoinCard/, `${name} card uses the shared container`)
+      assert.match(body, /palette=\{palette\}/, `${name} card is branded`)
     }
   })
 
@@ -216,9 +222,11 @@ describe('both Pathway surfaces render one implementation', () => {
 
 describe('long content cannot push the page sideways', () => {
   it('a long Option name wraps', () => {
+    // Now a property of the shared card's title, so it holds for the
+    // Gathering page's individual-ticket card too.
     const src = code(WTJ)
-    const option = src.slice(src.indexOf('function OptionCard'))
-    assert.match(option, /break-words/)
+    const card = src.slice(src.indexOf('export function WaysToJoinCard'))
+    assert.match(card, /break-words/)
   })
 
   it('the cards are a single column with vertical spacing', () => {

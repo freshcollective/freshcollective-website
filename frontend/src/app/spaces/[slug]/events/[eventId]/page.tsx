@@ -10,7 +10,7 @@ import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { countdownLabel, formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 import GatheringBookingClient from '@/components/spaces/GatheringBookingClient'
-import PathwayWaysToJoin from '@/components/commerce/PathwayWaysToJoin'
+import PathwayWaysToJoin, { WaysToJoinCard } from '@/components/commerce/PathwayWaysToJoin'
 import { GatheringRecognition } from '@/components/connections/InContextRecognition'
 import GatheringTicketPurchaseClient from '@/components/spaces/GatheringTicketPurchaseClient'
 import {
@@ -338,6 +338,12 @@ export default async function EventDetailPage({ params }: Props) {
   // safe. Panel remains obviously "this Collective's colour" — just
   // deepened, not neutralised.
   const palette: CollectivePaletteMeta | null = space?.colour_palette ?? null
+  // Stage 3D — are there Payment Options to show beside the ticket?
+  // When there are, the panel becomes one "Ways to join" list; when
+  // there aren't, every existing state renders exactly as before.
+  const hasPaymentOptionWays =
+    !isPast && !isCancelled
+    && (event.payment_option_ways_to_join?.length ?? 0) > 0
   const primaryHex = paletteHex('primary', palette) ?? '#0F172A'      // slate-900 fallback
   const accentHex  = paletteHex('accent',  palette) ?? primaryHex
 
@@ -757,9 +763,16 @@ export default async function EventDetailPage({ params }: Props) {
                 ? 'Status'
                 : event.booking_access_type === 'invitation_only'
                   ? 'Invitation only'
-                  : event.booking_access_type === 'paid_separately'
-                    ? 'Ticket'
-                    : 'Reserve your place'}
+                  : hasPaymentOptionWays
+                    // Stage 3D — one heading over every arrangement.
+                    // "Ticket" above the ticket and "Other ways to
+                    // join" below the Options said the first was the
+                    // way in and the rest were alternatives. They are
+                    // all ways in.
+                    ? 'Ways to join'
+                    : event.booking_access_type === 'paid_separately'
+                      ? 'Ticket'
+                      : 'Reserve your place'}
             </p>
 
             {/* Invitation-only surfaces on its own — bookings don't
@@ -774,20 +787,47 @@ export default async function EventDetailPage({ params }: Props) {
                 if you&rsquo;d like to attend.
               </p>
             ) : event.booking_access_type === 'paid_separately' ? (
-              <GatheringTicketPurchaseClient
-                spaceSlug={slug}
-                eventId={event.id}
-                eventTitle={event.title}
-                priceCents={event.ticket_price_cents}
-                currency={event.ticket_currency}
-                salesEnabled={event.sales_enabled}
-                isAuthenticated={isAuthenticated}
-                isPast={isPast}
-                isCancelled={isCancelled}
-                initialMyBookingStatus={event.my_booking_status}
-                spotsRemaining={event.spots_remaining}
-                capacity={event.capacity}
-              />
+              // Stage 3D — the same purchase control either way. When
+              // Payment Options sit beside it, it goes inside the same
+              // card they use so neither reads as the real option and
+              // the other as an aside. Its own logic — capacity,
+              // sold-out, pending payment, an existing booking — is
+              // untouched; only the frame around it changed.
+              hasPaymentOptionWays ? (
+                <WaysToJoinCard title="Individual ticket" palette={palette}>
+                  <div className="mt-2">
+                    <GatheringTicketPurchaseClient
+                      spaceSlug={slug}
+                      eventId={event.id}
+                      eventTitle={event.title}
+                      priceCents={event.ticket_price_cents}
+                      currency={event.ticket_currency}
+                      salesEnabled={event.sales_enabled}
+                      isAuthenticated={isAuthenticated}
+                      isPast={isPast}
+                      isCancelled={isCancelled}
+                      initialMyBookingStatus={event.my_booking_status}
+                      spotsRemaining={event.spots_remaining}
+                      capacity={event.capacity}
+                    />
+                  </div>
+                </WaysToJoinCard>
+              ) : (
+                <GatheringTicketPurchaseClient
+                  spaceSlug={slug}
+                  eventId={event.id}
+                  eventTitle={event.title}
+                  priceCents={event.ticket_price_cents}
+                  currency={event.ticket_currency}
+                  salesEnabled={event.sales_enabled}
+                  isAuthenticated={isAuthenticated}
+                  isPast={isPast}
+                  isCancelled={isCancelled}
+                  initialMyBookingStatus={event.my_booking_status}
+                  spotsRemaining={event.spots_remaining}
+                  capacity={event.capacity}
+                />
+              )
             ) : event.requires_booking ? (
               <GatheringBookingClient
                 eventId={event.id}
@@ -830,14 +870,23 @@ export default async function EventDetailPage({ params }: Props) {
                 Empty while the feature is off, so this renders
                 nothing at all today — an Option carrying a Gathering
                 grant is unfulfillable and the backend drops it. */}
-            {!isPast && !isCancelled
-              && (event.payment_option_ways_to_join?.length ?? 0) > 0 && (
-              <div className="mt-5 border-t border-slate-200 pt-5">
+            {hasPaymentOptionWays && (
+              // No divider and no second heading: these cards are
+              // siblings of the ticket card above, under the one
+              // "Ways to join" eyebrow.
+              //
+              // ``palette`` is passed, which is the whole of Issue A.
+              // Without it the shared purchase components fall back to
+              // the platform teal, so a Collective's own ticket button
+              // sat beside Payment Option buttons in a different
+              // colour. The Pathway page has always passed it.
+              <div className="mt-3">
                 <PathwayWaysToJoin
                   spaceSlug={slug}
                   arrangements={event.payment_option_ways_to_join ?? []}
+                  palette={palette}
                   isAuthenticated={isAuthenticated}
-                  heading="Other ways to join"
+                  showHeading={false}
                   returnBase={`/spaces/${slug}/events/${event.id}`}
                 />
               </div>

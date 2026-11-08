@@ -47,6 +47,7 @@ export default function PathwayWaysToJoin({
   palette,
   isAuthenticated,
   heading = 'Ways to join',
+  showHeading = true,
   returnBase,
 }: {
   spaceSlug: string
@@ -59,6 +60,11 @@ export default function PathwayWaysToJoin({
   palette?: CollectivePaletteMeta | null
   isAuthenticated: boolean
   heading?: string
+  /** Set false when the surface already carries a Ways to join
+   *  heading of its own and these cards sit under it alongside
+   *  something else — the standalone Gathering page puts its
+   *  individual ticket in the same list. */
+  showHeading?: boolean
   /** Where Stripe returns the buyer. Defaults to the Pathway checkout
    *  page; a Gathering passes its own page, because that is where the
    *  purchase started and where the booking will show up. */
@@ -70,12 +76,14 @@ export default function PathwayWaysToJoin({
 
   return (
     <div>
-      <p
-        className="mb-3 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
-        style={{ color: primary }}
-      >
-        {heading}
-      </p>
+      {showHeading && (
+        <p
+          className="mb-3 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+          style={{ color: primary }}
+        >
+          {heading}
+        </p>
+      )}
 
       <ul className="space-y-3">
         {arrangements.map((a) => (
@@ -119,6 +127,39 @@ function cardStyle(primary: string) {
   }
 }
 
+/**
+ * One Ways to join card.
+ *
+ * Exported so a surface with an arrangement of its own can render it
+ * with the same weight as the Options beside it, rather than
+ * reproducing the container and drifting from it. The standalone
+ * Gathering page uses this for its individual ticket: the ticket's own
+ * purchase logic is untouched and simply sits inside.
+ *
+ * The tint is derived from the Collective's primary, so a card is
+ * branded wherever it is used and falls back to the platform colour
+ * only when a Collective has no palette.
+ */
+export function WaysToJoinCard({
+  title, palette, children,
+}: {
+  title?: string
+  palette?: CollectivePaletteMeta | null
+  children: React.ReactNode
+}) {
+  const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
+  return (
+    <div className="rounded-2xl border p-4" style={cardStyle(primary)}>
+      {title && (
+        <h3 className="font-serif text-[16px] text-navy-900 break-words">
+          {title}
+        </h3>
+      )}
+      {children}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // The Pathway's own price
 // ---------------------------------------------------------------------------
@@ -132,17 +173,12 @@ function DirectCard({
   isAuthenticated: boolean
   accentHex: string
 }) {
-  const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
   // Currency from the arrangement, never a literal — a Collective
   // selling in USD must read US$59, not $59.
   const price = formatMoneyCents(arrangement.price_cents, arrangement.currency)
 
   return (
-    <div className="rounded-2xl border p-4" style={cardStyle(primary)}>
-      <h3 className="font-serif text-[16px] text-navy-900">
-        Purchase this Pathway
-      </h3>
-
+    <WaysToJoinCard title="Purchase this Pathway" palette={palette}>
       <div className="mt-3 mb-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[12px] font-medium text-navy-900">
@@ -164,7 +200,7 @@ function DirectCard({
         appearance="card"
         accentHex={accentHex}
       />
-    </div>
+    </WaysToJoinCard>
   )
 }
 
@@ -179,7 +215,6 @@ function OptionCard({
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
 }) {
-  const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
   const optionName = arrangement.name ?? 'Payment option'
 
   // The Pathway being viewed leads the list and is implicit in the
@@ -193,11 +228,7 @@ function OptionCard({
   const extra = alsoIncludes.length - shown.length
 
   return (
-    <div className="rounded-2xl border p-4" style={cardStyle(primary)}>
-      <h3 className="font-serif text-[16px] text-navy-900 break-words">
-        {optionName}
-      </h3>
-
+    <WaysToJoinCard title={optionName} palette={palette}>
       {arrangement.description && (
         <p className="mt-1 text-[12.5px] leading-relaxed text-slate-600">
           {arrangement.description}
@@ -234,6 +265,6 @@ function OptionCard({
           />
         ))}
       </div>
-    </div>
+    </WaysToJoinCard>
   )
 }
