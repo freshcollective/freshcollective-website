@@ -1384,6 +1384,8 @@ def get_space(
         "creator_name": creator_name,
         "join_policy": join_policy.resolve(space.join_policy),
         "joining_options": joining_doors.list_joining_doors(db, space),
+        # Stage 4 — set explicitly, never left to the schema default.
+        "discount_codes_enabled": settings.universal_discount_codes_enabled,
         "home_tiles": home_config.resolve(
             space.home_config,
             show_member_directory=space.show_member_directory,
@@ -2880,11 +2882,26 @@ def cancel_booking(
 from pydantic import BaseModel, Field, HttpUrl  # noqa: E402
 import stripe as _stripe  # noqa: E402
 from app.services import gathering_tickets as _gt  # noqa: E402
+# Stage 4 — the ticket door shares the discount hold protocol rather
+# than growing its own. Imported here, beside the ticket service, and
+# late for the same reason: this module is imported by the checkout
+# router's own dependency graph, so a top-of-file import would close a
+# cycle.
+from app.checkout import routes as _checkout_routes  # noqa: E402
+from app.services import discount_checkout_hold as _hold_mod  # noqa: E402
+from app.services.discount_pricing import DiscountError as _DiscountError  # noqa: E402
 
 
 class GatheringCheckoutRequest(BaseModel):
     success_url: HttpUrl = Field(..., description="Where Stripe returns the buyer on success.")
     cancel_url: HttpUrl = Field(..., description="Where Stripe returns the buyer on cancel.")
+    discount_code: str | None = Field(
+        None,
+        description=(
+            "Optional discount code. A code only — the amount charged is "
+            "the server's, resolved against the ticket's own price."
+        ),
+    )
 
 
 class GatheringCheckoutResponse(BaseModel):
@@ -2900,6 +2917,25 @@ class GatheringCheckoutResponse(BaseModel):
 def _map_ticket_error(exc: _gt.TicketCheckoutError) -> HTTPException:
     return HTTPException(status_code=exc.http_status,
                          detail={"code": exc.code, "message": exc.message})
+
+
+def _refuse_ticket_code_while_stage4_off(raw_code: str | None) -> None:
+    """Refuse a code on the ticket door while Stage 4 is off.
+
+    Refused rather than ignored, for the reason the shared helper in
+    ``checkout.routes`` gives: charging the full price after accepting a
+    code tells the member something untrue at the moment they commit.
+    Worded in this door's own ``{code, message}`` detail shape, which its
+    clients already parse.
+    """
+    if raw_code and not settings.universal_discount_codes_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "discount_codes_unavailable",
+                "message": _checkout_routes.STAGE4_OFF_DETAIL,
+            },
+        )
 
 
 @router.post(
@@ -2999,6 +3035,47 @@ def create_gathering_ticket_checkout(
     # One retry. If the second attempt still refuses, the holds are
     # genuinely live or genuinely unverifiable, and looping would spend
     # longer reaching the same answer.
+    # 3b. Stage 4 — the discount code, and its slot.
+    #
+    # Resolved against the ticket's OWN price, with no Payment Option
+    # named. That is deliberate: ``validate_code`` refuses a code scoped
+    # to one Payment Option when no option is named, so a code restricted
+    # to a bundle cannot be spent on a standalone ticket for a Gathering
+    # that bundle happens to include (§4).
+    #
+    # Taken BEFORE the seat, and outside the Event lock. The code's row
+    # lock and the Event row lock are never held together, so two
+    # popular Gatherings sharing one Collective-wide code cannot queue
+    # behind each other.
+    #
+    # On the two expiry windows: this Session lives for
+    # ``gathering_checkout_expiry_minutes`` (30), the discount hold for
+    # 60. The shorter one dying first is the safe direction — the Session
+    # expires, the seat is swept, and the discount hold is later verified
+    # against a Session Stripe reports as ``expired`` and released. The
+    # reverse would let the slot go while a live payment page could still
+    # charge.
+    _refuse_ticket_code_while_stage4_off(body.discount_code)
+    try:
+        ticket_hold = _checkout_routes._hold_for_direct(
+            db, raw_code=body.discount_code,
+            space_id=offer.space.id, kind="gathering",
+            target_id=offer.event.id, user=current_user,
+            price_cents=offer.price_cents, currency=offer.currency,
+            now=datetime.utcnow(),
+        )
+    except _DiscountError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "discount_unavailable", "message": exc.message},
+        ) from exc
+    except _hold_mod.LiveSessionExists as live:
+        return GatheringCheckoutResponse(
+            checkout_url=live.checkout_url,
+            transaction_id=live.transaction_id,
+            reused=True,
+        )
+
     def _take_hold():
         return _gt.create_or_reuse_hold(
             db,
@@ -3008,6 +3085,9 @@ def create_gathering_ticket_checkout(
             creator_plan_id=plan_id,
             creator_subscription_id=sub_id,
             hold_ttl_minutes=settings.gathering_checkout_expiry_minutes,
+            applied_discount=(
+                ticket_hold.applied if ticket_hold is not None else None
+            ),
         )
 
     try:
@@ -3019,64 +3099,94 @@ def create_gathering_ticket_checkout(
                 raise
             outcome = _take_hold()
     except _gt.TicketCheckoutError as exc:
+        # The seat was refused, so nothing can ever charge for this
+        # attempt — give the code's slot straight back rather than making
+        # the next buyer wait out a window. Positive knowledge, which is
+        # the only basis on which a slot is ever released.
+        if ticket_hold is not None:
+            ticket_hold.abandon(now=datetime.utcnow(), reason="seat_unavailable")
         raise _map_ticket_error(exc)
 
     # 5. Create the Stripe Checkout Session. If this fails, we roll back
     #    the hold+txn so no dangling capacity is consumed.
     _stripe.api_key = settings.stripe_secret_key
     session_lifetime_seconds = settings.gathering_checkout_expiry_minutes * 60
+    # What is actually charged. Taken from the hold, which froze it when
+    # the slot was reserved — never recomputed here, so the amount the
+    # member was quoted is the amount Stripe is asked for.
+    charge_cents = (
+        ticket_hold.applied.amounts.final_cents if ticket_hold is not None
+        else offer.price_cents
+    )
+    # Built as a dict rather than passed inline so a discount hold can
+    # persist the EXACT request before it is sent.
+    session_params = {
+        "mode": "payment",
+        "payment_method_types": ["card"],
+        "customer_email": current_user.email,
+        # Naive datetime.utcnow().timestamp() treats the value as local
+        # time — on a non-UTC host (this dev box is Australia/Melbourne)
+        # that puts the epoch several hours off and Stripe rejects the
+        # request as `expires_at is in the past`. Mark the value as UTC
+        # explicitly before converting to an epoch integer.
+        "expires_at": int(
+            (datetime.utcnow() + timedelta(seconds=session_lifetime_seconds))
+            .replace(tzinfo=timezone.utc)
+            .timestamp()
+        ),
+        "line_items": [{
+            "quantity": 1,
+            "price_data": {
+                "currency": offer.currency.lower(),
+                "unit_amount": charge_cents,
+                "product_data": {
+                    "name": offer.event.title,
+                    "description": (
+                        f"Ticket for {offer.event.title} "
+                        f"— {offer.space.name}"
+                    )[:500],
+                },
+            },
+        }],
+        "success_url": str(body.success_url),
+        "cancel_url": str(body.cancel_url),
+        "metadata": {
+            "purchase_type":    "standalone_gathering",
+            "transaction_id":   outcome.transaction.id,
+            "event_id":         offer.event.id,
+            "space_id":         offer.space.id,
+            "payer_user_id":    current_user.id,
+            "creator_user_id":  offer.space.creator_id or "",
+            "platform_fee_bps": str(fee_bps),
+            "creator_plan_id":  plan_id or "",
+        },
+        "payment_intent_data": {
+            "metadata": {
+                "purchase_type":  "standalone_gathering",
+                "transaction_id": outcome.transaction.id,
+                "event_id":       offer.event.id,
+                "payer_user_id":  current_user.id,
+            },
+        },
+    }
+    if ticket_hold is not None:
+        # This door keeps its own 30-minute Session lifetime rather than
+        # the reservation's 60 — see the note above the hold. The
+        # reservation still records the exact request, so a replay
+        # recovers this Session instead of opening a second one.
+        ticket_hold.persist_params(session_params)
     try:
         session = _stripe.checkout.Session.create(
-            mode="payment",
-            payment_method_types=["card"],
-            customer_email=current_user.email,
-            # Naive datetime.utcnow().timestamp() treats the value as local
-            # time — on a non-UTC host (this dev box is Australia/Melbourne)
-            # that puts the epoch several hours off and Stripe rejects the
-            # request as `expires_at is in the past`. Mark the value as UTC
-            # explicitly before converting to an epoch integer.
-            expires_at=int(
-                (datetime.utcnow() + timedelta(seconds=session_lifetime_seconds))
-                .replace(tzinfo=timezone.utc)
-                .timestamp()
+            **session_params,
+            **(
+                {"idempotency_key": ticket_hold.idempotency_key}
+                if ticket_hold is not None else {}
             ),
-            line_items=[{
-                "quantity": 1,
-                "price_data": {
-                    "currency": offer.currency.lower(),
-                    "unit_amount": offer.price_cents,
-                    "product_data": {
-                        "name": offer.event.title,
-                        "description": (
-                            f"Ticket for {offer.event.title} "
-                            f"— {offer.space.name}"
-                        )[:500],
-                    },
-                },
-            }],
-            success_url=str(body.success_url),
-            cancel_url=str(body.cancel_url),
-            metadata={
-                "purchase_type":    "standalone_gathering",
-                "transaction_id":   outcome.transaction.id,
-                "event_id":         offer.event.id,
-                "space_id":         offer.space.id,
-                "payer_user_id":    current_user.id,
-                "creator_user_id":  offer.space.creator_id or "",
-                "platform_fee_bps": str(fee_bps),
-                "creator_plan_id":  plan_id or "",
-            },
-            payment_intent_data={
-                "metadata": {
-                    "purchase_type":  "standalone_gathering",
-                    "transaction_id": outcome.transaction.id,
-                    "event_id":       offer.event.id,
-                    "payer_user_id":  current_user.id,
-                },
-            },
         )
     except Exception as exc:  # noqa: BLE001 — Stripe errors are broad
         db.rollback()
+        if ticket_hold is not None:
+            ticket_hold.abandon(now=datetime.utcnow())
         raise HTTPException(
             status_code=502,
             detail={"code": "stripe_error",
@@ -3105,6 +3215,11 @@ def create_gathering_ticket_checkout(
         ).replace(tzinfo=None)
 
     db.commit()
+    if ticket_hold is not None:
+        ticket_hold.attach(
+            session_id=session.id, session_url=session.url,
+            txn_id=outcome.transaction.id, now=datetime.utcnow(),
+        )
     return GatheringCheckoutResponse(
         checkout_url=session.url,
         transaction_id=outcome.transaction.id,
@@ -3449,6 +3564,8 @@ def get_event(
             )
             if a.source != "direct"
         ],
+        # Stage 4 — set explicitly, never left to the schema default.
+        "discount_codes_enabled": settings.universal_discount_codes_enabled,
         "recurrence_series_id": event.recurrence_series_id,
         "recurrence_label": event.recurrence_label,
         "recurrence_index": event.recurrence_index,
@@ -4064,6 +4181,8 @@ def get_pathway_overview(
                 db, pathway=pathway,
             )
         ],
+        # Stage 4 — set explicitly, never left to the schema default.
+        discount_codes_enabled=settings.universal_discount_codes_enabled,
         member_plan_state=_pathway_member_plan_state(current_user, pathway.id, db),
     )
 

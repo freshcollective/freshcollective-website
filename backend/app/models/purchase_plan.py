@@ -197,6 +197,22 @@ class PurchasePlan(Base):
     )
     total_expected_cents: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    # Stage 4 (migration 185) — the last instalment, when it differs.
+    #
+    # A discounted commitment rarely divides into equal cents: A$130
+    # over three payments is 43.33 / 43.33 / 43.34. The remainder is
+    # carried here rather than spread, so the schedule sums to
+    # ``total_expected_cents`` exactly.
+    #
+    # NULL means every instalment is ``installment_amount_cents`` — true
+    # of every plan written before Stage 4 and of every evenly
+    # discounted plan since. Read through
+    # :meth:`expected_installment_cents`, never directly, so that
+    # meaning lives in one place.
+    final_installment_amount_cents: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+    )
+
     # Fee snapshot — applied to each per-invoice PaymentTransaction.
     platform_fee_basis_points: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
@@ -237,6 +253,14 @@ class PurchasePlan(Base):
     # referenced by the SubscriptionSchedule phase.
     stripe_product_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     stripe_price_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Stage 4 (migration 185) — the second recurring Price an uneven
+    # plan needs. A single Price can only express identical invoices, so
+    # an uneven plan is two schedule phases: N-1 invoices at
+    # ``stripe_price_id``, then one at this one. NULL for every even
+    # plan, which stays one Price and one phase exactly as before.
+    stripe_final_price_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
 
     # Grants snapshot (FIP2, migration 118). JSON-serialised
     # ``FulfilmentIntent`` captured at plan creation. Prevents a
@@ -359,3 +383,55 @@ class PurchasePlan(Base):
             name="uq_purchase_plans_provider_subscription_id",
         ),
     )
+
+    # -----------------------------------------------------------------
+    # Per-instalment amount — the one lookup both invoice gates share
+    # -----------------------------------------------------------------
+
+    def expected_installment_cents(self, installment_number: int) -> int:
+        """What instalment ``installment_number`` (1-based) should cost.
+
+        ``final_installment_amount_cents`` for the last one when it is
+        set, ``installment_amount_cents`` for every other and for every
+        plan that never declared a different final amount.
+
+        Both invoice gates — ``finite_plan_handlers`` on the first
+        invoice and ``finite_plan_lifecycle`` on the rest — ask this
+        rather than reading the scalar, which is what let an uneven
+        discounted plan exist at all. Before Stage 4 they compared every
+        invoice against one number, so a final instalment of 43.34 would
+        have been *rejected* after the member had already paid twice.
+
+        Deliberately NOT behind ``universal_discount_codes_enabled``. A
+        plan established while that flag was on must keep billing
+        correctly if it is later switched off, so the machinery that
+        services a discounted plan is unconditional and only the
+        machinery that creates one is flagged.
+
+        An out-of-range number is not clamped or special-cased: callers
+        derive it from ``installments_paid + 1`` under a row lock and
+        already refuse a number past ``installments_expected``, so
+        quietly answering here would hide their bug rather than this
+        one's.
+        """
+        if (
+            self.final_installment_amount_cents is not None
+            and installment_number == self.installments_expected
+        ):
+            return self.final_installment_amount_cents
+        return self.installment_amount_cents
+
+    @property
+    def has_uneven_final_installment(self) -> bool:
+        """Whether the last payment differs from the rest.
+
+        The question Stripe cares about: an even plan is one recurring
+        Price and one schedule phase, an uneven one needs a second of
+        each. ``False`` when the column is NULL *and* when it happens to
+        equal the base amount, so a redundant write cannot make an even
+        plan look uneven.
+        """
+        return (
+            self.final_installment_amount_cents is not None
+            and self.final_installment_amount_cents != self.installment_amount_cents
+        )

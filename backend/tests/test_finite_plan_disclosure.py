@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from app.models.purchase_plan import PurchasePlan
 from app.services.finite_plan_disclosure import compose_setup_disclosure
 
 
@@ -32,6 +33,13 @@ class _FakePlan:
     stripe_interval: str
     stripe_interval_count: int
     currency: str = "AUD"
+    #: Stage 4. NULL is the even case — every plan before Stage 4, and
+    #: every evenly discounted one since.
+    final_installment_amount_cents: int | None = None
+
+    # Borrowed from the real model rather than restated, so this stub
+    # cannot drift away from the rule the composer actually branches on.
+    has_uneven_final_installment = PurchasePlan.has_uneven_final_installment
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +263,11 @@ class TestCustomTextPassedToStripe:
             stripe_interval=cadence[0],
             stripe_interval_count=cadence[1],
             currency="AUD",
+            # Stage 4: an even plan, which is what these cadence cases
+            # are about. NULL final amount, so the disclosure keeps its
+            # pre-Stage-4 wording — asserted below.
+            final_installment_amount_cents=None,
+            has_uneven_final_installment=False,
         )
 
         stripe_finite_plan.create_setup_session(

@@ -19,38 +19,38 @@ the same way and is a surprising rule to explain to a Creator. Because
 the final amount is derived by subtraction rather than rounded
 separately, ``original == discount + final`` always holds exactly.
 
-Finite plans are OUT OF SCOPE for v1 — a discount code applies to
-pay-in-full purchases only. A creator wanting a reduced payment plan
-publishes a separate Payment Option at that price. Complimentary access
-is a complimentary pass. Each of the three has its own mechanism, and
-none of them is a discount code stretched to cover the others.
+Finite plans are IN SCOPE as of Stage 4, behind
+``universal_discount_codes_enabled``. A discount applies to the whole
+commitment, and every instalment carries its share — see
+:func:`discount_instalment_plan`. Complimentary access remains its own
+mechanism; a discount code cannot produce it.
 
-:func:`discount_committed_total` and :func:`divides_evenly` are kept
-because that decision is expected to be revisited, and because the
-arithmetic is the part worth having settled in advance: the commitment
-is discounted as a whole, then instalments derive from it. Discounting
-one invoice would give away a tenth of what was promised. Neither
-function has a caller today; both are covered by tests so they stay
-honest until one does.
+How the split works, stated once. The commitment is discounted as a
+whole, then instalments are derived from the discounted total — never
+the other way round. Discounting one invoice would give away a tenth of
+what was promised. ``total // count`` is the base instalment and the
+remainder lands on the FINAL one, so the schedule sums to the
+authoritative total exactly and the largest payment is last. A$130 over
+three is 43.33 / 43.33 / 43.34, not a tolerance.
 
-What a later finite-plan work item would have to solve, recorded so the
-next reader starts from the findings rather than the question. A plan is
-one Stripe Product, one Price and one SubscriptionSchedule phase, so
-every invoice is identical by construction. Two amount gates —
-``finite_plan_handlers`` on the first invoice and ``finite_plan_lifecycle``
-on the rest — raise if an invoice total differs from
-``PurchasePlan.installment_amount_cents``, which is a single scalar. An
-uneven final instalment would therefore not merely fail to be
-represented; it would be rejected mid-plan, after the member had paid
-several times. ``schedule_validation`` already names the intended fix: add
-an explicit ``final_installment_amount_cents`` column and re-derive the
-sum — do not restore a tolerance. The disclosure sentence in
-``finite_plan_disclosure`` ("N payments of X") would also stop being true
-and is the only place money appears on Stripe's setup page.
+The two gates that made this impossible before, and how they were
+answered. ``finite_plan_handlers`` on the first invoice and
+``finite_plan_lifecycle`` on the rest both compared an invoice total
+against ``PurchasePlan.installment_amount_cents``, a single scalar — so
+an uneven final instalment would have been *rejected* mid-plan, after
+the member had paid several times. Both now ask
+``PurchasePlan.expected_installment_cents(n)``, which reads the new
+nullable ``final_installment_amount_cents`` for the last instalment and
+the scalar for every other. No tolerance was restored, and the lookup is
+NOT behind the flag: a plan established while the flag was on must keep
+billing if it is later switched off.
 
-The common real case is exact anyway — Activate $306 at 50% → $153 →
-$15.30 × 10 — so an even-split-only first step would ship every live
-EMBODY plan without touching the billing machinery.
+On the Stripe side an uneven plan is two phases rather than one — N-1
+invoices at the base amount, then one at the final amount — because a
+single recurring Price can only express identical invoices.
+``finite_plan_disclosure`` names the final payment separately when it
+differs, since that sentence is the only place money appears on Stripe's
+setup page.
 
 Validation is separated from arithmetic (:func:`validate_code` vs
 :func:`compute_discount`) so a preview surface and a checkout can share
@@ -255,10 +255,152 @@ def discount_committed_total(
 def divides_evenly(total_cents: int, installment_count: int) -> bool:
     """Whether a discounted commitment splits into equal whole cents.
 
-    Reported, not resolved. The Stripe representation of an uneven split
-    is decided with the finite-plan work, not here.
+    The question Stripe cares about: an even split is one recurring
+    Price and one schedule phase, an uneven one needs a second of each.
+    :class:`DiscountedInstalments` answers it as ``is_even``; this stays
+    as the bare predicate for callers that have a total and a count and
+    nothing else.
     """
     return installment_count > 0 and total_cents % installment_count == 0
+
+
+@dataclass(frozen=True)
+class DiscountedInstalments:
+    """A discounted commitment, and the schedule that pays it off.
+
+    ``base_cents`` is what instalments 1..N-1 cost; ``final_cents`` is
+    the last one, which absorbs any rounding remainder. When the total
+    divides evenly the two are equal, and callers that only ever look at
+    ``base_cents`` stay correct for the common case.
+
+    The remainder goes on the FINAL instalment rather than the first for
+    two reasons. A member reading "A$43.33 a month" should not be
+    charged A$43.34 the very first time, and the largest payment landing
+    last is the kinder way round. It is also at most N-1 cents, so the
+    difference is a rounding artefact rather than a pricing decision.
+    """
+
+    amounts: DiscountAmounts
+    installment_count: int
+    base_cents: int
+    final_cents: int
+
+    def __post_init__(self) -> None:
+        # The invariant the whole feature rests on, asserted at the
+        # point of calculation rather than discovered at invoice four.
+        total = self.base_cents * (self.installment_count - 1) + self.final_cents
+        if total != self.amounts.final_cents:
+            raise ValueError(
+                f"instalment schedule does not sum to the discounted total: "
+                f"{self.base_cents}x{self.installment_count - 1} + "
+                f"{self.final_cents} = {total}, expected {self.amounts.final_cents}"
+            )
+
+    @property
+    def is_even(self) -> bool:
+        """True when every instalment is the same amount."""
+        return self.base_cents == self.final_cents
+
+    @property
+    def schedule(self) -> list[int]:
+        """Every instalment, in order. For display and for tests."""
+        return [self.base_cents] * (self.installment_count - 1) + [self.final_cents]
+
+    @property
+    def currency(self) -> str:
+        return self.amounts.currency
+
+
+def allocate_instalments(total_cents: int, installment_count: int) -> tuple[int, int]:
+    """Split a total into ``(base, final)`` whole cents.
+
+    ``total // count`` each, with the remainder added to the final one.
+    Deterministic, integer-only, and exact: ``base * (count - 1) +
+    final == total`` for every input.
+
+    A$130 over three instalments → ``(4333, 4334)``.
+    """
+    if installment_count <= 0:
+        raise ValueError("installment_count must be positive")
+    if total_cents < 0:
+        raise ValueError("total_cents cannot be negative")
+    base = total_cents // installment_count
+    remainder = total_cents - base * installment_count
+    return base, base + remainder
+
+
+def discount_instalment_plan(
+    *,
+    installment_amount_cents: int,
+    installment_count: int,
+    currency: str,
+    discount_type: str,
+    percent_bps: int | None = None,
+    amount_cents: int | None = None,
+    discount_currency: str | None = None,
+    minimum_charge_cents: int,
+) -> DiscountedInstalments:
+    """Discount a finite plan and derive its schedule. Pure.
+
+    Composes the two decisions that were already settled —
+    :func:`discount_committed_total` discounts the whole commitment,
+    :func:`allocate_instalments` splits it — and then applies the one
+    rule that only makes sense for a plan: *every* payment must be large
+    enough to take, not just the total.
+
+    ``minimum_charge_cents`` is passed in rather than imported so this
+    module stays free of the money configuration it would otherwise have
+    to know about, and so a test can state the floor it is exercising.
+
+    Raises :class:`DiscountError`:
+
+    * ``NOT_PURCHASABLE`` — the discount leaves nothing to charge. Free
+      access is a complimentary pass, deliberately granted, not
+      something a code produces as a side effect.
+    * ``BELOW_MINIMUM`` — something is left but an instalment is too
+      small for a provider to take. The discount is NOT trimmed to clear
+      the floor, and the plan is NOT silently reshaped into fewer, larger
+      payments: the creator wrote "half off, six payments", and a member
+      charged something else has been told a small lie by the system.
+    """
+    amounts = discount_committed_total(
+        installment_amount_cents=installment_amount_cents,
+        installment_count=installment_count,
+        currency=currency,
+        discount_type=discount_type,
+        percent_bps=percent_bps,
+        amount_cents=amount_cents,
+        discount_currency=discount_currency,
+    )
+
+    if amounts.final_cents <= 0:
+        raise DiscountError(
+            DiscountRejection.NOT_PURCHASABLE,
+            "That code would make this payment plan free. Complimentary "
+            "access is arranged directly with the Collective rather than "
+            "through a code.",
+        )
+
+    base, final = allocate_instalments(amounts.final_cents, installment_count)
+
+    # ``base`` is the smallest payment in the schedule — ``final`` is
+    # ``base`` plus a non-negative remainder — so checking it checks
+    # every instalment.
+    if base < minimum_charge_cents:
+        raise DiscountError(
+            DiscountRejection.BELOW_MINIMUM,
+            "That code leaves each payment too small to charge. The "
+            f"smallest payment we can take is "
+            f"{minimum_charge_cents / 100:.2f} {amounts.currency}, and this "
+            f"would be {base / 100:.2f}.",
+        )
+
+    return DiscountedInstalments(
+        amounts=amounts,
+        installment_count=installment_count,
+        base_cents=base,
+        final_cents=final,
+    )
 
 
 # ---------------------------------------------------------------------------

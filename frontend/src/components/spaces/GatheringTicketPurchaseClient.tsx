@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
 import { formatMoneyCents } from '@/lib/formatMoney'
+import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 
 /**
  * GatheringTicketPurchaseClient
@@ -76,6 +77,11 @@ interface Props {
   /** Backend's max(0, capacity - confirmed - active_holds). null = unlimited */
   spotsRemaining: number | null
   capacity: number | null
+  /** Stage 4 — whether this Collective's surface may offer a discount
+   *  code. Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED;
+   *  defaults off so a caller that has not been taught to pass it shows
+   *  no code box rather than one whose every submission is refused. */
+  discountCodesEnabled?: boolean
 }
 
 export default function GatheringTicketPurchaseClient({
@@ -83,6 +89,7 @@ export default function GatheringTicketPurchaseClient({
   salesEnabled, isAuthenticated, isPast, isCancelled,
   initialMyBookingStatus, spotsRemaining, capacity,
   headingProvided = false,
+  discountCodesEnabled = false,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -92,6 +99,9 @@ export default function GatheringTicketPurchaseClient({
     useState<Props['initialMyBookingStatus']>(initialMyBookingStatus)
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Only ever a code. The amount is the server's business — see
+  // ``DiscountCodeField``.
+  const [discountCode, setDiscountCode] = useState<string | null>(null)
 
   // Interim "confirming your ticket…" state after Stripe returns success.
   // Set on mount when we see ?checkout=success AND the current booking
@@ -176,7 +186,14 @@ export default function GatheringTicketPurchaseClient({
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ success_url: successUrl, cancel_url: cancelUrl }),
+          body: JSON.stringify({
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+            // Stage 4 — the code, never a price. The server resolves it
+            // again against the ticket's own price, and the seat is
+            // still decided on capacity rather than on money.
+            ...(discountCode ? { discount_code: discountCode } : {}),
+          }),
         },
       )
       if (!r.ok) {
@@ -203,7 +220,11 @@ export default function GatheringTicketPurchaseClient({
       setError(GENERIC_ERROR)
       setOpening(false)
     }
-  }, [opening, spaceSlug, eventId, successUrl, cancelUrl, router])
+    // ``discountCode`` is a dependency, not an incidental read: without
+    // it this callback closes over whatever the code was when it was
+    // last rebuilt, and a member who applied a code after the first
+    // render would be charged full price while being shown a discount.
+  }, [opening, spaceSlug, eventId, successUrl, cancelUrl, router, discountCode])
 
   // Signed-out: preserve a safe next URL and hand off to /login. We route
   // through login; login.tsx will surface the "Log in to buy your ticket
@@ -417,6 +438,21 @@ export default function GatheringTicketPurchaseClient({
       )}
 
       {/* ── Signed-in: Buy your ticket ────────────────────────────────── */}
+      {/* Stage 4 — the code box sits above the button, and only on the
+          path that actually opens a checkout. A member continuing an
+          existing pending payment is returning to a Session whose amount
+          is already fixed, so offering a code there would imply it could
+          still change the price. */}
+      {discountCodesEnabled && !isConfirmed && !isCancelled && !isPast
+        && !isSoldOut && salesEnabled && isAuthenticated && !isPending && (
+        <div className="mb-2">
+          <DiscountCodeField
+            target={{ kind: 'gathering', targetId: eventId }}
+            onChange={setDiscountCode}
+            disabled={opening}
+          />
+        </div>
+      )}
       {!isConfirmed && !isCancelled && !isPast && !isSoldOut && salesEnabled && isAuthenticated && (
         <button
           type="button"

@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from typing import Any
 from datetime import datetime
 
 import stripe
@@ -61,6 +62,7 @@ from app.services.schedule_validation import (
     ScheduleValidationError,
 )
 from app.services import gathering_tickets as _gathering_tickets
+from app.services.discount_reservations import _jsonable
 from app.services import stripe_finite_plan
 
 
@@ -238,6 +240,19 @@ def start_finite_plan_setup(
     cancel_url: str,
     now: datetime,
     override_customer_id: str | None = None,
+    #: Stage 4. A ``discount_checkout_hold.DiscountHold`` — a discount
+    #: already validated and priced against the WHOLE commitment, with
+    #: the code's slot held. Not one instalment: see
+    #: ``discount_application.resolve_plan_discount``.
+    #:
+    #: Typed loosely on purpose. Importing the hold type here would pull
+    #: the checkout-hold module into the orchestrator's import graph for
+    #: one annotation, and the orchestrator is imported by the webhook
+    #: handlers; the two attributes read below are the whole contract.
+    #:
+    #: ``None`` is an undiscounted plan, and every line below then
+    #: behaves exactly as it did before Stage 4.
+    discounted: Any = None,
 ) -> FinitePlanStartOutcome:
     """Snapshot the plan + open a Stripe setup Session.
 
@@ -266,6 +281,14 @@ def start_finite_plan_setup(
     An in-flight Stripe SubscriptionSchedule is NOT created here.
     That happens after the member completes the setup Session and
     the ``checkout.session.completed`` webhook fires.
+
+    Stage 4 — a discounted plan. ``discounted`` carries the whole
+    commitment's discounted total and the schedule derived from it, so
+    the plan row stores the figures the member agreed to rather than the
+    Payment Option's list price. The reservation that holds the code's
+    slot was taken by the caller, before this function and before
+    Stripe; it converts to a redemption when the first payment lands, so
+    a plan consumes one use rather than one per instalment.
     """
 
     check_not_banned_or_raise(db, user=payer, space=resolved.space)
@@ -324,7 +347,32 @@ def start_finite_plan_setup(
 
     # ── Insert plan row ───────────────────────────────────────────
     schedule = resolved.payment_schedule
-    total_expected = schedule.installment_amount_cents * schedule.installment_count
+
+    # Stage 4 — what this plan actually costs. Undiscounted, these are
+    # the schedule's own figures and the final amount is NULL, which is
+    # what every pre-Stage-4 row means. Discounted, the commitment was
+    # reduced as a whole and split by
+    # ``discount_pricing.discount_instalment_plan``; the remainder rides
+    # on the last payment, so the schedule sums to ``total_expected``
+    # exactly rather than to within a cent.
+    hold_reservation = (
+        discounted.reservation if discounted is not None else None
+    )
+    if discounted is not None:
+        instalments = discounted.quote.instalments
+        installment_amount = instalments.base_cents
+        total_expected = instalments.amounts.final_cents
+        final_installment = (
+            instalments.final_cents if not instalments.is_even else None
+        )
+        discount_snapshot = discounted.applied.snapshot
+    else:
+        installment_amount = schedule.installment_amount_cents
+        total_expected = (
+            schedule.installment_amount_cents * schedule.installment_count
+        )
+        final_installment = None
+        discount_snapshot = None
 
     # Payout routing, decided once and frozen onto the plan. Every instalment
     # inherits it, so a creator who finishes onboarding — or loses a
@@ -346,10 +394,12 @@ def start_finite_plan_setup(
         creator_user_id=fee_context.creator_id,
         status=PurchasePlanStatus.pending_setup,
         currency=resolved.currency,
-        installment_amount_cents=schedule.installment_amount_cents,
+        installment_amount_cents=installment_amount,
         installments_expected=schedule.installment_count,
         installments_paid=0,
         total_expected_cents=total_expected,
+        final_installment_amount_cents=final_installment,
+        discount_snapshot_json=discount_snapshot,
         platform_fee_basis_points=fee_context.fee_bps,
         payout_model=payout.payout_model,
         connect_destination_account_id=payout.destination_account_id,
@@ -416,6 +466,26 @@ def start_finite_plan_setup(
         reuse_customer_id = stripe_finite_plan.find_reusable_customer_id(
             db, payer.id,
         )
+    # Stage 4 — a discounted plan's reservation records the exact Stripe
+    # request about to be sent, under the key it is sent with. That is
+    # what lets the stale-hold verifier replay it later and get Stripe's
+    # cached original back rather than creating a second setup page.
+    #
+    # Without this the verifier would find a reservation with no Session
+    # id and no parameters, conclude nothing ever reached Stripe, and
+    # release the slot — while the member's setup page was still live and
+    # still able to activate a plan. That is the one-slot oversell the
+    # whole reservation design exists to prevent, and a plan is the
+    # purchase most likely to meet it, because a setup Session outlives
+    # the sixty-minute hold window.
+    def _record_setup_request(idempotency_key: str, params: dict) -> None:
+        if discounted is None or hold_reservation is None:
+            return
+        hold_reservation.session_idempotency_key = idempotency_key
+        hold_reservation.session_create_params_json = _jsonable(params)
+        hold_reservation.updated_at = datetime.utcnow()
+        db.commit()
+
     try:
         session = stripe_finite_plan.create_setup_session(
             plan=plan,
@@ -428,6 +498,7 @@ def start_finite_plan_setup(
             success_url=success_url,
             cancel_url=cancel_url,
             reuse_customer_id=reuse_customer_id,
+            on_params=_record_setup_request,
         )
     except stripe.StripeError as exc:
         logger.error(
@@ -438,6 +509,15 @@ def start_finite_plan_setup(
             status_code=502,
             detail="Failed to open payment plan setup. Please try again.",
         )
+
+    # The reservation now points at the object the verifier must ask
+    # about. Committed with the plan's own session id below.
+    if hold_reservation is not None:
+        hold_reservation.provider_checkout_session_id = session.id
+        hold_reservation.provider_checkout_session_url = getattr(
+            session, "url", None,
+        )
+        hold_reservation.updated_at = datetime.utcnow()
 
     plan.provider_setup_session_id = session.id
     if reuse_customer_id is not None:

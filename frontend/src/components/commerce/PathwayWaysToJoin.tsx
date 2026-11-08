@@ -1,3 +1,8 @@
+'use client'
+
+import { useState } from 'react'
+
+import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 import ScheduleChoice from '@/components/commerce/ScheduleChoice'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { formatMoneyCents } from '@/lib/formatMoney'
@@ -49,6 +54,7 @@ export default function PathwayWaysToJoin({
   heading = 'Ways to join',
   showHeading = true,
   returnBase,
+  discountCodesEnabled = false,
 }: {
   spaceSlug: string
   /** Only needed when the list can contain a direct card — a
@@ -69,6 +75,12 @@ export default function PathwayWaysToJoin({
    *  page; a Gathering passes its own page, because that is where the
    *  purchase started and where the booking will show up. */
   returnBase?: string
+  /** Stage 4 — whether this Collective's surface may offer a discount
+   *  code. Resolved by the backend from UNIVERSAL_DISCOUNT_CODES_ENABLED
+   *  and threaded down; nothing here decides it, and the default is off
+   *  so a surface that has not been taught to pass it shows no code box
+   *  rather than one the server refuses. */
+  discountCodesEnabled?: boolean
 }) {
   const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
 
@@ -101,6 +113,7 @@ export default function PathwayWaysToJoin({
                 palette={palette}
                 isAuthenticated={isAuthenticated}
                 accentHex={primary}
+                discountCodesEnabled={discountCodesEnabled}
               />
             ) : (
               <OptionCard
@@ -110,6 +123,7 @@ export default function PathwayWaysToJoin({
                 }
                 arrangement={a}
                 palette={palette}
+                discountCodesEnabled={discountCodesEnabled}
               />
             )}
           </li>
@@ -166,16 +180,21 @@ export function WaysToJoinCard({
 
 function DirectCard({
   pathwayId, arrangement, palette, isAuthenticated, accentHex,
+  discountCodesEnabled,
 }: {
   pathwayId: string
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
   isAuthenticated: boolean
   accentHex: string
+  discountCodesEnabled: boolean
 }) {
   // Currency from the arrangement, never a literal — a Collective
   // selling in USD must read US$59, not $59.
   const price = formatMoneyCents(arrangement.price_cents, arrangement.currency)
+  // Only ever a code. The amount is the server's business — see
+  // ``DiscountCodeField``.
+  const [discountCode, setDiscountCode] = useState<string | null>(null)
 
   return (
     <WaysToJoinCard title="Purchase this Pathway" palette={palette}>
@@ -193,12 +212,26 @@ function DirectCard({
         </p>
       </div>
 
+      {/* Stage 4 — a Collective-wide code reaches this door too. The
+          field prices it against the Pathway's own price, with no
+          Payment Option named, which is what keeps a code scoped to one
+          Option off a standalone purchase of this Pathway. */}
+      {discountCodesEnabled && (
+        <div className="mb-2">
+          <DiscountCodeField
+            target={{ kind: 'pathway', targetId: pathwayId }}
+            onChange={setDiscountCode}
+          />
+        </div>
+      )}
+
       <CheckoutButton
         pathwayId={pathwayId}
         label={`Purchase for ${price}`}
         isAuthenticated={isAuthenticated}
         appearance="card"
         accentHex={accentHex}
+        discountCode={discountCode}
       />
     </WaysToJoinCard>
   )
@@ -209,11 +242,12 @@ function DirectCard({
 // ---------------------------------------------------------------------------
 
 function OptionCard({
-  returnBase, arrangement, palette,
+  returnBase, arrangement, palette, discountCodesEnabled,
 }: {
   returnBase: string
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
+  discountCodesEnabled: boolean
 }) {
   const optionName = arrangement.name ?? 'Payment option'
 
@@ -253,6 +287,7 @@ function OptionCard({
             returnBase={returnBase}
             palette={palette}
             withDivider={i > 0}
+            discountCodesEnabled={discountCodesEnabled}
             ctaLabel={
               // "Join with X" is the Series' wording and is wrong here
               // — a Pathway is bought, not joined. The schedule's own

@@ -46,6 +46,7 @@ export default function ScheduleChoice({
   palette,
   withDivider,
   ctaLabel,
+  discountCodesEnabled = false,
 }: {
   optionName: string
   schedule: PurchaseSchedule
@@ -59,6 +60,9 @@ export default function ScheduleChoice({
    *  reason, and a member who is already inside should not be told to
    *  join again. */
   ctaLabel?: string
+  /** Whether this Collective's surface may offer a discount code.
+   *  Threaded from the backend rather than decided here. */
+  discountCodesEnabled?: boolean
 }) {
   const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
   const line = rgbaFromHex(primary, 0.16)
@@ -97,6 +101,7 @@ export default function ScheduleChoice({
         palette={palette}
         schedule={schedule}
         optionName={optionName}
+        discountCodesEnabled={discountCodesEnabled}
       />
     </div>
   )

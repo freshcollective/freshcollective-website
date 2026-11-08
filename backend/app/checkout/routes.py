@@ -30,6 +30,8 @@ through the hardened fulfilment service.
 """
 
 import logging
+from dataclasses import dataclass
+from typing import Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -64,13 +66,19 @@ from app.models.payment import PaymentTransaction, PaymentTransactionType
 from app.models.payment_option import PaymentOption
 from app.models.platform import (
     EntitlementStatus,
+    Event,
     EventSeries,
     Pathway,
     PathwayEntitlement,
+    Space,
 )
 from app.models.user import User
 from app.models.payment_option_schedule import PaymentOptionSchedule
-from app.services.discount_application import find_code, resolve_discount
+from app.services import discount_checkout_hold as _hold
+from app.services import discount_reservations as _reservations
+from app.services.discount_application import (
+    find_code, resolve_discount, resolve_plan_discount,
+)
 from app.services.discount_reservations import attach_session, release
 from app.services.discount_pricing import (
     AppliedDiscount,
@@ -169,38 +177,35 @@ def _persist_session_params(db: Session, reservation, params: dict) -> None:
     db.commit()
 
 
-def _resolve_and_reserve(
-    db: Session, *, raw_code, resolved, user, now,
-):
-    """Price the code and hold a slot, sweeping stale holds once if the
-    code looks full.
+STAGE4_OFF_DETAIL = (
+    "Discount codes aren't available for this purchase yet."
+)
 
-    Both steps live behind one sweep because either can be the thing that
-    reports a full code: ``resolve_discount`` refuses when the slot count
-    has reached the limit, and ``reserve_or_reuse`` refuses again under
-    the row lock. A stale hold — one whose checkout window elapsed but
-    which nothing has verified — makes both refuse for a reason that may
-    not be true any more.
 
-    So on the first ``LIMIT_REACHED`` from either step, the stale holds
-    for that code are verified against Stripe, OUTSIDE the row lock, and
-    the pair is attempted once more. One retry only: if the second
-    attempt still refuses, the holds are genuinely live or genuinely
-    unverifiable, and looping would spend more time reaching the same
-    answer.
+def _refuse_code_while_stage4_off(raw_code: str | None) -> None:
+    """Refuse a code on a door Stage 4 has not opened yet.
 
-    Returns ``(applied, ReservationOutcome)``.
+    Refused rather than ignored. Accepting the code and charging the full
+    price would tell the member something untrue at the moment they
+    commit, which is the one outcome §10 rules out — and a 400 they can
+    read beats a silent overcharge they discover on their statement.
     """
-    from app.services.discount_reservations import (
-        reserve_or_reuse, sweep_stale_reservations,
-    )
+    if raw_code and not settings.universal_discount_codes_enabled:
+        raise HTTPException(status_code=400, detail=STAGE4_OFF_DETAIL)
 
-    own_attempt = (
-        user.id, resolved.payment_option.id, resolved.payment_schedule.id,
-    )
 
-    def attempt():
-        applied = resolve_discount(
+def _hold_for_pay_in_full(db: Session, *, raw_code, resolved, user, now):
+    """Open a hold for a pay-in-full Payment Option purchase."""
+    return _hold.open_hold(
+        db,
+        raw_code=raw_code,
+        space_id=resolved.space.id,
+        attempt=_reservations.ReservationAttempt.for_payment_option(
+            user_id=user.id,
+            payment_option_id=resolved.payment_option.id,
+            payment_option_schedule_id=resolved.payment_schedule.id,
+        ),
+        price=lambda own: resolve_discount(
             db,
             raw_code=raw_code,
             space_id=resolved.space.id,
@@ -208,31 +213,76 @@ def _resolve_and_reserve(
             original_cents=resolved.price_cents,
             currency=resolved.currency,
             now=now,
-            own_attempt=own_attempt,
-        )
-        code_row = find_code(db, raw_code=raw_code, space_id=resolved.space.id)
-        outcome = reserve_or_reuse(
-            db, applied=applied, code=code_row, user_id=user.id,
-            payment_option_id=resolved.payment_option.id,
-            payment_option_schedule_id=resolved.payment_schedule.id, now=now,
-        )
-        return applied, outcome
+            own_attempt=own,
+        ),
+        now=now,
+    )
 
-    try:
-        return attempt()
-    except DiscountError as first:
-        if first.reason is not DiscountRejection.LIMIT_REACHED:
-            raise
-        code_row = find_code(db, raw_code=raw_code, space_id=resolved.space.id)
-        if code_row is None:
-            raise
-        if not sweep_stale_reservations(db, discount_code_id=code_row.id, now=now):
-            raise
-        logger.info(
-            "Discount slot freed by verification sweep: code=%s user=%s",
-            code_row.id, user.id,
-        )
-        return attempt()
+
+def _hold_for_plan(db: Session, *, raw_code, resolved, user, now):
+    """Open a hold for a finite instalment plan.
+
+    The attempt names the plan's own schedule, so a member who prices a
+    code against pay-in-full and then switches to instalments correctly
+    takes a second slot rather than reusing the first — they are
+    different purchases, and the earlier hold is swept or released on its
+    own terms.
+    """
+    schedule = resolved.payment_schedule
+    return _hold.open_hold(
+        db,
+        raw_code=raw_code,
+        space_id=resolved.space.id,
+        attempt=_reservations.ReservationAttempt.for_payment_option(
+            user_id=user.id,
+            payment_option_id=resolved.payment_option.id,
+            payment_option_schedule_id=schedule.id,
+        ),
+        price=lambda own: resolve_plan_discount(
+            db,
+            raw_code=raw_code,
+            space_id=resolved.space.id,
+            payment_option_id=resolved.payment_option.id,
+            installment_amount_cents=schedule.installment_amount_cents,
+            installment_count=schedule.installment_count,
+            currency=resolved.currency,
+            now=now,
+            own_attempt=own,
+        ),
+        now=now,
+    )
+
+
+def _hold_for_direct(
+    db: Session, *, raw_code, space_id, kind, target_id, user, price_cents,
+    currency, now,
+):
+    """Open a hold for a direct purchase — one with no Payment Option.
+
+    ``payment_option_id`` is deliberately absent from the resolver call
+    rather than defaulted: ``validate_code`` refuses a Payment
+    Option-scoped code when no option is named, which is what keeps a
+    code restricted to one Option off a standalone purchase of an
+    experience that Option happens to include.
+    """
+    return _hold.open_hold(
+        db,
+        raw_code=raw_code,
+        space_id=space_id,
+        attempt=_reservations.ReservationAttempt.for_direct(
+            user_id=user.id, kind=kind, target_id=target_id,
+        ),
+        price=lambda own: resolve_discount(
+            db,
+            raw_code=raw_code,
+            space_id=space_id,
+            original_cents=price_cents,
+            currency=currency,
+            now=now,
+            own_attempt=own,
+        ),
+        now=now,
+    )
 
 
 @router.post("/discount-preview", response_model=DiscountPreviewResponse)
@@ -243,21 +293,184 @@ def preview_discount_code(
     current_user: User = Depends(get_verified_current_user),
     db: Session = Depends(get_db),
 ) -> DiscountPreviewResponse:
-    """What this code would do to this offer's price.
+    """What this code would do to this purchase's price.
 
     Answers, it does not reserve. Nothing is written, no code is
     consumed, and a member may preview the same code as often as they
     like — the figure is only a statement about right now, and checkout
     works it out again from scratch.
 
-    The price comes from ``resolve_option_and_schedule``, the same
-    resolver checkout uses, so the number being discounted is the number
-    that would be charged. Anything else and preview would be a second
-    opinion rather than a preview.
+    Three arrangements, one endpoint, because what a member wants to know
+    is the same question in each case:
+
+    * **Payment Option, pay in full** — one price, one discounted total.
+    * **Payment Option, finite instalments** — the commitment is
+      discounted and the answer carries the per-payment schedule, because
+      §7 requires the member to see the ACTUAL instalments before
+      agreeing to them. A browser dividing a total by four would be
+      guessing at the remainder.
+    * **Direct Pathway or Gathering** — priced from the experience's own
+      price, with no Payment Option named. That is what keeps a code
+      scoped to one Option off a standalone purchase of something that
+      Option includes.
+
+    Every price comes from the same resolver the matching checkout uses,
+    so the number being discounted is the number that would be charged.
+    Anything else and preview would be a second opinion rather than a
+    preview.
 
     Invalid codes come back 200 with ``valid: false`` and a reason. See
     ``DiscountPreviewResponse`` for why that is not an error.
     """
+    now = datetime.utcnow()
+    named_option = bool(body.payment_option_id and body.payment_option_schedule_id)
+    named_direct = bool(body.direct_kind and body.direct_id)
+    named_offering = bool(body.offering_space_slug and body.offering_slug)
+
+    if named_offering and not (named_option or named_direct):
+        # An Offering names a resource; the Option behind it is resolved
+        # here, exactly as its checkout door resolves it. From that point
+        # this is an ordinary Payment Option preview — which is what it
+        # is, and what lets a code scoped to that Option apply.
+        option, schedule = _resolve_offering_option(
+            db,
+            space_slug=body.offering_space_slug,
+            offering_slug=body.offering_slug,
+            user=current_user,
+        )
+        named_option = True
+        body = body.model_copy(update={
+            "payment_option_id": option.id,
+            "payment_option_schedule_id": schedule.id,
+        })
+
+    if named_option == named_direct:
+        # Neither, or both. Neither cannot be priced; both would leave it
+        # ambiguous which price the answer described, and an answer about
+        # the wrong price is worse than no answer.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Name either a payment option and schedule, or a direct "
+                "experience — not both and not neither."
+            ),
+        )
+
+    if named_direct:
+        _refuse_code_while_stage4_off(body.code)
+        target = _resolve_direct_preview_target(
+            db, kind=body.direct_kind, target_id=body.direct_id,
+        )
+        if target.price_cents <= 0:
+            return DiscountPreviewResponse(
+                valid=False,
+                code=normalise_code(body.code),
+                reason=DiscountRejection.NOT_PURCHASABLE.value,
+                message="This is already free — no code is needed.",
+            )
+        try:
+            applied = resolve_discount(
+                db,
+                raw_code=body.code,
+                space_id=target.space_id,
+                original_cents=target.price_cents,
+                currency=target.currency,
+                now=now,
+                own_attempt=_reservations.ReservationAttempt.for_direct(
+                    user_id=current_user.id,
+                    kind=body.direct_kind,
+                    target_id=body.direct_id,
+                ),
+            )
+        except DiscountError as exc:
+            logger.debug(
+                "Discount preview refused: reason=%s %s=%s user=%s",
+                exc.reason.value, body.direct_kind, body.direct_id,
+                current_user.id,
+            )
+            return DiscountPreviewResponse(
+                valid=False,
+                code=normalise_code(body.code),
+                reason=exc.reason.value,
+                message=exc.message,
+            )
+        return DiscountPreviewResponse(
+            valid=True,
+            code=applied.code,
+            original_amount_cents=applied.amounts.original_cents,
+            discount_amount_cents=applied.amounts.discount_cents,
+            final_amount_cents=applied.amounts.final_cents,
+            currency=applied.amounts.currency,
+            payment_mode="single",
+        )
+
+    # ── Payment Option ────────────────────────────────────────────
+    schedule_type_row = (
+        db.query(PaymentOptionSchedule.schedule_type)
+        .filter(PaymentOptionSchedule.id == body.payment_option_schedule_id)
+        .first()
+    )
+    if schedule_type_row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment schedule not found or not available for this option.",
+        )
+
+    if schedule_type_row[0] == "recurring_installments":
+        _refuse_code_while_stage4_off(body.code)
+        resolved_plan = resolve_option_and_schedule_for_plan(
+            db,
+            payment_option_id=body.payment_option_id,
+            payment_option_schedule_id=body.payment_option_schedule_id,
+        )
+        schedule = resolved_plan.payment_schedule
+        try:
+            quote = resolve_plan_discount(
+                db,
+                raw_code=body.code,
+                space_id=resolved_plan.space.id,
+                payment_option_id=resolved_plan.payment_option.id,
+                installment_amount_cents=schedule.installment_amount_cents,
+                installment_count=schedule.installment_count,
+                currency=resolved_plan.currency,
+                now=now,
+                own_attempt=_reservations.ReservationAttempt.for_payment_option(
+                    user_id=current_user.id,
+                    payment_option_id=resolved_plan.payment_option.id,
+                    payment_option_schedule_id=schedule.id,
+                ),
+            )
+        except DiscountError as exc:
+            logger.debug(
+                "Discount preview refused (plan): reason=%s option=%s user=%s",
+                exc.reason.value, resolved_plan.payment_option.id,
+                current_user.id,
+            )
+            return DiscountPreviewResponse(
+                valid=False,
+                code=normalise_code(body.code),
+                reason=exc.reason.value,
+                message=exc.message,
+            )
+        instalments = quote.instalments
+        return DiscountPreviewResponse(
+            valid=True,
+            code=quote.applied.code,
+            # The commitment, not one payment — which is what the
+            # discount was applied to.
+            original_amount_cents=instalments.amounts.original_cents,
+            discount_amount_cents=instalments.amounts.discount_cents,
+            final_amount_cents=instalments.amounts.final_cents,
+            currency=instalments.currency,
+            payment_mode="plan",
+            installment_count=instalments.installment_count,
+            installment_amount_cents=instalments.base_cents,
+            # Sent even when it equals the base amount, so a client
+            # renders the schedule accurately without having to work out
+            # whether a remainder exists.
+            final_installment_amount_cents=instalments.final_cents,
+        )
+
     resolved = resolve_option_and_schedule(
         db,
         payment_option_id=body.payment_option_id,
@@ -280,14 +493,14 @@ def preview_discount_code(
             payment_option_id=resolved.payment_option.id,
             original_cents=resolved.price_cents,
             currency=resolved.currency,
-            now=datetime.utcnow(),
+            now=now,
             # Their own hold must not count against them. Without this a
             # member who reserved the last slot reloads the page and is
             # told the code is fully used — by themselves.
-            own_attempt=(
-                current_user.id,
-                resolved.payment_option.id,
-                resolved.payment_schedule.id,
+            own_attempt=_reservations.ReservationAttempt.for_payment_option(
+                user_id=current_user.id,
+                payment_option_id=resolved.payment_option.id,
+                payment_option_schedule_id=resolved.payment_schedule.id,
             ),
         )
     except DiscountError as exc:
@@ -311,6 +524,127 @@ def preview_discount_code(
         discount_amount_cents=applied.amounts.discount_cents,
         final_amount_cents=applied.amounts.final_cents,
         currency=applied.amounts.currency,
+        payment_mode="single",
+    )
+
+
+def _resolve_offering_option(
+    db: Session, *, space_slug: str, offering_slug: str, user: User,
+):
+    """The Payment Option and pay-in-full schedule behind one Offering.
+
+    The same two helpers its checkout door uses, in the same order, and
+    behind the same acquisition guard — so a preview cannot quote a price
+    for an Offering the till would refuse. Resolving server-side also
+    means a client cannot name an option that sells something else.
+    """
+    from app.models.offering import Offering, OfferingPricingKind, OfferingStatus
+    from app.services import offering_acquisition as acq
+    from app.services import offering_commerce
+    from app.spaces import area_access, area_policies
+    from app.spaces.routes import _get_space_visible_to
+
+    space = _get_space_visible_to(space_slug, db, user)
+    area_access.require_area(db, space, user, area_policies.AREA_OFFERINGS)
+    offering = (
+        db.query(Offering)
+        .filter(Offering.space_id == space.id, Offering.slug == offering_slug)
+        .first()
+    )
+    # A draft is a 404 here as everywhere else, managers included — the
+    # same rule the checkout door applies, for the same reason.
+    if offering is None or offering.status == OfferingStatus.draft.value:
+        raise HTTPException(status_code=404, detail="Offering not found.")
+
+    try:
+        acq.guard_acquirable(
+            db, offering=offering, space=space, user=user,
+            for_pricing=OfferingPricingKind.one_time.value,
+        )
+    except acq.AcquisitionRefused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": exc.message},
+        ) from exc
+
+    # ``guard_acquirable`` has already established that these resolve and
+    # are sellable at the Offering's stated price, so neither is None.
+    option = offering_commerce.find_option(db, offering)
+    schedule = offering_commerce.pay_in_full_schedule(db, option)
+    return option, schedule
+
+
+@dataclass(frozen=True)
+class _DirectPreviewTarget:
+    """What a direct purchase would cost, for preview only.
+
+    Deliberately thin. Whether *this member* may buy — already owns it,
+    is banned, the Gathering is full — belongs to the guards that own
+    those questions and is answered at the till. A preview that
+    duplicated them would be a second set of rules to keep in step, and
+    getting a price for something you turn out not to be able to buy is
+    a far smaller harm than being refused a code you can.
+    """
+
+    space_id: str
+    price_cents: int
+    currency: str
+
+
+def _resolve_direct_preview_target(
+    db: Session, *, kind: str, target_id: str,
+) -> _DirectPreviewTarget:
+    """The price a direct door would charge, resolved server-side.
+
+    Server-side because the member sends an id, never a price — the same
+    rule the whole discount feature rests on.
+
+    The offer must actually be open. For a Pathway that is
+    ``pathway_direct_offer``, the one place the direct door's rule lives,
+    so a preview cannot quote a price the till would refuse. For a
+    Gathering it is ``gathering_tickets.load_and_validate_offer``, which
+    is the ticket door's own trusted-offer loader.
+    """
+    if kind == "pathway":
+        pathway = db.query(Pathway).filter(Pathway.id == target_id).first()
+        if pathway is None:
+            raise HTTPException(status_code=404, detail="Pathway not found.")
+        if _direct_offer.direct_purchase_block_reason(pathway) is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="This pathway is not sold individually.",
+            )
+        return _DirectPreviewTarget(
+            space_id=pathway.space_id,
+            price_cents=pathway.price_cents or 0,
+            currency=(pathway.currency or "AUD").upper(),
+        )
+
+    if kind == "gathering":
+        from app.services import gathering_tickets as _gt
+
+        event = db.query(Event).filter(Event.id == target_id).first()
+        if event is None:
+            raise HTTPException(status_code=404, detail="Gathering not found.")
+        space = db.query(Space).filter(Space.id == event.space_id).first()
+        if space is None:  # pragma: no cover — FK guarantees it
+            raise HTTPException(status_code=404, detail="Collective not found.")
+        try:
+            offer = _gt.load_and_validate_offer(db, space.slug, event.id)
+        except _gt.TicketCheckoutError as exc:
+            raise HTTPException(
+                status_code=exc.http_status,
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
+        return _DirectPreviewTarget(
+            space_id=offer.space.id,
+            price_cents=offer.price_cents,
+            currency=offer.currency,
+        )
+
+    raise HTTPException(
+        status_code=422,
+        detail="direct_kind must be 'pathway' or 'gathering'.",
     )
 
 
@@ -460,18 +794,15 @@ def create_unified_checkout_session(
         )
 
     if is_recurring:
-        if body.discount_code:
-            # Settled product scope, not an unfinished edge: discount
-            # codes are a pay-in-full feature. A creator wanting a
-            # reduced payment plan publishes a separate Payment Option
-            # at that price, which keeps one price per schedule and
-            # leaves the finite-plan billing machinery alone.
+        if body.discount_code and not settings.universal_discount_codes_enabled:
+            # Stage 4 is not switched on, so this is still the pay-in-full
+            # feature it has been since v1 — same refusal, same wording.
             #
-            # Refused rather than ignored, because accepting the code
-            # and charging the full plan would tell the member something
-            # untrue at the moment they commit. The frontend already
-            # hides the field here; this is the guard for anything that
-            # posts directly.
+            # Refused rather than ignored, because accepting the code and
+            # charging the full plan would tell the member something
+            # untrue at the moment they commit. The frontend hides the
+            # field here while the flag is off; this is the guard for
+            # anything that posts directly.
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -496,8 +827,37 @@ def create_unified_checkout_session(
             payment_option=recurring_resolved.payment_option, now=now,
         )
         _run_checkout_shadow(
-            db, resolved=recurring_resolved, recurring=True, discounted=False,
+            db, resolved=recurring_resolved, recurring=True,
+            discounted=bool(body.discount_code),
         )
+
+        # ── Discount: revalidated here, independently of any preview ──
+        # Same discipline as pay-in-full below. The preview the member
+        # saw is not evidence: it described an earlier moment, it is not
+        # signed, and the code may have expired or filled up since. So
+        # the code is resolved again from scratch against the schedule's
+        # own figures, and the slot is held before Stripe is contacted.
+        #
+        # The discount applies to the WHOLE commitment, not to one
+        # instalment — see ``resolve_plan_discount``.
+        plan_hold = None
+        try:
+            plan_hold = _hold_for_plan(
+                db, raw_code=body.discount_code,
+                resolved=recurring_resolved, user=current_user, now=now,
+            )
+        except DiscountError as exc:
+            # 409, not 422: the request was well formed and was valid
+            # when the member saw the preview. What changed is the
+            # world.
+            raise HTTPException(status_code=409, detail=exc.message) from exc
+        except _hold.LiveSessionExists as live:
+            return UnifiedCheckoutResponse(
+                checkout_url=live.checkout_url,
+                transaction_id=live.transaction_id,
+                free=False,
+            )
+
         outcome = start_finite_plan_setup(
             db,
             resolved=recurring_resolved,
@@ -505,6 +865,7 @@ def create_unified_checkout_session(
             success_url=body.success_url,
             cancel_url=body.cancel_url,
             now=now,
+            discounted=plan_hold,
         )
         logger.info(
             "FIP2 finite-plan start: plan=%s session=%s user=%s",
@@ -581,61 +942,28 @@ def create_unified_checkout_session(
     # about an earlier moment, it is not signed, and the code may have
     # expired or filled up since. So the code is resolved again from
     # scratch, against a price read again from the Payment Option.
-    applied: AppliedDiscount | None = None
-    reservation = None
-    if body.discount_code:
-        try:
-            applied, outcome = _resolve_and_reserve(
-                db, raw_code=body.discount_code, resolved=resolved,
-                user=current_user, now=now,
-            )
-        except DiscountError as exc:
-            # 409, not 422: the request was well formed and was valid when
-            # the member saw the preview. What changed is the world.
-            raise HTTPException(status_code=409, detail=exc.message) from exc
-        reservation = outcome.reservation
-
-        if (
-            outcome.reused
-            and reservation.provider_checkout_session_id
-            and now < reservation.session_expires_at
-        ):
-            # This member already has a live payment page for exactly this
-            # purchase. Hand back the same one: a new Session would be a
-            # second charge waiting to happen, and a new reservation would
-            # spend a slot they already hold.
-            existing_url = reservation.provider_checkout_session_url
-            if existing_url:
-                logger.info(
-                    "Unified checkout: reusing reservation=%s session=%s user=%s",
-                    reservation.id, reservation.provider_checkout_session_id,
-                    current_user.id,
-                )
-                return UnifiedCheckoutResponse(
-                    checkout_url=existing_url,
-                    transaction_id=(
-                        reservation.payment_transaction_id
-                        or reservation.intended_payment_transaction_id
-                        or reservation.id
-                    ),
-                    free=False,
-                )
-
-        if outcome.reused and now >= reservation.session_expires_at:
-            # Their own hold is past its window. Whether it is dead is a
-            # question for Stripe, not for this request — opening a second
-            # Session before knowing could charge them twice.
-            from app.services.discount_reservations import verify_stale_reservation
-            verdict = verify_stale_reservation(db, reservation=reservation, now=now)
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "That checkout has already been completed."
-                    if verdict == "completed" else
-                    "Your previous checkout for this offer timed out. "
-                    "Please start again."
-                ),
-            )
+    #
+    # The hold protocol — reserve before Stripe, hand back a live page,
+    # verify a stale one, persist parameters, release only on knowledge —
+    # lives in ``discount_checkout_hold`` and is shared with the direct
+    # purchase doors. See that module for why it is one implementation.
+    hold = None
+    try:
+        hold = _hold_for_pay_in_full(
+            db, raw_code=body.discount_code, resolved=resolved,
+            user=current_user, now=now,
+        )
+    except DiscountError as exc:
+        # 409, not 422: the request was well formed and was valid when
+        # the member saw the preview. What changed is the world.
+        raise HTTPException(status_code=409, detail=exc.message) from exc
+    except _hold.LiveSessionExists as live:
+        return UnifiedCheckoutResponse(
+            checkout_url=live.checkout_url,
+            transaction_id=live.transaction_id,
+            free=False,
+        )
+    applied: AppliedDiscount | None = hold.applied if hold else None
 
     # ── Paid path: Stripe Checkout Session ────────────────────────
     try:
@@ -647,56 +975,25 @@ def create_unified_checkout_session(
             cancel_url=body.cancel_url,
             now=now,
             applied_discount=applied,
-            txn_id_override=(
-                reservation.intended_payment_transaction_id if reservation else None
-            ),
-            session_expires_at=reservation.session_expires_at if reservation else None,
-            session_idempotency_key=(
-                reservation.session_idempotency_key if reservation else None
-            ),
-            on_session_params=(
-                (lambda params: _persist_session_params(db, reservation, params))
-                if reservation else None
-            ),
+            txn_id_override=hold.txn_id if hold else None,
+            session_expires_at=hold.session_expires_at if hold else None,
+            session_idempotency_key=hold.idempotency_key if hold else None,
+            on_session_params=hold.persist_params if hold else None,
             txn_transaction_type_override=(
                 PaymentTransactionType.member_payment_option_purchase
             ),
         )
     except Exception:
-        # Stripe refused, or the ledger write failed. Either way no
-        # payment page exists for this attempt, so the slot must go back
-        # immediately rather than waiting out its window — this is the one
-        # release that needs no verification, because we are the party who
-        # knows the request failed.
-        #
-        # Guarded on the params never having been persisted: if they WERE
-        # persisted, a Session may exist despite the error, and releasing
-        # would be a guess. Those fall to the verification ladder.
-        if reservation is not None:
-            db.rollback()
-            db.refresh(reservation)
-            if reservation.session_create_params_json is None:
-                release(
-                    db, reservation=reservation,
-                    reason="session_create_failed", now=now,
-                )
-            else:
-                logger.warning(
-                    "Discount reservation %s left held after a failed checkout: "
-                    "Stripe params were already sent, so a Session may exist. "
-                    "Verification will decide.",
-                    reservation.id,
-                )
+        # Stripe refused, or the ledger write failed. Either way the slot
+        # may need to go back — ``abandon`` decides, and only releases
+        # when it knows no payment page exists.
+        if hold is not None:
+            hold.abandon(now=now)
         raise
-    if reservation is not None:
-        reservation.provider_checkout_session_url = session.url
-        attach_session(
-            db,
-            reservation=reservation,
-            session_id=session.id,
-            session_params=reservation.session_create_params_json or {},
-            payment_transaction_id=txn.id,
-            now=now,
+    if hold is not None:
+        hold.attach(
+            session_id=session.id, session_url=session.url,
+            txn_id=txn.id, now=now,
         )
     logger.info(
         "Unified checkout: txn=%s session=%s option=%s user=%s discount=%s",
@@ -874,6 +1171,18 @@ def create_pathway_checkout_session(
                 db, user=current_user,
                 payment_option=recurring_resolved.payment_option, now=now,
             )
+            _refuse_code_while_stage4_off(body.discount_code)
+            try:
+                plan_hold = _hold_for_plan(
+                    db, raw_code=body.discount_code,
+                    resolved=recurring_resolved, user=current_user, now=now,
+                )
+            except DiscountError as exc:
+                raise HTTPException(
+                    status_code=409, detail=exc.message,
+                ) from exc
+            except _hold.LiveSessionExists as live:
+                return PathwayCheckoutResponse(checkout_url=live.checkout_url)
             outcome = start_finite_plan_setup(
                 db,
                 resolved=recurring_resolved,
@@ -881,6 +1190,7 @@ def create_pathway_checkout_session(
                 success_url=body.success_url,
                 cancel_url=body.cancel_url,
                 now=now,
+                discounted=plan_hold,
             )
             logger.info(
                 "FIP4A pathway finite-plan start: plan=%s session=%s user=%s pathway=%s",
@@ -899,21 +1209,55 @@ def create_pathway_checkout_session(
                 detail="Payment option has no valid price.",
             )
 
+        _refuse_code_while_stage4_off(body.discount_code)
+        try:
+            option_hold = _hold_for_pay_in_full(
+                db, raw_code=body.discount_code, resolved=resolved,
+                user=current_user, now=now,
+            )
+        except DiscountError as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from exc
+        except _hold.LiveSessionExists as live:
+            return PathwayCheckoutResponse(checkout_url=live.checkout_url)
+
         # Legacy metadata continuity: include ``pathway_id`` on the
         # Stripe Session + payment_intent, and populate
         # ``PaymentTransaction.pathway_id`` for downstream reporting.
-        _txn, session = orchestrate_paid_checkout(
-            db,
-            resolved=resolved,
-            payer=current_user,
-            success_url=body.success_url,
-            cancel_url=body.cancel_url,
-            now=now,
-            extra_metadata={"pathway_id": pathway.id},
-            extra_payment_intent_metadata={"pathway_id": pathway.id},
-            txn_pathway_id=pathway.id,
-            product_name=pathway.title,
-        )
+        try:
+            _txn, session = orchestrate_paid_checkout(
+                db,
+                resolved=resolved,
+                payer=current_user,
+                success_url=body.success_url,
+                cancel_url=body.cancel_url,
+                now=now,
+                extra_metadata={"pathway_id": pathway.id},
+                extra_payment_intent_metadata={"pathway_id": pathway.id},
+                txn_pathway_id=pathway.id,
+                product_name=pathway.title,
+                applied_discount=(
+                    option_hold.applied if option_hold else None
+                ),
+                txn_id_override=option_hold.txn_id if option_hold else None,
+                session_expires_at=(
+                    option_hold.session_expires_at if option_hold else None
+                ),
+                session_idempotency_key=(
+                    option_hold.idempotency_key if option_hold else None
+                ),
+                on_session_params=(
+                    option_hold.persist_params if option_hold else None
+                ),
+            )
+        except Exception:
+            if option_hold is not None:
+                option_hold.abandon(now=now)
+            raise
+        if option_hold is not None:
+            option_hold.attach(
+                session_id=session.id, session_url=session.url,
+                txn_id=_txn.id, now=now,
+            )
         return PathwayCheckoutResponse(checkout_url=session.url)
 
     # ── Option-less direct path (pathway.price_cents source) ──────
@@ -984,22 +1328,57 @@ def create_pathway_checkout_session(
 
     check_not_banned_or_raise(db, user=current_user, space=pathway.space)
 
-    session = _legacy_pathway_price_stripe_session(
-        db, pathway=pathway, payer=current_user,
-        success_url=body.success_url, cancel_url=body.cancel_url, now=now,
-    )
+    # ── Stage 4 — a Collective-wide code on the direct door ───────
+    # The code is resolved against the Pathway's OWN price, because that
+    # is what this door charges. No Payment Option is named, and that is
+    # the point: ``validate_code`` refuses a code scoped to one Payment
+    # Option when no option is named, so a code restricted to
+    # "EMBODY Term 4" cannot be spent here on a Pathway that Option
+    # happens to include. §4's scope integrity, enforced by the rule
+    # that already existed rather than by a new one.
+    _refuse_code_while_stage4_off(body.discount_code)
+    try:
+        direct_hold = _hold_for_direct(
+            db, raw_code=body.discount_code,
+            space_id=pathway.space_id, kind="pathway", target_id=pathway.id,
+            user=current_user, price_cents=pathway.price_cents,
+            currency=(pathway.currency or "AUD").upper(), now=now,
+        )
+    except DiscountError as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
+    except _hold.LiveSessionExists as live:
+        return PathwayCheckoutResponse(checkout_url=live.checkout_url)
+
+    try:
+        session = _legacy_pathway_price_stripe_session(
+            db, pathway=pathway, payer=current_user,
+            success_url=body.success_url, cancel_url=body.cancel_url, now=now,
+            hold=direct_hold,
+        )
+    except Exception:
+        if direct_hold is not None:
+            direct_hold.abandon(now=now)
+        raise
     return PathwayCheckoutResponse(checkout_url=session.url)
 
 
 def _legacy_pathway_price_stripe_session(
     db: Session, *, pathway: Pathway, payer: User,
     success_url: str, cancel_url: str, now: datetime,
+    hold: Any = None,
 ):
     """Option-less pathway-purchase path — reads price directly
-    from ``pathway.price_cents``. Preserved verbatim for the
-    R.E.A.L. Journey shape and other pre-PaymentOptions pathways
-    still in use. Not exported for reuse; the shared orchestration
-    is grants/option-based only."""
+    from ``pathway.price_cents``. Preserved for the R.E.A.L. Journey
+    shape and other pre-PaymentOptions pathways still in use. Not
+    exported for reuse; the shared orchestration is grants/option-based
+    only.
+
+    ``hold`` is a Stage 4 ``DiscountHold`` or ``None``. When present the
+    Session and the ledger row carry the DISCOUNTED amount, the
+    transaction id the reservation already set aside, and the Session
+    expiry and idempotency key the reservation pinned down — so a replay
+    recovers this request rather than making a second one. With no hold
+    every line below is exactly what it was."""
     import stripe as _stripe
     from uuid import uuid4 as _uuid4
 
@@ -1038,8 +1417,16 @@ def _legacy_pathway_price_stripe_session(
             status_code=403,
             detail=PLAN_FORBIDS_PAID_OFFERS_DETAIL,
         )
-    gross = pathway.price_cents
     currency = (pathway.currency or "AUD").upper()
+    # What is actually charged. The platform fee follows the discounted
+    # amount, not the list price — §12, and the same rule
+    # ``checkout_orchestration`` already applies on the Option doors.
+    # Nothing is recomputed here: the figure comes from the reservation,
+    # which froze it when the slot was taken.
+    gross = (
+        hold.applied.amounts.final_cents if hold is not None
+        else pathway.price_cents
+    )
     platform_fee = round(gross * fee_context.fee_bps / 10000)
     net_creator = gross - platform_fee
     # Same snapshot rule as every other purchase path: decided here, frozen
@@ -1049,43 +1436,69 @@ def _legacy_pathway_price_stripe_session(
         creator_user_id=fee_context.creator_id,
         is_platform_owned=fee_context.is_platform_owned,
     )
-    txn_id = str(_uuid4())
+    # The reservation set aside a transaction id before Stripe was
+    # called, so a recovery replay identifies this same purchase instead
+    # of creating a second one.
+    txn_id = (
+        hold.txn_id if hold is not None and hold.txn_id else str(_uuid4())
+    )
+
+    # Built as a dict rather than passed inline so a discount hold can
+    # persist the EXACT request before it is sent. Without that, a crash
+    # between the call and recording its id leaves a reservation that
+    # looks like it never reached Stripe — and releasing it would free a
+    # slot the member may already have paid for.
+    session_params: dict[str, Any] = {
+        "mode": "payment",
+        "line_items": [{
+            "price_data": {
+                "currency": currency.lower(),
+                "product_data": {
+                    "name": pathway.title,
+                    "description": f"{space.name} — Fresh Collective",
+                },
+                "unit_amount": gross,
+            },
+            "quantity": 1,
+        }],
+        "metadata": {
+            "transaction_id": txn_id,
+            "pathway_id": pathway.id,
+            "space_id": space.id,
+            "payer_user_id": payer.id,
+            "creator_user_id": fee_context.creator_id or "",
+            "platform_fee_bps": str(fee_context.fee_bps),
+            "creator_plan_id": fee_context.creator_plan_id or "",
+            "payment_option_id": "",
+            "payment_option_schedule_id": "",
+        },
+        "payment_intent_data": {
+            "metadata": {
+                "transaction_id": txn_id,
+                "pathway_id": pathway.id,
+                "payer_user_id": payer.id,
+            }
+        },
+        "customer_email": payer.email,
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+    }
+    if hold is not None:
+        # The same instant the reservation is judged stale against, so
+        # "past expiry" cannot mean two different things on the two sides
+        # of the boundary. Set before the params are persisted, because a
+        # replay must re-send this absolute value rather than a freshly
+        # derived one.
+        session_params["expires_at"] = hold.expires_at_unix
+        hold.persist_params(session_params)
 
     try:
         session = _stripe.checkout.Session.create(
-            mode="payment",
-            line_items=[{
-                "price_data": {
-                    "currency": currency.lower(),
-                    "product_data": {
-                        "name": pathway.title,
-                        "description": f"{space.name} — Fresh Collective",
-                    },
-                    "unit_amount": gross,
-                },
-                "quantity": 1,
-            }],
-            metadata={
-                "transaction_id": txn_id,
-                "pathway_id": pathway.id,
-                "space_id": space.id,
-                "payer_user_id": payer.id,
-                "creator_user_id": fee_context.creator_id or "",
-                "platform_fee_bps": str(fee_context.fee_bps),
-                "creator_plan_id": fee_context.creator_plan_id or "",
-                "payment_option_id": "",
-                "payment_option_schedule_id": "",
-            },
-            payment_intent_data={
-                "metadata": {
-                    "transaction_id": txn_id,
-                    "pathway_id": pathway.id,
-                    "payer_user_id": payer.id,
-                }
-            },
-            customer_email=payer.email,
-            success_url=success_url,
-            cancel_url=cancel_url,
+            **session_params,
+            **(
+                {"idempotency_key": hold.idempotency_key}
+                if hold is not None else {}
+            ),
         )
     except _stripe.StripeError as exc:
         logger.error(
@@ -1125,14 +1538,28 @@ def _legacy_pathway_price_stripe_session(
         connect_destination_account_id=payout.destination_account_id,
         connect_transfer_status=payout.initial_transfer_status,
         stripe_mode=settings.stripe_mode,
+        # The immutable record of how this charge was reached. Read by
+        # the creator's payment views and by the member's confirmation,
+        # so a discounted purchase stays explicable after the code is
+        # edited or deleted.
+        discount_snapshot_json=(
+            hold.applied.snapshot if hold is not None else None
+        ),
         created_at=now,
         updated_at=now,
     )
     db.add(txn)
     db.commit()
+    if hold is not None:
+        hold.attach(
+            session_id=session.id, session_url=session.url,
+            txn_id=txn_id, now=now,
+        )
     logger.info(
-        "Legacy pathway checkout: txn=%s session=%s pathway=%s user=%s",
+        "Legacy pathway checkout: txn=%s session=%s pathway=%s user=%s "
+        "discount=%s amount=%d",
         txn_id, session.id, pathway.id, payer.id,
+        hold.applied.code if hold is not None else "-", gross,
     )
     return session
 
@@ -1220,30 +1647,67 @@ def create_gathering_series_checkout_session(
     if resolved.price_cents <= 0:
         raise HTTPException(status_code=400, detail="Schedule has no valid price.")
 
+    # ── Stage 4 — a code on the Series door ───────────────────────
+    # §15: Series purchasing stays on the existing arrangement model, so
+    # this is a Payment Option purchase and the code is resolved against
+    # the Option exactly as it is at ``POST /api/checkout``. A code
+    # scoped to THIS Option applies; one scoped to another does not.
+    _refuse_code_while_stage4_off(body.discount_code)
+    try:
+        series_hold = _hold_for_pay_in_full(
+            db, raw_code=body.discount_code, resolved=resolved,
+            user=current_user, now=now,
+        )
+    except DiscountError as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
+    except _hold.LiveSessionExists as live:
+        return GatheringSeriesCheckoutResponse(checkout_url=live.checkout_url)
+
     # Legacy metadata: include ``series_id`` on the Session +
     # payment_intent so any downstream tooling that inspected it
     # continues to see it. ``pathway_id`` is deliberately absent
     # (matches the pre-B4B series endpoint).
-    _txn, session = orchestrate_paid_checkout(
-        db,
-        resolved=resolved,
-        payer=current_user,
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
-        now=now,
-        extra_metadata={"series_id": series.id},
-        extra_payment_intent_metadata={"series_id": series.id},
-        # ``PaymentTransaction.pathway_id`` legacy pointer: the
-        # pre-B4B series endpoint set this to the option's
-        # ``grants_pathway_id`` when set (bundled Pathway continuity).
-        # Preserve that.
-        txn_pathway_id=(
-            resolved.payment_option.grants_pathway_id
-            if resolved.payment_option.grants_pathway_id
-            else None
-        ),
-        product_name=f"{series.title} — {resolved.payment_option.name}",
-    )
+    try:
+        _txn, session = orchestrate_paid_checkout(
+            db,
+            resolved=resolved,
+            payer=current_user,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            now=now,
+            extra_metadata={"series_id": series.id},
+            extra_payment_intent_metadata={"series_id": series.id},
+            # ``PaymentTransaction.pathway_id`` legacy pointer: the
+            # pre-B4B series endpoint set this to the option's
+            # ``grants_pathway_id`` when set (bundled Pathway continuity).
+            # Preserve that.
+            txn_pathway_id=(
+                resolved.payment_option.grants_pathway_id
+                if resolved.payment_option.grants_pathway_id
+                else None
+            ),
+            product_name=f"{series.title} — {resolved.payment_option.name}",
+            applied_discount=series_hold.applied if series_hold else None,
+            txn_id_override=series_hold.txn_id if series_hold else None,
+            session_expires_at=(
+                series_hold.session_expires_at if series_hold else None
+            ),
+            session_idempotency_key=(
+                series_hold.idempotency_key if series_hold else None
+            ),
+            on_session_params=(
+                series_hold.persist_params if series_hold else None
+            ),
+        )
+    except Exception:
+        if series_hold is not None:
+            series_hold.abandon(now=now)
+        raise
+    if series_hold is not None:
+        series_hold.attach(
+            session_id=session.id, session_url=session.url,
+            txn_id=_txn.id, now=now,
+        )
     return GatheringSeriesCheckoutResponse(checkout_url=session.url)
 
 

@@ -41,6 +41,9 @@ interface CheckoutButtonProps {
   /** Collective primary, used by `appearance='card'` so the CTA is
    *  branded the same way the schedule buttons beside it are. */
   accentHex?: string | null
+  /** Stage 4 — an applied discount code, or null. A code only: the
+   *  amount charged is the server's, resolved again at checkout. */
+  discountCode?: string | null
 }
 
 export function CheckoutButton({
@@ -54,6 +57,7 @@ export function CheckoutButton({
   optionName,
   appearance = 'pill',
   accentHex,
+  discountCode = null,
 }: CheckoutButtonProps) {
   const pathname = usePathname()
   const [loading, setLoading] = useState(false)
@@ -120,6 +124,9 @@ export function CheckoutButton({
           cancel_url: cancelUrl,
           ...(paymentOptionId ? { payment_option_id: paymentOptionId } : {}),
           ...(paymentOptionScheduleId ? { payment_option_schedule_id: paymentOptionScheduleId } : {}),
+          // Stage 4 — the code, never a price. The server resolves it
+          // again from scratch against the Pathway's own price.
+          ...(discountCode ? { discount_code: discountCode } : {}),
         }),
       })
 

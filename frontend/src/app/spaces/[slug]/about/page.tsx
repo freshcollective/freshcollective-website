@@ -590,6 +590,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 autoGrantRole={space.auto_grant_role ?? null}
                 joinPolicy={space.join_policy ?? 'open'}
                 joiningOptions={space.joining_options ?? []}
+                discountCodesEnabled={space.discount_codes_enabled === true}
                 palette={space.colour_palette ?? null}
               />
             </div>

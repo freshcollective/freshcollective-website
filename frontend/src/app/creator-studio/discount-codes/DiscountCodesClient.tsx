@@ -190,7 +190,7 @@ export default function DiscountCodesClient({ spaceSlug, defaultCurrency }: Prop
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center">
           <p className="text-[15px] font-medium text-navy-900">No discount codes yet</p>
           <p className="mx-auto mt-1 max-w-md text-[13px] text-slate-600">
-            Create one to offer a reduced price on a pay-in-full purchase —
+            Create one to offer a reduced price on eligible purchases —
             across the Collective, or on a single Payment Option.
           </p>
         </div>
@@ -479,9 +479,10 @@ function DiscountCodeForm({
             One Payment Option
           </label>
           <p className="mt-2 max-w-[54ch] text-[12.5px] text-slate-500">
-            Discount codes currently apply to pay-in-full purchases only.
-            Payment plans keep their own price — to offer a reduced plan,
-            add a separate Payment Option for it.
+            Discounts apply to eligible purchases in this Collective,
+            including supported payment plans. For instalments, the
+            discount is spread across all scheduled payments — we work out
+            the amounts, so there is nothing for you to calculate.
           </p>
           {values.scope === 'payment_option' && (
             <select

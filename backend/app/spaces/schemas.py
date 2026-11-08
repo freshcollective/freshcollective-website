@@ -133,6 +133,13 @@ class SpaceResponse(BaseModel):
     # creator has not nominated any — which the About page must render
     # as "not open right now", never as a free door.
     joining_options: list[dict] = []
+    # Stage 4 — may a member type a discount code on this Collective's
+    # purchase surfaces? Resolved server-side from
+    # UNIVERSAL_DISCOUNT_CODES_ENABLED, and populated explicitly at the
+    # construction site rather than left to this default: a field whose
+    # only value is its schema default reads ``False`` forever and looks
+    # like a working flag, which has caught us before.
+    discount_codes_enabled: bool = False
     # Which areas this viewer may reach. Viewer-specific — see the
     # cache note on the endpoint. Deliberately only the resolved set,
     # not the policy map: the member client needs to know what it may
@@ -454,6 +461,14 @@ class PathwayWithSteps(BaseModel):
     # whose only arrangements cannot be sold: the surface then renders
     # no purchase section rather than an empty one.
     ways_to_join: list[WaysToJoinArrangementOut] = []
+    # Stage 4 — may a member type a discount code on this surface?
+    #
+    # Resolved server-side from ``UNIVERSAL_DISCOUNT_CODES_ENABLED``, so
+    # the browser never decides. Populated explicitly at the construction
+    # site, never left to this default: a field whose only value is its
+    # schema default reads ``False`` forever and looks like a working
+    # flag, which has caught us before.
+    discount_codes_enabled: bool = False
     # FIP4B1 — non-null when the viewer has a finite payment plan
     # granting this pathway that needs their attention
     # (``payment_problem`` or ``suspended``). Frontend uses this to
@@ -643,6 +658,9 @@ class EventDetail(EventSummary):
     # its own booking control on this surface already, and §9 says not
     # to redesign an established interface to make room for a sibling.
     payment_option_ways_to_join: list[WaysToJoinArrangementOut] = []
+    # Stage 4 — may a member type a discount code on this surface?
+    # Same resolution and the same caution as the Pathway field.
+    discount_codes_enabled: bool = False
 
 
 class SeriesBookingResponse(BaseModel):

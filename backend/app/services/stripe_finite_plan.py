@@ -105,6 +105,14 @@ def create_setup_session(
     success_url: str,
     cancel_url: str,
     reuse_customer_id: str | None,
+    #: Stage 4. Called with ``(idempotency_key, kwargs)`` immediately
+    #: before the Stripe call, so a discount reservation can persist the
+    #: exact request it is about to make. That is what lets the stale-hold
+    #: verifier replay this Session later and get Stripe's cached original
+    #: back instead of creating a second one — the same recovery a
+    #: pay-in-full reservation relies on, working for a setup Session
+    #: because the key and parameters match what was actually sent.
+    on_params: Any = None,
 ) -> Any:
     """Create a Stripe Checkout Session in ``mode='setup'``.
 
@@ -153,8 +161,15 @@ def create_setup_session(
         # explicitly avoids drift if Stripe defaults ever change).
         kwargs["customer_creation"] = "always"
 
+    idempotency_key = _idem(plan.id, "setup_session")
+    if on_params is not None:
+        # Before the network call, never after: a crash between the two
+        # must leave evidence that a Session may exist, rather than a
+        # reservation that looks like it never reached Stripe.
+        on_params(idempotency_key, dict(kwargs))
+
     return stripe.checkout.Session.create(
-        idempotency_key=_idem(plan.id, "setup_session"),
+        idempotency_key=idempotency_key,
         **kwargs,
     )
 
@@ -313,6 +328,49 @@ def create_product_and_price(
     return product.id, price.id
 
 
+def create_final_installment_price(*, plan: PurchasePlan, product_id: str) -> str:
+    """The second recurring Price an unevenly discounted plan needs.
+
+    A single recurring Price can only express identical invoices, so a
+    plan whose last payment differs by a cent or two cannot be one Price
+    — it is two, hung off the same Product, billed as two consecutive
+    schedule phases.
+
+    Deliberately a separate call rather than a third element of
+    :func:`create_product_and_price`'s return. Every even plan — which
+    is every undiscounted plan and every evenly discounted one — never
+    reaches here, so the common path makes exactly the two Stripe calls
+    it always has.
+
+    Same cadence as the base Price: the phase boundary has to land on a
+    billing boundary or Stripe would prorate across it.
+    """
+    _bind_key()
+
+    if plan.final_installment_amount_cents is None:  # pragma: no cover
+        # Guarded rather than assumed: a NULL here would create a Price
+        # of ``None`` and fail inside Stripe with a worse message.
+        raise ValueError(
+            f"plan {plan.id} has no final_installment_amount_cents to price"
+        )
+
+    price = stripe.Price.create(
+        product=product_id,
+        currency=plan.currency.lower(),
+        unit_amount=plan.final_installment_amount_cents,
+        recurring={
+            "interval": plan.stripe_interval,
+            "interval_count": plan.stripe_interval_count,
+        },
+        metadata={
+            "purchase_plan_id": plan.id,
+            "installment_role": "final",
+        },
+        idempotency_key=_idem(plan.id, "final_price"),
+    )
+    return price.id
+
+
 # ---------------------------------------------------------------------------
 # SubscriptionSchedule — the finite billing agreement
 # ---------------------------------------------------------------------------
@@ -324,6 +382,7 @@ def create_finite_subscription_schedule(
     customer_id: str,
     price_id: str,
     default_payment_method_id: str,
+    final_price_id: str | None = None,
 ) -> tuple[str, str | None]:
     """Create the SubscriptionSchedule Stripe will use to bill N
     invoices then stop.
@@ -334,7 +393,16 @@ def create_finite_subscription_schedule(
     typically fills it on the same response, but the caller should
     handle a nullable return).
 
-    Shape:
+    Shape — one phase for an even plan, two for an uneven one.
+
+    ``final_price_id`` is supplied only when the plan's last instalment
+    differs from the rest, which happens when a discount does not divide
+    into equal cents. Then the base phase covers N-1 instalments and a
+    second phase of exactly one cadence carries the final Price. Omitted
+    — which is every undiscounted plan and every evenly discounted one —
+    the schedule is the single phase it has always been, byte for byte.
+
+    Even shape:
       * One phase whose ``duration`` covers the full finite plan:
         ``interval`` = the recurring Price's cadence unit,
         ``interval_count`` = the Price's cadence multiplier × the
@@ -363,9 +431,49 @@ def create_finite_subscription_schedule(
     # e.g. weekly × 3       → week × 1 Price   → phase duration week × 3
     #      fortnightly × 5  → week × 2 Price   → phase duration week × 10
     #      monthly × 6      → month × 1 Price  → phase duration month × 6
-    phase_interval_count = (
-        plan.stripe_interval_count * plan.installments_expected
-    )
+    #
+    # Stage 4: when a final Price is supplied the count below covers the
+    # instalments at the BASE price only, and a second phase of exactly
+    # one cadence carries the last one.
+    base_installments = plan.installments_expected
+    if final_price_id is not None:
+        base_installments -= 1
+
+    phases: list[dict[str, Any]] = []
+    if base_installments > 0:
+        phases.append({
+            "items": [
+                {"price": price_id, "quantity": 1},
+            ],
+            "duration": {
+                "interval": plan.stripe_interval,
+                "interval_count": plan.stripe_interval_count * base_installments,
+            },
+            "metadata": {
+                "purchase_plan_id": plan.id,
+            },
+        })
+    if final_price_id is not None:
+        phases.append({
+            "items": [
+                {"price": final_price_id, "quantity": 1},
+            ],
+            "duration": {
+                "interval": plan.stripe_interval,
+                "interval_count": plan.stripe_interval_count,
+            },
+            # The phase boundary coincides with a billing boundary, so
+            # Stripe has nothing to prorate — but a changed price across
+            # a phase edge is exactly the case it would prorate if it
+            # did, and a surprise line item on a member's final invoice
+            # would break the "sums to the agreed total" guarantee the
+            # whole feature rests on. Stated rather than relied upon.
+            "proration_behavior": "none",
+            "metadata": {
+                "purchase_plan_id": plan.id,
+                "installment_role": "final",
+            },
+        })
 
     schedule = stripe.SubscriptionSchedule.create(
         customer=customer_id,
@@ -374,20 +482,7 @@ def create_finite_subscription_schedule(
         default_settings={
             "default_payment_method": default_payment_method_id,
         },
-        phases=[
-            {
-                "items": [
-                    {"price": price_id, "quantity": 1},
-                ],
-                "duration": {
-                    "interval": plan.stripe_interval,
-                    "interval_count": phase_interval_count,
-                },
-                "metadata": {
-                    "purchase_plan_id": plan.id,
-                },
-            }
-        ],
+        phases=phases,
         metadata={
             "purchase_plan_id": plan.id,
             "payment_option_id": plan.payment_option_id,

@@ -4,11 +4,17 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 import type { MemberOffering } from '@/types/platform'
 
 interface Props {
   offering: MemberOffering
   spaceSlug: string
+  /** Stage 4 — whether this Collective's surface may offer a discount
+   *  code. Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED;
+   *  defaults off so an un-taught caller shows no code box rather than
+   *  one whose every submission is refused. */
+  discountCodesEnabled?: boolean
 }
 
 /**
@@ -45,12 +51,17 @@ interface Props {
  * rule, and a Collective that computes its own membership promises
  * nothing it would not deliver.
  */
-export default function AcquireOffering({ offering, spaceSlug }: Props) {
+export default function AcquireOffering({
+  offering, spaceSlug, discountCodesEnabled = false,
+}: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ joined: boolean } | null>(null)
+  // Only ever a code. The amount is the server's business — see
+  // ``DiscountCodeField``.
+  const [discountCode, setDiscountCode] = useState<string | null>(null)
 
   const isPaid = offering.pricing_kind === 'one_time'
   const collectiveName = offering.collective.name
@@ -199,6 +210,9 @@ export default function AcquireOffering({ offering, spaceSlug }: Props) {
         // at redirect time.
         success_url: `${base}?purchased=true&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${base}?cancelled=true`,
+        // Stage 4 — the code, never a price. The server resolves it
+        // again against the Offering's own Payment Option.
+        ...(discountCode ? { discount_code: discountCode } : {}),
       }),
     })
     if (!res.ok) {
@@ -248,6 +262,22 @@ export default function AcquireOffering({ offering, spaceSlug }: Props) {
   return (
     <div className="mt-4">
       {notice}
+      {/* Stage 4 — paid Offerings only. A free Offering has no price for
+          a code to reduce, and offering one there would be a box that
+          can only ever be refused. */}
+      {isPaid && discountCodesEnabled && (
+        <div className="mb-3">
+          <DiscountCodeField
+            target={{
+              kind: 'offering',
+              spaceSlug,
+              offeringSlug: offering.slug,
+            }}
+            onChange={setDiscountCode}
+            disabled={busy}
+          />
+        </div>
+      )}
       <button
         type="button"
         onClick={() => { void onClick() }}

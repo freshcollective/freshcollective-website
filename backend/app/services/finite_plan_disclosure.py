@@ -112,9 +112,38 @@ def compose_setup_disclosure(
     count       = plan.installments_expected
     remaining   = count - 1
 
+    # Stage 4: a discounted commitment rarely divides into equal cents,
+    # so the last payment may be a cent or two more than the rest. This
+    # sentence is the only place money appears on Stripe's setup page,
+    # so it has to name that rather than quote one figure and charge
+    # another. "N payments of X" would be a small lie told by the
+    # system at the moment the member commits.
+    #
+    # ``has_uneven_final_installment`` is False for every undiscounted
+    # plan and for every evenly discounted one, so the wording below is
+    # unchanged for all of them.
+    if plan.has_uneven_final_installment:
+        final_payment = _format_money(
+            plan.final_installment_amount_cents, plan.currency,
+        )
+        middle = remaining - 1
+        if middle == 0:
+            # Two payments, and they differ: there is no "N more of X"
+            # clause to write, just the second one.
+            followup = f"1 {cadence} payment of {final_payment}"
+        elif middle == 1:
+            followup = (
+                f"1 {cadence} payment of {per_payment}, "
+                f"then a final payment of {final_payment}"
+            )
+        else:
+            followup = (
+                f"{middle} {cadence} payments of {per_payment}, "
+                f"then a final payment of {final_payment}"
+            )
     # Singular/plural for the "followed by N …" clause. FIP1
     # validation requires count >= 2, so ``remaining`` is at least 1.
-    if remaining == 1:
+    elif remaining == 1:
         followup = f"1 {cadence} payment of {per_payment}"
     else:
         followup = f"{remaining} {cadence} payments of {per_payment}"

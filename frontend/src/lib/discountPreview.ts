@@ -31,7 +31,37 @@ export interface DiscountPreview {
   discount_amount_cents?: number | null
   final_amount_cents?: number | null
   currency?: string | null
+  /**
+   * Stage 4 — `'single'` for one charge, `'plan'` for finite
+   * instalments. On a plan the three amounts above describe the WHOLE
+   * commitment, which is what the discount applied to, and the four
+   * instalment fields describe how it is paid.
+   */
+  payment_mode?: 'single' | 'plan' | null
+  installment_count?: number | null
+  /** What instalments 1..N-1 cost. */
+  installment_amount_cents?: number | null
+  /** The last instalment, which carries any rounding remainder. */
+  final_installment_amount_cents?: number | null
 }
+
+/**
+ * What is being priced. Exactly one shape, never both.
+ *
+ * A Payment Option purchase names the option and the schedule; a direct
+ * Pathway or Gathering names the experience; an Offering names its
+ * slugs. The server refuses a request that names more than one shape,
+ * because an answer about the wrong price is worse than no answer — so
+ * this is a discriminated union rather than six optional fields.
+ */
+export type DiscountTarget =
+  | {
+      kind: 'payment_option'
+      paymentOptionId: string
+      paymentOptionScheduleId: string
+    }
+  | { kind: 'pathway' | 'gathering'; targetId: string }
+  | { kind: 'offering'; spaceSlug: string; offeringSlug: string }
 
 /** What the field is doing right now. */
 export type DiscountFieldState =
@@ -47,6 +77,31 @@ export function normaliseCodeInput(raw: string): string {
 }
 
 /**
+ * The request fields for one target. Exported so a test can assert the
+ * wire shape without a fetch, and so there is one place that maps the
+ * union onto the snake_case the API expects.
+ */
+export function targetBody(target: DiscountTarget): Record<string, string> {
+  if (target.kind === 'payment_option') {
+    return {
+      payment_option_id: target.paymentOptionId,
+      payment_option_schedule_id: target.paymentOptionScheduleId,
+    }
+  }
+  if (target.kind === 'offering') {
+    // Named by slug, because the member knows which resource they want
+    // and has never heard of a Payment Option. The server resolves the
+    // Option behind it and prices it as one — which is what it is, and
+    // what lets a code scoped to that Option apply.
+    return {
+      offering_space_slug: target.spaceSlug,
+      offering_slug: target.offeringSlug,
+    }
+  }
+  return { direct_kind: target.kind, direct_id: target.targetId }
+}
+
+/**
  * Ask what this code would do to this offer's price.
  *
  * Returns the server's verdict. Throws only when the server could not be
@@ -55,8 +110,7 @@ export function normaliseCodeInput(raw: string): string {
  */
 export async function previewDiscount(params: {
   code: string
-  paymentOptionId: string
-  paymentOptionScheduleId: string
+  target: DiscountTarget
   signal?: AbortSignal
 }): Promise<DiscountPreview> {
   const res = await fetch(apiUrl('/api/checkout/discount-preview'), {
@@ -66,8 +120,7 @@ export async function previewDiscount(params: {
     signal: params.signal,
     body: JSON.stringify({
       code: params.code,
-      payment_option_id: params.paymentOptionId,
-      payment_option_schedule_id: params.paymentOptionScheduleId,
+      ...targetBody(params.target),
     }),
   })
 
@@ -102,6 +155,61 @@ export function describeApplied(preview: DiscountPreview): {
     final: formatMoneyCents(final_amount_cents, currency),
     saving: formatMoneyCents(discount_amount_cents, currency),
     original: formatMoneyCents(original_amount_cents, currency),
+  }
+}
+
+/**
+ * "4 payments of A$40" — or "2 of A$43.33, then A$43.34".
+ *
+ * Built entirely from server figures. The browser never divides a total
+ * by a count: a discounted commitment rarely splits into equal cents,
+ * and a client that guessed at the remainder would show a schedule the
+ * member is not actually charged. §7 is explicit that the real
+ * instalments must be visible before they agree.
+ *
+ * Returns null when the preview is not a valid plan preview, so a caller
+ * cannot render a partial schedule.
+ */
+export function describeSchedule(preview: DiscountPreview): {
+  line: string
+  total: string
+  isEven: boolean
+} | null {
+  if (!preview.valid || preview.payment_mode !== 'plan') return null
+  const count = preview.installment_count
+  const base = preview.installment_amount_cents
+  const last = preview.final_installment_amount_cents
+  const currency = preview.currency
+  const total = preview.final_amount_cents
+  if (count == null || base == null || last == null || !currency
+    || total == null || count < 1) {
+    return null
+  }
+
+  const baseText = formatMoneyCents(base, currency)
+  const totalText = formatMoneyCents(total, currency)
+  const isEven = base === last
+
+  if (isEven) {
+    return {
+      line: `${count} payment${count === 1 ? '' : 's'} of ${baseText}`,
+      total: totalText,
+      isEven: true,
+    }
+  }
+
+  const lastText = formatMoneyCents(last, currency)
+  const earlier = count - 1
+  // Named separately rather than averaged. "3 payments of A$43.33" would
+  // be a small lie about the last one, and rounding the lot up would be
+  // a larger one about all of them.
+  return {
+    line:
+      earlier === 1
+        ? `1 payment of ${baseText}, then ${lastText}`
+        : `${earlier} payments of ${baseText}, then ${lastText}`,
+    total: totalText,
+    isEven: false,
   }
 }
 

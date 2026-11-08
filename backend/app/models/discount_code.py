@@ -42,6 +42,21 @@ class DiscountScopeKind(str, enum.Enum):
     payment_option = "payment_option"
 
 
+class DiscountTargetKind(str, enum.Enum):
+    """Which door a reservation's purchase came through.
+
+    Deliberately NOT ``DiscountScopeKind``, which answers a different
+    question — what a *code* applies to, as the creator set it. This
+    answers what a *purchase* is, and the two coincide only for the
+    ``payment_option`` member. Sharing one enum would make a
+    Collective-wide code's direct purchase inexpressible.
+    """
+
+    payment_option = "payment_option"
+    pathway = "pathway"
+    gathering = "gathering"
+
+
 class DiscountCode(Base):
     __tablename__ = "discount_codes"
     __table_args__ = (
@@ -217,11 +232,18 @@ class DiscountReservation(Base):
     pricing is frozen at creation: conversion charges what the member was
     quoted, not what the code says by the time their webhook lands.
 
-    Identity is the purchase attempt — code, member, Payment Option and
-    schedule — so a retry of the same purchase reuses its own reservation
-    instead of being told the code is fully used, while the same member
-    using one Collective-wide code on a different offer correctly takes a
+    Identity is the purchase attempt — code, member, and then either the
+    Payment Option and schedule or the directly-purchased experience —
+    so a retry of the same purchase reuses its own reservation instead
+    of being told the code is fully used, while the same member using
+    one Collective-wide code on a different offer correctly takes a
     second slot.
+
+    Stage 4 added the direct shape (migration 186). A Collective-wide
+    code used on a direct Pathway purchase or a standalone Gathering
+    ticket has no Payment Option to be identified by, so
+    ``target_kind`` + ``target_id`` identify it instead. The exclusivity
+    guarantee is unchanged; see ``target_kind`` for where it moved to.
     """
 
     __tablename__ = "discount_reservations"
@@ -236,18 +258,42 @@ class DiscountReservation(Base):
         nullable=False, index=True,
     )
 
-    #: All four identity columns are NOT NULL. A nullable one would let a
-    #: row slip past the partial unique index that makes retry safe.
+    #: The member is always known. ``user_id`` stays NOT NULL: no shape
+    #: of purchase lacks a buyer.
     user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
     )
-    payment_option_id: Mapped[str] = mapped_column(
-        String, ForeignKey("payment_options.id", ondelete="CASCADE"), nullable=False,
+
+    #: Which door this purchase came through — ``payment_option``,
+    #: ``pathway`` or ``gathering`` (migration 186). The two shapes below
+    #: are exclusive, and a CHECK enforces that each is fully described:
+    #: a Payment Option reservation names an option and a schedule and
+    #: no target, a direct one names a target and neither.
+    #:
+    #: Migration 140 made all four identity columns NOT NULL so the
+    #: partial unique index could not be evaded by a null. That
+    #: guarantee is preserved, moved from NOT NULL onto the CHECK plus a
+    #: second partial index — because a direct purchase genuinely has no
+    #: Payment Option, and a sentinel standing in for one would be a
+    #: worse lie than a null.
+    target_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        default=DiscountTargetKind.payment_option.value,
+        server_default="payment_option",
     )
-    payment_option_schedule_id: Mapped[str] = mapped_column(
+    payment_option_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("payment_options.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    payment_option_schedule_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("payment_option_schedules.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
+    #: The Pathway or Gathering bought directly. No ForeignKey: it names
+    #: one of two different tables depending on ``target_kind``, and the
+    #: alternative — a nullable column per experience type — would need a
+    #: new one every time a new door opens.
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="held")
 

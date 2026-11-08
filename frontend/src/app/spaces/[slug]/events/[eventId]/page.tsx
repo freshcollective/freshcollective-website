@@ -827,6 +827,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       initialMyBookingStatus={event.my_booking_status}
                       spotsRemaining={event.spots_remaining}
                       capacity={event.capacity}
+                      discountCodesEnabled={event.discount_codes_enabled === true}
                     />
                   </div>
                 </WaysToJoinCard>
@@ -844,6 +845,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   initialMyBookingStatus={event.my_booking_status}
                   spotsRemaining={event.spots_remaining}
                   capacity={event.capacity}
+                  discountCodesEnabled={event.discount_codes_enabled === true}
                 />
               )
             ) : event.requires_booking ? (
@@ -906,6 +908,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   isAuthenticated={isAuthenticated}
                   showHeading={false}
                   returnBase={`/spaces/${slug}/events/${event.id}`}
+                  discountCodesEnabled={event.discount_codes_enabled === true}
                 />
               </div>
             )}

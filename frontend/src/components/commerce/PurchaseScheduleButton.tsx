@@ -47,7 +47,7 @@ import {
  */
 export default function PurchaseScheduleButton({
   returnBase, paymentOptionId, paymentOptionScheduleId, label,
-  palette, schedule, optionName,
+  palette, schedule, optionName, discountCodesEnabled = false,
 }: {
   /** Path the buyer returns to, e.g. ``/spaces/embody/about``.
    *  ``?checkout=success`` / ``?checkout=cancel`` are appended. */
@@ -60,6 +60,12 @@ export default function PurchaseScheduleButton({
    *  Stripe's setup-mode page cannot show the amount itself. */
   schedule?: AnyPaymentSchedule | null
   optionName?: string | null
+  /** Whether this Collective's surface may offer a discount code.
+   *  Comes from the backend, which resolves the Stage 4 flag — the
+   *  browser never decides, and the default is off so a surface that
+   *  has not been taught to pass it shows no code box rather than one
+   *  whose every submission is refused. */
+  discountCodesEnabled?: boolean
   /** Optional Collective palette — button uses the primary hex
    *  so the CTA feels branded to the Collective. Falls back to
    *  the platform teal when the Space has no palette hydrated. */
@@ -76,10 +82,16 @@ export default function PurchaseScheduleButton({
   // through — Stripe shows the amount for those itself.
   const needsConfirm = schedule != null && planConfirmationCopy(schedule) != null
 
-  // Discount codes are a pay-in-full feature in v1. A recurring plan
-  // takes its price from its own schedule; a creator wanting a reduced
-  // plan makes a separate Payment Option for it.
-  const isPayInFull = schedule?.schedule_type === 'pay_in_full' 
+  // Stage 4 — a code may be used on a payment plan as well as a
+  // pay-in-full purchase, so the gate is no longer the schedule type. It
+  // is whether this Collective's surface says codes are available
+  // (resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED) and
+  // whether we know which schedule is being priced.
+  //
+  // The schedule id still has to be present: without it the field
+  // cannot say which arrangement it is pricing, and a code box on an
+  // unidentified purchase would quote a figure for the wrong one.
+  const canUseCode = discountCodesEnabled && Boolean(paymentOptionScheduleId)
 
   function handleClick() {
     if (needsConfirm) {
@@ -133,18 +145,18 @@ export default function PurchaseScheduleButton({
   const bg = paletteHex('primary', palette) ?? '#38A09E'
   return (
     <div className="flex w-full flex-col items-stretch gap-2">
-      {/* Pay-in-full only, and gated on the schedule saying so rather
-          than on ``needsConfirm``. That flag answers "does this need a
-          confirm dialog?", which is false for a payment plan whose
-          instalment metadata is incomplete and false again for a caller
-          that omits the schedule prop — either would have offered a code
-          box on a purchase the server refuses codes for. Asking the
-          schedule directly means the field appears only where a code can
-          actually be used. */}
-      {isPayInFull && (
+      {/* Gated on the server's answer rather than on ``needsConfirm``.
+          That flag answers "does this need a confirm dialog?", which is
+          false for a payment plan whose instalment metadata is
+          incomplete — and offering a code box where the server refuses
+          codes tells the member something untrue. */}
+      {canUseCode && (
         <DiscountCodeField
-          paymentOptionId={paymentOptionId}
-          paymentOptionScheduleId={paymentOptionScheduleId}
+          target={{
+            kind: 'payment_option',
+            paymentOptionId,
+            paymentOptionScheduleId,
+          }}
           onChange={setDiscountCode}
           disabled={busy}
         />

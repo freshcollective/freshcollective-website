@@ -19,36 +19,39 @@ Nothing here writes. Recording that a code was *redeemed* belongs to
 fulfilment (Work Item 6), which happens when Stripe confirms payment —
 not when a member asks what something would cost.
 
-That leaves one thing unsolved, named here because this module is where
-the fix belongs. A limited code's last slot is not held by anything, so
-two members can both reach Stripe with it. The answer cannot be to
-refuse the loser once payment has succeeded: by then their card has
-been charged, and handing someone a refund they did not ask for is
-worse than the double-spend. Work Item 6 owes an atomic pre-payment
-*reservation* — taken when a real checkout starts, counted against the
-limit alongside redemptions, released when a session is abandoned or
-expires, converted to a redemption exactly once on payment, and
-refusing a competing checkout for the last slot before Stripe is called.
-Deactivation must stop new reservations, and a code with live ones must
-not be hard-deleted out from under them.
+The slot problem this module once listed as unsolved is solved:
+``discount_reservations`` holds a code's slot before Stripe is called,
+counts it against the limit alongside redemptions, and converts it to a
+redemption exactly once on payment. ``consumed_slots`` is the figure the
+limit is measured against.
+
+Two resolvers, one rule set. :func:`resolve_discount` prices a single
+charge — a pay-in-full purchase, a direct Pathway, a ticket.
+:func:`resolve_plan_discount` prices a finite plan, where the discount
+applies to the whole commitment and the instalments derive from the
+discounted total. They share every eligibility rule and differ only in
+what "the price" is, which is the one thing that genuinely differs.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.core.money import MIN_PAID_CHARGE_CENTS
 from app.models.discount_code import DiscountCode, DiscountRedemption
-from app.services.discount_reservations import consumed_slots
+from app.services.discount_reservations import ReservationAttempt, consumed_slots
 from app.services.discount_pricing import (
     AppliedDiscount,
+    DiscountedInstalments,
     DiscountError,
     DiscountRejection,
     build_snapshot,
     compute_discount,
+    discount_instalment_plan,
     normalise_code,
     validate_code,
 )
@@ -73,31 +76,29 @@ def find_code(db: Session, *, raw_code: str | None, space_id: str) -> DiscountCo
     )
 
 
-def resolve_discount(
+def _eligible_code(
     db: Session,
     *,
     raw_code: str | None,
     space_id: str,
-    payment_option_id: str,
-    original_cents: int,
-    currency: str,
-    now: datetime | None = None,
-    #: ``(user_id, payment_option_id, payment_option_schedule_id)`` — the
-    #: purchase attempt asking. Its own held reservation is excluded from
-    #: the slot count, so a member who already holds the last slot is not
-    #: told their own code is fully used when they retry or reload.
-    own_attempt: tuple[str, str, str] | None = None,
-) -> AppliedDiscount:
-    """Validate a code against one offer and price it, or raise.
+    payment_option_id: str | None,
+    now: datetime,
+    own_attempt: "ReservationAttempt | None",
+) -> DiscountCode:
+    """Find a code and check every eligibility rule, or raise.
 
-    Raises :class:`DiscountError` carrying the reason, which callers map
-    to their own shape — a preview reports it, checkout refuses with it.
+    Shared verbatim by both resolvers, which is the point: a pay-in-full
+    purchase, a direct Pathway and a finite plan are eligible on
+    identical terms, and the only thing that differs between them is what
+    "the price" means. Two copies of these rules would drift.
 
-    The redemption count is taken from the ledger and written onto the
-    row before validation, so ``validate_code`` reads a true count
-    rather than the cached column.
+    ``payment_option_id`` is ``None`` for a direct purchase, and that is
+    load-bearing rather than incidental: ``validate_code`` already
+    refuses a Payment Option-scoped code when no option is named, so a
+    code restricted to EMBODY Term 4 cannot reach a standalone purchase
+    of a Pathway that Option happens to include. The scope distinction
+    the brief asks for is existing behaviour, not a new rule.
     """
-    moment = now or datetime.utcnow()
     code = find_code(db, raw_code=raw_code, space_id=space_id)
 
     if code is not None:
@@ -122,9 +123,45 @@ def resolve_discount(
         code_for_validation,
         space_id=space_id,
         payment_option_id=payment_option_id,
-        now=moment,
+        now=now,
     )
     assert code is not None  # validate_code raises on None
+    return code
+
+
+def resolve_discount(
+    db: Session,
+    *,
+    raw_code: str | None,
+    space_id: str,
+    #: ``None`` for a direct purchase, which has no Payment Option. Not a
+    #: convenience default — see :func:`_eligible_code`.
+    payment_option_id: str | None = None,
+    original_cents: int,
+    currency: str,
+    now: datetime | None = None,
+    #: The purchase attempt asking. Its own held reservation is excluded
+    #: from the slot count, so a member who already holds the last slot
+    #: is not told their own code is fully used when they retry or
+    #: reload.
+    own_attempt: "ReservationAttempt | None" = None,
+) -> AppliedDiscount:
+    """Validate a code against one charge and price it, or raise.
+
+    One charge: a pay-in-full Payment Option, a direct Pathway, a
+    standalone Gathering ticket, a direct Offering. For a finite plan use
+    :func:`resolve_plan_discount`, which discounts the commitment rather
+    than a payment.
+
+    Raises :class:`DiscountError` carrying the reason, which callers map
+    to their own shape — a preview reports it, checkout refuses with it.
+    """
+    moment = now or datetime.utcnow()
+    code = _eligible_code(
+        db, raw_code=raw_code, space_id=space_id,
+        payment_option_id=payment_option_id, now=moment,
+        own_attempt=own_attempt,
+    )
 
     # Raises DiscountError on currency mismatch for fixed-amount codes.
     amounts = compute_discount(
@@ -173,6 +210,91 @@ def resolve_discount(
         amounts=amounts,
         snapshot=build_snapshot(code, amounts),
     )
+
+
+@dataclass(frozen=True)
+class DiscountedPlanQuote:
+    """A discounted finite plan, priced and split. What checkout agrees to.
+
+    ``applied`` is the discount against the WHOLE commitment — its
+    ``amounts.original_cents`` is the plan's undiscounted total, not one
+    instalment — and ``instalments`` is the schedule derived from it.
+    Carried together because a plan row needs both, and because reading
+    one without the other is how a plan ends up storing a discounted
+    total against undiscounted instalments.
+    """
+
+    applied: AppliedDiscount
+    instalments: DiscountedInstalments
+
+
+def resolve_plan_discount(
+    db: Session,
+    *,
+    raw_code: str | None,
+    space_id: str,
+    payment_option_id: str,
+    installment_amount_cents: int,
+    installment_count: int,
+    currency: str,
+    now: datetime | None = None,
+    own_attempt: ReservationAttempt | None = None,
+) -> DiscountedPlanQuote:
+    """Validate a code against a finite plan and price the whole plan.
+
+    Same eligibility rules as :func:`resolve_discount` — the shared
+    :func:`_eligible_code` is the only place they live. What differs is
+    the price: a plan's is its commitment, ``installment_amount_cents ×
+    installment_count``, and the discount reduces that. The instalments
+    then derive from the discounted total.
+
+    The other way round — discounting each instalment — would look
+    identical on an exact division and quietly give away a different
+    amount on every other one. Worse, "20% off" would stop meaning 20%
+    off what the member committed to.
+
+    Raises :class:`DiscountError`, including ``BELOW_MINIMUM`` when the
+    discount leaves an *instalment* too small to charge even though the
+    total is fine. That is the rule a plan has and a single charge does
+    not, and it is why this is a second function rather than a flag on
+    the first.
+    """
+    moment = now or datetime.utcnow()
+    code = _eligible_code(
+        db, raw_code=raw_code, space_id=space_id,
+        payment_option_id=payment_option_id, now=moment,
+        own_attempt=own_attempt,
+    )
+
+    instalments = discount_instalment_plan(
+        installment_amount_cents=installment_amount_cents,
+        installment_count=installment_count,
+        currency=currency,
+        discount_type=code.discount_type,
+        percent_bps=code.percent_bps,
+        amount_cents=code.amount_cents,
+        discount_currency=code.currency,
+        minimum_charge_cents=MIN_PAID_CHARGE_CENTS,
+    )
+
+    applied = AppliedDiscount(
+        code=normalise_code(code.code),
+        discount_code_id=code.id,
+        amounts=instalments.amounts,
+        # The snapshot records the commitment-level figures, plus the
+        # schedule they were split into. A plan's charge history has to
+        # be explicable years later, when the code may have been edited
+        # or deleted — and "A$130 total, 43.33/43.33/43.34" is the part
+        # that explains it.
+        snapshot={
+            **build_snapshot(code, instalments.amounts),
+            "payment_mode": "plan",
+            "installment_count": instalments.installment_count,
+            "installment_amount_cents": instalments.base_cents,
+            "final_installment_amount_cents": instalments.final_cents,
+        },
+    )
+    return DiscountedPlanQuote(applied=applied, instalments=instalments)
 
 
 class _WithLiveCount:

@@ -84,6 +84,9 @@ export interface SpaceResponse {
    *  Collective, and empty on a purchase-required one whose creator
    *  has nominated none — which means "closed", never "free". */
   joining_options?: JoiningOption[]
+  /** Stage 4 — may a member type a discount code on this
+   *  Collective's purchase surfaces? Resolved server-side. */
+  discount_codes_enabled?: boolean
   /** Authoritative counts injected by the ``get_space`` endpoint. Use
    *  these for sidebar/stats displays — do NOT derive counts from
    *  the ``/api/spaces/{slug}/members`` list, which is privacy-
@@ -294,6 +297,9 @@ export interface PathwayWithSteps {
    *  dropped by the backend. Empty for a free or members-only Pathway.
    *  A surface renders these and never derives a price of its own. */
   ways_to_join?: WaysToJoinArrangement[]
+  /** Stage 4 — may a member type a discount code on this surface?
+   *  Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED. */
+  discount_codes_enabled?: boolean
   /** FIP4B1 — surfaces the plan-recovery banner and suppresses
    *  standard purchase CTAs when present. */
   member_plan_state?: MemberPlanState | null
@@ -476,6 +482,8 @@ export interface EventDetail extends EventSummary {
    *  join cards. Empty while the feature is off, and never contains
    *  the individual ticket: that keeps its own booking control. */
   payment_option_ways_to_join?: WaysToJoinArrangement[]
+  /** Stage 4 — as above, for the Gathering surface. */
+  discount_codes_enabled?: boolean
   location_url: string | null
   // recording_url inherited from EventSummary
   /** Full venue address + arrival instructions — the server scrubs
@@ -2368,6 +2376,9 @@ export interface MemberOffering {
    *  the transparency notice, and is false for somebody who already
    *  belongs — no unnecessary messaging. */
   will_join_collective: boolean
+  /** Stage 4 — may a member type a discount code on this surface?
+   *  Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED. */
+  discount_codes_enabled?: boolean
 }
 
 /** One card in a Collective's Offerings catalogue. */

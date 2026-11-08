@@ -94,6 +94,7 @@ from app.auth.dependencies import (
     get_optional_user,
     get_verified_current_user,
 )
+from app.core.config import settings
 from app.core.database import get_db
 from app.creator._offering_about_routes import OFFERING_OWNER_KIND
 from app.creator._offering_routes import require_offerings_enabled
@@ -567,6 +568,11 @@ def get_member_offering(
         "will_join_collective": acq.will_join_collective(
             db, user=current_user, space=space,
         ),
+        # Stage 4 — may a member type a discount code on this surface?
+        # Resolved from UNIVERSAL_DISCOUNT_CODES_ENABLED here rather than
+        # anywhere in the browser. This payload is a plain dict, so there
+        # is no schema default to accidentally rely on.
+        "discount_codes_enabled": settings.universal_discount_codes_enabled,
     }
     payload.update(_price_fields(offering))
     return payload

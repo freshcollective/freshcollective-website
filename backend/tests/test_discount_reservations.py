@@ -380,8 +380,12 @@ def reserve_directly(db, *, code, user, option, schedule, now=None,
         snapshot={"code": code.code, "final_amount_cents": HALF},
     )
     outcome = res.reserve_or_reuse(
-        db, applied=applied, code=code, user_id=user.id,
-        payment_option_id=option.id, payment_option_schedule_id=schedule.id,
+        db, applied=applied, code=code,
+        attempt=res.ReservationAttempt.for_payment_option(
+            user_id=user.id,
+            payment_option_id=option.id,
+            payment_option_schedule_id=schedule.id,
+        ),
         now=now,
     )
     r = outcome.reservation
@@ -903,10 +907,35 @@ class TestReallocatingTheFinalSlot:
 
         # And the sweep sits between two attempts, each of which takes
         # and releases the lock on its own.
-        from app.checkout import routes
-        src = inspect.getsource(routes._resolve_and_reserve)
-        assert src.count("return attempt()") == 2
+        #
+        # Stage 4 moved this structure into ``discount_checkout_hold``,
+        # which every door shares — pay-in-full, finite plan, direct
+        # Pathway, Gathering ticket. What differs between them is only
+        # the price. Asserted at its one home, plus that no door grows
+        # its own copy of the retry: a near-copy of this ordering would
+        # be a near-copy of its correctness argument.
+        from app.services import discount_checkout_hold as hold_mod
+
+        src = inspect.getsource(hold_mod._reserve_with_sweep)
+        assert src.count("return once()") == 2
         assert "sweep_stale_reservations(db" in src
+
+        from app.checkout import routes
+        from app.spaces import routes as space_routes
+
+        for door in (
+            routes._hold_for_pay_in_full,
+            routes._hold_for_plan,
+            routes._hold_for_direct,
+        ):
+            door_src = inspect.getsource(door)
+            assert "open_hold(" in door_src, door.__name__
+            assert "sweep_stale_reservations" not in door_src, door.__name__
+
+        # No module outside the hold runs the sweep for itself.
+        for mod in (routes, space_routes):
+            mod_src = inspect.getsource(mod)
+            assert "sweep_stale_reservations" not in mod_src, mod.__name__
 
 
 # ---------------------------------------------------------------------------

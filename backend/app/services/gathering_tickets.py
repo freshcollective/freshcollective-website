@@ -420,6 +420,10 @@ def create_or_reuse_hold(
     creator_plan_id: str | None,
     creator_subscription_id: str | None,
     hold_ttl_minutes: int,
+    #: Stage 4 — a validated discount against this ticket's price, or
+    #: ``None``. Only lowers what the transaction records and charges;
+    #: it has no bearing on capacity, which is decided on seats.
+    applied_discount: Any = None,
 ) -> HoldOutcome:
     """
     Atomically:
@@ -489,6 +493,7 @@ def create_or_reuse_hold(
         fee_bps=fee_bps,
         creator_plan_id=creator_plan_id,
         creator_subscription_id=creator_subscription_id,
+        applied_discount=applied_discount,
     )
     db.add(txn)
     db.flush()
@@ -536,9 +541,20 @@ def _build_pending_transaction(
     fee_bps: int,
     creator_plan_id: str | None,
     creator_subscription_id: str | None,
+    applied_discount: Any = None,
 ) -> PaymentTransaction:
-    """PaymentTransaction row for a pending gathering ticket purchase."""
-    gross = offer.price_cents
+    """PaymentTransaction row for a pending gathering ticket purchase.
+
+    Stage 4: ``applied_discount`` lowers the gross, and with it the
+    platform fee — §12's rule that a creator's fee follows the amount
+    actually charged, never the list price. The figure is taken from the
+    discount, which froze it when the code's slot was reserved; nothing
+    is recomputed here.
+    """
+    gross = (
+        applied_discount.amounts.final_cents if applied_discount is not None
+        else offer.price_cents
+    )
     platform_fee = gross * fee_bps // 10_000
     net_creator = gross - platform_fee
 
@@ -575,6 +591,12 @@ def _build_pending_transaction(
         creator_plan_id=creator_plan_id,
         creator_subscription_id=creator_subscription_id,
         stripe_mode=settings.stripe_mode,
+        # The immutable record of how this charge was reached, so a
+        # discounted ticket stays explicable after the code is edited or
+        # deleted. NULL for every undiscounted ticket.
+        discount_snapshot_json=(
+            applied_discount.snapshot if applied_discount is not None else None
+        ),
         payout_status=payout_status,
         payout_model=payout.payout_model,
         connect_destination_account_id=payout.destination_account_id,

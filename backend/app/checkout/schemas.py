@@ -10,6 +10,11 @@ class PathwayCheckoutRequest(BaseModel):
     payment_option_id: str | None = None
     # Optional: when set, price and checkout mode come from this schedule
     payment_option_schedule_id: str | None = None
+    # Stage 4. A code, never an amount — the server prices it. Honoured
+    # on all three shapes this endpoint serves (direct, Payment Option
+    # pay-in-full, Payment Option instalments), so there is no door where
+    # a member's valid code silently does nothing.
+    discount_code: str | None = None
 
 
 class PathwayCheckoutResponse(BaseModel):
@@ -30,6 +35,10 @@ class GatheringSeriesCheckoutRequest(BaseModel):
     payment_option_schedule_id: str
     success_url: str
     cancel_url: str
+    # Stage 4 — §15 keeps Series purchasing on the existing arrangement
+    # model, so a code here is a Payment Option code and goes through the
+    # same hold as every other Option purchase.
+    discount_code: str | None = None
 
 
 class GatheringSeriesCheckoutResponse(BaseModel):
@@ -93,9 +102,34 @@ class DiscountPreviewRequest(BaseModel):
     the charge will.
     """
 
-    payment_option_id: str
-    payment_option_schedule_id: str
+    payment_option_id: str | None = None
+    payment_option_schedule_id: str | None = None
     code: str
+
+    # Stage 4 — the direct doors, which have no Payment Option.
+    #
+    # Exactly one shape must be named: an Option and its Schedule, OR a
+    # direct kind and its experience. A request naming neither cannot be
+    # priced, and one naming both would leave it ambiguous which price
+    # the answer described. Enforced in the endpoint rather than by a
+    # validator so the refusal can be a readable 422 detail.
+    #
+    # ``direct_kind`` is ``pathway`` or ``gathering``. A direct Offering
+    # purchase is deliberately absent: that door already resolves to a
+    # Payment Option server-side, so it previews as one.
+    direct_kind: str | None = None
+    direct_id: str | None = None
+
+    # An Offering, named the way its door names it: by slug, because the
+    # member knows which resource they want and has never heard of a
+    # Payment Option.
+    #
+    # Resolved server-side to that Option and then priced as one — NOT as
+    # a direct target. An Offering purchase genuinely is a Payment Option
+    # purchase, so a code scoped to that Option must apply to it, and
+    # treating it as "direct" would refuse the creator's own code.
+    offering_space_slug: str | None = None
+    offering_slug: str | None = None
 
 
 class DiscountPreviewResponse(BaseModel):
@@ -129,6 +163,24 @@ class DiscountPreviewResponse(BaseModel):
     discount_amount_cents: int | None = None
     final_amount_cents: int | None = None
     currency: str | None = None
+
+    # Stage 4 — the instalment schedule, when the previewed arrangement
+    # is a finite plan. §7: the member must see the ACTUAL discounted
+    # schedule before agreeing to it, which means the real per-payment
+    # figures rather than a total divided in the browser.
+    #
+    # ``installment_amount_cents`` is what instalments 1..N-1 cost and
+    # ``final_installment_amount_cents`` the last, which absorbs any
+    # rounding remainder. They are equal when the total divides evenly —
+    # both are sent regardless, so a client renders accurately without
+    # having to decide whether a remainder exists.
+    #
+    # All NULL for a pay-in-full preview, where ``final_amount_cents`` is
+    # the whole answer.
+    payment_mode: str | None = None
+    installment_count: int | None = None
+    installment_amount_cents: int | None = None
+    final_installment_amount_cents: int | None = None
 
 
 class OfferingCheckoutRequest(BaseModel):

@@ -1300,3 +1300,222 @@ class TestTheUnifiedEndpointAppliesOfferingRules:
             res = self._call_unified(db, make_user(), option, schedule)
         assert res.checkout_url == "https://checkout.stripe.test/o"
         assert m.call_count == 1
+
+
+class TestStage4OfferingDiscountPreview:
+    """§9 and §15 — a member must be able to enter a code where they buy.
+
+    An Offering purchase has always accepted a code at the till (the
+    door delegates to the unified endpoint, which has priced codes since
+    v1). What Stage 4 added is the ability to *preview* one, which the
+    member surface needs before it can offer the field at all: it knows
+    which resource it wants and has never heard of a Payment Option.
+
+    So the preview names the Offering by slug and the server resolves the
+    Option behind it — and then prices it AS an Option. That distinction
+    is the point of these tests: treating an Offering as a "direct"
+    target would make the server refuse a code the creator scoped to
+    that very Option.
+    """
+
+    def _code(self, db, space, **kw):
+        from app.models.discount_code import DiscountCode
+        defaults = dict(
+            id=_uid("dc"), space_id=space.id, code="SAVEHALF",
+            discount_type="percentage", percent_bps=5000,
+            is_active=True, scope_kind="space", scope_id=None,
+            created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        )
+        defaults.update(kw)
+        row = DiscountCode(**defaults)
+        db.add(row)
+        db.commit()
+        return row
+
+    def _preview(self, db, space, offering, user, code: str):
+        """Through HTTP, not by calling the function.
+
+        The endpoint carries a rate limiter that requires a real
+        ``starlette.Request``, so a direct call cannot reach it — and
+        going through the client exercises the limiter and the response
+        model too.
+        """
+        from fastapi.testclient import TestClient
+
+        from app.auth.dependencies import (
+            get_current_user, get_verified_current_user,
+        )
+        from app.core.database import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_verified_current_user] = lambda: user
+        app.dependency_overrides[get_current_user] = lambda: user
+        try:
+            client = TestClient(app, raise_server_exceptions=False)
+            return client.post("/api/checkout/discount-preview", json={
+                "offering_space_slug": space.slug,
+                "offering_slug": offering.slug,
+                "code": code,
+            })
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_verified_current_user, None)
+            app.dependency_overrides.pop(get_current_user, None)
+
+    def test_the_preview_prices_the_offering(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        self._code(db, space)
+
+        body = self._preview(db, space, off, make_user(), "SAVEHALF").json()
+
+        assert body["valid"] is True
+        assert body["original_amount_cents"] == 2400
+        assert body["final_amount_cents"] == 1200
+        assert body["payment_mode"] == "single"
+
+    def test_a_code_scoped_to_the_offerings_own_option_applies(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        """The reason an Offering is not previewed as a direct target.
+        Scoped to the Option that sells this Offering, the code must
+        work — and it does, because the preview resolves to that Option
+        and prices it as one."""
+        from app.services import offering_commerce
+
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        option = offering_commerce.find_option(db, off)
+        self._code(
+            db, space, code="THISONE", percent_bps=2500,
+            scope_kind="payment_option", scope_id=option.id,
+        )
+
+        body = self._preview(db, space, off, make_user(), "THISONE").json()
+
+        assert body["valid"] is True
+        assert body["final_amount_cents"] == 1800
+
+    def test_a_code_scoped_to_another_option_does_not_apply(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        other = _sellable(db, space)
+        from app.services import offering_commerce
+
+        other_option = offering_commerce.find_option(db, other)
+        self._code(
+            db, space, code="OTHER", percent_bps=2500,
+            scope_kind="payment_option", scope_id=other_option.id,
+        )
+
+        body = self._preview(db, space, off, make_user(), "OTHER").json()
+
+        assert body["valid"] is False
+        assert body["reason"] == "wrong_payment_option"
+
+    def test_an_unknown_code_is_a_readable_verdict_not_an_error(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+
+        body = self._preview(db, space, off, make_user(), "NOPE").json()
+
+        assert body["valid"] is False
+        assert body["reason"] == "not_found"
+
+    def test_the_preview_is_not_gated_on_the_stage_4_flag(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        """And deliberately so — this is not a new door.
+
+        The Offering checkout door has accepted codes since v1: it
+        resolves to a Payment Option and delegates to the unified
+        endpoint, which has priced codes all along. What Stage 4 added
+        here is the member *interface*, which is gated by
+        ``discount_codes_enabled`` on the Offering payload.
+
+        Gating the preview as well would make it disagree with the till
+        — a member posting directly would be refused a quote for a code
+        that then works at checkout. The new doors (direct Pathway,
+        direct Gathering) ARE gated, because for those the capability
+        itself is new; see
+        ``TestTheFlagGatesTheNewDoors`` in
+        ``test_stage4_universal_discounts``.
+        """
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", False)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        self._code(db, space)
+
+        body = self._preview(db, space, off, make_user(), "SAVEHALF").json()
+
+        assert body["valid"] is True
+        assert body["final_amount_cents"] == 1200
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_the_payload_tells_the_surface_whether_to_offer_the_field(
+        self, db, selling_collective, make_user, monkeypatch, enabled,
+    ):
+        """What actually gates the interface.
+
+        The browser never decides. ``discount_codes_enabled`` is
+        resolved here from the flag, and it is read off the payload at
+        its construction site rather than left to a schema default — a
+        field whose only value is its default reads ``False`` forever
+        and looks like a working flag.
+        """
+        from fastapi.testclient import TestClient
+
+        from app.auth.dependencies import get_current_user
+        from app.core.database import get_db
+        from app.main import app
+
+        monkeypatch.setattr(
+            settings, "universal_discount_codes_enabled", enabled,
+        )
+        monkeypatch.setattr(settings, "offerings_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        viewer = make_user()
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        try:
+            client = TestClient(app, raise_server_exceptions=False)
+            res = client.get(
+                f"/api/spaces/{space.slug}/offerings/{off.slug}",
+            )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
+
+        assert res.status_code == 200, res.text
+        assert res.json()["discount_codes_enabled"] is enabled
+
+    def test_a_draft_offering_cannot_be_previewed(
+        self, db, selling_collective, make_user, monkeypatch,
+    ):
+        """A 404 here as everywhere else. Previewing an unreleased
+        Offering must not be able to produce a price that looks real."""
+        from app.models.offering import OfferingStatus
+
+        monkeypatch.setattr(settings, "universal_discount_codes_enabled", True)
+        space, _owner = selling_collective()
+        off = _sellable(db, space)
+        off.status = OfferingStatus.draft.value
+        db.commit()
+        self._code(db, space)
+
+        res = self._preview(db, space, off, make_user(), "SAVEHALF")
+
+        assert res.status_code == 404

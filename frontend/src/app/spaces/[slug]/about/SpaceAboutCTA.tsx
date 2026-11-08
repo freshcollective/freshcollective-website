@@ -33,6 +33,9 @@ interface Props {
   /** Published, creator-nominated doors. Only consulted when the
    *  policy is purchase_required. */
   joiningOptions?: JoiningOption[]
+  /** Stage 4 — whether a discount code may be offered on these doors.
+   *  Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED. */
+  discountCodesEnabled?: boolean
   /** Collective palette, so the purchase CTAs feel like this place. */
   palette?: CollectivePaletteMeta | null
 }
@@ -49,6 +52,7 @@ export default function SpaceAboutCTA({
   autoGrantRole,
   joinPolicy = 'open',
   joiningOptions = [],
+  discountCodesEnabled = false,
   palette = null,
 }: Props) {
   const router = useRouter()
@@ -168,6 +172,7 @@ export default function SpaceAboutCTA({
         slug={slug}
         options={joiningOptions}
         isLoggedIn={isLoggedIn}
+        discountCodesEnabled={discountCodesEnabled}
         isMember={isMember}
         palette={palette}
       />

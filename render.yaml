@@ -409,6 +409,38 @@ services:
       # ``config.py:standalone_gathering_payment_options_enabled``).
       - key: STANDALONE_GATHERING_PAYMENT_OPTIONS_ENABLED
         sync: false
+      # Stage 4 — discount codes across every supported purchase, and
+      # across finite instalment plans. Dashboard-managed, ``sync:
+      # false`` for the same load-bearing reason as every flag above.
+      #
+      # When false, discount codes behave exactly as they have since
+      # v1: Payment Option pay-in-full only. A finite-plan checkout
+      # carrying a code is refused with the same wording it is today,
+      # and the direct Pathway / Gathering doors do not read a code.
+      #
+      # When true, a Collective-wide code also reaches the direct
+      # Pathway, direct Gathering and Gathering Series doors, and may
+      # be used on a finite plan — discounting the whole commitment,
+      # with every instalment carrying its share and the final one
+      # absorbing any rounding remainder.
+      #
+      # What this flag does NOT gate, deliberately: the per-instalment
+      # amount the two invoice gates expect, or the
+      # ``final_installment_amount_cents`` column they read. A plan
+      # established while this was on must keep billing correctly if
+      # it is later switched off, so servicing a discounted plan is
+      # unconditional and only creating one is flagged.
+      #
+      # Do not enable without working through the activation
+      # checklist: a two-phase Stripe SubscriptionSchedule (the shape
+      # an uneven final instalment needs) has been exercised only
+      # against a mocked Stripe, and wants one real test-mode plan
+      # before any member meets it.
+      #
+      # Application default when the env var is absent is False (see
+      # ``config.py:universal_discount_codes_enabled``).
+      - key: UNIVERSAL_DISCOUNT_CODES_ENABLED
+        sync: false
       # ── Offerings rollout ────────────────────────────────────────
       # Two switches, both Dashboard-managed, for the same reason as
       # the two flags above: the Dashboard is the operational source

@@ -341,6 +341,10 @@ export default async function MemberGatheringSeriesPage({
               options={options}
               hasPurchasable={detail.has_purchasable_options}
               palette={collectivePalette}
+              discountCodesEnabled={
+                (space as { discount_codes_enabled?: boolean } | null)
+                  ?.discount_codes_enabled === true
+              }
             />
           )}
         </aside>

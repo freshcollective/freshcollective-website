@@ -263,6 +263,29 @@ class Settings(BaseSettings):
     # route to the same seat, and the decision to open it is separate.
     standalone_gathering_payment_options_enabled: bool = False
 
+    # Stage 4 — discount codes across every supported purchase, and
+    # across finite instalment plans. Hard-off by default.
+    #
+    # Flag OFF: discount codes behave exactly as they have since v1 —
+    # Payment Option pay-in-full (and the Offering door that delegates
+    # to it), nothing else. A finite-plan checkout carrying a code is
+    # refused with the same 400 and the same wording; the direct
+    # Pathway and Gathering doors do not read a code at all.
+    #
+    # Flag ON: a Collective-wide code also reaches the direct Pathway,
+    # direct Gathering and Gathering Series doors, and a code may be
+    # used on a finite plan — where it discounts the whole commitment
+    # and every instalment carries its share.
+    #
+    # What this flag deliberately does NOT gate: the per-instalment
+    # amount lookup in the two invoice gates, or the final-instalment
+    # column they read. A plan established while this was on must keep
+    # billing correctly if it is later switched off, so the machinery
+    # that *services* a discounted plan is unconditional and only the
+    # machinery that *creates* one is flagged. Turning this off stops
+    # new discounted plans; it never strands an established one.
+    universal_discount_codes_enabled: bool = False
+
     # Stage 3 — how long a seat may stay reserved for a payment plan
     # that has never taken its first payment.
     #

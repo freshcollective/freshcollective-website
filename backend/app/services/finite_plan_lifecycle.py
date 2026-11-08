@@ -309,11 +309,20 @@ def record_later_successful_instalment(
         )
 
     # Sanity checks — same rules as first-invoice handler.
-    if invoice_amount_cents != plan.installment_amount_cents:
+    # Stage 4: per-instalment, not one scalar — see
+    # ``PurchasePlan.expected_installment_cents``. The instalment number
+    # is derived below under the row lock, but the amount gate has to
+    # run before anything is written, so it is derived once here and
+    # re-used rather than computed twice.
+    expected_installment_number = plan.installments_paid + 1
+    expected_installment_cents = plan.expected_installment_cents(
+        expected_installment_number,
+    )
+    if invoice_amount_cents != expected_installment_cents:
         raise RuntimeError(
             f"FIP3 later-instalment: amount mismatch invoice={invoice_id} "
-            f"got={invoice_amount_cents} expected={plan.installment_amount_cents} "
-            f"plan={plan.id}"
+            f"got={invoice_amount_cents} expected={expected_installment_cents} "
+            f"plan={plan.id} installment={expected_installment_number}"
         )
     if (invoice_currency or "").upper() != plan.currency:
         raise RuntimeError(
@@ -321,8 +330,11 @@ def record_later_successful_instalment(
             f"got={invoice_currency!r} expected={plan.currency!r} plan={plan.id}"
         )
 
-    # Instalment number under row lock — deterministic.
-    installment_number = plan.installments_paid + 1
+    # Instalment number under row lock — deterministic. Derived above
+    # for the amount gate and reused here rather than recomputed, so the
+    # number the invoice was checked against is the number it is
+    # recorded as.
+    installment_number = expected_installment_number
     if installment_number > plan.installments_expected:
         # Shouldn't happen — Stripe stops after the schedule's phase
         # duration. If it does, refuse rather than record a phantom.
@@ -608,7 +620,12 @@ def handle_invoice_failed_for_plan(
             space_id=plan.space_id,
             creator_plan_id=plan.creator_plan_id,
             currency=plan.currency,
-            gross_amount_cents=plan.installment_amount_cents,
+            # Stage 4: the amount THIS instalment was due, which for an
+            # unevenly discounted plan's last payment is not the base
+            # amount. A failed attempt still records what was owed.
+            gross_amount_cents=plan.expected_installment_cents(
+                plan.installments_paid + 1,
+            ),
             platform_fee_basis_points=plan.platform_fee_basis_points,
             platform_fee_cents=0,
             net_creator_amount_cents=0,

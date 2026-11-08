@@ -2423,6 +2423,18 @@ class CreatorPaymentTransactionOut(BaseModel):
     discount_type: str | None = None
     #: Basis points, when percentage (5000 = 50%).
     discount_percent_bps: int | None = None
+    #: Stage 4 — what the figures above describe.
+    #:
+    #: ``'purchase'`` — this charge. ``'payment_plan'`` — the whole
+    #: commitment, because the snapshot came from the PurchasePlan rather
+    #: than from this instalment. ``None`` when no code was used.
+    #:
+    #: Present because the distinction is not cosmetic: on a plan
+    #: instalment the original and discount amounts are the plan's, so a
+    #: surface that printed "Original A$306" next to a A$43.33 payment
+    #: would mislead in a new way while fixing the old one. The amount
+    #: actually paid is always ``gross_amount_cents``, whichever this is.
+    discount_applies_to: str | None = None
     # Fee-split reversal (migration 127). Cumulative reversed portions
     # of ``platform_fee_cents`` and ``net_creator_amount_cents``. Both
     # zero until a refund lands. Frontend uses these to display

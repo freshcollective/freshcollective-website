@@ -8977,6 +8977,36 @@ def _refund_blocked_copy(txn, viewer_is_admin: bool) -> str | None:
     return REFUND_BLOCKED_REASONS.get(reason)
 
 
+def resolve_discount_view(
+    txn, plan_discounts: dict[str, dict],
+) -> tuple[dict, str | None]:
+    """The discount snapshot to display for one payment, and its scope.
+
+    The transaction's own snapshot wins: a pay-in-full purchase's figures
+    are about that charge. Falling back to the plan's is what gives an
+    instalment row its code at all — but the figures there are the WHOLE
+    commitment's, so the scope is returned alongside them and never left
+    for a reader to assume. "Original A$306" beside a A$43.33 payment
+    would be a different kind of wrong from showing nothing.
+
+    Module-level rather than a closure so it can be tested directly. The
+    rule it encodes is the whole of §17's change, and a closure would
+    have made it reachable only through the full creator endpoint.
+
+    Returns ``({}, None)`` when no code was involved — which is every
+    transaction predating discount codes.
+    """
+    own = getattr(txn, "discount_snapshot_json", None) or {}
+    if own:
+        return own, "purchase"
+    plan_id = getattr(txn, "purchase_plan_id", None)
+    if plan_id:
+        plan_snap = plan_discounts.get(plan_id)
+        if plan_snap:
+            return plan_snap, "payment_plan"
+    return {}, None
+
+
 def _payout_model_value(txn) -> str:
     """``payout_model`` as a plain string, enum or not.
 
@@ -9240,11 +9270,33 @@ def list_creator_payments(
         ):
             future_bookings_by_txn[_txn_id] = int(_count)
 
+    # Stage 4 — a discounted PLAN keeps its snapshot on the plan, not on
+    # each instalment transaction. Without this, a creator looking at
+    # instalment one of a half-price plan sees a A$43.33 payment and no
+    # sign that a code was involved — the amount is right, but the page
+    # cannot explain it. §17's "smallest change needed to avoid
+    # misleading financial information".
+    #
+    # One grouped query for the page, like the bookings above.
+    _plan_ids = {r.purchase_plan_id for r in rows if r.purchase_plan_id}
+    plan_discounts: dict[str, dict] = {}
+    if _plan_ids:
+        from app.models.purchase_plan import PurchasePlan as _PP
+
+        for _pid, _snap in (
+            db.query(_PP.id, _PP.discount_snapshot_json)
+            .filter(_PP.id.in_(_plan_ids), _PP.discount_snapshot_json.isnot(None))
+            .all()
+        ):
+            if _snap:
+                plan_discounts[_pid] = _snap
+
     out: list[CreatorPaymentTransactionOut] = []
     for r in rows:
         payer = users.get(r.payer_user_id) if r.payer_user_id else None
         space = spaces.get(r.space_id) if r.space_id else None
         option = options.get(r.payment_option_id) if r.payment_option_id else None
+        _dv, _dv_scope = resolve_discount_view(r, plan_discounts)
         provider = (
             r.payment_provider.value
             if hasattr(r.payment_provider, "value")
@@ -9293,17 +9345,12 @@ def list_creator_payments(
             # Snapshot, not the live code. ``.get`` throughout because a
             # historical row has no snapshot at all and an older one may
             # predate a field.
-            discount_code=(r.discount_snapshot_json or {}).get("code"),
-            discount_original_amount_cents=(
-                (r.discount_snapshot_json or {}).get("original_amount_cents")
-            ),
-            discount_amount_cents=(
-                (r.discount_snapshot_json or {}).get("discount_amount_cents")
-            ),
-            discount_type=(r.discount_snapshot_json or {}).get("discount_type"),
-            discount_percent_bps=(
-                (r.discount_snapshot_json or {}).get("percent_bps")
-            ),
+            discount_code=_dv.get("code"),
+            discount_original_amount_cents=_dv.get("original_amount_cents"),
+            discount_amount_cents=_dv.get("discount_amount_cents"),
+            discount_type=_dv.get("discount_type"),
+            discount_percent_bps=_dv.get("percent_bps"),
+            discount_applies_to=_dv_scope,
             refunded_platform_fee_cents=r.refunded_platform_fee_cents or 0,
             refunded_creator_amount_cents=r.refunded_creator_amount_cents or 0,
             payout_status=(

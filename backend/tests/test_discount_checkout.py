@@ -1024,20 +1024,35 @@ class TestTheClientCannotDictateThePrice:
 # ---------------------------------------------------------------------------
 
 
-class TestDiscountCodesArePayInFullOnly:
-    """Settled v1 product scope, not unfinished work.
+class TestDiscountCodesArePayInFullOnlyWhileStage4IsOff:
+    """What a payment plan does with a code while Stage 4 is switched off.
 
-    Three needs, three mechanisms: a discount code reduces a
-    single-payment purchase; a reduced payment plan is a separate
-    Payment Option the creator publishes; free access is a complimentary
-    pass. Stretching the code to cover the other two is what these tests
-    prevent.
+    This class was written as settled v1 scope and is now the other
+    thing it predicted it might become: Stage 4 added finite-plan
+    discounting, and these tests were rewritten on purpose rather than
+    deleted. What they assert is unchanged, because the *behaviour* is
+    unchanged — they simply mean something different now. They are the
+    §22 contract: with ``universal_discount_codes_enabled`` off, a code
+    on a payment plan is refused with the same status and the same
+    wording it always was, and nothing reaches Stripe.
 
-    Pinned deliberately. If a later work item adds finite-plan
-    discounting it should rewrite this class on purpose — the refusal
-    below is a decision, and should not be deleted as though it were a
-    gap someone forgot to fill.
+    That matters more than it looks. The whole safety case for deploying
+    Stage 4 dark is that the old behaviour is still exactly the old
+    behaviour, and this is where that is checked. Every test here runs
+    with the flag at its default, which is off.
+
+    The flag-ON behaviour lives in ``test_stage4_universal_discounts``.
+    Free access remains its own mechanism in both states: a complimentary
+    pass, never a code discounting everything.
     """
+
+    def test_the_flag_is_off_by_default(self):
+        """Stated here rather than assumed by the tests below, so a
+        change to the default fails loudly in one obvious place instead
+        of quietly turning this whole class into a tautology."""
+        from app.core.config import settings as _s
+
+        assert _s.universal_discount_codes_enabled is False
 
     def test_a_payment_plan_refuses_a_code(
         self, db, make_space, make_user, stripe_configured, stripe_spy,

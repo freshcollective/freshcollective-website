@@ -254,6 +254,7 @@ export default async function PathwayAboutPage({ params }: Props) {
                 arrangements={waysToJoin}
                 palette={collectivePalette}
                 isAuthenticated={isAuthenticated}
+                discountCodesEnabled={pathway.discount_codes_enabled === true}
               />
               <p className="mt-3 text-center text-[11px] text-black">
                 Secure checkout via Stripe

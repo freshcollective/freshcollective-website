@@ -412,6 +412,25 @@ def _do_setup_completed(
         plan.stripe_price_id = price_id
         db.commit()
 
+    # Stage 4 — the second Price an unevenly discounted plan needs. One
+    # recurring Price can only express identical invoices, so a plan
+    # whose last payment differs by a cent or two is two Prices on the
+    # same Product, billed as two consecutive phases.
+    #
+    # Guarded on the plan's own columns, not on
+    # ``universal_discount_codes_enabled``: a plan established while
+    # that flag was on must still reach Stripe correctly if it is
+    # switched off before its setup Session completes. Every even plan
+    # skips this entirely and makes exactly the Stripe calls it always
+    # has.
+    if plan.has_uneven_final_installment and plan.stripe_final_price_id is None:
+        plan.stripe_final_price_id = (
+            stripe_finite_plan.create_final_installment_price(
+                plan=plan, product_id=plan.stripe_product_id,
+            )
+        )
+        db.commit()
+
     # SubscriptionSchedule — the finite billing agreement.
     if plan.provider_subscription_schedule_id is None:
         schedule_id, subscription_id = (
@@ -420,6 +439,7 @@ def _do_setup_completed(
                 customer_id=customer_id,
                 price_id=plan.stripe_price_id,
                 default_payment_method_id=payment_method_id,
+                final_price_id=plan.stripe_final_price_id,
             )
         )
         plan.provider_subscription_schedule_id = schedule_id
@@ -1086,14 +1106,22 @@ def _do_invoice_succeeded(
     # legitimately paid invoice may be satisfied wholly or partly
     # via a Stripe customer balance credit; the member's obligation
     # is the contractual amount.
-    if invoice_total != plan.installment_amount_cents:
+    # Stage 4: the expected amount is per-instalment, not one scalar. A
+    # discounted plan whose total does not divide evenly bills N-1
+    # invoices at the base amount and one at the final amount, so asking
+    # the plan which instalment this is keeps the gate exact instead of
+    # loosening it to a tolerance. This is instalment #1 — the first
+    # invoice handler — which for a one-payment plan is also the last,
+    # so the number is passed rather than assumed.
+    expected_installment_cents = plan.expected_installment_cents(1)
+    if invoice_total != expected_installment_cents:
         logger.error(
             "FIP2 invoice: total mismatch invoice=%s total=%s expected=%s plan=%s",
-            invoice_id, invoice_total, plan.installment_amount_cents, plan.id,
+            invoice_id, invoice_total, expected_installment_cents, plan.id,
         )
         raise RuntimeError(
             f"invoice total {invoice_total} != plan instalment "
-            f"{plan.installment_amount_cents}"
+            f"{expected_installment_cents}"
         )
     if invoice_currency != plan.currency:
         raise RuntimeError(
@@ -1265,6 +1293,23 @@ def _do_invoice_succeeded(
     plan.activated_at = now
     plan.updated_at = now
 
+    # Stage 4 — spend the discount code, if this plan was established
+    # with one. Here rather than at checkout: capturing a card is not a
+    # redemption, and a plan whose first payment never lands must leave
+    # the slot for someone else.
+    #
+    # One use for the whole purchase. The redemption is keyed to the
+    # PLAN, and ``uq_discount_redemptions_code_plan`` permits exactly one
+    # such row, so instalments two through N cannot add another — that is
+    # structural rather than a rule this code remembers to follow. It
+    # also only runs on the genuine ``pending_setup → active``
+    # transition, which the guards above have already made unique.
+    #
+    # ``commit=False``: the redemption lands with the activation or not
+    # at all.
+    from app.services import discount_reservations as _discount_res
+    _discount_res.convert_plan_reservation(db, plan=plan, now=now, commit=False)
+
     # R3 — emit ``purchase.completed`` (payment_mode='plan') for the
     # FIP first-instalment confirmation. Only reached on the genuine
     # ``pending_setup → active`` transition; the pending_setup guard
@@ -1285,7 +1330,7 @@ def _do_invoice_succeeded(
         comms_event = _r3.emit_purchase_completed(
             db, user=member, payment_option=payment_option,
             payment_mode="plan",
-            amount_cents=plan.installment_amount_cents,
+            amount_cents=expected_installment_cents,
             currency=plan.currency,
             plan=plan,
             # Stage 3E — the same included-experience lines as a
@@ -1308,7 +1353,7 @@ def _do_invoice_succeeded(
                 db, user=member, payment_option=payment_option,
             ).experience_name,
             payment_mode="plan",
-            amount_cents=plan.installment_amount_cents,
+            amount_cents=expected_installment_cents,
             currency=plan.currency,
             dedupe_key=f"purchase_received:plan:{plan.id}",
             session_count=len(intent.bookings) or None,

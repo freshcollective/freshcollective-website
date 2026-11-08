@@ -307,7 +307,11 @@ export default async function MemberOfferingPage({ params, searchParams }: Props
                 ``AcquireOffering``. A manager previewing a draft gets
                 it too, and the endpoint refuses them, which is the
                 point of a preview being the real page. */}
-            <AcquireOffering offering={offering} spaceSlug={slug} />
+            <AcquireOffering
+              offering={offering}
+              spaceSlug={slug}
+              discountCodesEnabled={offering.discount_codes_enabled === true}
+            />
 
             <dl className="mt-4 space-y-2 border-t border-slate-100 pt-4">
               <div className="flex items-baseline justify-between gap-3">

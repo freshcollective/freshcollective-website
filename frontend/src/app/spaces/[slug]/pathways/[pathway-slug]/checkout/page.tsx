@@ -386,6 +386,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
                 palette={collectivePalette}
                 isAuthenticated={isAuthenticated}
                 heading="Ways to join"
+                discountCodesEnabled={pathway.discount_codes_enabled === true}
               />
             ) : pathway.payment_options.length > 0 ? (
               <PaymentOptionSelector

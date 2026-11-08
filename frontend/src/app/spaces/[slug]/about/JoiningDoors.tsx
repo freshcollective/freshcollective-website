@@ -37,10 +37,15 @@ export default function JoiningDoors({
   isLoggedIn,
   isMember = false,
   palette = null,
+  discountCodesEnabled = false,
 }: {
   slug: string
   options: JoiningOption[]
   isLoggedIn: boolean
+  /** Stage 4 — whether a discount code may be offered here. Resolved
+   *  server-side; the default is off so an un-taught caller shows no
+   *  code box rather than one the server refuses. */
+  discountCodesEnabled?: boolean
   /** A member reaching this page should not be told to join again;
    *  the same options remain purchasable to them. */
   isMember?: boolean
@@ -161,6 +166,7 @@ export default function JoiningDoors({
                   returnBase={returnBase}
                   palette={palette}
                   withDivider={i > 0}
+                  discountCodesEnabled={discountCodesEnabled}
                   // A member is buying, not joining — they are already in.
                   ctaLabel={isMember
                     ? (schedule.schedule_type === 'recurring_installments'

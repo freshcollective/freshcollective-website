@@ -3,10 +3,12 @@
 import { useRef, useState } from 'react'
 import {
   describeApplied,
+  describeSchedule,
   normaliseCodeInput,
   previewDiscount,
   stateFromPreview,
   type DiscountFieldState,
+  type DiscountTarget,
 } from '@/lib/discountPreview'
 
 /**
@@ -22,12 +24,25 @@ import {
  * again from scratch, so what is shown here is a quote, not a contract;
  * if the code lapses in between, checkout refuses rather than silently
  * charging full price.
+ *
+ * One component for every purchase type, which §9 asks for directly.
+ * What differs between a Pathway, a ticket, a bundle and a payment plan
+ * is the `target` it is given; the field itself does not know or care,
+ * and a second copy of it per experience type would be four places to
+ * fix the next wording problem.
+ *
+ * On a payment plan it also shows the discounted SCHEDULE — "2 payments
+ * of A$43.33, then A$43.34" — because §7 requires the member to see the
+ * actual instalments before agreeing. Those figures are the server's
+ * too: a discounted commitment rarely divides into equal cents, and a
+ * browser dividing a total by a count would be guessing at the
+ * remainder.
  */
 export default function DiscountCodeField({
-  paymentOptionId, paymentOptionScheduleId, onChange, disabled,
+  target, onChange, disabled,
 }: {
-  paymentOptionId: string
-  paymentOptionScheduleId: string
+  /** What is being priced. See `DiscountTarget`. */
+  target: DiscountTarget
   /** The applied code, or null when there is none to send. */
   onChange: (code: string | null) => void
   disabled?: boolean
@@ -55,9 +70,7 @@ export default function DiscountCodeField({
     // reach checkout.
     onChange(null)
 
-    previewDiscount({
-      code, paymentOptionId, paymentOptionScheduleId, signal: controller.signal,
-    })
+    previewDiscount({ code, target, signal: controller.signal })
       .then((preview) => {
         if (controller.signal.aborted) return
         const next = stateFromPreview(preview)
@@ -93,6 +106,7 @@ export default function DiscountCodeField({
   }
 
   const applied = state.status === 'applied' ? describeApplied(state.preview) : null
+  const schedule = state.status === 'applied' ? describeSchedule(state.preview) : null
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -126,9 +140,23 @@ export default function DiscountCodeField({
       </div>
 
       {applied && (
-        <p className="rounded-md bg-emerald-50 px-2 py-1 text-[12px] text-emerald-800">
-          Code applied — you save {applied.saving}. Total {applied.final}.
-        </p>
+        <div className="rounded-md bg-emerald-50 px-2 py-1 text-[12px] text-emerald-800">
+          {/* A plan says the schedule, because that is what the member
+              is agreeing to. A single charge says the total, because
+              that is all there is. Never both — "Total A$130" above a
+              schedule that already ends in a total reads as two
+              different prices. */}
+          {schedule ? (
+            <>
+              <p>Code applied — you save {applied.saving}.</p>
+              <p className="mt-0.5 font-medium">
+                {schedule.line} — {schedule.total} total.
+              </p>
+            </>
+          ) : (
+            <p>Code applied — you save {applied.saving}. Total {applied.final}.</p>
+          )}
+        </div>
       )}
       {state.status === 'rejected' && (
         <p className="rounded-md bg-amber-50 px-2 py-1 text-[12px] text-amber-800">

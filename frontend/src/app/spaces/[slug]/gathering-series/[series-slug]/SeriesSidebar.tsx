@@ -144,12 +144,17 @@ export function SidebarYourAccess({
 
 export function SidebarWaysToJoin({
   spaceSlug, seriesSlug, options, hasPurchasable, palette,
+  discountCodesEnabled = false,
 }: {
   spaceSlug: string
   seriesSlug: string
   options: SidebarPaymentOption[]
   hasPurchasable: boolean
   palette: CollectivePaletteMeta | null
+  /** Stage 4 — whether a discount code may be offered here. Resolved
+   *  server-side; the default is off so an un-taught caller shows no
+   *  code box rather than one the server refuses. */
+  discountCodesEnabled?: boolean
 }) {
   const primary = paletteHex('primary', palette) ?? '#0f766e'
   // Only surface options that (a) the viewer doesn't already hold
@@ -190,6 +195,7 @@ export function SidebarWaysToJoin({
               seriesSlug={seriesSlug}
               option={o}
               palette={palette}
+              discountCodesEnabled={discountCodesEnabled}
             />
           </li>
         ))}
@@ -206,12 +212,13 @@ export function SidebarWaysToJoin({
 }
 
 function CompactOptionCard({
-  spaceSlug, seriesSlug, option, palette,
+  spaceSlug, seriesSlug, option, palette, discountCodesEnabled,
 }: {
   spaceSlug: string
   seriesSlug: string
   option: SidebarPaymentOption
   palette: CollectivePaletteMeta | null
+  discountCodesEnabled: boolean
 }) {
   const primary = paletteHex('primary', palette) ?? '#0f766e'
   const primary_border = rgbaFromHex(primary, 0.14)
@@ -264,6 +271,7 @@ function CompactOptionCard({
             returnBase={`/spaces/${spaceSlug}/gathering-series/${seriesSlug}`}
             palette={palette}
             withDivider={i > 0}
+            discountCodesEnabled={discountCodesEnabled}
           />
         ))}
       </div>

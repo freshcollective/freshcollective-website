@@ -41,6 +41,7 @@ from app.models.discount_code import (
     DiscountCode,
     DiscountRedemption,
     DiscountReservation,
+    DiscountTargetKind,
     ReservationStatus,
 )
 from app.services.discount_pricing import (
@@ -68,6 +69,84 @@ IDEMPOTENCY_RECOVERY_MAX_AGE = timedelta(hours=6)
 
 
 # ---------------------------------------------------------------------------
+# Who is asking — the reservation's identity
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReservationAttempt:
+    """One purchase attempt, as a reservation identifies it.
+
+    The thing a retry has to match. A member who reloads the checkout
+    page, or clicks buy twice, must find their own hold rather than be
+    told the code is fully used — so this has to be stable across
+    attempts at the *same* purchase and distinct between different ones.
+
+    Two shapes, exclusively, mirroring the columns (see
+    ``DiscountReservation.target_kind``):
+
+    * ``payment_option`` — an option and a schedule. The schedule is
+      part of the identity because changing payment method is a
+      different purchase, not a retry of the same one.
+    * ``pathway`` / ``gathering`` — a directly-purchased experience.
+
+    Built by :meth:`for_payment_option` and :meth:`for_direct` rather
+    than by hand, so an incompletely-described attempt cannot be
+    constructed and then fail at INSERT against the CHECK.
+    """
+
+    user_id: str
+    kind: str
+    payment_option_id: str | None = None
+    payment_option_schedule_id: str | None = None
+    target_id: str | None = None
+
+    @classmethod
+    def for_payment_option(
+        cls, *, user_id: str, payment_option_id: str, payment_option_schedule_id: str,
+    ) -> "ReservationAttempt":
+        return cls(
+            user_id=user_id,
+            kind=DiscountTargetKind.payment_option.value,
+            payment_option_id=payment_option_id,
+            payment_option_schedule_id=payment_option_schedule_id,
+        )
+
+    @classmethod
+    def for_direct(
+        cls, *, user_id: str, kind: str, target_id: str,
+    ) -> "ReservationAttempt":
+        if kind not in (
+            DiscountTargetKind.pathway.value, DiscountTargetKind.gathering.value,
+        ):
+            raise ValueError(f"not a direct target kind: {kind!r}")
+        return cls(user_id=user_id, kind=kind, target_id=target_id)
+
+    @property
+    def is_direct(self) -> bool:
+        return self.kind != DiscountTargetKind.payment_option.value
+
+    def matches(self, column_owner: Any) -> Any:
+        """A SQLAlchemy predicate selecting this attempt's rows.
+
+        One place, so the counting query and the retry lookup cannot
+        drift into asking slightly different questions — which is
+        exactly the drift that would make a retry spend a second slot.
+        """
+        clause = (
+            (column_owner.user_id == self.user_id)
+            & (column_owner.target_kind == self.kind)
+        )
+        if self.is_direct:
+            return clause & (column_owner.target_id == self.target_id)
+        return clause & (
+            (column_owner.payment_option_id == self.payment_option_id)
+            & (column_owner.payment_option_schedule_id
+               == self.payment_option_schedule_id)
+        )
+
+
+# ---------------------------------------------------------------------------
 # Counting — what a code has actually committed
 # ---------------------------------------------------------------------------
 
@@ -76,7 +155,7 @@ def consumed_slots(
     db: Session,
     discount_code_id: str,
     *,
-    excluding_attempt: tuple[str, str, str] | None = None,
+    excluding_attempt: ReservationAttempt | None = None,
 ) -> int:
     """Permanent redemptions plus reservations still able to complete.
 
@@ -85,12 +164,16 @@ def consumed_slots(
     reservation counts whether or not its window has elapsed, because
     until it is verified dead the member holding it may still be paying.
 
-    ``excluding_attempt`` is ``(user_id, payment_option_id,
-    payment_option_schedule_id)`` — that purchase attempt's own hold is
-    left out of the count. Without it a member who reserved the last slot
-    would be told the code was fully used by their own reservation the
-    moment they retried, or reloaded the page, which is the most likely
-    way anyone would meet this code path at all.
+    It is also deliberately a count of *purchases*, not of payments. A
+    finite plan's redemption is one row keyed to the plan, so a
+    four-instalment purchase consumes one slot and its later invoices
+    consume none.
+
+    ``excluding_attempt`` leaves that purchase attempt's own hold out of
+    the count. Without it a member who reserved the last slot would be
+    told the code was fully used by their own reservation the moment they
+    retried, or reloaded the page, which is the most likely way anyone
+    would meet this code path at all.
     """
     redemptions = db.query(func.count(DiscountRedemption.id)).filter(
         DiscountRedemption.discount_code_id == discount_code_id,
@@ -101,12 +184,7 @@ def consumed_slots(
         DiscountReservation.status == ReservationStatus.held.value,
     )
     if excluding_attempt is not None:
-        user_id, option_id, schedule_id = excluding_attempt
-        held_q = held_q.filter(~(
-            (DiscountReservation.user_id == user_id)
-            & (DiscountReservation.payment_option_id == option_id)
-            & (DiscountReservation.payment_option_schedule_id == schedule_id)
-        ))
+        held_q = held_q.filter(~excluding_attempt.matches(DiscountReservation))
     return int(redemptions) + int(held_q.scalar() or 0)
 
 
@@ -160,9 +238,7 @@ def reserve_or_reuse(
     *,
     applied: AppliedDiscount,
     code: DiscountCode,
-    user_id: str,
-    payment_option_id: str,
-    payment_option_schedule_id: str,
+    attempt: ReservationAttempt,
     now: datetime,
 ) -> ReservationOutcome:
     """Take (or re-find) this purchase attempt's slot. Commits.
@@ -182,10 +258,8 @@ def reserve_or_reuse(
         db.query(DiscountReservation)
         .filter(
             DiscountReservation.discount_code_id == code.id,
-            DiscountReservation.user_id == user_id,
-            DiscountReservation.payment_option_id == payment_option_id,
-            DiscountReservation.payment_option_schedule_id == payment_option_schedule_id,
             DiscountReservation.status == ReservationStatus.held.value,
+            attempt.matches(DiscountReservation),
         )
         .first()
     )
@@ -194,9 +268,8 @@ def reserve_or_reuse(
         return ReservationOutcome(reservation=existing, reused=True)
 
     limit = code.max_redemptions
-    own_attempt = (user_id, payment_option_id, payment_option_schedule_id)
     if limit is not None and consumed_slots(
-        db, code.id, excluding_attempt=own_attempt,
+        db, code.id, excluding_attempt=attempt,
     ) >= limit:
         db.rollback()
         raise DiscountError(
@@ -208,9 +281,11 @@ def reserve_or_reuse(
         id=f"dres_{uuid.uuid4().hex[:24]}",
         discount_code_id=code.id,
         space_id=code.space_id,
-        user_id=user_id,
-        payment_option_id=payment_option_id,
-        payment_option_schedule_id=payment_option_schedule_id,
+        user_id=attempt.user_id,
+        target_kind=attempt.kind,
+        payment_option_id=attempt.payment_option_id,
+        payment_option_schedule_id=attempt.payment_option_schedule_id,
+        target_id=attempt.target_id,
         status=ReservationStatus.held.value,
         original_amount_cents=applied.amounts.original_cents,
         discount_amount_cents=applied.amounts.discount_cents,
@@ -294,7 +369,12 @@ def convert_to_redemption(
     db: Session,
     *,
     reservation: DiscountReservation,
-    payment_transaction_id: str,
+    payment_transaction_id: str | None = None,
+    #: Stage 4. A finite plan redeems against the PLAN, not against one
+    #: of its invoices — which is what makes a four-instalment purchase
+    #: consume one use rather than four. Exactly one of the two ids is
+    #: given; the ``discount_redemptions`` CHECK enforces that too.
+    purchase_plan_id: str | None = None,
     now: datetime,
     commit: bool = True,
 ) -> DiscountRedemption | None:
@@ -314,10 +394,16 @@ def convert_to_redemption(
     which is worse than the double-spend the expiry exists to prevent.
 
     Exactly once, enforced by the database rather than by care: the
-    partial unique index ``uq_discount_redemptions_code_txn`` makes a
-    second redemption for the same (code, transaction) a constraint
-    violation. A redelivered webhook therefore finds the reservation
-    already ``converted`` and returns the existing row.
+    partial unique index ``uq_discount_redemptions_code_txn`` — or
+    ``uq_discount_redemptions_code_plan`` for a plan — makes a second
+    redemption for the same purchase a constraint violation. A
+    redelivered webhook therefore finds the reservation already
+    ``converted`` and returns the existing row.
+
+    For a plan that index does more than deduplicate a redelivery: it is
+    what makes "one use per purchase, not one per instalment" structural.
+    Instalment four cannot add a redemption because instalment one
+    already holds the only row the index permits.
 
     Uses the reservation's FROZEN amounts and snapshot. The live code may
     by now be deactivated, edited or expired; none of that may change
@@ -325,6 +411,12 @@ def convert_to_redemption(
     let a Creator's later edit retroactively invalidate a completed
     payment.
     """
+    if (payment_transaction_id is None) == (purchase_plan_id is None):
+        raise ValueError(
+            "convert_to_redemption needs exactly one of "
+            "payment_transaction_id / purchase_plan_id"
+        )
+
     locked = db.execute(
         text("SELECT status FROM discount_reservations WHERE id = :id FOR UPDATE"),
         {"id": reservation.id},
@@ -334,14 +426,18 @@ def convert_to_redemption(
     db.refresh(reservation)
 
     if reservation.status == ReservationStatus.converted.value:
-        existing = (
-            db.query(DiscountRedemption)
-            .filter(
-                DiscountRedemption.discount_code_id == reservation.discount_code_id,
+        existing_q = db.query(DiscountRedemption).filter(
+            DiscountRedemption.discount_code_id == reservation.discount_code_id,
+        )
+        if purchase_plan_id is not None:
+            existing_q = existing_q.filter(
+                DiscountRedemption.purchase_plan_id == purchase_plan_id,
+            )
+        else:
+            existing_q = existing_q.filter(
                 DiscountRedemption.payment_transaction_id == payment_transaction_id,
             )
-            .first()
-        )
+        existing = existing_q.first()
         if commit:
             db.commit()
         return existing
@@ -366,6 +462,7 @@ def convert_to_redemption(
         space_id=reservation.space_id,
         user_id=reservation.user_id,
         payment_transaction_id=payment_transaction_id,
+        purchase_plan_id=purchase_plan_id,
         original_amount_cents=reservation.original_amount_cents,
         discount_amount_cents=reservation.discount_amount_cents,
         final_amount_cents=reservation.final_amount_cents,
@@ -376,17 +473,93 @@ def convert_to_redemption(
 
     reservation.status = ReservationStatus.converted.value
     reservation.converted_at = now
-    reservation.payment_transaction_id = payment_transaction_id
+    # Only a pay-in-full reservation names a transaction. A plan's
+    # reservation is answered by the plan; the FK column stays NULL
+    # rather than pointing at whichever invoice happened to be first.
+    if payment_transaction_id is not None:
+        reservation.payment_transaction_id = payment_transaction_id
     reservation.updated_at = now
     if commit:
         db.commit()
     else:
         db.flush()
     logger.info(
-        "discount reservation converted: id=%s code=%s txn=%s",
-        reservation.id, reservation.discount_code_id, payment_transaction_id,
+        "discount reservation converted: id=%s code=%s txn=%s plan=%s",
+        reservation.id, reservation.discount_code_id,
+        payment_transaction_id or "-", purchase_plan_id or "-",
     )
     return redemption
+
+
+def convert_plan_reservation(
+    db: Session, *, plan: Any, now: datetime, commit: bool = False,
+) -> DiscountRedemption | None:
+    """Spend the code a finite plan was established with. Once, per plan.
+
+    Called where the plan activates — the genuine ``pending_setup →
+    active`` transition, on the first invoice that actually succeeded.
+    Not at checkout: typing a code and saving a card is not a redemption,
+    and a plan whose first payment never lands must leave the slot for
+    someone else.
+
+    ``commit=False`` by default, the opposite of
+    :func:`convert_to_redemption`, because the only caller is inside a
+    webhook transaction that must commit the redemption together with
+    the activation it accompanies. A separate commit would leave a window
+    where the plan is active but the code unspent, and the replay guards
+    above it mean that window would never be revisited.
+
+    Returns ``None`` — harmlessly — when the plan carries no discount, or
+    when no reservation can be found for it. The second case is logged at
+    warning rather than raised: the member has paid and their plan is
+    real, so refusing to activate it over a missing hold would be the
+    worse outcome. It is also recoverable, because the redemption ledger
+    is what the limit counts and a missing row under-counts rather than
+    over-counts.
+    """
+    snapshot = getattr(plan, "discount_snapshot_json", None) or {}
+    discount_code_id = snapshot.get("discount_code_id")
+    if not discount_code_id:
+        return None
+
+    attempt = ReservationAttempt.for_payment_option(
+        user_id=plan.member_user_id,
+        payment_option_id=plan.payment_option_id,
+        payment_option_schedule_id=plan.payment_option_schedule_id,
+    )
+    reservation = (
+        db.query(DiscountReservation)
+        .filter(
+            DiscountReservation.discount_code_id == discount_code_id,
+            attempt.matches(DiscountReservation),
+            # ``converted`` is included deliberately: a redelivered
+            # webhook must find the row and return the existing
+            # redemption rather than conclude the hold is missing.
+            # ``released`` too — ``convert_to_redemption`` shouts about
+            # that case, which is exactly the one worth hearing.
+            DiscountReservation.status.in_((
+                ReservationStatus.held.value,
+                ReservationStatus.converted.value,
+                ReservationStatus.released.value,
+            )),
+        )
+        .order_by(DiscountReservation.created_at.desc())
+        .first()
+    )
+    if reservation is None:
+        logger.warning(
+            "FIP discount: plan %s claims code %s but no reservation matches "
+            "(user=%s option=%s schedule=%s) — plan activates, redemption "
+            "not recorded.",
+            plan.id, discount_code_id, plan.member_user_id,
+            plan.payment_option_id, plan.payment_option_schedule_id,
+        )
+        return None
+
+    return convert_to_redemption(
+        db, reservation=reservation, purchase_plan_id=plan.id,
+        now=now, commit=commit,
+    )
 
 
 def find_by_session(db: Session, session_id: str) -> DiscountReservation | None:
