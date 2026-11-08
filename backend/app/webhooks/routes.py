@@ -1084,6 +1084,10 @@ def _handle_checkout_completed(
                 payment_mode="single",
                 amount_cents=txn.gross_amount_cents,
                 currency=txn.currency,
+                # What was actually granted, so the confirmation can
+                # name it. Passed rather than re-derived: this is the
+                # outcome, and the Option may be edited later.
+                fulfilment_result=result,
             )
             # And the other side of it: the Collective's leaders hear that
             # a paid signup succeeded. One per purchase — this is the

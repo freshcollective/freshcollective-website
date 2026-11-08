@@ -2316,6 +2316,17 @@ class CreatorPaymentTransactionOut(BaseModel):
     id: str
     transaction_type: str
     status: str
+    # Stage 3E — may this viewer refund this payment, and if not, why?
+    #
+    # Answered by the same gate ``POST .../refund`` enforces, so the
+    # button a creator sees and the endpoint behind it cannot
+    # disagree. The frontend used to re-derive this from six fields;
+    # when its answer was "no" it rendered nothing at all, which is
+    # how a missing Refund action became undiagnosable — neither the
+    # creator nor anyone reading the page could tell which condition
+    # had failed, or that one had.
+    can_refund: bool = False
+    refund_blocked_reason: str | None = None
     # Human-readable provider label — populated from the model row's
     # ``payment_provider`` enum. Frontend uses this to distinguish
     # Stripe purchases from manual (bank transfer / cash /

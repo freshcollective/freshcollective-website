@@ -88,6 +88,98 @@ def _progress_line(paid: int | None, expected: int | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+def _fmt_gathering_when(iso: str | None) -> str:
+    """"Sunday 22 November 2026, 8:45 am" — a Gathering is identified
+    by when it is as much as by its name. Returns "" rather than a
+    guess when the value cannot be read."""
+    if not iso:
+        return ""
+    from datetime import datetime
+
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    hour = dt.strftime("%I").lstrip("0") or "12"
+    return (
+        f"{dt.strftime('%A %d %B %Y')}, "
+        f"{hour}:{dt.strftime('%M %p').lower()}"
+    )
+
+
+
+def _plan_arrangement_line(ctx: dict) -> str | None:
+    """"2 monthly payments of A$45. A$90 total. 1 payment remaining."
+
+    §7: a first instalment must not read as though the programme has
+    been paid for. Every figure comes from the PurchasePlan the emitter
+    carried through — nothing is computed here, because an email that
+    does its own arithmetic is an email that can disagree with the
+    ledger.
+    """
+    paid = ctx.get("installments_paid")
+    expected = ctx.get("installments_expected")
+    each = ctx.get("installment_amount_cents")
+    total = ctx.get("total_expected_cents")
+    interval = (ctx.get("interval") or "").strip()
+    currency = ctx.get("currency")
+    if not expected or each is None:
+        return None
+
+    cadence = {
+        "week": "weekly", "month": "monthly", "year": "yearly",
+    }.get(interval, interval or "scheduled")
+    bits = [f"Your arrangement: {expected} {cadence} payments of "
+            f"{_fmt_amount(each, currency)}."]
+    if total is not None:
+        bits.append(f"{_fmt_amount(total, currency)} total.")
+    if paid is not None:
+        remaining = max(0, int(expected) - int(paid))
+        if remaining:
+            bits.append(
+                f"{remaining} payment{'s' if remaining != 1 else ''} remaining."
+            )
+    return " ".join(bits)
+
+
+def _included_lines(included: list | None, base_url: str) -> list[str]:
+    """"What's included" as plain lines, one experience each.
+
+    Kept to a readable length: a large programme lists the first
+    several and then says how many more there are, rather than
+    producing an email nobody scrolls to the end of. The member can
+    still see everything in Your World, which every version of this
+    email links to.
+    """
+    if not included:
+        return []
+    shown = included[:8]
+    lines: list[str] = []
+    for item in shown:
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("title") or "").strip()
+        if not title:
+            continue
+        status = (item.get("status") or "").strip()
+        when = _fmt_gathering_when(item.get("starts_at"))
+        url = (item.get("url") or "").strip()
+        parts = [title]
+        if when:
+            parts.append(when)
+        if status:
+            parts.append(status)
+        line = " — ".join(parts)
+        if url:
+            line += f"\n{base_url}{url}"
+        lines.append(line)
+    remaining = len(included) - len(shown)
+    if remaining > 0:
+        lines.append(f"…and {remaining} more, all in Your World.")
+    return lines
+
+
 @template_for(_EVENT_PURCHASE_COMPLETED, CHANNEL_EMAIL_TRANSACTIONAL)
 class PurchaseCompletedEmailTemplate:
     key = "purchase.completed.email_transactional"
@@ -127,13 +219,34 @@ class PurchaseCompletedEmailTemplate:
             )
             middle_line = "Your access is now active."
 
-        cta_label = f"Open {experience}" if experience != "your purchase" else "Open your purchase"
+        # Stage 3E — what they actually bought, named.
+        #
+        # The button used to read "Open <Option>" and go to the
+        # dashboard, because a Payment Option has no page of its own.
+        # Now the experiences carry their own links and the single CTA
+        # is the honest one: Your World, where all of them live.
+        from app.core.config import settings as _settings
+
+        included = ctx.get("included") or []
+        included_lines = _included_lines(included, _settings.public_app_url)
+
+        if is_plan:
+            middle_line = _plan_arrangement_line(ctx) or middle_line
+
+        cta_label = "Go to Your World" if included_lines else (
+            f"Open {experience}" if experience != "your purchase"
+            else "Open your purchase"
+        )
+
+        paragraphs = [first_line, middle_line]
+        if included_lines:
+            paragraphs.append("Here's what's included in your purchase:")
+            paragraphs.extend(included_lines)
 
         body_text = (
             f"{greeting}\n\n"
-            f"{first_line}\n\n"
-            f"{middle_line}\n\n"
-            f"{cta_label}:\n{member_url}\n\n"
+            + "\n\n".join(paragraphs)
+            + f"\n\n{cta_label}:\n{member_url}\n\n"
             f"{resolver_for(db, self.key, ctx).text('signoff')}"
         )
         # Only the sign-off is editable here. The amount, the instalment
@@ -144,7 +257,7 @@ class PurchaseCompletedEmailTemplate:
             preheader=first_line,
             heading=subject,
             greeting=greeting,
-            body_paragraphs=[first_line, middle_line],
+            body_paragraphs=paragraphs,
             action=(cta_label, member_url),
             signoff=signoff,
             show_preferences_link=_SHOW_PREFS,

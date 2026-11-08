@@ -1288,6 +1288,11 @@ def _do_invoice_succeeded(
             amount_cents=plan.installment_amount_cents,
             currency=plan.currency,
             plan=plan,
+            # Stage 3E — the same included-experience lines as a
+            # pay-in-full purchase. ``result`` is this invoice's
+            # fulfilment, which for the first payment is where the
+            # access and the booking were created.
+            fulfilment_result=result,
         )
         # The Collective's leaders hear about it HERE, not at checkout.
         # A plan's checkout only captures a card; this is the

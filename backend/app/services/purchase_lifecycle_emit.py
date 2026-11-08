@@ -187,6 +187,7 @@ def emit_purchase_completed(
     amount_cents: int | None,
     currency: str | None,
     plan: PurchasePlan | None = None,
+    fulfilment_result=None,
 ) -> "CommunicationEvent | None":
     """Emit for a single successful purchase or a FIP first-instalment.
 
@@ -205,9 +206,29 @@ def emit_purchase_completed(
         "amount_cents":    amount_cents,
         "currency":        currency,
     }
+    # Stage 3E — what the purchase actually produced, so the email can
+    # name the Gathering and the Pathway rather than only the bundle.
+    # Read from the fulfilment outcome, never from the Option's current
+    # configuration: a creator may edit it afterwards, and the email
+    # must describe the purchase that happened.
+    if fulfilment_result is not None:
+        try:
+            from app.services.purchase_included_summary import (
+                build_included_summary,
+            )
+
+            payload["included"] = build_included_summary(
+                db, result=fulfilment_result, payer_user_id=user.id,
+            ).as_payload()
+        except Exception:  # pragma: no cover - never block the email
+            logger.exception("purchase.completed: included summary failed")
+
     if plan is not None and payment_mode == "plan":
         payload["installments_paid"]     = plan.installments_paid
         payload["installments_expected"] = plan.installments_expected
+        payload["installment_amount_cents"] = plan.installment_amount_cents
+        payload["total_expected_cents"] = plan.total_expected_cents
+        payload["interval"] = plan.stripe_interval
     return comms_emit(
         db,
         event_type="purchase.completed",

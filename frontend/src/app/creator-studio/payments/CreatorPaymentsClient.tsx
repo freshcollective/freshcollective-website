@@ -42,6 +42,16 @@ interface CreatorPaymentTransaction {
   id: string
   transaction_type: string
   status: string
+  /** Stage 3E — the refund gate's own answer, from the backend.
+   *
+   *  This page used to re-derive it from six fields, and when its
+   *  answer was "no" it rendered nothing: no button, no reason, no
+   *  indication that an action existed at all. A creator looking at a
+   *  perfectly ordinary payment could not tell whether the action was
+   *  missing, forbidden or broken. The endpoint that enforces the rule
+   *  now answers the question too. */
+  can_refund?: boolean
+  refund_blocked_reason?: string | null
   payment_provider: string | null
   payer_user_id: string | null
   payer_name: string | null
@@ -203,6 +213,11 @@ function canRevoke(row: CreatorPaymentTransaction, isPlatformOwner: boolean): bo
 // the backend's ``_payout_gate_action`` without rendering the page.
 // This wrapper keeps the call sites below unchanged.
 function canRefund(row: CreatorPaymentTransaction, isPlatformOwner: boolean): boolean {
+  // The backend's answer wins when it is present. `canRefundRow` stays
+  // as the fallback for a payload served by an older build — it is the
+  // same rule, which is exactly why it was safe to stop depending on
+  // it here.
+  if (typeof row.can_refund === 'boolean') return row.can_refund
   return canRefundRow(row, isPlatformOwner)
 }
 
@@ -777,7 +792,7 @@ export default function CreatorPaymentsClient({
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-right">
                           <div className="inline-flex items-center gap-1.5">
-                            {canRefund(row, isPlatformOwner) && (
+                            {canRefund(row, isPlatformOwner) ? (
                               <button
                                 type="button"
                                 onClick={() => setRefundingRow(row)}
@@ -786,7 +801,21 @@ export default function CreatorPaymentsClient({
                               >
                                 Refund
                               </button>
-                            )}
+                            ) : row.refund_blocked_reason ? (
+                              /* Say why. Silence here is what made a
+                                 missing Refund action impossible to
+                                 diagnose — including for a Payment
+                                 Option purchase, which is refundable
+                                 on exactly the same terms as any
+                                 other and was never blocked for being
+                                 a bundle. */
+                              <span
+                                className="text-[11px] text-slate-400"
+                                title={row.refund_blocked_reason}
+                              >
+                                Refund unavailable
+                              </span>
+                            ) : null}
                             {canRevoke(row, isPlatformOwner) && (
                               <button
                                 type="button"

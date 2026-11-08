@@ -8958,6 +8958,25 @@ def get_creator_payment_summary(
     )
 
 
+
+def _refund_eligibility(txn, viewer_is_admin: bool):
+    """The refund gate's own answer, for a list row. See
+    ``creator.refund_routes.refund_eligibility`` — one rule, used by
+    the endpoint that enforces it and by the surface that offers it."""
+    from app.creator.refund_routes import refund_eligibility
+
+    return refund_eligibility(txn, actor_is_admin=viewer_is_admin)
+
+
+def _refund_blocked_copy(txn, viewer_is_admin: bool) -> str | None:
+    from app.creator.refund_routes import REFUND_BLOCKED_REASONS
+
+    allowed, reason = _refund_eligibility(txn, viewer_is_admin)
+    if allowed or reason is None:
+        return None
+    return REFUND_BLOCKED_REASONS.get(reason)
+
+
 def _payout_model_value(txn) -> str:
     """``payout_model`` as a plain string, enum or not.
 
@@ -9190,6 +9209,12 @@ def list_creator_payments(
             return "fully_revoked"
         return "partially_revoked"
 
+    # The refund gate distinguishes an admin from a creator-owner for
+    # the post-payout cases, so the row's answer has to know which this
+    # viewer is — the same distinction ``_can_creator_act_on_space``
+    # and the refund endpoint already make.
+    viewer_is_admin = getattr(current_user, "role", None) == "admin"
+
     out: list[CreatorPaymentTransactionOut] = []
     for r in rows:
         payer = users.get(r.payer_user_id) if r.payer_user_id else None
@@ -9230,6 +9255,8 @@ def list_creator_payments(
             net_creator_amount_cents=r.net_creator_amount_cents,
             payout_model=_payout_model_value(r),
             connect=_connect_detail(r),
+            can_refund=_refund_eligibility(r, viewer_is_admin)[0],
+            refund_blocked_reason=_refund_blocked_copy(r, viewer_is_admin),
             # FIP4C — plan context. NULL on pay-in-full rows.
             purchase_plan_id=r.purchase_plan_id,
             installment_number=r.installment_number,

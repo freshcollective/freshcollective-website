@@ -480,3 +480,80 @@ def creator_refund_payment(
         refundable_after_cents=max(0, txn.gross_amount_cents - projected_refunded),
         payout_advisory=payout_advisory,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage 3E — the same gate, answered for a list row
+# ---------------------------------------------------------------------------
+
+#: Why the Refund action is not offered. Short, member-safe strings: a
+#: creator reads these, so each says what is true rather than naming a
+#: column.
+REFUND_BLOCKED_REASONS: dict[str, str] = {
+    "not_stripe": "Only Stripe payments can be refunded here.",
+    "not_refundable_status": "This payment is not in a refundable state.",
+    "nothing_left": "This payment has already been fully refunded.",
+    "payout_not_applicable": (
+        "This Collective's payouts are handled outside Fresh Collective's "
+        "manual process, so refunds are not available from here."
+    ),
+    "payout_settled": (
+        "The creator's share has already been paid out. Contact Fresh "
+        "Collective to arrange this refund."
+    ),
+    "connect_state_unknown": (
+        "The payout state of this payment is still being established. "
+        "Try again shortly."
+    ),
+}
+
+
+def refund_eligibility(txn, *, actor_is_admin: bool) -> tuple[bool, str | None]:
+    """May this payment be refunded, and if not, why?
+
+    One authority for a question that had two implementations: this
+    gate, which the endpoint enforces, and a copy in the frontend that
+    decided whether to render the button. They agreed — but when the
+    answer was "no" the page showed nothing at all, so a creator with a
+    perfectly ordinary payment in front of them had no way to tell
+    whether the action was missing, forbidden, or broken.
+
+    Nothing about the rule changes here. ``transaction_type`` plays no
+    part in it and never did: a Payment Option purchase is refundable on
+    exactly the same terms as a Gathering ticket, which is why the one
+    the creator reported is failing on its payout state rather than on
+    being a bundle.
+    """
+    from app.models.payment import PaymentProvider, PaymentTransactionStatus
+
+    if txn.payment_provider != PaymentProvider.stripe:
+        return False, "not_stripe"
+    if txn.status not in (
+        PaymentTransactionStatus.succeeded,
+        PaymentTransactionStatus.partially_refunded,
+    ):
+        return False, "not_refundable_status"
+    remaining = (txn.gross_amount_cents or 0) - (txn.refunded_amount_cents or 0)
+    if remaining <= 0:
+        return False, "nothing_left"
+
+    allowed, _advisory = _payout_gate_action(
+        txn=txn, actor_is_admin=actor_is_admin,
+    )
+    if allowed:
+        return True, None
+
+    # Say which refusal it was, because they mean different things to
+    # the person reading.
+    from app.models.payment import PayoutModel, PayoutStatus
+
+    if _payout_model_value_for_gate(txn) == PayoutModel.connect.value:
+        return False, "connect_state_unknown"
+    if txn.payout_status in (PayoutStatus.paid, PayoutStatus.held):
+        return False, "payout_settled"
+    return False, "payout_not_applicable"
+
+
+def _payout_model_value_for_gate(txn) -> str:
+    raw = txn.payout_model
+    return raw.value if hasattr(raw, "value") else (raw or "manual")
