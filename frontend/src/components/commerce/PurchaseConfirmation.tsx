@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
+import { DASHBOARD_PATH } from '@/lib/routes'
 import { formatMoneyCents } from '@/lib/formatMoney'
 import {
   paletteHex,
@@ -237,7 +238,7 @@ export default function PurchaseConfirmation({
       )}
 
       <Link
-        href="/your-world"
+        href={DASHBOARD_PATH}
         className="mt-4 inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white"
         style={{ background: primary }}
       >

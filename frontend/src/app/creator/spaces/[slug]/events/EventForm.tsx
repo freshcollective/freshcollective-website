@@ -1190,9 +1190,33 @@ export default function EventForm({
             <span className="text-xs text-black">
               {bookingRequiredByRules
                 ? 'Automatic — this Access type / capacity setting requires booking.'
-                : 'Members must book a spot to attend.'}
+                : 'Members must reserve a place to attend.'}
             </span>
           </div>
+
+          {/* Stage 3F — what switching it off actually means.
+              A creator turned it off expecting it to make attending
+              easier, and it did the opposite: with no reservation
+              there is no place to hold, so a member with a Series
+              pass had nothing to click. The toggle behaved correctly;
+              nothing said what it was for. */}
+          {!requiresBooking && !bookingRequiredByRules && (
+            <p className="mb-3 text-[12px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
+              With this off, eligible members can simply turn up — there
+              is no place to reserve and no attendance list. Switch it on
+              when you need to know who is coming, or when places are
+              limited.
+              {Boolean(seriesId) && (
+                <>
+                  {' '}
+                  <strong>This Gathering is part of a Series.</strong> A
+                  Series pass lets a member attend eligible sessions, but
+                  it doesn&rsquo;t book them in — they still reserve each
+                  session individually, and only when this is on.
+                </>
+              )}
+            </p>
+          )}
 
           {requiresBooking && (
             <div className="flex flex-col gap-4">

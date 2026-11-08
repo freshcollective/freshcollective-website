@@ -276,6 +276,54 @@ def record_series_published(
         )
 
 
+
+#: The member dashboard — titled "Your World" in the interface, and
+#: living at ``/dashboard``. Named once because writing the title
+#: where the path belongs is exactly the mistake this stage is
+#: correcting.
+DASHBOARD_PATH = "/dashboard"
+
+
+def _purchase_destination(
+    included: list[dict] | None, space_id: str | None, db: Session,
+) -> str:
+    """Where this purchase should take the member.
+
+    A Payment Option is a purchase arrangement, not a page — there is
+    nothing called "Sunday Slow Down Series" to open. So the
+    destination is the experience the purchase is *about*, when one
+    clearly is.
+
+    One Series, or one Gathering, or one Pathway: that is the thing
+    they bought, whatever else came bundled with it. Several Pathways
+    and no single centre: the Collective, where all of them are. Only
+    when neither holds does this fall back to the dashboard, which is
+    true but says nothing.
+
+    It had been the dashboard in every case, which is how a
+    notification reading "Sunday Slow Down Series — purchase
+    confirmed" took somebody to a page that did not mention it.
+    """
+    items = [i for i in (included or []) if isinstance(i, dict) and i.get("url")]
+    by_kind: dict[str, list[dict]] = {}
+    for item in items:
+        by_kind.setdefault(item.get("kind") or "", []).append(item)
+
+    # Most specific first: a Series is the centre of a programme even
+    # when Pathways come with it.
+    for kind in ("event_series", "gathering", "pathway", "offering"):
+        of_kind = by_kind.get(kind) or []
+        if len(of_kind) == 1:
+            return of_kind[0]["url"]
+
+    if space_id:
+        space = _space_of(db, space_id)
+        if space is not None and getattr(space, "slug", None):
+            return f"/spaces/{space.slug}"
+
+    return DASHBOARD_PATH
+
+
 def record_purchase_fulfilled(
     db: Session,
     *,
@@ -345,10 +393,7 @@ def record_purchase_fulfilled(
                 "title": option_name or "Your purchase",
                 "included": included or [],
                 "counts": counts,
-                # Where "Explore what's included" goes. The purchase
-                # summary names every experience with its own link;
-                # the Option itself has no page.
-                "url": "/your-world",
+                "url": _purchase_destination(included, space_id, db),
             },
         )
         # The column carries a unique partial index, so it is the

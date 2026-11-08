@@ -43,6 +43,19 @@ class PurchaseCompletedResolver:
             "payment_mode":          p.get("payment_mode") or "single",
             "installments_paid":     p.get("installments_paid"),
             "installments_expected": p.get("installments_expected"),
+            # Stage 3F — the included experiences, and the figures the
+            # plan wording needs.
+            #
+            # This context is an allowlist, not a pass-through: a key
+            # the emitter puts in the payload reaches the template only
+            # if it is named here. Stage 3E.1 added ``included`` to the
+            # payload and stopped there, so every Payment Option email
+            # since has rendered the generic version — the data was
+            # computed, carried to this point, and dropped.
+            "included":                 p.get("included") or [],
+            "installment_amount_cents": p.get("installment_amount_cents"),
+            "total_expected_cents":     p.get("total_expected_cents"),
+            "interval":                 p.get("interval"),
         })
         return [
             ResolvedRecipient(

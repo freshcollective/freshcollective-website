@@ -304,6 +304,8 @@ def _live_pathway_status(
 
     from app.models.platform import EntitlementStatus, PathwayEntitlement
 
+    pathway = db.get(Pathway, pathway_id)
+
     ent = (
         db.query(PathwayEntitlement)
         .filter(
@@ -314,8 +316,34 @@ def _live_pathway_status(
         .order_by(PathwayEntitlement.created_at.asc())
         .first()
     )
+
+    # A Pathway anyone in the Collective can open was never this
+    # purchase's to unlock.
+    #
+    # This is the case the timestamp alone got wrong in production.
+    # Sophie already had both Sunday Slow Down Pathways — not through
+    # entitlements, but because the Pathways are open to members. So
+    # there was no earlier row to compare against, the purchase wrote
+    # the first one, and the comparison concluded "new" about
+    # something she had been reading for weeks.
+    #
+    # Access type is the authoritative relationship here, which is
+    # what §12 asks for: ask whether the member could already reach it,
+    # not whether a row happens to be younger than a charge.
+    access_type = getattr(
+        getattr(pathway, "access_type", None), "value",
+        getattr(pathway, "access_type", None),
+    )
+    if pathway is not None and str(access_type or "") in ("free", "included"):
+        return "Already in your collection"
+
     if ent is None:
         return "No longer available"
+
+    # Otherwise fall back to the entitlement's own age. A minute of
+    # slack because the webhook writes the grant moments after the
+    # charge, and a strict comparison would call genuinely new access
+    # "already yours" whenever the clocks disagreed slightly.
     if (
         purchased_at is not None
         and ent.created_at is not None

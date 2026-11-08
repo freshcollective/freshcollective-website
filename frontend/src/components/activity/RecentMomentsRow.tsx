@@ -53,10 +53,70 @@ const EVENT_FALLBACK_TITLE: Record<string, string> = {
   invitation_accepted:       'Your invitation was accepted',
 }
 
+/**
+ * How to say what happened, given the thing it happened to.
+ *
+ * A row used to render `payload.title` verbatim, which for a
+ * published Series read "Sunday Slow Down" and for a purchase of the
+ * same Series also read "Sunday Slow Down Series". Two different
+ * events, both rendered as a bare noun, neither saying what occurred
+ * — a member could not tell whether something had been published,
+ * bought, booked or joined without clicking.
+ *
+ * Presentation only. No record changes, no timestamps move, and an
+ * event type with no entry here keeps rendering exactly as it did.
+ */
+const EVENT_PHRASING: Record<string, (name: string) => string> = {
+  pathway_published:   (n) => `New Pathway: ${n}`,
+  pathway_step_released: (n) => `A new step is unlocked in ${n}`,
+  pathway_completed:   (n) => `You finished ${n}`,
+  gathering_created:   (n) => `New Gathering: ${n}`,
+  gathering_booking:   (n) => `You're booked for ${n}`,
+  gathering_cancelled: (n) => `${n} was cancelled`,
+  gathering_reminder:  (n) => `Coming up: ${n}`,
+  gathering_replay_available: (n) => `The replay of ${n} is ready`,
+  booking_confirmed:   (n) => `You're booked for ${n}`,
+  conversation_created: (n) => `New conversation: ${n}`,
+  conversation_replied: (n) => `New reply in ${n}`,
+  // Stage 3E.2's purchase event. "You've joined" rather than "you
+  // bought": what the member gained is the point, and it reads the
+  // same whether they paid or were given it.
+  purchase_fulfilled:  (n) => `You've joined ${n}`,
+}
+
 function titleFor(activity: ActivityOut): string {
   const t = activity.payload?.title
-  if (typeof t === 'string' && t.trim().length > 0) return t
+  if (typeof t === 'string' && t.trim().length > 0) {
+    const phrase = EVENT_PHRASING[activity.event_type]
+    return phrase ? phrase(t.trim()) : t
+  }
   return EVENT_FALLBACK_TITLE[activity.event_type] ?? 'Update'
+}
+
+/** The second line — what came with a purchase, when it was a bundle.
+ *
+ *  One entry per purchase is the rule (a four-Pathway programme must
+ *  not become four rows), so the contents belong here rather than in
+ *  more rows. */
+function subtitleFor(activity: ActivityOut): string | null {
+  if (activity.event_type !== 'purchase_fulfilled') return null
+  const counts = activity.payload?.counts
+  if (!counts || typeof counts !== 'object') return null
+  const label: Record<string, [string, string]> = {
+    pathway: ['Pathway', 'Pathways'],
+    gathering: ['Gathering', 'Gatherings'],
+    event_series: ['Gathering Series', 'Gathering Series'],
+    offering: ['Offering', 'Offerings'],
+  }
+  const parts: string[] = []
+  for (const [kind, [one, many]] of Object.entries(label)) {
+    const n = (counts as Record<string, number>)[kind]
+    if (typeof n === 'number' && n > 0) {
+      parts.push(`${n} ${n === 1 ? one : many}`)
+    }
+  }
+  if (parts.length === 0) return null
+  return `Includes ${parts.join(' and ')}`
 }
 
 function urlFor(activity: ActivityOut): string | null {
@@ -155,6 +215,8 @@ interface Props {
 export default function RecentMomentsRow({ activity, variant = 'comfortable' }: Props) {
   const tint = CATEGORY_TINT[activity.category] ?? CATEGORY_TINT.account
   const title = titleFor(activity)
+  // Only a bundle purchase has one; every other row renders as before.
+  const subtitle = subtitleFor(activity)
   const url = urlFor(activity)
   const time = relativeTime(activity.created_at)
 
@@ -182,6 +244,11 @@ export default function RecentMomentsRow({ activity, variant = 'comfortable' }: 
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] leading-snug text-navy-900">{title}</p>
+        {subtitle && (
+          <p className="mt-0.5 text-[12.5px] leading-snug text-slate-600">
+            {subtitle}
+          </p>
+        )}
         <p className="mt-0.5 text-[12px] text-slate-500">{time}</p>
       </div>
     </div>
