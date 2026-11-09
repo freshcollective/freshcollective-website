@@ -59,25 +59,29 @@
  * Every entry here renders for an anonymous visitor. That is a
  * stronger requirement than "the middleware does not protect it", and
  * the difference cost three wrong entries on the first pass: a page
- * can gate or redirect itself without the middleware knowing. ``/about``
- * is a body of ``redirect('/')``; ``/build-your-place`` is a legacy
- * alias that redirects; ``/build-your-collective`` is the authenticated
- * creator ritual, which reads creator drafts and sends a signed-out
- * caller to ``/login``. None of them belongs on a public allow-list,
- * and ``/build-your-collective`` would have been reported for a
- * signed-in creator.
+ * can gate or redirect itself without the middleware knowing.
+ * ``/build-your-place`` is a legacy alias that redirects;
+ * ``/build-your-collective`` is the authenticated creator ritual,
+ * which reads creator drafts and sends a signed-out caller to
+ * ``/login``. Neither belongs on a public allow-list, and
+ * ``/build-your-collective`` would have been reported for a signed-in
+ * creator.
  *
- * ``/about`` is simply absent rather than refused below: it is dead,
- * not sensitive, and absence is what a fail-closed allow-list does
- * with a page nobody named.
+ * ``/about`` was the third, and is the one that came back. It was a
+ * body of ``redirect('/')`` when this list was first written, so it
+ * was removed as a dead entry; it is now the full "Why Fresh
+ * Collective exists" story page, rendered for anyone, with no guard
+ * and no redirect. The source check below is what makes re-adding it
+ * safe to do rather than something to take on trust.
  *
- * ``analytics.test.ts`` now asserts this property from each page's
- * source, so the next wrong entry fails a test rather than reaching
+ * ``analytics.test.ts`` asserts this property from each page's source,
+ * so the next wrong entry fails a test rather than reaching
  * production.
  */
 const TRACKED_EXACT: ReadonlySet<string> = new Set([
   // Marketing and orientation
   '/',
+  '/about',
   '/for-creators',
   '/real-journey',
   '/membership',

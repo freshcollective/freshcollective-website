@@ -98,6 +98,7 @@ const NOT_TRACKABLE: readonly string[] = [
 /** Paths that are on the allow-list and must work end to end. */
 const TRACKABLE: readonly string[] = [
   '/',
+  '/about',
   '/for-creators',
   '/membership',
   '/tnlbook',

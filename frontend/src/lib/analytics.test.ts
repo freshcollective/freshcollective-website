@@ -32,6 +32,7 @@ import { isTrackablePath, __lists } from './analytics.ts'
 describe('public pages are tracked', () => {
   for (const path of [
     '/',
+    '/about',
     '/for-creators',
     '/real-journey',
     '/membership',
@@ -300,18 +301,17 @@ describe('the allow-list and the refusal list are disjoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('a page must render for an anonymous visitor, not merely be unprotected', () => {
-  // The regression. These three shipped on the allow-list because
+  // The regression. Three pages shipped on the allow-list because
   // "public" was derived from the middleware's protected prefixes and
   // the route listing — but a page can gate or redirect itself without
-  // the middleware knowing, and all three do. Production answered each
-  // with a 307 the first time anyone asked it.
-
-  test('/about is not tracked — its body is redirect("/")', () => {
-    // Harmless in itself: the beacon could never have fired there,
-    // because no document ever renders at that pathname. A dead entry,
-    // and dead entries mislead the next reader.
-    assert.equal(isTrackablePath('/about'), false)
-  })
+  // the middleware knowing, and all three did. Production answered
+  // each with a 307 the first time anyone asked it.
+  //
+  // Two of them are still refused below. The third, ``/about``, has
+  // since been built into a real page and is tracked again — see the
+  // section that follows, and note that the property tested here is
+  // unchanged: it is on the list *because* it renders, not because it
+  // is unprotected.
 
   test('/build-your-place is not tracked — it is a legacy alias', () => {
     assert.equal(isTrackablePath('/build-your-place'), false)
@@ -338,6 +338,68 @@ describe('a page must render for an anonymous visitor, not merely be unprotected
         `${prefix} must be refused outright, not just left out`,
       )
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7b · /about, which earned its place back
+// ---------------------------------------------------------------------------
+
+describe('/about is tracked, and for the right reason', () => {
+  // It came off this list as a dead entry: the route existed but its
+  // whole body was ``redirect('/')``, so no document ever rendered at
+  // that pathname and the beacon could not have fired there. It is now
+  // the "Why Fresh Collective exists" story page — a public reading
+  // page with no guard, no redirect and the same content for every
+  // visitor, which is the standard this allow-list actually applies.
+  //
+  // Tested as the property rather than the conclusion. "It is on the
+  // list" is one assertion and worth little on its own; "the page it
+  // names renders for an anonymous visitor" is the reason, and it is
+  // what would change if someone turned the route back into a stub.
+
+  test('/about is tracked', () => {
+    assert.equal(isTrackablePath('/about'), true)
+    assert.equal(isTrackablePath('/about/'), true)
+    assert.equal(isTrackablePath('/about?utm_source=news'), true)
+  })
+
+  test('it is a real page, not a redirect to one', () => {
+    const src = readFileSync('src/app/about/page.tsx', 'utf8')
+    assert.ok(
+      !/\bredirect\(/.test(src),
+      '/about redirects again — it must come off the allow-list if so',
+    )
+    assert.match(src, /export default function AboutPage/)
+  })
+
+  test('nothing on it is gated or visitor-specific', () => {
+    // The requirement is stricter than "an anonymous visitor is not
+    // refused": the content has to be the same for everyone, or the
+    // page view would be reporting a members-only render.
+    const src = readFileSync('src/app/about/page.tsx', 'utf8')
+    for (const guard of [
+      /requireArea\(/,
+      /requireAuthenticatedUser/,
+      /getCurrentUser/,
+      /cookies\(/,
+      /notFound\(/,
+    ]) {
+      assert.ok(!guard.test(src), `/about matches ${guard}`)
+    }
+  })
+
+  test('it is absent from the refusal list, as a tracked page must be', () => {
+    assert.ok(__lists.TRACKED_EXACT.has('/about'))
+    assert.ok(!__lists.NEVER_TRACKED.includes('/about'))
+  })
+
+  test('the sitemap offers it too, so the two files agree', () => {
+    // ``/about`` has been in ``PUBLIC_PAGES`` throughout, including
+    // while it was a redirect. Now that both files name it, a reader
+    // finds one answer rather than two.
+    const sitemap = readFileSync('src/app/sitemap.ts', 'utf8')
+    assert.match(sitemap, /^\s*'\/about',$/m)
   })
 })
 
