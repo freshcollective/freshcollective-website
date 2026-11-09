@@ -180,18 +180,22 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })
 
-  test('connect-src is self and MailerLite only, with no DSN configured', () => {
+  test('connect-src is self, MailerLite and the Google tag, with no DSN configured', () => {
     // SEC-002 keeps browser XHR same-origin. The exceptions are the
     // MailerLite opt-in form on /tnlbook, which pings its own endpoint
-    // and submits through it; and — only when a DSN is configured —
-    // Sentry's ingest host (asserted separately below). Asserted as an
-    // exact set rather than a contains-check, so the next addition has
-    // to be argued for here.
+    // and submits through it; Google Analytics 4, which transmits a
+    // page view from the public pages only (``isTrackablePath`` in
+    // ``analytics.ts`` decides which, and this directive bounds where);
+    // and — only when a DSN is configured — Sentry's ingest host
+    // (asserted separately below). Asserted as an exact set rather
+    // than a contains-check, so the next addition has to be argued for
+    // here.
     //
-    // The analytics reporting host that used to sit between them is
-    // gone with Cloudflare Web Analytics, and no replacement has been
-    // granted. A page-view service added later has to appear in this
-    // list to transmit at all, which is the point of pinning the set.
+    // ``*.google-analytics.com`` is the one wildcard, and the only one
+    // in this directive: GA4 chooses its collection host at runtime
+    // (``www`` normally, ``region1.…`` for a request Google routes
+    // through the EU), and a missing host fails silently — a blocked
+    // beacon reads exactly like a page nobody visited.
     //
     // Built from an explicit absent DSN rather than read from the
     // ambient environment, so the result does not depend on whether
@@ -200,6 +204,8 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(withoutSentry['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
+      'https://www.googletagmanager.com',
+      'https://*.google-analytics.com',
     ])
   })
 
@@ -227,6 +233,10 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
       'https://assets.mlcdn.com',
       'https://static.mailerlite.com',
       'https://assets.mailerlite.com',
+      // The Google tag loader, ``gtag/js?id=…``. Exact origin — the
+      // URL is literally this host, so no wildcard is needed and none
+      // is given.
+      'https://www.googletagmanager.com',
     ])
   })
 
@@ -451,6 +461,8 @@ describe('Sentry ingest is permitted, narrowly', () => {
     assert.deepEqual(parsed['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
+      'https://www.googletagmanager.com',
+      'https://*.google-analytics.com',
       EU_ORIGIN,
     ])
   })
@@ -490,6 +502,8 @@ describe('Sentry ingest is permitted, narrowly', () => {
       assert.deepEqual(parseCsp(buildCsp(dsn))['connect-src'], [
         "'self'",
         'https://assets.mailerlite.com',
+        'https://www.googletagmanager.com',
+        'https://*.google-analytics.com',
       ])
     })
   }

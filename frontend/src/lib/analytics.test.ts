@@ -67,6 +67,56 @@ describe('public pages are tracked', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 1b · Unlisted pages: public, reachable, and still not counted
+// ---------------------------------------------------------------------------
+
+describe('an unlisted page is not tracked', () => {
+  // ``/tnlbook123`` is the Book Companion. It is public, it needs no
+  // account, and it must keep resolving for anyone who types the URL
+  // printed in the book — but it declares ``robots: noindex`` and is
+  // absent from the sitemap, so the site does not advertise it. A page
+  // the site does not advertise is not a page it counts: the same
+  // answer, given consistently to a crawler and to analytics.
+  //
+  // Nothing on it is sensitive, which is why this is a decision rather
+  // than a safety rule. It is tested because the three files have to
+  // agree, and the way they stop agreeing is one of them being edited
+  // on its own.
+
+  test('/tnlbook123 is not tracked', () => {
+    assert.equal(isTrackablePath('/tnlbook123'), false)
+    assert.equal(isTrackablePath('/tnlbook123/'), false)
+    assert.equal(isTrackablePath('/tnlbook123?utm_source=book'), false)
+  })
+
+  test('it is absent from the allow-list, not refused', () => {
+    // Deliberately NOT in ``NEVER_TRACKED``: that list is for paths
+    // that must never be reported whatever the allow-list says —
+    // tokens, member areas, admin. This page is simply unlisted, and
+    // the fail-closed allow-list is what excludes it. Putting it in
+    // the refusal list would overstate the reason.
+    assert.ok(!__lists.TRACKED_EXACT.has('/tnlbook123'))
+    assert.ok(!__lists.NEVER_TRACKED.includes('/tnlbook123'))
+  })
+
+  test('/tnlbook, the opt-in page, is still tracked', () => {
+    // The control. The two are different steps of one flow and only
+    // one of them came off the list — without this, removing both
+    // would pass.
+    assert.equal(isTrackablePath('/tnlbook'), true)
+  })
+
+  test('the page itself declares noindex, which is why it is unlisted', () => {
+    // Read from source, in the manner of section 8 below: the reason
+    // this page is absent lives in another file, and a test that only
+    // asserted the absence would pass just as happily if that reason
+    // were deleted.
+    const src = readFileSync('src/app/tnlbook123/page.tsx', 'utf8')
+    assert.match(src, /robots: \{ index: false, follow: false \}/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 2 · Bearer credentials in URLs — the cases with no recovery
 // ---------------------------------------------------------------------------
 

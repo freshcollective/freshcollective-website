@@ -66,6 +66,12 @@ interface SitemapCollective {
  *   /messages             declares ``robots: noindex``
  *   /build-your-place     a redirect to /build-your-collective
  *   /build-your-collective a creator flow, driven by query strings
+ *   /tnlbook123           declares ``robots: noindex`` — the Book
+ *                         Companion is for a reader who already has
+ *                         the printed URL, not for a search result.
+ *                         Deliberately still crawlable: robots.txt
+ *                         must not close it, or the crawler never
+ *                         reads the ``noindex`` it is being told.
  *   /login /signup /verify-email /forgot-password /reset-password
  *                         authentication, not destinations
  *   /dashboard /settings /profile /notifications /checkout /invites
@@ -86,7 +92,6 @@ const PUBLIC_PAGES = [
   '/discover-places',
   '/leadershipbodychart',
   '/tnlbook',
-  '/tnlbook123',
   '/ecosystem-interest',
 ] as const
 

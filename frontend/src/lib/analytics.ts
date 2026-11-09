@@ -1,19 +1,20 @@
 /**
  * Which pages any analytics service is allowed to see.
  *
- * **No service reads this today.** Cloudflare Web Analytics was
- * removed and nothing replaced it, so this module has no runtime
- * caller. It is kept because the rule is the hard part and it is not
- * vendor-specific: whatever is adopted next — Google Analytics,
- * Umami, something else — needs exactly this answer, and rebuilding
- * it from scratch is how the wrong page gets reported. The first pass
- * at this list contained three pages that only looked public; the
- * tests that caught them are still here.
+ * **Google Analytics 4 reads this, and only this.** ``googleAnalytics.ts``
+ * asks before it loads gtag at all and again before every
+ * ``page_view``, so a page absent from the lists below is a page GA
+ * never learns exists. The rule was written while nothing consumed it
+ * — Cloudflare Web Analytics had been removed and GA4 had not arrived
+ * — and kept deliberately vendor-neutral, which is why adopting GA
+ * needed no change to it beyond removing one page. The first pass at
+ * this list contained three pages that only looked public; the tests
+ * that caught them are still here.
  *
  * Nothing in it grants a service anything. A beacon also needs a
- * ``script-src`` and a ``connect-src`` origin, and ``cspDirectives``
- * in ``securityHeaders.ts`` now names none — so adopting a service is
- * a deliberate act in two files, not an import away.
+ * ``script-src`` and a ``connect-src`` origin from ``cspDirectives``
+ * in ``securityHeaders.ts`` — so a second service is a deliberate act
+ * in two files, not an import away.
  *
  * An allow-list, not a deny-list, and that choice is the whole safety
  * story. A deny-list fails open: the next route someone adds is
@@ -83,7 +84,12 @@ const TRACKED_EXACT: ReadonlySet<string> = new Set([
   '/ecosystem-interest',
   '/leadershipbodychart',
   '/tnlbook',
-  '/tnlbook123',
+  // ``/tnlbook123`` is deliberately not here. The Book Companion
+  // declares ``robots: noindex`` and is absent from the sitemap: it
+  // is an unlisted page for a reader holding the printed URL, and a
+  // page the site does not advertise is not a page it counts. Nothing
+  // on it is sensitive — this is the same unlisted-means-unlisted
+  // answer given to crawlers, kept consistent across both files.
   // Public discovery
   '/spaces',
   '/discover-places',

@@ -110,7 +110,7 @@ describe('which pages are offered', () => {
     // The conflict worth catching: two files disagreeing about
     // whether a page may be indexed.
     const pages = publicPages()
-    for (const route of ['creator-onboarding', 'messages']) {
+    for (const route of ['creator-onboarding', 'messages', 'tnlbook123']) {
       const src = read(`src/app/${route}/page.tsx`)
       assert.match(
         src,
@@ -287,6 +287,31 @@ describe('robots.txt', () => {
 
   test('it allows the site by default', () => {
     assert.match(read(ROBOTS), /allow: '\/'/)
+  })
+
+  test('a noindex page is left crawlable, deliberately', () => {
+    // The trap this closes. ``/tnlbook123`` is unlisted — noindex, and
+    // absent from the sitemap — and the instinct is to disallow it
+    // here as well. That would be the one change that defeats the
+    // other two: a crawler that cannot fetch the page never reads the
+    // ``noindex`` it is being told, and the URL stays indexable by
+    // reference from any link to it. Google has to be allowed in to
+    // be told to stay out.
+    //
+    // Nothing is lost by allowing it: the page needs no account and
+    // holds nothing sensitive, which is why "unlisted" is the whole
+    // requirement.
+    assert.match(
+      read('src/app/tnlbook123/page.tsx'),
+      /robots: \{ index: false/,
+      'tnlbook123 is expected to declare noindex',
+    )
+    for (const rule of disallowed()) {
+      assert.ok(
+        !'/tnlbook123'.startsWith(rule),
+        `the rule ${rule} would stop a crawler reading tnlbook123's noindex`,
+      )
+    }
   })
 
   test('it says plainly that it is not access control', () => {

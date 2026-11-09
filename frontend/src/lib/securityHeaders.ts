@@ -130,6 +130,59 @@ const MAILERLITE_SCRIPT_SOURCES: readonly string[] = [
   MAILERLITE_API_ORIGIN,
 ]
 
+// Google Analytics 4 on the public pages — the Google Tag origins.
+//
+// Scoped the way the MailerLite grants above are: named constants, one
+// purpose each, and no origin granted to a directive that does not
+// need it. The difference from MailerLite is that this one transmits,
+// so the reasoning for each directive is the reasoning for what can
+// leave the browser.
+//
+//   script-src   www.googletagmanager.com — ``gtag/js?id=…``, the
+//                loader, and the only script host involved. Exact
+//                origin, no wildcard: the URL is literally this host.
+//
+//   connect-src  *.google-analytics.com — where the hit goes. A
+//                wildcard here and nowhere else, because GA4 picks the
+//                collection host at runtime: ``www`` normally and a
+//                regional endpoint (``region1.…``) for a visitor whose
+//                request Google routes through the EU. Those hostnames
+//                are Google's to change and are not documented as a
+//                fixed set, and the failure mode of guessing wrong is
+//                the silent one — a blocked beacon looks exactly like
+//                a page nobody visited. Google's own CSP guidance
+//                names the wildcard for this reason.
+//                www.googletagmanager.com as well: the loader fetches
+//                its own configuration from the host it came from.
+//
+//   img-src      both of the above. gtag falls back to a pixel when
+//                ``sendBeacon`` and ``fetch`` are unavailable or the
+//                page is unloading, and the fallback is an <img>, so
+//                connect-src never applies to it.
+//
+// NOT added, and the omission is the configuration rather than an
+// oversight: ``*.google.com`` and ``*.g.doubleclick.net``, which
+// Google's guidance lists for Ads features. The tag is configured
+// ``allow_google_signals: false`` and
+// ``allow_ad_personalization_signals: false`` (see
+// ``googleAnalytics.ts``), so the advertising pings those origins
+// serve — ``/ads/ga-audiences`` and the DoubleClick cookie sync —
+// are never made. Granting them would permit the one category of
+// request this configuration exists to prevent. If Google Signals is
+// ever switched on in the GA admin, these origins are what has to be
+// argued for here first, and ``csp.test.ts`` pins their absence.
+//
+// No ``frame-src`` grant. Nothing in GA4 is framed without Ads
+// features, and no page embeds a Google tag iframe.
+const GA_TAG_SCRIPT_ORIGIN = 'https://www.googletagmanager.com'
+const GA_COLLECT_ORIGIN = 'https://*.google-analytics.com'
+
+/** Hosts a page view reaches: the loader's own host, and collection. */
+const GA_TRANSMIT_ORIGINS: readonly string[] = [
+  GA_TAG_SCRIPT_ORIGIN,
+  GA_COLLECT_ORIGIN,
+]
+
 /**
  * The browser Sentry SDK's ingest origin, derived from the DSN.
  *
@@ -192,7 +245,12 @@ export function cspDirectives(
     // is accepted for Stage A per policy — nonce/hash strategy is
     // deferred until after SEC-016 lands, since SEC-001 sanitisation
     // already closes the primary XSS surface.
-    'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
+    'script-src': [
+      "'self'",
+      "'unsafe-inline'",
+      ...MAILERLITE_SCRIPT_SOURCES,
+      GA_TAG_SCRIPT_ORIGIN,
+    ],
     // Same reasoning as script-src, plus pervasive React inline
     // ``style={…}`` attributes that would require every value to be
     // nonced/hashed. Not tractable without a large refactor.
@@ -204,7 +262,17 @@ export function cspDirectives(
     // per CSP L3 each hop in the fetch chain is re-checked.
     // ``data:`` for Next's built-in image blur-up placeholders.
     // ``blob:`` for local file previews (URL.createObjectURL).
-    'img-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS, 'data:', 'blob:'],
+    // GA_TRANSMIT_ORIGINS for gtag's <img> fallback beacon, which is
+    // what it uses when sendBeacon/fetch cannot run or the page is
+    // unloading — connect-src does not cover an image request.
+    'img-src': [
+      "'self'",
+      MEDIA_ORIGIN,
+      ...R2_MEDIA_ORIGINS,
+      'data:',
+      'blob:',
+      ...GA_TRANSMIT_ORIGINS,
+    ],
     'font-src': ["'self'"],
     // Browser code talks to same-origin /api/* (SEC-002), MailerLite's
     // own endpoint from the /tnlbook form, and — once a DSN is
@@ -212,14 +280,21 @@ export function cspDirectives(
     // entry appears only when a DSN is set and only as the one exact
     // origin that DSN names.
     //
-    // No analytics origin is granted here. Cloudflare Web Analytics
-    // was removed, and nothing replaced it: a page-view beacon needs
-    // both a script host and a reporting host, so whichever service
-    // comes next has to be argued for in this directive before it can
-    // transmit anything at all.
+    // GA_TRANSMIT_ORIGINS is the analytics grant, and the only one.
+    // A page-view beacon needs both a script host and a reporting
+    // host; this directive is the reporting half, so what GA can
+    // transmit is bounded here and the question of *which pages* is
+    // bounded separately by ``isTrackablePath`` in ``analytics.ts``.
+    // Unconditional rather than keyed on the measurement ID, matching
+    // the MailerLite entries above: a grant to an origin nothing
+    // contacts is inert, and deriving it from a build-time variable
+    // would make the header differ between environments for no
+    // security gain. Sentry is the exception, and only because its
+    // origin is not knowable without the DSN.
     'connect-src': [
       "'self'",
       MAILERLITE_API_ORIGIN,
+      ...GA_TRANSMIT_ORIGINS,
       ...(sentryIngest ? [sentryIngest] : []),
     ],
     // <audio> and <video> sources. Same host set as ``img-src`` minus

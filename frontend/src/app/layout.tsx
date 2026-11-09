@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { FreshProviders } from "@/components/platform/FreshProviders";
+import GoogleAnalytics from '@/components/analytics/GoogleAnalytics'
 import { BrandProvider } from '@/components/brand/BrandProvider'
 import { getBrandOverrides } from '@/lib/serverApi'
 import { SITE_ORIGIN } from '@/lib/collectiveSeo'
@@ -45,6 +46,12 @@ export default async function RootLayout({
         <BrandProvider overrides={brandOverrides}>
           <FreshProviders>{children}</FreshProviders>
         </BrandProvider>
+        {/* Public pages only, and it decides that for itself — see
+            ``GoogleAnalytics.tsx``. Mounted here rather than on each
+            public page because a tag that must be remembered per page
+            is a tag that will be forgotten; renders nothing, and on a
+            signed-in route it loads nothing. */}
+        <GoogleAnalytics />
       </body>
     </html>
   );

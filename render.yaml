@@ -260,6 +260,35 @@ services:
         sync: false
       - key: SENTRY_ORG
         sync: false
+      # Google Analytics 4 measurement ID, for the public pages only.
+      #
+      # ``sync: false`` — Dashboard-owned, and deliberately not written
+      # down here. Not because it is a secret (a measurement ID is
+      # public by construction; it ships inside the client bundle) but
+      # because a ``value:`` entry is reasserted on every blueprint
+      # sync, and the incident pattern this file already carries twice
+      # is a Dashboard change being silently reverted. Analytics is
+      # exactly the thing nobody would notice had stopped.
+      #
+      # Build-time inlined, like the flags and the DSN above: Next
+      # bakes ``NEXT_PUBLIC_*`` into the bundle, so setting, changing
+      # or clearing this takes effect on a rebuild and never on a
+      # restart.
+      #
+      # Absent or empty is a clean no-op: the Google tag is never
+      # requested, no ``dataLayer`` is created and nothing is sent.
+      # That is how every local run and every CI build behaves.
+      #
+      # Which pages it may see is NOT configuration — it is the
+      # allow-list in ``frontend/src/lib/analytics.ts``, and this
+      # variable cannot widen it. Nothing under the signed-in
+      # surfaces, Creator Studio, admin, a token-bearing URL or a
+      # query string is ever reported. The CSP grants for the Google
+      # tag are in ``frontend/src/lib/securityHeaders.ts`` and are
+      # unconditional, so a wrong value here fails closed — no tag,
+      # rather than a tag reporting somewhere unexpected.
+      - key: NEXT_PUBLIC_GA_MEASUREMENT_ID
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # Backend web service — fc-api (FastAPI)

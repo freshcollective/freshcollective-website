@@ -36,6 +36,28 @@ export const metadata: Metadata = {
     'Free companion resources for The Natural Leader by Lindsey Hilliard, '
     + 'including Human Design, journal prompts, embodiment practices and '
     + 'supporting resources.',
+  /**
+   * Unlisted, not protected.
+   *
+   * The audience for this page is a reader holding the book, who types
+   * the printed URL. It is not a search result, and it is not a page
+   * the site advertises: it is absent from ``sitemap.ts`` and from the
+   * analytics allow-list for the same reason.
+   *
+   * ``noindex`` and nothing else. There is no login, no token and no
+   * gate — anyone with the link still gets the resources, which is the
+   * whole point of preserving the URL.
+   *
+   * ``follow: false`` as well, so the page does not pass crawl signals
+   * on to the five static assets it links. They are files, not
+   * destinations.
+   *
+   * Deliberately NOT disallowed in ``robots.ts``: a crawler has to be
+   * able to fetch the page to read this header. Closing the path in
+   * robots.txt would leave the URL indexable-by-reference — known from
+   * a link, never fetched, never told to stay out.
+   */
+  robots: { index: false, follow: false },
 }
 
 /** Static asset paths, served straight from ``public/``. */
