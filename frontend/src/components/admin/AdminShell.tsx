@@ -46,11 +46,15 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    // What the world says to the people in it. One page today; the
-    // section exists so the next comms surface has an obvious home.
+    // What the world says to the people in it — whether it is sent to
+    // someone or published for anyone to find.
     label: '✉️ COMMUNICATIONS',
     items: [
       { href: '/admin/communications/email-templates', label: 'Email Templates' },
+      // Guides are public articles. Not under CARE with the World
+      // Guide: that is governance members are asked to accept, and
+      // this is writing we publish to be found.
+      { href: '/admin/guides', label: 'Guides' },
     ],
   },
   {

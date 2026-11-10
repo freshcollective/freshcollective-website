@@ -52,6 +52,23 @@ interface SitemapCollective {
 }
 
 /**
+ * The cache tag the Guides admin busts.
+ *
+ * Exported so the route handler that calls ``revalidateTag`` and the
+ * fetch being tagged name the same string — a tag that only matches
+ * by coincidence of spelling is a cache that never clears, and it
+ * fails silently.
+ */
+export const GUIDES_TAG = 'guides'
+
+interface SitemapGuide {
+  slug: string
+  /** ``guides.updated_at`` — when the article last changed, which is
+   *  not when it was published. An edited Guide is a changed page. */
+  updated_at: string
+}
+
+/**
  * The public pages that are not Collectives.
  *
  * Listed explicitly rather than discovered from the filesystem: most
@@ -90,6 +107,7 @@ const PUBLIC_PAGES = [
   '/membership',
   '/real-journey',
   '/discover-places',
+  '/guides',
   '/leadershipbodychart',
   '/tnlbook',
   '/ecosystem-interest',
@@ -123,11 +141,55 @@ async function publicCollectives(): Promise<SitemapCollective[]> {
   }
 }
 
+/**
+ * Published Guides.
+ *
+ * Same arrangement as the Collectives above and for the same reason:
+ * the list comes from an endpoint that already decides what is
+ * public, so a draft cannot be advertised here and unpublishing one
+ * removes it from the sitemap without anything to remember. A
+ * hand-maintained list would be correct the day it was written.
+ */
+async function publishedGuides(): Promise<SitemapGuide[]> {
+  try {
+    const res = await fetch(apiUrl('/api/public/guides/sitemap'), {
+      // Tagged as well as timed. The hour is the backstop; the tag is
+      // what lets publishing a Guide reach this file in seconds, via
+      // the admin-only handler at ``/api/internal/guides/revalidate``.
+      // Only the Guides half is tagged — the Collectives query keeps
+      // its hourly rhythm, because nothing in the admin knows when a
+      // Collective changed.
+      next: { revalidate, tags: [GUIDES_TAG] },
+    })
+    if (!res.ok) return []
+    const rows: unknown = await res.json()
+    if (!Array.isArray(rows)) return []
+    return rows.filter(
+      (r): r is SitemapGuide =>
+        typeof r?.slug === 'string' &&
+        r.slug.length > 0 &&
+        typeof r?.updated_at === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const collectives = await publicCollectives()
+  // Fetched together: two independent endpoints, and waiting for one
+  // before starting the other would double the time this page takes
+  // for no reason.
+  const [collectives, guides] = await Promise.all([
+    publicCollectives(),
+    publishedGuides(),
+  ])
 
   const entries: MetadataRoute.Sitemap = [
     ...PUBLIC_PAGES.map((path) => ({ url: `${SITE_ORIGIN}${path}` })),
+    ...guides.map((g) => ({
+      url: `${SITE_ORIGIN}/guides/${encodeURIComponent(g.slug)}`,
+      lastModified: new Date(g.updated_at),
+    })),
     ...collectives.map((c) => ({
       // The canonical the About page declares for itself — not
       // ``/spaces/{slug}``, which redirects a non-member here and

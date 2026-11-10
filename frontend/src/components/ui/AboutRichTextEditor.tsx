@@ -1,5 +1,6 @@
 'use client'
 
+import { Node, mergeAttributes } from '@tiptap/core'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -11,6 +12,33 @@ import {
   ToolButton,
   ToolDivider,
 } from '@/components/creator/EditorToolbar'
+
+/**
+ * An inline image, as a ten-line node rather than a new dependency.
+ *
+ * ``@tiptap/extension-image`` is not installed and is not needed: the
+ * World Guide's ``WgImage`` already proves the shape, and this is the
+ * same thing with one difference. ``WgImage`` bakes an inline
+ * ``style`` attribute into its ``renderHTML``; this emits a bare
+ * ``<img src alt>`` because the Guides sanitiser allows no ``style``
+ * attribute and would strip it on the next save. Appearance belongs
+ * to the renderer, and the stored HTML stays content.
+ */
+const InlineImage = Node.create({
+  name: 'inlineImage',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { src: { default: '' }, alt: { default: '' } }
+  },
+  parseHTML() {
+    return [{ tag: 'img[src]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['img', mergeAttributes(HTMLAttributes)]
+  },
+})
 
 // ---------------------------------------------------------------------------
 // Editor
@@ -38,10 +66,29 @@ interface Props {
   /** Editing area height. About pages want a tall canvas; a Gathering
    *  description is usually a few paragraphs. */
   minHeight?: string
+  /**
+   * Offer block quotes.
+   *
+   * Opt-in for the same reason ``extendedMarks`` is: the Collective
+   * About page and Gathering descriptions have never had one, their
+   * renderer does not display one, and adding it there is a separate
+   * decision from adding it to Guides.
+   */
+  blockquote?: boolean
+  /**
+   * Offer inline images.
+   *
+   * The handler uploads and returns a URL, or ``null`` if the author
+   * cancelled or the upload failed. Absent means no image button and
+   * no image node registered at all — a surface that cannot store an
+   * image should not be able to produce one.
+   */
+  onRequestImage?: () => Promise<{ src: string; alt: string } | null>
 }
 
 export default function AboutRichTextEditor({
   value, onChange, id, extendedMarks = false, placeholder, minHeight,
+  blockquote = false, onRequestImage,
 }: Props) {
   const editor = useEditor({
     extensions: [
@@ -52,7 +99,7 @@ export default function AboutRichTextEditor({
         strike: false,
         code: false,
         codeBlock: false,
-        blockquote: false,
+        blockquote: blockquote ? undefined : false,
         horizontalRule: false,
       }),
       Link.configure({
@@ -66,6 +113,8 @@ export default function AboutRichTextEditor({
         placeholder: placeholder
           ?? 'Write your About page content here.\n\nUse the toolbar to add headings, bold text, and bullet lists.',
       }),
+      // Registered only where images can actually be stored.
+      ...(onRequestImage ? [InlineImage] : []),
     ],
     // Convert markdown → HTML if needed; HTML passes through unchanged
     content: markdownToHtml(value),
@@ -95,6 +144,17 @@ export default function AboutRichTextEditor({
       return
     }
     editor?.chain().focus().setLink({ href: url }).run()
+  }
+
+  async function handleAddImage() {
+    if (!onRequestImage) return
+    const picked = await onRequestImage()
+    if (!picked?.src) return
+    editor
+      ?.chain()
+      .focus()
+      .insertContent({ type: 'inlineImage', attrs: picked })
+      .run()
   }
 
   return (
@@ -164,6 +224,17 @@ export default function AboutRichTextEditor({
           </ToolButton>
         )}
 
+        {blockquote && (
+          <ToolButton
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            active={editor.isActive('blockquote')}
+            title="Block quote"
+            wide
+          >
+            &rdquo;
+          </ToolButton>
+        )}
+
         <ToolDivider />
 
         {/* Insert */}
@@ -176,6 +247,12 @@ export default function AboutRichTextEditor({
         >
           🔗
         </ToolButton>
+
+        {onRequestImage && (
+          <ToolButton onClick={handleAddImage} title="Insert image" wide>
+            🖼
+          </ToolButton>
+        )}
 
         <EmojiPicker
           variant="compact"

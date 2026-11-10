@@ -36,6 +36,7 @@ import app.models.peer_messages     # noqa: F401 — registers PeerThread + Peer
 import app.models.member_blocks     # noqa: F401 — registers MemberBlock (Ways to Connect 5d, migration 149)
 import app.models.business_event    # noqa: F401 — registers BusinessEvent (BI-1, migration 171)
 import app.models.reporting_aggregate  # noqa: F401 — registers MetricDaily + ReportingJobRun (BI-3, migration 172)
+import app.models.guide            # noqa: F401 — registers Guide + GuideSettings (migration 187)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config

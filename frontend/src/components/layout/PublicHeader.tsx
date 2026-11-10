@@ -46,6 +46,10 @@ function peerNavItems(
 ): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
+  // Guides is unconditional: free public articles with no backend
+  // flag behind them, so there is no state in which the link
+  // outlives the route.
+  items.push({ href: '/guides', label: 'Guides' })
   // One flag each: a nav entry must never outlive the route behind it.
   if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
   // Ways to Connect also needs a signed-in viewer, where the other two

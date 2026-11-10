@@ -94,6 +94,7 @@ const TRACKED_EXACT: ReadonlySet<string> = new Set([
   // page the site does not advertise is not a page it counts. Nothing
   // on it is sensitive — this is the same unlisted-means-unlisted
   // answer given to crawlers, kept consistent across both files.
+  '/guides',
   // Public discovery
   '/spaces',
   '/discover-places',
@@ -108,6 +109,11 @@ const TRACKED_EXACT: ReadonlySet<string> = new Set([
 const TRACKED_PATTERNS: readonly RegExp[] = [
   /^\/discover-places\/[^/]+$/,
   /^\/world-guide\/[^/]+$/,
+  // One Guide. Public by construction — a draft never renders at this
+  // path, it 404s — so there is no visitor-dependent content here.
+  // The admin preview of the same Guide lives under ``/admin`` and is
+  // refused by ``NEVER_TRACKED``, not by this pattern.
+  /^\/guides\/[^/]+$/,
   // A Collective's public front door: the page built to explain what
   // it is to someone who has not joined.
   /^\/spaces\/[^/]+\/about$/,

@@ -38,6 +38,7 @@ describe('public pages are tracked', () => {
     '/membership',
     '/ecosystem-interest',
     '/tnlbook',
+    '/guides',
     '/spaces',
     '/discover-places',
     '/world-guide',
@@ -114,6 +115,58 @@ describe('an unlisted page is not tracked', () => {
     // were deleted.
     const src = readFileSync('src/app/tnlbook123/page.tsx', 'utf8')
     assert.match(src, /robots: \{ index: false, follow: false \}/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 1c · Guides
+// ---------------------------------------------------------------------------
+
+describe('Guides are tracked; the admin behind them is not', () => {
+  // Public articles with no account, no gate and no visitor-specific
+  // content — the standard this allow-list applies. The pairing that
+  // matters is the last two tests: the same Guide has a public URL
+  // that is counted and an admin preview URL that must never be.
+
+  test('the index is tracked', () => {
+    assert.equal(isTrackablePath('/guides'), true)
+    assert.equal(isTrackablePath('/guides/'), true)
+  })
+
+  test('one Guide is tracked', () => {
+    assert.equal(isTrackablePath('/guides/moving-your-community'), true)
+    assert.equal(isTrackablePath('/guides/moving-your-community?from=home'), true)
+  })
+
+  test('the pattern cannot widen by a deeper path', () => {
+    assert.equal(isTrackablePath('/guides/a/b'), false)
+    assert.equal(isTrackablePath('/guides/a/b/c'), false)
+  })
+
+  test('the admin surface is not tracked', () => {
+    for (const p of [
+      '/admin/guides',
+      '/admin/guides/new',
+      '/admin/guides/gde_123',
+    ]) {
+      assert.equal(isTrackablePath(p), false, p)
+    }
+  })
+
+  test('the admin preview of a Guide is not tracked', () => {
+    // The one worth naming. The preview renders the real public
+    // article layout, so it is the surface most likely to be mistaken
+    // for the public page — and it is reachable only by an
+    // administrator, whose visits must not be counted as readership.
+    assert.equal(isTrackablePath('/admin/guides/gde_123/preview'), false)
+  })
+
+  test('a draft has no trackable path of its own', () => {
+    // Nothing to assert about a draft URL, because there is not one:
+    // /guides/{slug} 404s until the Guide is published. Pinned as the
+    // reasoning so the next reader does not go looking for a rule
+    // that would have to exist if drafts were reachable.
+    assert.equal(isTrackablePath('/guides/an-unpublished-draft'), true)
   })
 })
 
@@ -423,6 +476,7 @@ describe('no allow-listed page gates or redirects itself', () => {
       '/spaces/:slug/pathways/:slug/about',
       'src/app/spaces/[slug]/pathways/[pathway-slug]/about/page.tsx',
     ],
+    ['/guides/:slug', 'src/app/guides/[slug]/page.tsx'],
   ]
 
   /** ``/`` → app/page.tsx; ``/x`` → app/x/page.tsx. */

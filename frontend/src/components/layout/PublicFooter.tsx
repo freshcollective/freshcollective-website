@@ -42,6 +42,7 @@ export default function PublicFooter() {
               // First, because it is the one link here that explains
               // the place rather than moving you through it.
               { href: '/about',  label: 'About Fresh Collective' },
+              { href: '/guides', label: 'Guides' },
               { href: '/spaces', label: 'Explore Collectives' },
               { href: '/login',  label: 'Log in' },
               { href: '/signup', label: PUBLIC_JOIN_LABEL },
