@@ -192,12 +192,16 @@ export default async function GuidePage(
             </aside>
           </div>
 
-          <div className="mt-16 md:mt-20">
-            <GuideClosingBand />
-          </div>
+        </Container>
 
-          {related.length > 0 && (
-            <section className="mt-16 md:mt-20" aria-labelledby="keep-reading">
+        {/* Outside the article's Container on purpose:
+            ``ClosingInvitation`` brings its own section and Container,
+            and nesting them would double the page padding. */}
+        <GuideClosingBand />
+
+        {related.length > 0 && (
+          <Container className="pb-16 md:pb-20">
+            <section aria-labelledby="keep-reading">
               <h2
                 id="keep-reading"
                 className="mb-6 text-[24px] leading-[1.2] text-navy-950 md:mb-8 md:text-[26px]"
@@ -211,8 +215,8 @@ export default async function GuidePage(
                 ))}
               </div>
             </section>
-          )}
-        </Container>
+          </Container>
+        )}
       </div>
 
       {/* Article structured data, serialised from the same values the

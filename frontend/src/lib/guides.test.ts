@@ -512,6 +512,75 @@ describe('the sitemap is cleared by an admin action, not by anyone', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 4d · The closing band is the homepage's, not a copy of it
+// ---------------------------------------------------------------------------
+
+describe('a Guide ends the way the homepage ends', () => {
+  // It previously carried its own navy card and drifted in every
+  // detail that matters — no gold hairline, no teal glow, flat
+  // surface, plain pill buttons. Two cards that are meant to look
+  // identical and are maintained separately will always end up
+  // looking nearly identical.
+
+  const BAND = 'src/components/guides/GuideClosingBand.tsx'
+
+  test('it renders ClosingInvitation rather than its own card', () => {
+    const src = readFileSync(BAND, 'utf8')
+    assert.match(src, /from '@\/components\/marketing\/ClosingInvitation'/)
+    assert.match(src, /<ClosingInvitation/)
+  })
+
+  test('it carries no styling of its own', () => {
+    // The specific failure mode: someone copies a gradient or a
+    // shadow across "just to tweak it" and the two drift again.
+    const src = readFileSync(BAND, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '')
+    for (const smell of [/className=/, /style=\{\{/, /#0[0-9A-Fa-f]{5}/]) {
+      assert.ok(!smell.test(src), `${smell} suggests restyling, not reuse`)
+    }
+  })
+
+  test('it uses the homepage button pair', () => {
+    // ``hero`` is the teal-gradient primary with the white secondary.
+    // ``pill`` is the quieter /for-creators pair and would not match.
+    const src = readFileSync(BAND, 'utf8')
+    assert.match(src, /buttonVariant="hero"/)
+  })
+
+  test('the copy is the Guide copy', () => {
+    const src = readFileSync(BAND, 'utf8')
+    assert.match(src, /Ready to give your work a home\?/)
+    assert.match(src, /Set up your Collective in about 15 minutes/)
+    assert.match(src, /Start your Collective/)
+    assert.match(src, /Take a look around/)
+  })
+
+  test('the shared component still renders an h2, not an h1', () => {
+    // A Guide's one h1 is its title. If ClosingInvitation ever became
+    // an h1 this would be an SEO defect on every Guide *and* on the
+    // homepage, so it is asserted against the shared file rather than
+    // the wrapper.
+    const shared = readFileSync(
+      'src/components/marketing/ClosingInvitation.tsx', 'utf8',
+    )
+    assert.match(shared, /<h2/)
+    assert.ok(!/<h1/.test(shared))
+  })
+
+  test('both the article and the preview end with it', () => {
+    // The preview stops being a preview the moment it ends
+    // differently from the page it previews.
+    for (const file of [
+      'src/app/guides/[slug]/page.tsx',
+      'src/app/admin/guides/[id]/preview/page.tsx',
+    ]) {
+      assert.match(readFileSync(file, 'utf8'), /<GuideClosingBand \/>/, file)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 5 · Labels
 // ---------------------------------------------------------------------------
 

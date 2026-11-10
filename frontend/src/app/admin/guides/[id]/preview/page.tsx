@@ -134,10 +134,10 @@ export default async function GuidePreviewPage(
           </aside>
         </div>
 
-        <div className="mt-16 md:mt-20">
-          <GuideClosingBand />
-        </div>
       </Container>
+
+      {/* Outside the Container — see the note on the public page. */}
+      <GuideClosingBand />
     </div>
   )
 }

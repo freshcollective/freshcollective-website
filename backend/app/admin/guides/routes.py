@@ -41,7 +41,7 @@ from app.admin.guides.schemas import (
 )
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
-from app.core.storage import save_media_file
+from app.core.storage import save_file
 from app.models.guide import GUIDE_STATUSES, Guide, GuideSettings
 from app.models.user import User
 # Borrowed rather than copied: the platform should have one answer to
@@ -219,7 +219,26 @@ def update_settings(
 # ---------------------------------------------------------------------------
 
 
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+#: Matches ``storage.ALLOWED_EXTENSIONS``, which ``save_file``
+#: enforces. GIF is absent because that shared list does not carry it,
+#: and widening a list every other upload path depends on is not this
+#: endpoint's business — WebP covers animation and compresses better.
+#:
+#: SVG is absent on purpose and would stay absent even if the shared
+#: list grew one: an SVG is a document that can carry script, and
+#: these render on public marketing pages rather than behind a login.
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+#: Guide images get their own storage prefix and their own public read
+#: route (``serve_guide_image``). They used to go through
+#: ``save_media_file(space_slug="guides")``, which produced
+#: ``media/guides/…`` — a key the uploads authoriser reads as
+#: "the Asset Library of a Collective slugged *guides*". There is no
+#: such Collective, so every Guide image 404'd for everyone including
+#: administrators; and had anyone ever registered that slug, Guide
+#: artwork would have quietly fallen under their Collective's
+#: membership rules.
+GUIDE_IMAGE_PREFIX = "guide-images"
 
 
 @router.post("/images", status_code=201)
@@ -229,15 +248,13 @@ async def upload_image(
 ) -> dict:
     """Accept a hero or inline image and return a URL to reference.
 
-    The same path platform artwork and brand assets use —
-    ``save_media_file`` routes to Cloudflare R2 whenever the ``R2_*``
-    variables are set, and returns a same-origin ``/api/uploads/…``
-    URL either way.
+    Writes to the ``guide-images/`` prefix, which ``save_file`` routes
+    to Cloudflare R2 whenever the ``R2_*`` variables are set and to
+    the local upload directory otherwise, returning a same-origin
+    ``/api/uploads/…`` URL either way.
 
-    SVG is deliberately absent from the extension list that the World
-    Guide allows. An SVG is a document that can carry script, and
-    these images are rendered on public marketing pages rather than
-    behind an admin login.
+    Admin-only, like every other write here. The matching *read* is
+    deliberately public — see ``serve_guide_image``.
     """
     filename = file.filename or "image"
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -246,7 +263,7 @@ async def upload_image(
             status_code=400,
             detail=(
                 f"File type '{ext or '(none)'}' is not permitted. "
-                "Use PNG, JPG, GIF or WebP."
+                "Use PNG, JPG or WebP."
             ),
         )
     mime = file.content_type or ""
@@ -256,20 +273,15 @@ async def upload_image(
         )
     data = await file.read()
     try:
-        _, file_url, media_type, _stored, size = save_media_file(
+        rel_path, _resource_type, size = save_file(
             data=data,
             original_name=filename,
             mime_type=mime,
-            space_slug="guides",
+            subdir=GUIDE_IMAGE_PREFIX,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    if media_type != "image":
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file was not recognised as an image.",
-        )
-    return {"url": file_url, "size": size, "media_type": media_type}
+    return {"url": f"/api/uploads/{rel_path}", "size": size, "media_type": "image"}
 
 
 # ---------------------------------------------------------------------------

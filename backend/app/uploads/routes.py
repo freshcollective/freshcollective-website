@@ -69,7 +69,7 @@ from app.core.database import get_db
 from app.core.storage import UPLOAD_DIR
 from app.models.user import User
 from app.services.offering_files import OFFERING_FILES_PREFIX
-from app.uploads.authorization import authorize_upload
+from app.uploads.authorization import authorize_upload, guide_image_is_published
 
 uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -269,6 +269,59 @@ def serve_public_upload(file_path: str):
     if settings.is_r2_enabled:
         return _redirect_to_public_r2(key)
     return _serve_from_filesystem(key)
+
+
+@uploads_router.get("/guide-images/{file_path:path}")
+def serve_guide_image(
+    file_path: str,
+    current_user: "User | None" = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Public read for images that belong to a published Guide.
+
+    Guides are free, public articles meant to be found through search,
+    so their hero and inline images must render for a logged-out
+    reader. They get their own namespace rather than riding on the
+    Asset Library, for three reasons that all bit at once:
+
+      * ``media/guides/…`` sent every Guide image through
+        ``_authorise_media``, which reads the segment after ``media/``
+        as a *Collective slug*, found no Collective called "guides",
+        and answered 404 — to everyone, administrators in the preview
+        included;
+      * even once resolved, that namespace is member-gated, so an
+        anonymous reader could never have been served;
+      * and if a creator ever registered a Collective slugged
+        ``guides``, every Guide image would silently fall under that
+        Collective's membership rules. A namespace of its own makes
+        that collision unreachable rather than unlikely.
+
+    **Published only, plus administrators.** A key is readable when
+    some *published* Guide points at it — as its hero, or from inside
+    its sanitised body. A draft's artwork is not public yet, and
+    neither is an image uploaded and then never used. Administrators
+    are allowed either way, which is what makes the draft preview
+    work.
+
+    Refusals are a flat 404, the same answer a key that was never
+    uploaded gets, so the route cannot be used to learn that a draft
+    exists.
+
+    Only reads are opened up. Uploading and replacing still go through
+    ``app/admin/guides/routes.py`` behind ``get_admin_user``.
+    """
+    _reject_traversal(file_path)
+    key = f"guide-images/{file_path}"
+    is_admin = current_user is not None and current_user.role == "admin"
+    if not is_admin and not guide_image_is_published(key, db):
+        raise HTTPException(status_code=404, detail="File not found.")
+    if settings.is_r2_enabled:
+        # Presigned rather than a public-origin redirect: the bytes
+        # are in the private bucket and stay there. Cached the same
+        # way an anonymous public cover is — see the constants above
+        # for why the signature outlives the cache window.
+        return _redirect_to_presigned_r2(key, public_cache=not is_admin)
+    return _serve_from_filesystem(key, public_cache=not is_admin)
 
 
 @uploads_router.get("/place-artwork/{file_path:path}")

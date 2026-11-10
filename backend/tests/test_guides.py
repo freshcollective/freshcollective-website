@@ -34,8 +34,9 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_admin_user, get_current_user
+from app.auth.dependencies import get_admin_user, get_current_user, get_optional_user
 from app.core.database import get_db
+from app.core.storage import UPLOAD_DIR
 from app.main import app
 from app.models.guide import Guide, GuideSettings
 
@@ -500,9 +501,9 @@ class TestSanitiser:
         guide = _create(client)
         saved = _fill(
             client, guide["id"],
-            body='<p><img src="/api/uploads/media/guides/abc.png" alt="A chart"></p>',
+            body='<p><img src="/api/uploads/guide-images/abc.png" alt="A chart"></p>',
         )
-        assert "/api/uploads/media/guides/abc.png" in saved["body"]
+        assert "/api/uploads/guide-images/abc.png" in saved["body"]
         assert 'alt="A chart"' in saved["body"]
 
     def test_sanitising_is_idempotent(self):
@@ -524,10 +525,15 @@ class TestSanitiser:
     def test_a_protocol_relative_image_is_not_mistaken_for_same_origin(self):
         from app.services.guide_body import is_permitted_image_src
 
-        assert is_permitted_image_src("/api/uploads/media/guides/a.png") is True
+        assert is_permitted_image_src("/api/uploads/guide-images/a.png") is True
         assert is_permitted_image_src("//evil.test/a.png") is False
         assert is_permitted_image_src("/not-uploads/a.png") is False
         assert is_permitted_image_src("") is False
+        # Another upload namespace is not servable to a logged-out
+        # reader, so a body may not reference one — including the
+        # ``media/guides/`` shape these images used to have.
+        assert is_permitted_image_src("/api/uploads/media/guides/a.png") is False
+        assert is_permitted_image_src("/api/uploads/media/some-space/a.png") is False
 
     def test_the_renderer_and_the_sanitiser_allow_the_same_tags(self):
         """The invariant ``rich_text.py`` documents: a tag the
@@ -784,6 +790,280 @@ class TestPublicPayload:
         res = public_client.get(f"{PUBLIC}/sitemap")
         assert res.status_code == 200
         assert isinstance(res.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# 10b · Guide images — their own namespace, servable to a stranger
+# ---------------------------------------------------------------------------
+
+
+GUIDE_IMAGE = "/api/uploads/guide-images/abc123_hero.png"
+
+
+@pytest.fixture
+def read_as(db):
+    """Fetch a URL as a given identity — ``None`` means anonymous.
+
+    One fixture rather than an anonymous client *and* an admin client,
+    because ``get_optional_user`` is a single global override: two
+    fixtures requested by the same test clobber each other, and the
+    "anonymous" one silently becomes whichever was set last. That is
+    not a hypothetical — it is how the first draft of these tests
+    passed an admin off as a stranger.
+    """
+    app.dependency_overrides[get_db] = lambda: db
+
+    def _get(url: str, user=None):
+        if user is None:
+            app.dependency_overrides.pop(get_optional_user, None)
+        else:
+            app.dependency_overrides[get_optional_user] = lambda: user
+        return TestClient(app, follow_redirects=False).get(url)
+
+    yield _get
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def uploaded_image(client):
+    """A real image, through the real admin upload endpoint.
+
+    Returns the URL the endpoint hands back, so a test that uses it
+    is exercising whatever shape the upload currently produces rather
+    than a shape the test author believed in.
+    """
+    import io
+
+    res = client.post(
+        f"{BASE}/images",
+        files={"file": ("hero.png",
+                        io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 64),
+                        "image/png")},
+    )
+    assert res.status_code == 201, res.text
+    url = res.json()["url"]
+    yield url
+    (UPLOAD_DIR / url[len("/api/uploads/"):]).unlink(missing_ok=True)
+
+
+@pytest.fixture
+def guide_image_on_disk():
+    """Real bytes, so a permitted read is a 200 rather than a 404
+    about a missing file."""
+    target = UPLOAD_DIR / "guide-images" / "abc123_hero.png"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    yield target
+    target.unlink(missing_ok=True)
+
+
+class TestGuideImages:
+    """The bug: every Guide image 404'd, for everyone.
+
+    ``save_media_file(space_slug="guides")`` produced
+    ``media/guides/…``, which the uploads authoriser reads as the
+    Asset Library of a Collective slugged "guides". No such
+    Collective exists, so it 404'd — including for an administrator
+    in the preview — and even resolved it would have been member-only,
+    so a logged-out reader could never have been served.
+    """
+
+    def test_the_upload_endpoint_writes_to_the_guide_namespace(
+        self, client, monkeypatch,
+    ):
+        import io
+
+        res = client.post(
+            f"{BASE}/images",
+            files={"file": ("hero.png", io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 64),
+                            "image/png")},
+        )
+        assert res.status_code == 201, res.text
+        url = res.json()["url"]
+        assert url.startswith("/api/uploads/guide-images/"), url
+        # The shape that caused the bug must not come back.
+        assert "/media/guides/" not in url
+
+    def test_uploading_still_requires_an_administrator(self, member_client):
+        import io
+
+        res = member_client.post(
+            f"{BASE}/images",
+            files={"file": ("hero.png", io.BytesIO(b"x"), "image/png")},
+        )
+        assert res.status_code == 403
+
+    # -- the reported symptom ----------------------------------------
+
+    def test_an_anonymous_visitor_can_read_a_published_guides_hero(
+        self, client, read_as, guide_image_on_disk,
+    ):
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            hero_image_url=GUIDE_IMAGE,
+            hero_image_alt="An island at dusk",
+        )
+        _publish(client, guide["id"])
+
+        res = read_as(GUIDE_IMAGE)
+        assert res.status_code == 200, res.text
+
+    def test_an_inline_body_image_is_readable_too(
+        self, client, read_as, guide_image_on_disk,
+    ):
+        """Not only the hero column — an image embedded in the body
+        has to be servable or the article renders with a hole in it."""
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            body=f'<p>Text</p><p><img src="{GUIDE_IMAGE}" alt="A chart"></p>',
+        )
+        _publish(client, guide["id"])
+
+        assert read_as(GUIDE_IMAGE).status_code == 200
+
+    # -- still narrow -------------------------------------------------
+
+    def test_a_drafts_image_is_not_public_but_an_admin_can_preview_it(
+        self, client, read_as, admin, guide_image_on_disk,
+    ):
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            hero_image_url=GUIDE_IMAGE, hero_image_alt="x",
+        )
+        # Left as a draft.
+        assert read_as(GUIDE_IMAGE).status_code == 404
+        assert read_as(GUIDE_IMAGE, admin).status_code == 200
+
+    def test_unpublishing_takes_the_image_down_too(
+        self, client, read_as, guide_image_on_disk,
+    ):
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            hero_image_url=GUIDE_IMAGE, hero_image_alt="x",
+        )
+        _publish(client, guide["id"])
+        assert read_as(GUIDE_IMAGE).status_code == 200
+
+        client.post(f"{BASE}/{guide['id']}/unpublish")
+        assert read_as(GUIDE_IMAGE).status_code == 404
+
+    def test_an_uploaded_but_unused_image_is_not_public(
+        self, read_as, guide_image_on_disk,
+    ):
+        """Uploading publishes nothing. Only a key a published Guide
+        points at is readable."""
+        assert read_as(GUIDE_IMAGE).status_code == 404
+
+    def test_a_refusal_looks_like_a_key_that_never_existed(self, read_as):
+        """No oracle: a draft's image and a key nobody uploaded give
+        the same answer, so the route cannot be used to learn that a
+        draft exists."""
+        a = read_as(GUIDE_IMAGE)
+        b = read_as("/api/uploads/guide-images/nope_nothing.png")
+        assert a.status_code == b.status_code == 404
+        assert a.json() == b.json()
+
+    # -- the collision the namespace removes --------------------------
+
+    def test_a_collective_slugged_guides_cannot_capture_guide_images(
+        self, db, read_as, admin, guide_image_on_disk, make_user,
+    ):
+        """The latent trap, made unreachable.
+
+        While Guide images lived at ``media/guides/…`` they were
+        resolved by slug, so registering a Collective called "guides"
+        would have put every Guide image under that Collective's
+        membership rules. The namespace is no longer slug-derived, so
+        the Collective can exist and change nothing.
+        """
+        from app.models.platform import Space, SpaceStatus
+
+        owner = make_user(role="creator")
+        db.add(Space(
+            id=f"s_{uuid.uuid4().hex[:10]}",
+            slug="guides", name="Guides", status=SpaceStatus.active,
+            visibility="link", is_public=False, kind="standard",
+            connection_style="online", creator_id=owner.id, themes=[],
+            pricing_type="free", pricing_currency="AUD",
+            has_paid_internal_content=False,
+            timezone="Australia/Melbourne", island_artwork_status="not_started",
+        ))
+        db.flush()
+
+        # The Guide image route is unaffected by that Collective.
+        assert read_as(GUIDE_IMAGE, admin).status_code == 200
+        # And the Collective's own Asset Library is still its own,
+        # refused to a stranger — the two namespaces never meet.
+        assert read_as(
+            "/api/uploads/media/guides/anything.png",
+        ).status_code == 401
+
+    # -- the test that would have caught the bug ----------------------
+
+    def test_the_hero_url_a_guide_returns_is_servable_to_a_stranger(
+        self, client, read_as, uploaded_image,
+    ):
+        """The end-to-end invariant, and the one that was missing.
+
+        Every earlier test asserted one side or the other: that the
+        API returns a hero URL, or that some key is readable. The bug
+        lived exactly between them — the public payload advertised a
+        URL the uploads route refused to serve to the audience the
+        page is written for, and no test crossed that seam.
+
+        So nothing here is written down. The image goes through the
+        real admin upload, the URL *it* returns becomes the hero, the
+        Guide is published, and the URL the *public endpoint* hands
+        back is fetched with no session. Every link in the chain is
+        the real one, which is what makes this fail against the old
+        ``media/guides/`` shape rather than passing on a hard-coded
+        path that happens to be right.
+        """
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            hero_image_url=uploaded_image, hero_image_alt="An island at dusk",
+        )
+        _publish(client, guide["id"])
+
+        payload = read_as(f"{PUBLIC}/{guide['slug']}").json()
+        hero = payload["guide"]["hero_image_url"]
+        assert hero, (
+            "the public payload dropped the hero entirely — the URL the "
+            "upload returned is not one the API will even advertise"
+        )
+
+        res = read_as(hero)
+        assert res.status_code == 200, (
+            f"the API advertises {hero} but serving it to an anonymous "
+            f"reader answered {res.status_code}"
+        )
+
+    def test_the_same_invariant_for_every_image_in_the_body(
+        self, client, read_as, uploaded_image,
+    ):
+        """The body half of the same contract, read out of the stored
+        HTML rather than assumed."""
+        import re
+
+        guide = _create(client)
+        _fill(
+            client, guide["id"],
+            body=f'<p><img src="{uploaded_image}" alt="A chart"></p>',
+        )
+        _publish(client, guide["id"])
+
+        body = read_as(
+            f"{PUBLIC}/{guide['slug']}",
+        ).json()["guide"]["body"]
+        srcs = re.findall(r'<img[^>]+src="([^"]+)"', body)
+        assert srcs, "the body lost its image"
+        for src in srcs:
+            assert read_as(src).status_code == 200, src
 
 
 # ---------------------------------------------------------------------------

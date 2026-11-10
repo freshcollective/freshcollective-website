@@ -29,10 +29,17 @@ hosts is already refused by the enforcing CSP's ``img-src``, so a
 pasted external image would save cleanly and then render as a broken
 box behind a console error nobody has open. Rather than leave that to
 be discovered, :func:`sanitize_guide_body` drops the tag here and the
-admin editor says so. The permitted shapes are the ones the platform
-actually serves: a same-origin ``/api/uploads/…`` path — which is what
-``save_media_file`` returns, and so what every uploaded Guide image
-is — and the Cloudflare R2 hosts, for a body that names one directly.
+admin editor says so.
+
+The rule is narrower than "same-origin" and deliberately so. A Guide
+is read by people with no account, so an inline image has to be
+servable *anonymously* — which means the ``guide-images`` prefix and
+its public route, not any ``/api/uploads/…`` path. An Asset Library
+image pasted into a Guide body would pass a same-origin check, save
+cleanly, and then 403 for every logged-out reader, because that
+namespace is member-gated. So the permitted shapes are exactly two:
+a ``/api/uploads/guide-images/…`` path, and a Cloudflare R2 host for
+a body that names one directly.
 """
 
 from __future__ import annotations
@@ -75,8 +82,8 @@ LINK_REL = "noopener noreferrer"
 #: matching rules in general.
 #:
 #: In practice almost every Guide image is the first case below, not
-#: these: ``save_media_file`` returns a same-origin
-#: ``/api/uploads/media/guides/…`` path and the redirect to R2 happens
+#: these: the upload endpoint returns a same-origin
+#: ``/api/uploads/guide-images/…`` path and the redirect to R2 happens
 #: server-side. These are here for a body that names an R2 URL
 #: directly, which the public-bucket configuration can produce.
 _R2_HOST_SUFFIXES: tuple[str, ...] = (".r2.cloudflarestorage.com", ".r2.dev")
@@ -84,6 +91,11 @@ _R2_HOST_SUFFIXES: tuple[str, ...] = (".r2.cloudflarestorage.com", ".r2.dev")
 #: Anything that looks like a tag — a letter after the ``<``, so
 #: "3 < 5" and "<3 you all" are prose rather than markup.
 _TAGLIKE = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
+
+#: The one upload prefix a Guide body may reference. Spelled here
+#: rather than imported from the admin router, which imports this
+#: module — the dependency only runs one way.
+GUIDE_IMAGE_PREFIX = "guide-images"
 
 _IMG_TAG = re.compile(r"<img\b[^>]*>", flags=re.IGNORECASE)
 _IMG_SRC = re.compile(r"""\bsrc\s*=\s*["']([^"']*)["']""", flags=re.IGNORECASE)
@@ -117,10 +129,12 @@ def is_permitted_image_src(src: str) -> bool:
     value = (src or "").strip()
     if not value:
         return False
-    # A same-origin upload path. Not any relative URL: ``//evil.test/x``
-    # is protocol-relative and would leave the origin entirely.
+    # A same-origin Guide-image path, and only that prefix. Not any
+    # relative URL — ``//evil.test/x`` is protocol-relative and would
+    # leave the origin entirely — and not any other upload namespace,
+    # because none of the others serve a logged-out reader.
     if value.startswith("/") and not value.startswith("//"):
-        return value.startswith("/api/uploads/")
+        return value.startswith(f"/api/uploads/{GUIDE_IMAGE_PREFIX}/")
     try:
         parsed = urlparse(value)
     except ValueError:

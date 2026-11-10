@@ -50,6 +50,7 @@ Design:
 from __future__ import annotations
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.platform import (
@@ -62,6 +63,7 @@ from app.models.platform import (
     Space,
     SpaceMembership,
 )
+from app.models.guide import Guide
 from app.models.offering import (
     Offering,
     OfferingEntitlement,
@@ -594,6 +596,50 @@ def _authorise_offering_cover(user: User, file_path: str, db: Session) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Guide images — their own namespace, served by their own public route
+# ---------------------------------------------------------------------------
+
+
+def guide_image_is_published(key: str, db: Session) -> bool:
+    """Does some *published* Guide point at this image?
+
+    Lives here with the other read rules even though the
+    ``guide-images`` route answers for itself and never reaches
+    ``authorize_upload`` — "who may read which key" is this module's
+    job, and splitting one namespace's rule into the route handler is
+    how the matrix stops being readable in one place.
+
+    Two places a Guide can reference an image, and both count:
+
+      * ``hero_image_url`` — an exact column match;
+      * the body, where an inline image is an ``<img src>`` inside
+        sanitised HTML, so the test is substring containment.
+
+    ``strpos`` rather than ``LIKE``: stored filenames are
+    ``{uuid}_{name}`` and ``_`` is a ``LIKE`` single-character
+    wildcard, so a ``LIKE`` pattern built from a real URL would match
+    keys it was never meant to. Exact substring has no such edge.
+
+    Unreferenced images are not public — uploading one and never
+    using it publishes nothing. Neither is a draft's artwork, until
+    the Guide is published.
+    """
+    url = f"/api/uploads/{key}"
+    row = (
+        db.query(Guide.id)
+        .filter(
+            Guide.status == "published",
+            or_(
+                Guide.hero_image_url == url,
+                func.strpos(Guide.body, url) > 0,
+            ),
+        )
+        .first()
+    )
+    return row is not None
+
+
+# ---------------------------------------------------------------------------
 # Anonymous callers
 # ---------------------------------------------------------------------------
 
@@ -713,12 +759,14 @@ def _authorise_anonymous(file_path: str, db: Session) -> None:
 # Prefix → resolver. Order doesn't matter — we match on the exact first
 # path segment. Anything not in this table is default-deny.
 #
-# Two namespaces are deliberately absent because they never reach this
-# function: ``platform-artwork`` and ``place-artwork`` are matched by
-# their own public routes in ``app/uploads/routes.py``, declared ahead
-# of the catch-all. Adding either here would have no effect; removing
-# their routes would silently default-deny them, which is the bug that
-# made Place artwork unrenderable before those routes existed.
+# Three namespaces are deliberately absent because they never reach
+# this function: ``platform-artwork``, ``place-artwork`` and
+# ``guide-images`` are matched by their own public routes in
+# ``app/uploads/routes.py``, declared ahead of the catch-all. Adding
+# any of them here would have no effect; removing their routes would
+# silently default-deny them, which is the bug that made Place artwork
+# unrenderable before those routes existed — and the one that made
+# every Guide image 404 while they lived under ``media/guides/``.
 _DISPATCH = {
     "avatars":          _authorise_avatar,
     "covers":           _authorise_space_cover,
@@ -765,4 +813,4 @@ def authorize_upload(file_path: str, user: User | None, db: Session) -> bool:
     return False
 
 
-__all__ = ["authorize_upload"]
+__all__ = ["authorize_upload", "guide_image_is_published"]
