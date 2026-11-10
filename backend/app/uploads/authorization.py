@@ -17,10 +17,20 @@ leave the Collective, when the Collective closes, and when the product
 is retired. Membership is neither necessary nor sufficient. See
 ``_authorise_offering_file``.
 
+Anonymous callers are a separate, much smaller matrix. See
+``_anonymous_may_read``: a logged-out visitor may fetch the covers and
+logos that render on Explore and on the public About pages, and
+nothing else. It is a separate function rather than a ``User | None``
+threaded through the authorisers below, because the failure mode of
+getting one of eleven membership predicates wrong for ``None`` is
+silent over-granting, and because the whole anonymous surface should
+be readable in one screen.
+
 Not in this module:
   * Path traversal — enforced upstream in ``uploads/routes.py``.
   * R2 presigning / filesystem serving — the route handler still owns
-    those; this module only decides allow / deny.
+    those; this module only decides allow / deny, and whether the
+    answer may be cached publicly.
   * The public ``/api/uploads/platform-artwork/*`` route — it has its
     own handler that intentionally does not check auth.
 
@@ -28,7 +38,9 @@ Design:
   * Default-deny for any unknown prefix. New private namespaces must
     add an explicit branch.
   * 403 for known-owner-but-not-allowed, 404 for keys that don't
-    resolve to any DB row (defence against enumeration).
+    resolve to any DB row (defence against enumeration). For an
+    *anonymous* caller every refusal is a flat 401 instead — see
+    ``_authorise_anonymous`` for why the distinction is withheld.
   * Reverse-lookup resolvers query on the exact URL string
     (``/api/uploads/{file_path}``), the same value the write path
     persisted — so any key not present in the DB is a 404 regardless
@@ -582,6 +594,118 @@ def _authorise_offering_cover(user: User, file_path: str, db: Session) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Anonymous callers
+# ---------------------------------------------------------------------------
+
+
+_UNAUTHENTICATED_DETAIL = "Not authenticated."
+
+
+def _anonymous_may_read(file_path: str, db: Session) -> bool:
+    """May a logged-out visitor fetch this key?
+
+    The whole anonymous surface, in one function. It exists because
+    three pages are reachable without an account and render images
+    from this route — Explore, a Collective's About page, and a
+    Pathway's About page — and until now every one of those images
+    answered 401, so they were broken for exactly the audience the
+    pages are written for.
+
+    Four things, and only when the Collective they belong to is
+    public *and* active:
+
+      * ``covers/…``          the Collective's own cover
+      * ``logos/{slug}/…``    its logo
+      * ``pathway-covers/…``  a Pathway cover
+      * ``media/{slug}/…``    the same four, when the creator chose
+                              them from the Asset Library instead of
+                              uploading directly — see
+                              ``_media_key_is_public_cover``
+
+    Everything else is False: avatars, island artwork, Gathering
+    thumbnails, step resources, Offering files and covers, community
+    images, World Guide help content, and any Asset Library image not
+    in use as one of those covers. ``island-artwork`` is worth naming
+    because it shares a resolver with ``logos`` in the signed-in
+    dispatch and does *not* share this grant: no public payload
+    exposes it.
+
+    Returns a bool and never raises, which is deliberate — the caller
+    turns every False into one uniform 401, so this function cannot
+    accidentally become the thing that tells an anonymous caller
+    which keys exist.
+    """
+    if not file_path:
+        return False
+    parts = file_path.split("/", 3)
+    prefix = parts[0]
+    full_url = f"/api/uploads/{file_path}"
+
+    def _public(space: Space | None) -> bool:
+        return space is not None and _space_is_publicly_visible(space)
+
+    if prefix == "covers":
+        return _public(
+            db.query(Space).filter(Space.cover_image_url == full_url).first(),
+        )
+
+    if prefix == "logos":
+        # Deliberately not ``island-artwork``, which the signed-in
+        # dispatch routes through the same resolver.
+        if len(parts) < 3 or not parts[1]:
+            return False
+        return _public(db.query(Space).filter(Space.slug == parts[1]).first())
+
+    if prefix == "pathway-covers":
+        pathway = (
+            db.query(Pathway)
+            .filter(Pathway.cover_image_url == full_url)
+            .first()
+        )
+        if pathway is None:
+            return False
+        return _public(
+            db.query(Space).filter(Space.id == pathway.space_id).first(),
+        )
+
+    if prefix == "media":
+        if len(parts) < 3 or not parts[1]:
+            return False
+        # ``media/world-guide/…`` is help content for signed-in people,
+        # not a cover. It is allowed to any authenticated user and to
+        # no anonymous one.
+        if parts[1] == "world-guide":
+            return False
+        space = db.query(Space).filter(Space.slug == parts[1]).first()
+        if not _public(space):
+            return False
+        assert space is not None  # narrowed by _public
+        return _media_key_is_public_cover(space, full_url, db)
+
+    return False
+
+
+def _authorise_anonymous(file_path: str, db: Session) -> None:
+    """Allow an anonymous caller, or refuse with a uniform 401.
+
+    **Every refusal is the same 401, including a key that resolves to
+    nothing.** The signed-in matrix distinguishes 403 (exists, not
+    yours) from 404 (resolves to no row), which is useful to a caller
+    who has already proved who they are. Handing that distinction to
+    an anonymous caller would create an enumeration oracle that does
+    not exist today: before this change every anonymous request to
+    this route was a flat 401 and told them nothing at all. Collapsing
+    all of it back to 401 keeps that property exactly.
+    """
+    if _anonymous_may_read(file_path, db):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=_UNAUTHENTICATED_DETAIL,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -610,11 +734,25 @@ _DISPATCH = {
 }
 
 
-def authorize_upload(file_path: str, user: User, db: Session) -> None:
-    """Route entry point. Dispatch on the first path segment, run the
-    matching authoriser, or raise 403 for anything not in the
-    dispatch table. Called by ``serve_upload`` after the path-traversal
-    guard and before the R2 / filesystem branch."""
+def authorize_upload(file_path: str, user: User | None, db: Session) -> bool:
+    """Route entry point. Raises on refusal; returns on success.
+
+    ``user`` is ``None`` for a logged-out visitor — ``serve_upload``
+    depends on ``get_optional_user``, so anonymous requests reach
+    here rather than being refused by the dependency. They are
+    answered by ``_authorise_anonymous`` and its much smaller matrix.
+
+    **Returns whether the response may be cached publicly.** True
+    only for an anonymous public-cover grant: that answer is the same
+    for everyone, for as long as the Collective stays public, so a
+    browser may keep it and a repeat visit need not mint a fresh
+    pre-signed URL. Every signed-in answer returns False — those
+    depend on who is asking, and a shared cache must not reuse them.
+    """
+    if user is None:
+        _authorise_anonymous(file_path, db)
+        return True
+
     if not file_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
     prefix = file_path.split("/", 1)[0]
@@ -624,6 +762,7 @@ def authorize_upload(file_path: str, user: User, db: Session) -> None:
         # New namespaces must add an explicit branch above.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL)
     resolver(user, file_path, db)
+    return False
 
 
 __all__ = ["authorize_upload"]

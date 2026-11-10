@@ -82,10 +82,10 @@ class TestAnonymousReads:
         """Opening a namespace publicly must not accidentally close it
         to signed-in users — which is what the dispatch table's
         default-deny did to administrators before this route."""
-        from app.auth.dependencies import get_current_user
+        from app.auth.dependencies import get_optional_user
         from app.core.database import get_db
 
-        app.dependency_overrides[get_current_user] = lambda: make_user()
+        app.dependency_overrides[get_optional_user] = lambda: make_user()
         app.dependency_overrides[get_db] = lambda: db
         try:
             res = TestClient(app).get(f"/api/uploads/{_rel(place_artwork_file)}")
@@ -120,10 +120,10 @@ class TestEverythingElseStaysPrivate:
     def test_an_unknown_namespace_is_still_default_denied(self, db, make_user):
         """Signed in, so this is the dispatch table answering, not the
         session gate."""
-        from app.auth.dependencies import get_current_user
+        from app.auth.dependencies import get_optional_user
         from app.core.database import get_db
 
-        app.dependency_overrides[get_current_user] = lambda: make_user()
+        app.dependency_overrides[get_optional_user] = lambda: make_user()
         app.dependency_overrides[get_db] = lambda: db
         try:
             res = TestClient(app).get("/api/uploads/not-a-namespace/x.png")

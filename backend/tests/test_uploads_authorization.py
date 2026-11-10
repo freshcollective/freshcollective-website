@@ -882,6 +882,210 @@ class TestMediaLibraryCovers:
 
 
 # ---------------------------------------------------------------------------
+# Anonymous callers — the small matrix
+# ---------------------------------------------------------------------------
+
+
+class TestAnonymousAccess:
+    """A logged-out visitor may fetch public covers, and nothing else.
+
+    Three pages are reachable without an account and render images
+    from this route: Explore, a Collective's About page and a
+    Pathway's About page. Until ``serve_upload`` took an optional
+    user, every one of those images answered 401 — verified live
+    against production, where the Explore cover and the About logo
+    were both broken.
+
+    The two properties worth holding onto are opposite in direction,
+    so both are tested: the four cover kinds are readable, and
+    *everything else* is refused with one indistinguishable 401.
+    """
+
+    @staticmethod
+    def _allow(key, db):
+        # ``authorize_upload`` returns True for an anonymous
+        # public-cover grant — the flag the route turns into a cache
+        # header — so the assertion covers both the decision and the
+        # cacheability in one.
+        assert authorize_upload(key, None, db) is True
+
+    @staticmethod
+    def _deny(key, db):
+        with pytest.raises(HTTPException) as exc:
+            authorize_upload(key, None, db)
+        assert exc.value.status_code == 401, (
+            f"{key}: expected 401, got {exc.value.status_code}"
+        )
+
+    # -- allowed ------------------------------------------------------
+
+    def test_a_collectives_own_cover_is_readable(self, db, spaces_and_users):
+        s = spaces_and_users
+        key = "covers/uuid_banner.jpg"
+        s["space_public"].cover_image_url = f"/api/uploads/{key}"
+        db.flush()
+        self._allow(key, db)
+
+    def test_a_collectives_logo_is_readable(self, db, spaces_and_users):
+        s = spaces_and_users
+        self._allow(f"logos/{s['space_public'].slug}/logo.png", db)
+
+    def test_a_pathway_cover_is_readable(self, db, spaces_and_users):
+        s = spaces_and_users
+        key = "pathway-covers/uuid_pw.png"
+        db.add(Pathway(
+            id=_uid("pw"), space_id=s["space_public"].id, slug=_uid("pw"),
+            title="P", status="active",
+            pathway_type=PathwayType.guided_experience, position=0,
+            cover_image_url=f"/api/uploads/{key}",
+        ))
+        db.flush()
+        self._allow(key, db)
+
+    def test_the_same_covers_chosen_from_the_asset_library_are_readable(
+        self, db, spaces_and_users,
+    ):
+        """The ImagePickerField case, for anonymous callers.
+
+        A cover picked from the library is stored as a ``media/…``
+        key. Which upload button the creator used must not decide
+        whether a logged-out reader sees the image.
+        """
+        s = spaces_and_users
+        space = s["space_public"]
+        base = f"media/{space.slug}"
+
+        space.logo_url = f"/api/uploads/{base}/lib_logo.png"
+        db.add(Pathway(
+            id=_uid("pw"), space_id=space.id, slug=_uid("pw"),
+            title="P", status="active",
+            pathway_type=PathwayType.guided_experience, position=0,
+            cover_image_url=f"/api/uploads/{base}/lib_pathway.png",
+        ))
+        db.add(EventSeries(
+            id=_uid("es"), space_id=space.id, slug=_uid("series"),
+            title="S", starts_at=datetime.utcnow() + timedelta(days=7),
+            cover_image_url=f"/api/uploads/{base}/lib_series.png",
+        ))
+        db.flush()
+
+        for name in ("lib_logo.png", "lib_pathway.png", "lib_series.png"):
+            self._allow(f"{base}/{name}", db)
+
+    # -- refused ------------------------------------------------------
+
+    def test_the_same_covers_in_a_private_collective_are_refused(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        private = s["space_private"]
+        key = "covers/uuid_private_banner.jpg"
+        private.cover_image_url = f"/api/uploads/{key}"
+        db.add(Pathway(
+            id=_uid("pw"), space_id=private.id, slug=_uid("pw"),
+            title="P", status="active",
+            pathway_type=PathwayType.guided_experience, position=0,
+            cover_image_url="/api/uploads/pathway-covers/uuid_private_pw.png",
+        ))
+        db.flush()
+
+        self._deny(key, db)
+        self._deny(f"logos/{private.slug}/logo.png", db)
+        self._deny("pathway-covers/uuid_private_pw.png", db)
+
+    def test_an_inactive_collective_is_refused_even_if_public(
+        self, db, spaces_and_users,
+    ):
+        """``is_public`` alone is not the gate — an archived
+        Collective has no public surface to render its cover on."""
+        s = spaces_and_users
+        space = s["space_public"]
+        key = "covers/uuid_archived.jpg"
+        space.cover_image_url = f"/api/uploads/{key}"
+        space.status = SpaceStatus.archived
+        db.flush()
+        self._deny(key, db)
+
+    def test_an_unreferenced_library_image_is_refused(
+        self, db, spaces_and_users,
+    ):
+        """Being in a public Collective's library grants nothing. Only
+        the key a cover field points at is readable."""
+        s = spaces_and_users
+        self._deny(f"media/{s['space_public'].slug}/never_used.png", db)
+
+    @pytest.mark.parametrize("key", [
+        "avatars/uuid_face.png",
+        "island-artwork/{public}/island.png",
+        "event-thumbnails/uuid_evt.png",
+        "steps/step_123/uuid_worksheet.pdf",
+        "offering-files/uuid_book.pdf",
+        "offering-covers/uuid_cover.png",
+        "media/world-guide/uuid_help.png",
+        "media/{public}/community/uuid_post.png",
+        "totally-unknown-prefix/x.png",
+        "",
+    ])
+    def test_every_other_namespace_is_refused(
+        self, db, spaces_and_users, key,
+    ):
+        """The default-deny side, named one by one so a new namespace
+        has to be argued for rather than inherited.
+
+        ``island-artwork`` matters most here: it shares a resolver
+        with ``logos`` in the signed-in dispatch, so granting by
+        resolver rather than by prefix would have let it through.
+        """
+        s = spaces_and_users
+        self._deny(key.format(public=s["space_public"].slug), db)
+
+    def test_every_refusal_is_indistinguishable(self, db, spaces_and_users):
+        """No enumeration oracle.
+
+        A signed-in caller is told 403 for "exists, not yours" and 404
+        for "no such row" — useful once you have proved who you are.
+        An anonymous caller is told neither. Before this change every
+        anonymous request was a flat 401; these three shapes must
+        stay identical so that remains true.
+        """
+        s = spaces_and_users
+        private = s["space_private"]
+        private.cover_image_url = "/api/uploads/covers/uuid_real_but_private.jpg"
+        db.flush()
+
+        outcomes = []
+        for key in (
+            "covers/uuid_real_but_private.jpg",   # resolves, not public
+            "covers/uuid_no_such_key.jpg",        # resolves to nothing
+            f"media/{private.slug}/asset.png",    # member-only library
+        ):
+            with pytest.raises(HTTPException) as exc:
+                authorize_upload(key, None, db)
+            outcomes.append((exc.value.status_code, exc.value.detail))
+
+        assert len(set(outcomes)) == 1, outcomes
+        assert outcomes[0][0] == 401
+
+    # -- the signed-in matrix is untouched -----------------------------
+
+    def test_signed_in_answers_are_never_publicly_cacheable(
+        self, db, spaces_and_users,
+    ):
+        """The flag drives a ``public`` cache header, so it must be
+        False for anything that depends on who is asking — even when
+        the image is the very same public cover."""
+        s = spaces_and_users
+        space = s["space_public"]
+        key = "covers/uuid_shared.jpg"
+        space.cover_image_url = f"/api/uploads/{key}"
+        db.flush()
+
+        assert authorize_upload(key, None, db) is True
+        for user in (s["unrelated"], s["learner_pub"], s["admin"]):
+            assert authorize_upload(key, user, db) is False
+
+
+# ---------------------------------------------------------------------------
 # Default-deny + empty path
 # ---------------------------------------------------------------------------
 
@@ -927,19 +1131,116 @@ def r2_serving(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture
 def client_with_overrides(db: Session, make_user):
-    """TestClient with get_current_user + get_db overridden to use the
-    per-test session so seeded rows are visible to the route handler."""
-    from app.auth.dependencies import get_current_user as _gcu
+    """TestClient with the session user + get_db overridden to use the
+    per-test session so seeded rows are visible to the route handler.
+
+    ``get_optional_user``, not ``get_current_user``: ``serve_upload``
+    takes an optional user so logged-out visitors can reach the
+    public-cover branches. Overriding the wrong one leaves the route
+    resolving the real dependency, finding no cookie, and answering
+    every request anonymously — which is how this fixture failed when
+    the route changed.
+    """
+    from app.auth.dependencies import get_optional_user as _gou
     from app.core.database import get_db as _gdb
     user = make_user(role="user")
-    app.dependency_overrides[_gcu] = lambda: user
+    app.dependency_overrides[_gou] = lambda: user
     app.dependency_overrides[_gdb] = lambda: db
     client = TestClient(app, follow_redirects=False)
     try:
         yield client, user
     finally:
-        app.dependency_overrides.pop(_gcu, None)
+        app.dependency_overrides.pop(_gou, None)
         app.dependency_overrides.pop(_gdb, None)
+
+
+class TestAnonymousPublicCoverInR2Mode:
+    """The half that cannot be exercised locally: the 302.
+
+    This is where the change could go wrong quietly. In R2 mode the
+    response is a redirect to a *pre-signed* URL, so the cache
+    lifetime and the signature lifetime are coupled. Cache the
+    redirect for a day while the signature lasts the default five
+    minutes and every repeat visit for the next 23h55m follows a link
+    R2 rejects — a broken image that no test of the decision alone
+    would catch, and that is strictly worse than not caching.
+    """
+
+    @pytest.fixture
+    def anon_client(self, db):
+        from app.core.database import get_db as _gdb
+        app.dependency_overrides[_gdb] = lambda: db
+        try:
+            # No session override at all: ``get_optional_user`` runs
+            # for real, finds no cookie, and returns None.
+            yield TestClient(app, follow_redirects=False)
+        finally:
+            app.dependency_overrides.pop(_gdb, None)
+
+    def _public_cover_key(self, db, spaces_and_users) -> str:
+        key = "covers/uuid_public_banner.jpg"
+        spaces_and_users["space_public"].cover_image_url = f"/api/uploads/{key}"
+        db.flush()
+        return key
+
+    def test_the_signature_outlives_the_cache_window(
+        self, anon_client, r2_serving, db, spaces_and_users,
+    ):
+        from app.uploads.routes import (
+            _PUBLIC_COVER_MAX_AGE_SECONDS,
+            _PUBLIC_COVER_URL_EXPIRY_SECONDS,
+        )
+
+        key = self._public_cover_key(db, spaces_and_users)
+        r = anon_client.get(f"/api/uploads/{key}")
+
+        assert r.status_code == 302
+        assert r.headers["cache-control"] == (
+            f"public, max-age={_PUBLIC_COVER_MAX_AGE_SECONDS}"
+        )
+        assert r.headers["vary"] == "Cookie"
+
+        expires = r2_serving.generate_presigned_url.call_args.kwargs["ExpiresIn"]
+        assert expires == _PUBLIC_COVER_URL_EXPIRY_SECONDS
+        # The property, not just the constant: a redirect served at the
+        # last moment of its cache lifetime must still have signature
+        # left on it.
+        assert expires > _PUBLIC_COVER_MAX_AGE_SECONDS
+
+    def test_a_signed_in_caller_gets_the_short_signature_and_no_store(
+        self, client_with_overrides, r2_serving, db, spaces_and_users,
+    ):
+        """The same image, a signed-in caller, unchanged behaviour.
+
+        The long signature and the shared-cache grant belong to the
+        anonymous branch alone. A signed-in answer can depend on who
+        is asking, so it must stay ``no-store`` on the default
+        five-minute URL.
+        """
+        from app.uploads.routes import _PRESIGNED_URL_EXPIRY_SECONDS
+
+        client, _user = client_with_overrides
+        key = self._public_cover_key(db, spaces_and_users)
+        r = client.get(f"/api/uploads/{key}")
+
+        assert r.status_code == 302
+        assert "no-store" in r.headers["cache-control"]
+        assert "vary" not in {h.lower() for h in r.headers}
+        assert r2_serving.generate_presigned_url.call_args.kwargs[
+            "ExpiresIn"
+        ] == _PRESIGNED_URL_EXPIRY_SECONDS
+
+    def test_a_refused_anonymous_request_never_presigns(
+        self, anon_client, r2_serving, db, spaces_and_users,
+    ):
+        """Authorisation runs before the R2 branch, so a refusal costs
+        no presign call — which is what keeps an unauthenticated
+        endpoint from being a free way to generate signed URLs."""
+        r = anon_client.get(
+            f"/api/uploads/media/{spaces_and_users['space_public'].slug}/nope.png",
+        )
+        assert r.status_code == 401
+        r2_serving.generate_presigned_url.assert_not_called()
 
 
 class TestRouteIntegrationR2Mode:

@@ -62,7 +62,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_optional_user
 from app.core import storage as storage_module
 from app.core.config import settings
 from app.core.database import get_db
@@ -80,6 +80,26 @@ uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 # stops working before it can be exploited.
 _PRESIGNED_URL_EXPIRY_SECONDS = 300
 
+# How long a browser may keep an anonymous public-cover response.
+_PUBLIC_COVER_MAX_AGE_SECONDS = 86_400  # 24 hours
+
+# …and the signature behind it, which must outlive that cache entry.
+#
+# This is the whole reason the two numbers are different. A cached 302
+# is a cached *pre-signed URL*: cache the redirect for a day while the
+# signature lasts five minutes and every repeat visit for the next
+# 23h55m follows a link that R2 rejects — strictly worse than minting
+# a new one each time. An hour of headroom means a redirect served at
+# the last moment of its cache lifetime still has an hour of signature
+# left.
+#
+# A day-long signature is acceptable *for this subset and no other*.
+# The 300-second default exists because a leaked private URL is a
+# disclosure; these are cover images on a public, indexed page, already
+# fetchable by anyone with no session at all. Nothing else gets this
+# lifetime — the flag is set only by an anonymous public-cover grant.
+_PUBLIC_COVER_URL_EXPIRY_SECONDS = _PUBLIC_COVER_MAX_AGE_SECONDS + 3_600
+
 
 def _reject_traversal(file_path: str) -> None:
     """Refuse ``..`` in the requested key. R2 keys are literal, so a
@@ -92,7 +112,7 @@ def _reject_traversal(file_path: str) -> None:
 
 
 def _serve_from_filesystem(
-    file_path: str, *, force_download: bool = False,
+    file_path: str, *, force_download: bool = False, public_cache: bool = False,
 ) -> FileResponse:
     """Filesystem-mode serving — the pre-Stage-B behaviour, preserved
     for local dev and tests that write to UPLOAD_DIR."""
@@ -118,6 +138,12 @@ def _serve_from_filesystem(
             f'attachment; filename="{_download_filename_from_key(file_path)}"'
         )
         headers["Cache-Control"] = "private, max-age=0, no-store"
+    elif public_cache:
+        # An anonymous public-cover response: the same bytes for every
+        # visitor, for as long as the Collective stays public. No
+        # signature to outlive here — these are the bytes themselves.
+        headers["Cache-Control"] = f"public, max-age={_PUBLIC_COVER_MAX_AGE_SECONDS}"
+        headers["Vary"] = "Cookie"
     return FileResponse(
         str(target),
         media_type=(
@@ -163,7 +189,7 @@ def _download_filename_from_key(key: str) -> str:
 
 
 def _redirect_to_presigned_r2(
-    key: str, *, force_download: bool = False,
+    key: str, *, force_download: bool = False, public_cache: bool = False,
 ) -> RedirectResponse:
     """Private-bucket redirect via a short-lived pre-signed URL.
 
@@ -201,21 +227,37 @@ def _redirect_to_presigned_r2(
     url = storage_module._r2_client().generate_presigned_url(
         "get_object",
         Params=params,
-        ExpiresIn=_PRESIGNED_URL_EXPIRY_SECONDS,
+        ExpiresIn=(
+            _PUBLIC_COVER_URL_EXPIRY_SECONDS
+            if public_cache
+            else _PRESIGNED_URL_EXPIRY_SECONDS
+        ),
     )
-    return RedirectResponse(
-        url=url,
-        status_code=302,
-        headers={
-            "Cross-Origin-Resource-Policy": "cross-origin",
-            "X-Content-Type-Options": "nosniff",
-            # A pre-signed URL is caller-specific and time-bounded; any
-            # shared cache that stored the 302 would hand the same URL
-            # to other users well past its usefulness. Force no-store
-            # so intermediaries do not stash it.
-            "Cache-Control": "private, max-age=0, no-store",
-        },
-    )
+    if public_cache:
+        # Anonymous public cover. The signature is deliberately longer
+        # than the cache lifetime — see the constants above — so a
+        # redirect served from cache always has time left on it.
+        #
+        # ``Vary: Cookie`` because this same URL answers differently
+        # for a signed-in caller, whose response is ``no-store``. A
+        # shared cache must key on the session cookie rather than
+        # handing one caller's answer to another. It costs shared-cache
+        # hit rate and keeps the browser caching that this is for.
+        cache_control = f"public, max-age={_PUBLIC_COVER_MAX_AGE_SECONDS}"
+    else:
+        # A pre-signed URL is caller-specific and time-bounded; any
+        # shared cache that stored the 302 would hand the same URL
+        # to other users well past its usefulness. Force no-store
+        # so intermediaries do not stash it.
+        cache_control = "private, max-age=0, no-store"
+    headers = {
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": cache_control,
+    }
+    if public_cache:
+        headers["Vary"] = "Cookie"
+    return RedirectResponse(url=url, status_code=302, headers=headers)
 
 
 # Public route — declared first so FastAPI's specificity ordering picks
@@ -256,15 +298,28 @@ def serve_public_place_artwork(file_path: str):
 @uploads_router.get("/{file_path:path}")
 def serve_upload(
     file_path: str,
-    current_user: User = Depends(get_current_user),
+    current_user: "User | None" = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
+    """Serve a private upload to whoever is entitled to see it.
+
+    ``get_optional_user`` rather than ``get_current_user``: three
+    pages are reachable without an account and render images from
+    this route — Explore, a Collective's About page and a Pathway's
+    About page — and while the dependency refused anonymous callers,
+    every one of those covers was a broken image. Authorisation moved
+    into ``authorize_upload``, which answers anonymous requests from a
+    deliberately small matrix and refuses everything else with the
+    same 401 the dependency used to raise.
+    """
     _reject_traversal(file_path)
     # Per-namespace authorization. Raises 403 (or 404 for keys that
-    # don't resolve to a DB row). See ``app.uploads.authorization`` for
-    # the full rule matrix. Runs BEFORE the R2 / filesystem branch so
-    # both modes are equally gated.
-    authorize_upload(file_path, current_user, db)
+    # don't resolve to a DB row; a flat 401 for anything anonymous).
+    # See ``app.uploads.authorization`` for the full rule matrix. Runs
+    # BEFORE the R2 / filesystem branch so both modes are equally
+    # gated. Returns whether the answer may be cached publicly, which
+    # only an anonymous public-cover grant ever is.
+    public_cache = authorize_upload(file_path, current_user, db)
     # Purchased Offering files are the one namespace served as a forced
     # download. Everything else here is imagery the app renders inline
     # (covers, avatars, artwork, step resources), and attaching those
@@ -272,5 +327,9 @@ def serve_upload(
     # imagery too, and deliberately not in this set.
     force_download = file_path.startswith(f"{OFFERING_FILES_PREFIX}/")
     if settings.is_r2_enabled:
-        return _redirect_to_presigned_r2(file_path, force_download=force_download)
-    return _serve_from_filesystem(file_path, force_download=force_download)
+        return _redirect_to_presigned_r2(
+            file_path, force_download=force_download, public_cache=public_cache,
+        )
+    return _serve_from_filesystem(
+        file_path, force_download=force_download, public_cache=public_cache,
+    )

@@ -122,16 +122,22 @@ class TestPrivateRouteR2Mode:
         self, client: TestClient, r2_serving: MagicMock,
         db, make_user,
     ) -> None:
-        from app.auth.dependencies import get_current_user
+        from app.auth.dependencies import get_optional_user
         user = make_user()
         # Bypass the real session cookie by overriding the dependency
         # for the duration of this test — the endpoint under test is
         # the redirect logic, not the session lookup.
-        app.dependency_overrides[get_current_user] = lambda: user
+        #
+        # ``get_optional_user``: ``serve_upload`` takes an optional
+        # user so logged-out visitors reach the public-cover branches.
+        # Overriding ``get_current_user`` here would do nothing, the
+        # route would find no cookie, and every assertion below would
+        # be measuring an anonymous request instead.
+        app.dependency_overrides[get_optional_user] = lambda: user
         try:
             r = client.get("/api/uploads/avatars/some-key.png")
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_optional_user, None)
 
         assert r.status_code == 302
         assert r.headers["location"] == _PRESIGNED_URL
@@ -145,12 +151,12 @@ class TestPrivateRouteR2Mode:
         self, client: TestClient, r2_serving: MagicMock,
         db, make_user,
     ) -> None:
-        from app.auth.dependencies import get_current_user
-        app.dependency_overrides[get_current_user] = lambda: make_user()
+        from app.auth.dependencies import get_optional_user
+        app.dependency_overrides[get_optional_user] = lambda: make_user()
         try:
             r = client.get("/api/uploads/avatars/some-key.png")
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_optional_user, None)
         # Pre-signed URLs are caller-specific and time-bounded — any
         # shared cache stashing the 302 would hand the same URL back
         # to a different user later.
