@@ -46,10 +46,6 @@ function peerNavItems(
 ): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
-  // Guides is unconditional: free public articles with no backend
-  // flag behind them, so there is no state in which the link
-  // outlives the route.
-  items.push({ href: '/guides', label: 'Guides' })
   // One flag each: a nav entry must never outlive the route behind it.
   if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
   // Ways to Connect also needs a signed-in viewer, where the other two
@@ -59,6 +55,14 @@ function peerNavItems(
   // they are shown the unavailable state. The link was the only thing
   // promising them something — the route itself is unchanged.
   if (waysToConnectOn && isLoggedIn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  // Guides sits after the discovery pillars rather than among them.
+  // It is not a pillar — it is free public writing that leads back to
+  // them — so it reads as the last stop, not a peer of Explore.
+  //
+  // Unconditional, where the pillars above are flagged: there is no
+  // backend flag behind Guides, so there is no state in which this
+  // link outlives the route.
+  items.push({ href: '/guides', label: 'Guides' })
   return items
 }
 
