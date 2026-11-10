@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from app.models.platform import (
     CommunityPost,
     Event,
+    EventSeries,
     Pathway,
     PathwayStep,
     PostComment,
@@ -124,6 +125,78 @@ def _allow_if_publicly_visible_else_member(
     if _user_can_view_space_media(user, space, db):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_DENIED_DETAIL)
+
+
+def _media_key_is_public_cover(
+    space: Space, full_url: str, db: Session,
+) -> bool:
+    """Is this Media Library image in use as a cover a non-member sees?
+
+    The Media Library is member-only because it holds everything a
+    creator has ever uploaded, including work in progress. But a
+    creator who picks a library image as a Pathway cover has published
+    that one image to a surface non-members can reach, and the
+    authoriser has to agree with the page — otherwise the cover is a
+    broken image for exactly the audience the page was written for.
+
+    So the question is not "is this in the library" but "is this
+    *referenced* by a field that renders publicly". An unreferenced
+    library image is unaffected, which is what keeps the fix narrow.
+
+    Every lookup is scoped to this Collective. A reference from another
+    Collective's Pathway must not unlock an image under
+    ``media/{this-slug}/…`` — the key belongs to the Collective in its
+    path, and only that Collective's own surfaces can publish it.
+
+    The fields here are the ones whose images render on Explore or on
+    a public About page:
+
+      * ``Space.cover_image_url`` / ``Space.logo_url`` — the Explore
+        card and the Collective About header.
+      * ``Pathway.cover_image_url`` — the Pathways list and the
+        Pathway About page. This is the one that was reported broken.
+      * ``EventSeries.cover_image_url`` — the Gathering Series cover.
+
+    Deliberately absent, and each for a reason rather than an
+    oversight:
+
+      * ``Event.thumbnail_url`` — ``_authorise_event_thumbnail`` holds
+        that Gathering thumbnails render on member surfaces and not on
+        public Explore pages. Granting them here would contradict the
+        dedicated namespace next door rather than match it.
+      * ``PathwaySection.banner_image_url`` and
+        ``PathwayStep.banner_image_url`` — inside Pathway content,
+        which is entitlement-gated by ``_check_pathway_access``.
+      * Collective Home tile images — ``/spaces/{slug}`` sends a
+        non-member to the About page, so the tiles never render to
+        one.
+
+    Returning ``True`` grants nothing on its own: the caller still
+    applies ``_allow_if_publicly_visible_else_member``, so a cover in
+    a private or inactive Collective stays member-only.
+    """
+    # Free: the Space row is already loaded.
+    if space.cover_image_url == full_url or space.logo_url == full_url:
+        return True
+    pathway_ref = (
+        db.query(Pathway.id)
+        .filter(
+            Pathway.space_id == space.id,
+            Pathway.cover_image_url == full_url,
+        )
+        .first()
+    )
+    if pathway_ref is not None:
+        return True
+    series_ref = (
+        db.query(EventSeries.id)
+        .filter(
+            EventSeries.space_id == space.id,
+            EventSeries.cover_image_url == full_url,
+        )
+        .first()
+    )
+    return series_ref is not None
 
 
 def _require_member_or_manager(
@@ -247,10 +320,12 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
         authenticated user.
       * ``media/{slug}/community/…`` — community post / comment images;
         require active membership in that Space.
-      * ``media/{slug}/…`` (Media Library) — require active membership
-        in that Space. Paid-pathway asset-reference analysis is
-        deliberately NOT applied here; see the launch report §7 for
-        the deferred tightening.
+      * ``media/{slug}/…`` (Media Library) — active membership in that
+        Space, *unless* the key is in use as a cover that renders to
+        non-members, in which case the public rule applies instead.
+        See ``_media_key_is_public_cover``. Paid-pathway
+        asset-reference analysis is deliberately NOT applied here; see
+        the launch report §7 for the deferred tightening.
 
     The Collective is identified by a whole path segment and nothing
     else. There used to be a fallback that read a *trailing* substring:
@@ -271,6 +346,17 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
     Do not reintroduce a fallback here. ``media/{slug}_community/…`` is
     now simply a Media Library key belonging to a Collective whose slug
     happens to end that way, and a 404 if no such Collective exists.
+
+    **Covers are the exception to member-only, because the page is.**
+    ``ImagePickerField`` uploads through
+    ``POST /api/creator/spaces/{slug}/media``, so a cover chosen from
+    the library is stored as a ``media/{slug}/…`` key rather than
+    under ``pathway-covers/``. Routed on its prefix alone it landed in
+    the member-only branch, and a signed-in non-member browsing a
+    public Collective's Pathways list got 403s where the covers should
+    be. The dedicated ``pathway-covers`` namespace has always used the
+    public rule for the same images; this makes the key's *namespace*
+    stop deciding what its *use* already decided.
     """
     parts = file_path.split("/", 3)
     # parts[0] = 'media'; parts[1] = slug (or 'world-guide'); parts[2]
@@ -287,6 +373,15 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
     space = db.query(Space).filter(Space.slug == slug).first()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+
+    # In use as a cover on a surface a non-member can reach? Then the
+    # same rule the dedicated cover namespaces use, which still
+    # requires membership when the Collective is private or inactive.
+    # Everything else in the library stays member-only.
+    if _media_key_is_public_cover(space, f"/api/uploads/{file_path}", db):
+        _allow_if_publicly_visible_else_member(user, space, db)
+        return
+
     _require_member_or_manager(user, space, db)
 
 

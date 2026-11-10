@@ -15,8 +15,9 @@ Two layers:
 Namespaces covered:
   avatars, covers, logos/{slug}, island-artwork/{slug}, pathway-covers,
   event-thumbnails, steps/{step_id}, media/world-guide,
-  media/{slug}/community, media/{slug}, plus default-deny for any
-  unknown prefix.
+  media/{slug}/community, media/{slug} — including the sub-case where
+  a Media Library key is in use as a cover that renders to
+  non-members — plus default-deny for any unknown prefix.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from app.models.platform import (
     CommunityPost,
     ConversationChannel,
     Event,
+    EventSeries,
     Pathway,
     PathwayEntitlement,
     PathwayStatus,
@@ -572,6 +574,311 @@ class TestMediaNamespace:
             lambda: authorize_upload("media/no-such-slug/x.png", s["admin"], db),
             status_code=404,
         )
+
+
+# ---------------------------------------------------------------------------
+# media/… used as a cover — the namespace stops deciding what the use decided
+# ---------------------------------------------------------------------------
+
+
+class TestMediaLibraryCovers:
+    """A library image chosen as a public cover follows the page.
+
+    ``ImagePickerField`` uploads through the Media Library endpoint,
+    so a Pathway cover picked that way is stored as a
+    ``media/{slug}/…`` key rather than under ``pathway-covers/``.
+    Routed on its prefix alone it fell into the member-only branch,
+    and a signed-in non-member browsing a public Collective's
+    Pathways list saw 403s where the covers should be — while the
+    identical image under ``pathway-covers/`` was allowed.
+
+    The grant is narrow in three ways, and there is a test for each:
+    only a key actually *referenced* by a public cover field, only
+    within the Collective whose slug is in the key, and only when
+    that Collective is public and active.
+    """
+
+    @staticmethod
+    def _key(space, name="uuid_cover.png") -> str:
+        return f"media/{space.slug}/{name}"
+
+    @staticmethod
+    def _url(space, name="uuid_cover.png") -> str:
+        return f"/api/uploads/media/{space.slug}/{name}"
+
+    @staticmethod
+    def _pathway(db, space, cover_url, **overrides):
+        pathway = Pathway(
+            id=_uid("pw"),
+            space_id=space.id,
+            slug=_uid("pw"),
+            title="P",
+            status=overrides.pop("status", "active"),
+            pathway_type=PathwayType.guided_experience,
+            position=0,
+            cover_image_url=cover_url,
+            **overrides,
+        )
+        db.add(pathway)
+        db.flush()
+        return pathway
+
+    # -- the reported bug ---------------------------------------------
+
+    def test_a_pathway_cover_in_a_public_space_is_readable_by_a_non_member(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        space = s["space_public"]
+        self._pathway(db, space, self._url(space))
+        _assert_allow(
+            lambda: authorize_upload(self._key(space), s["unrelated"], db),
+        )
+
+    def test_it_matches_what_the_dedicated_cover_namespace_already_allowed(
+        self, db, spaces_and_users,
+    ):
+        """The same image, two namespaces, one answer.
+
+        This is the whole point of the change: which upload button the
+        creator happened to use is not a fact about who may see the
+        cover.
+        """
+        s = spaces_and_users
+        space = s["space_public"]
+        self._pathway(db, space, "/api/uploads/pathway-covers/uuid_c.png")
+        _assert_allow(
+            lambda: authorize_upload(
+                "pathway-covers/uuid_c.png", s["unrelated"], db,
+            ),
+        )
+        other = s["space_public"]
+        self._pathway(db, other, self._url(other, "uuid_b.png"))
+        _assert_allow(
+            lambda: authorize_upload(
+                self._key(other, "uuid_b.png"), s["unrelated"], db,
+            ),
+        )
+
+    # -- still narrow -------------------------------------------------
+
+    def test_an_unrelated_library_image_in_the_same_space_is_still_denied(
+        self, db, spaces_and_users,
+    ):
+        """The control that keeps the fix narrow.
+
+        Being in the library of a public Collective grants nothing.
+        Only the key a cover field actually points at is readable, so
+        a creator's unpublished work in progress stays private even
+        though it sits beside a published cover.
+        """
+        s = spaces_and_users
+        space = s["space_public"]
+        self._pathway(db, space, self._url(space, "uuid_used.png"))
+
+        _assert_allow(
+            lambda: authorize_upload(
+                self._key(space, "uuid_used.png"), s["unrelated"], db,
+            ),
+        )
+        _assert_deny(
+            lambda: authorize_upload(
+                self._key(space, "uuid_never_used.png"), s["unrelated"], db,
+            ),
+        )
+
+    def test_a_cover_in_a_private_space_is_still_member_only(
+        self, db, spaces_and_users,
+    ):
+        """Being a cover is not the grant — being a cover *on a public
+        Collective* is. A private Collective's Pathways list has no
+        non-member audience to serve."""
+        s = spaces_and_users
+        space = s["space_private"]
+        self._pathway(db, space, self._url(space))
+
+        _assert_deny(
+            lambda: authorize_upload(self._key(space), s["unrelated"], db),
+        )
+        _assert_deny(
+            lambda: authorize_upload(self._key(space), s["learner_pub"], db),
+        )
+        # Members of that Collective are unaffected either way.
+        _assert_allow(
+            lambda: authorize_upload(self._key(space), s["learner_priv"], db),
+        )
+        _assert_allow(
+            lambda: authorize_upload(self._key(space), s["owner_private"], db),
+        )
+
+    def test_a_reference_from_another_collective_unlocks_nothing(
+        self, db, spaces_and_users,
+    ):
+        """Cross-Collective isolation.
+
+        The key names the public Collective, but the only Pathway
+        pointing at it belongs to the private one. The lookup is
+        scoped to the Collective in the path, so this is still a
+        denial — otherwise any creator could publish another
+        Collective's library by referencing its URLs.
+        """
+        s = spaces_and_users
+        public, private = s["space_public"], s["space_private"]
+        self._pathway(db, private, self._url(public, "uuid_borrowed.png"))
+
+        _assert_deny(
+            lambda: authorize_upload(
+                self._key(public, "uuid_borrowed.png"), s["unrelated"], db,
+            ),
+        )
+
+    def test_a_draft_pathways_cover_follows_the_collective_not_the_draft(
+        self, db, spaces_and_users,
+    ):
+        """Named rather than left to be discovered.
+
+        A draft Pathway's cover is readable on a public Collective,
+        because this rule asks about the Collective's visibility and
+        not the Pathway's status — exactly as ``_authorise_pathway_cover``
+        has always behaved for the same image under its own namespace.
+        What a draft protects is its *content*, which is gated by
+        ``_check_pathway_access`` on the ``steps/`` namespace.
+        """
+        s = spaces_and_users
+        space = s["space_public"]
+        self._pathway(db, space, self._url(space, "uuid_draft.png"), status="draft")
+        _assert_allow(
+            lambda: authorize_upload(
+                self._key(space, "uuid_draft.png"), s["unrelated"], db,
+            ),
+        )
+
+    # -- the other public cover fields --------------------------------
+
+    def test_a_gathering_series_cover_follows_the_same_rule(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        public, private = s["space_public"], s["space_private"]
+
+        def _series(space, url):
+            row = EventSeries(
+                id=_uid("es"),
+                space_id=space.id,
+                slug=_uid("series"),
+                title="A Series",
+                starts_at=datetime.utcnow() + timedelta(days=7),
+                cover_image_url=url,
+            )
+            db.add(row)
+            db.flush()
+
+        _series(public, self._url(public, "uuid_series.png"))
+        _series(private, self._url(private, "uuid_series.png"))
+
+        _assert_allow(
+            lambda: authorize_upload(
+                self._key(public, "uuid_series.png"), s["unrelated"], db,
+            ),
+        )
+        _assert_deny(
+            lambda: authorize_upload(
+                self._key(private, "uuid_series.png"), s["unrelated"], db,
+            ),
+        )
+
+    def test_the_collectives_own_cover_and_logo_follow_the_same_rule(
+        self, db, spaces_and_users,
+    ):
+        """Both render on the Explore card and the About header, and
+        both can be set from the library."""
+        s = spaces_and_users
+        public, private = s["space_public"], s["space_private"]
+
+        public.cover_image_url = self._url(public, "uuid_banner.png")
+        public.logo_url = self._url(public, "uuid_logo.png")
+        private.cover_image_url = self._url(private, "uuid_banner.png")
+        db.flush()
+
+        for name in ("uuid_banner.png", "uuid_logo.png"):
+            _assert_allow(
+                lambda n=name: authorize_upload(
+                    self._key(public, n), s["unrelated"], db,
+                ),
+            )
+        _assert_deny(
+            lambda: authorize_upload(
+                self._key(private, "uuid_banner.png"), s["unrelated"], db,
+            ),
+        )
+
+    def test_a_gathering_thumbnail_is_not_treated_as_a_public_cover(
+        self, db, spaces_and_users,
+    ):
+        """Deliberately excluded, so the two namespaces agree.
+
+        ``_authorise_event_thumbnail`` holds that Gathering thumbnails
+        render on member surfaces rather than public Explore pages. A
+        library image used as one must follow that rule, not the cover
+        rule — otherwise the fix would quietly widen a different
+        namespace's decision.
+        """
+        s = spaces_and_users
+        space = s["space_public"]
+        url = self._url(space, "uuid_thumb.png")
+        now = datetime.utcnow()
+        db.add(Event(
+            id=_uid("evt"),
+            space_id=space.id,
+            title="A Gathering",
+            description="",
+            starts_at=now,
+            ends_at=now + timedelta(hours=1),
+            is_published=True,
+            thumbnail_url=url,
+        ))
+        db.flush()
+
+        _assert_deny(
+            lambda: authorize_upload(
+                self._key(space, "uuid_thumb.png"), s["unrelated"], db,
+            ),
+        )
+        # And the dedicated namespace for the same image agrees.
+        db.add(Event(
+            id=_uid("evt"),
+            space_id=space.id,
+            title="Another Gathering",
+            description="",
+            starts_at=now,
+            ends_at=now + timedelta(hours=1),
+            is_published=True,
+            thumbnail_url="/api/uploads/event-thumbnails/uuid_t.png",
+        ))
+        db.flush()
+        _assert_deny(
+            lambda: authorize_upload(
+                "event-thumbnails/uuid_t.png", s["unrelated"], db,
+            ),
+        )
+
+    def test_an_anonymous_caller_is_refused_before_any_of_this(self):
+        """Worth stating, because it bounds what this change fixes.
+
+        ``serve_upload`` depends on ``get_current_user``, so every
+        ``/api/uploads/*`` request from a logged-out visitor is a 401
+        and never reaches an authoriser. This change helps the
+        signed-in non-member — the member of another Collective
+        browsing Explore — and not the logged-out reader of a public
+        About page, whose covers were already blocked under
+        ``pathway-covers/`` for the same reason.
+        """
+        import inspect
+
+        from app.uploads import routes as upload_routes
+
+        signature = inspect.signature(upload_routes.serve_upload)
+        assert "current_user" in signature.parameters
 
 
 # ---------------------------------------------------------------------------
