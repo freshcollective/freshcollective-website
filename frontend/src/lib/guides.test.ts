@@ -650,44 +650,126 @@ describe('the /guides header is the shared one, with optional artwork', () => {
     assert.match(src, /linear-gradient\(90deg, #38A09E 0%, #FFFFFF 55%\)/)
   })
 
-  test('the overlay holds the dark value across the whole text band', () => {
-    // The trick that makes the contrast a guarantee. A straight ramp
-    // from 0.88 down towards 0.62 crosses the 0.823 that white needs
-    // for 4.5:1 at about 8.8% of the card's height — long before the
-    // heading ends. So the dark value is *held* to a fixed 200px
-    // from the top, which covers the heading and a two-line subtitle
-    // at every width however the copy wraps. A percentage cannot
-    // promise that; the phone is where it would break first.
+  test('the overlay plateau is held in pixels, not a percentage', () => {
+    // The part worth keeping from the darker version. A proportional
+    // stop moves with the card, but the text does not: on a phone the
+    // subtitle wraps to two lines and the words reach further down a
+    // shorter card than they do on a desktop. Pixels from the top
+    // cover the copy at every width; a percentage is only ever right
+    // at one of them.
     const src = readFileSync(HERO, 'utf8')
     const pxStops = [...src.matchAll(/rgba\(7,24,36,(0?\.?\d+)\) (\d+)px/g)]
       .map((m) => ({ alpha: Number(m[1]), at: Number(m[2]) }))
+    assert.ok(pxStops.length >= 2, 'the text band should be held in px')
     assert.ok(
-      pxStops.length >= 2,
-      'the text band should be held in px, not percentages',
+      Math.max(...pxStops.map((x) => x.at)) >= 200,
+      'the held band should reach past a two-line subtitle',
     )
-    for (const { alpha, at } of pxStops) {
+  })
+
+  test('the overlay is light enough to let the artwork through', () => {
+    // Tuned against the real sunset image, not an arbitrary one. The
+    // measured contrast behind the actual glyphs is 6.2:1 at 1440px,
+    // 6.1:1 at 768 and 6.3:1 at 390 — so the wash can stay thin
+    // enough to show the sky and the water. A plateau above ~0.7
+    // would be the near-solid navy this replaced.
+    const src = readFileSync(HERO, 'utf8')
+    const alphas = [...src.matchAll(/rgba\(7,24,36,(0\.\d+)\)/g)]
+      .map((m) => Number(m[1]))
+    assert.ok(alphas.length >= 4, 'expected a multi-stop overlay')
+    assert.ok(
+      Math.max(...alphas) <= 0.7,
+      `overlay reaches ${Math.max(...alphas)} — too dark to show the image`,
+    )
+    // …and thinner still at the bottom, where the islands are.
+    assert.match(src, /rgba\(7,24,36,0\.10\) 100%/)
+  })
+
+  test('the plateau is not lighter than the measured floor', () => {
+    // 0.45 put two of the three widths at 4.4:1 on this artwork —
+    // the brightest patch a letter sits on measures L≈0.334 — so
+    // 0.50 is a floor rather than a preference. Pinned because the
+    // temptation when someone says "lighter" is to take it below
+    // the line, which is invisible until someone cannot read it.
+    const src = readFileSync(HERO, 'utf8')
+    const plateau = [...src.matchAll(/rgba\(7,24,36,(0\.\d+)\) \d+px/g)]
+      .map((m) => Number(m[1]))
+    assert.ok(plateau.length >= 2)
+    assert.ok(
+      Math.max(...plateau) >= 0.5,
+      `plateau is ${Math.max(...plateau)} — below the measured 4.5:1 floor`,
+    )
+  })
+
+  test('legibility comes from a text shadow, not from more darkness', () => {
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /textShadow: '0 2px 12px rgba\(7,24,36,0\.6\)'/)
+    // Applied to both the heading and the supporting copy, and only
+    // when there is artwork behind them. Asserted by where it is
+    // spread rather than by counting references, which would break
+    // on any harmless refactor.
+    assert.match(src, /const artTextShadow = hasArt/)
+    assert.match(src, /letterSpacing: '-0\.03em',\s*\n\s*\.\.\.artTextShadow,/)
+    assert.match(src, /color: '#FFFFFF', \.\.\.artTextShadow \}/)
+  })
+
+  test('the crop keeps the sky and the islands both in frame', () => {
+    // 45% down at every width. Horizontally it moves: a phone card
+    // is nearly square, so ``cover`` shows only the middle ~60% of a
+    // wide image — on this artwork that is the islands with the sun
+    // cropped off the right. 70% brings it back; from ``sm`` up the
+    // card is wide enough that centring already includes it.
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /\[object-position:70%_45%\]/)
+    assert.match(src, /sm:\[object-position:center_45%\]/)
+  })
+
+  test('the Guides rule is gold, and only the Guides rule', () => {
+    // Value-for-value from ClosingInvitation rather than
+    // approximated: two gold hairlines that are nearly the same gold
+    // look like a mistake nobody would ever find.
+    const hero = readFileSync(HERO, 'utf8')
+    const closing = readFileSync(
+      'src/components/marketing/ClosingInvitation.tsx', 'utf8',
+    )
+    const GOLD = /rgba\(212, 176, 72, 0\.85\) 0%, rgba\(212, 176, 72, 0\.30\) 100%/
+    assert.match(closing, GOLD, 'the homepage hairline moved')
+    assert.match(hero, GOLD, 'PageHero should reuse that exact gold')
+
+    assert.match(hero, /accentTone = 'teal'/)
+    assert.match(readFileSync(PAGE, 'utf8'), /accentTone="gold"/)
+    for (const file of [
+      'src/app/discover-places/page.tsx',
+      'src/app/ways-to-connect/page.tsx',
+    ]) {
       assert.ok(
-        alpha >= 0.823,
-        `overlay is ${alpha} at ${at}px — below the 4.5:1 floor for white`,
+        !/accentTone=/.test(readFileSync(file, 'utf8')),
+        `${file} should keep its teal rule without changing`,
       )
     }
-    const held = Math.max(...pxStops.map((s) => s.at))
-    assert.ok(held >= 180, `the dark band only reaches ${held}px`)
   })
 
-  test('below the text it fades away so the artwork is seen', () => {
-    // The point of the image: the lower part of the card is where it
-    // shows, which is why nothing sits there and why the card has a
-    // minimum height to reserve the space.
+  test('the card is short enough not to be mostly empty water', () => {
     const src = readFileSync(HERO, 'utf8')
-    assert.match(src, /rgba\(7,24,36,0\.00\) 100%/)
-    assert.match(src, /min-h-\[400px\]/)
-    assert.match(src, /pb-24/)
+    assert.match(src, /min-h-\[300px\]/)
+    assert.match(src, /sm:min-h-\[340px\]/)
   })
 
-  test('the artwork is anchored low, where it is on show', () => {
-    const src = readFileSync(HERO, 'utf8')
-    assert.match(src, /objectPosition: 'center 75%'/)
+  test('/guides centres its header; every other page stays left', () => {
+    const hero = readFileSync(HERO, 'utf8')
+    assert.match(hero, /align = 'left'/)
+    assert.match(hero, /const centred = align === 'center'/)
+    assert.match(readFileSync(PAGE, 'utf8'), /align="center"/)
+    // The six existing consumers pass nothing and are unchanged.
+    for (const file of [
+      'src/app/discover-places/page.tsx',
+      'src/app/ways-to-connect/page.tsx',
+    ]) {
+      assert.ok(
+        !/align=/.test(readFileSync(file, 'utf8')),
+        `${file} should not have had to change`,
+      )
+    }
   })
 
   test('the header image is only ever a guide-images path', () => {

@@ -122,6 +122,8 @@ export default async function GuidesIndexPage() {
           title="Guides"
           supportingCopy={GUIDES_SUBTITLE}
           bandBackground="#FFFFFF"
+          align="center"
+          accentTone="gold"
           backgroundImage={
             header_image_url
               ? { url: header_image_url, alt: header_image_alt ?? '' }

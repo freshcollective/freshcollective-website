@@ -76,6 +76,23 @@ interface Props {
   backgroundImage?: BackgroundImage | null
   /** The band behind the card. Defaults to the warm off-white. */
   bandBackground?: string
+  /**
+   * Horizontal alignment of the rule, heading and supporting copy.
+   *
+   * Left by default, which is what the member destinations have
+   * always been. /guides centres, matching its mockup.
+   */
+  align?: 'left' | 'center'
+  /**
+   * The colour of the thin rule above the heading.
+   *
+   * Teal by default — it is the platform accent and what every
+   * member destination has always used. /guides takes gold, the same
+   * hairline ``ClosingInvitation`` draws at the foot of the homepage,
+   * so the editorial surfaces rhyme with each other rather than with
+   * the app.
+   */
+  accentTone?: 'teal' | 'gold'
 }
 
 export default function PageHero({
@@ -85,20 +102,40 @@ export default function PageHero({
   children,
   backgroundImage = null,
   bandBackground = '#FDFCF9',
+  align = 'left',
+  accentTone = 'teal',
 }: Props) {
+  // Copied value-for-value from ``ClosingInvitation`` rather than
+  // approximated: two gold hairlines that are nearly the same gold
+  // look like a mistake, and nobody would ever find it.
+  const accentGradient = accentTone === 'gold'
+    ? 'linear-gradient(90deg, rgba(212, 176, 72, 0.85) 0%, rgba(212, 176, 72, 0.30) 100%)'
+    : 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.2) 100%)'
   const hasArt = backgroundImage !== null && backgroundImage.url !== ''
+  const centred = align === 'center'
+  /**
+   * Carried by the words rather than by darkness.
+   *
+   * The artwork is the point of the header, so the overlay stays
+   * light enough to show it and the type earns its legibility from a
+   * soft shadow instead. The shadow is additional to the measured
+   * contrast, never a substitute — the composited background behind
+   * the glyphs still has to clear 4.5:1 on its own.
+   */
+  const artTextShadow = hasArt
+    ? { textShadow: '0 2px 12px rgba(7,24,36,0.6)' }
+    : {}
   return (
     <div className="py-8 sm:py-10" style={{ background: bandBackground }}>
       <Container>
         <div
           className={
             hasArt
-              // Text at the top, generous room beneath it: the
-              // bottom of the card is where the artwork is meant to
-              // be seen, so it needs space that nothing sits on. The
-              // min-height is what reserves that space when the copy
-              // is short.
-              ? 'relative min-h-[400px] overflow-hidden rounded-2xl px-8 pb-24 pt-10 sm:min-h-[440px] sm:px-10 sm:pb-32 sm:pt-12'
+              // Short enough not to be mostly empty sea, tall enough
+              // that the islands sit below the words rather than
+              // behind them. The copy lands in the upper middle and
+              // the artwork carries the rest.
+              ? 'relative min-h-[300px] overflow-hidden rounded-2xl px-8 pb-20 pt-10 sm:min-h-[340px] sm:px-10 sm:pb-24 sm:pt-12'
               : 'relative overflow-hidden rounded-2xl px-8 py-10 sm:px-10 sm:py-12'
           }
           style={{
@@ -115,48 +152,68 @@ export default function PageHero({
                 src={backgroundImage!.url}
                 alt={backgroundImage!.alt}
                 {...(backgroundImage!.alt ? {} : { 'aria-hidden': true })}
-                className="absolute inset-0 h-full w-full object-cover"
-                // Anchored low: the part of the artwork on show is
-                // the bottom of the card, so that is the part worth
-                // framing.
-                style={{ objectPosition: 'center 75%' }}
+                // 45% down keeps the golden sky and the islands both
+                // in frame; anchoring lower cropped the sunset out
+                // entirely, which is the one thing the artwork is
+                // there for.
+                //
+                // Horizontally it moves with the viewport. A phone
+                // card is nearly square, so ``cover`` shows only the
+                // middle ~60% of a wide image — and on this artwork
+                // that middle is the islands with the sun cropped
+                // off the right. 70% brings the sun back into frame
+                // on a narrow screen; from ``sm`` up the card is wide
+                // enough that centring already includes it.
+                className="absolute inset-0 h-full w-full object-cover [object-position:70%_45%] sm:[object-position:center_45%]"
+                
               />
-              {/* Darkest behind the words, fading out towards the
-                  bottom so the artwork is seen where nothing sits on
-                  it.
+              {/* Light enough to let the sunset through, dense
+                  enough behind the words.
 
-                  The second stop is in **pixels, not a percentage**,
-                  and that is the whole trick. A straight ramp from
-                  0.88 to 0.62 over the top 40% of the card crosses
-                  the 0.823 that white needs for 4.5:1 at about 8.8%
-                  of the height — long before the heading ends — so
-                  the dark value has to be *held* across the text
-                  rather than ramped through it. 200px covers the
-                  heading and a two-line subtitle at every width,
-                  however the copy wraps, which a percentage cannot
-                  promise. The fade below it is proportional, so the
-                  curve still scales with the card. */}
+                  Three jobs in one ramp. It stays thin at the very
+                  top so the sky reads; it holds a plateau across the
+                  text band; and it thins again towards the bottom so
+                  the islands and the water are seen plainly.
+
+                  0.50 across the text is a floor, not a preference.
+                  Measured behind the glyphs on this artwork, the
+                  brightest patch any letter sits on is L≈0.334: 0.45
+                  put two of the three widths at 4.4:1, and 0.48 only
+                  just clears the line. 0.50 leaves a little margin
+                  for antialiasing without greying the sky out again.
+                  A different image moves that number — re-measure
+                  rather than assuming this one carries over.
+
+                  The plateau is measured in **pixels, not a
+                  percentage**, and that is the part worth keeping. A
+                  proportional stop moves with the card, but the text
+                  does not — on a phone the subtitle wraps to two
+                  lines and the words reach further down a shorter
+                  card than they do on a desktop. Pixels from the top
+                  cover the copy at every width however it wraps; a
+                  percentage is only ever right at one of them. */}
               <div
                 aria-hidden="true"
                 className="absolute inset-0"
                 style={{
                   background:
-                    'linear-gradient(180deg, rgba(7,24,36,0.88) 0px, '
-                    + 'rgba(7,24,36,0.86) 200px, rgba(7,24,36,0.62) 58%, '
-                    + 'rgba(7,24,36,0.15) 78%, rgba(7,24,36,0.00) 100%)',
+                    'linear-gradient(180deg, rgba(7,24,36,0.28) 0px, '
+                    + 'rgba(7,24,36,0.50) 56px, rgba(7,24,36,0.50) 210px, '
+                    + 'rgba(7,24,36,0.28) 82%, rgba(7,24,36,0.10) 100%)',
                 }}
               />
             </>
           )}
 
-          <div className="relative">
+          <div className={centred ? 'relative text-center' : 'relative'}>
           {accentLine && (
             <div
-              className="mb-5 h-[2px] w-8 rounded-full"
-              style={{
-                background:
-                  'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.2) 100%)',
-              }}
+              className={
+                centred
+                  ? 'mx-auto mb-5 h-[2px] w-8 rounded-full'
+                  : 'mb-5 h-[2px] w-8 rounded-full'
+              }
+              style={{ background: accentGradient }}
               aria-hidden="true"
             />
           )}
@@ -167,6 +224,7 @@ export default function PageHero({
               fontSize: 'clamp(2rem, 4vw, 3rem)',
               lineHeight: '1.1',
               letterSpacing: '-0.03em',
+              ...artTextShadow,
             }}
           >
             {/* The gradient only on plain navy. Over artwork it is
@@ -191,8 +249,12 @@ export default function PageHero({
 
           {supportingCopy && (
             <p
-              className="max-w-[560px] text-[15px] leading-[1.78]"
-              style={{ color: '#FFFFFF' }}
+              className={
+                centred
+                  ? 'mx-auto max-w-[560px] text-[15px] leading-[1.78]'
+                  : 'max-w-[560px] text-[15px] leading-[1.78]'
+              }
+              style={{ color: '#FFFFFF', ...artTextShadow }}
             >
               {supportingCopy}
             </p>
