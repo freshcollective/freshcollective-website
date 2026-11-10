@@ -69,7 +69,7 @@ from app.core.database import get_db
 from app.core.storage import UPLOAD_DIR
 from app.models.user import User
 from app.services.offering_files import OFFERING_FILES_PREFIX
-from app.uploads.authorization import authorize_upload, guide_image_is_published
+from app.uploads.authorization import authorize_upload, guide_image_is_public
 
 uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -297,11 +297,11 @@ def serve_guide_image(
         that collision unreachable rather than unlikely.
 
     **Published only, plus administrators.** A key is readable when
-    some *published* Guide points at it — as its hero, or from inside
-    its sanitised body. A draft's artwork is not public yet, and
-    neither is an image uploaded and then never used. Administrators
-    are allowed either way, which is what makes the draft preview
-    work.
+    something already public points at it: a *published* Guide's hero
+    or body, or the Guides index header image. A draft's artwork is
+    not public yet, and neither is an image uploaded and then never
+    used. Administrators are allowed either way, which is what makes
+    the draft preview work.
 
     Refusals are a flat 404, the same answer a key that was never
     uploaded gets, so the route cannot be used to learn that a draft
@@ -313,7 +313,7 @@ def serve_guide_image(
     _reject_traversal(file_path)
     key = f"guide-images/{file_path}"
     is_admin = current_user is not None and current_user.role == "admin"
-    if not is_admin and not guide_image_is_published(key, db):
+    if not is_admin and not guide_image_is_public(key, db):
         raise HTTPException(status_code=404, detail="File not found.")
     if settings.is_r2_enabled:
         # Presigned rather than a public-origin redirect: the bytes

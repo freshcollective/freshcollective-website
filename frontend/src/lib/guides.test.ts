@@ -581,6 +581,120 @@ describe('a Guide ends the way the homepage ends', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 4e · The index header
+// ---------------------------------------------------------------------------
+
+describe('the /guides header is the shared one, with optional artwork', () => {
+  const PAGE = 'src/app/guides/page.tsx'
+  const HERO = 'src/components/layout/PageHero.tsx'
+
+  test('it reuses PageHero rather than restyling it', () => {
+    // Explore Collectives, Discover Places and Guides should stay one
+    // family. A second navy card maintained separately drifts — the
+    // closing band already did exactly that.
+    const src = readFileSync(PAGE, 'utf8')
+    assert.match(src, /from '@\/components\/layout\/PageHero'/)
+    assert.match(src, /<PageHero/)
+  })
+
+  test('the page declares no heading of its own', () => {
+    // PageHero renders the h1. A second one here would be two h1s on
+    // a page that is meant to have exactly one.
+    const code = readFileSync(PAGE, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '')
+    assert.ok(!/<h1/.test(code), 'the page should not render its own h1')
+  })
+
+  test('PageHero still renders exactly one h1', () => {
+    const src = readFileSync(HERO, 'utf8')
+    assert.equal((src.match(/<h1/g) ?? []).length, 1)
+  })
+
+  test('the subtitle is the new line, in one place', () => {
+    const src = readFileSync(PAGE, 'utf8')
+    assert.match(
+      src,
+      /Ideas, stories and how-tos for anyone who brings people together\./,
+    )
+    // The old line is gone from the page and from its metadata.
+    assert.ok(!/Practical, honest guidance/.test(src))
+  })
+
+  test('the meta description is built from that same line', () => {
+    // One constant for the visible subtitle and the description, so
+    // they cannot drift — which is how the previous pair ended up
+    // being two different sentences.
+    const src = readFileSync(PAGE, 'utf8')
+    assert.match(src, /const GUIDES_SUBTITLE =/)
+    assert.match(src, /description: `\$\{GUIDES_SUBTITLE\}/)
+    assert.match(src, /description: GUIDES_SUBTITLE/)
+  })
+
+  test('artwork is optional and off by default', () => {
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /backgroundImage\?: BackgroundImage \| null/)
+    assert.match(src, /backgroundImage = null/)
+    // The six existing consumers pass nothing, so their heroes are
+    // byte-identical to before.
+    assert.match(src, /bandBackground = '#FDFCF9'/)
+  })
+
+  test('the heading drops its gradient only when there is artwork', () => {
+    // The measured reason: the gradient's teal end (#38A09E) needs a
+    // ~98% navy overlay to hold 4.5:1 over an arbitrary image, which
+    // is solid navy with extra steps. White needs ~82%, which leaves
+    // the artwork visible. So the two are mutually exclusive.
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /hasArt\s*\?\s*\{ display: 'inline-block', color: '#FFFFFF' \}/)
+    assert.match(src, /linear-gradient\(90deg, #38A09E 0%, #FFFFFF 55%\)/)
+  })
+
+  test('the overlay never thins below the contrast floor at the text', () => {
+    // 0.55 at the very top is above the artwork; by 28% — before the
+    // accent rule, let alone the heading — it is 0.84, above the
+    // 0.823 that white needs against a worst-case white image.
+    const src = readFileSync(HERO, 'utf8')
+    const stops = [...src.matchAll(/rgba\(7,24,36,(0\.\d+)\) (\d+)%/g)]
+      .map((m) => ({ alpha: Number(m[1]), at: Number(m[2]) }))
+    assert.ok(stops.length >= 3, 'expected a multi-stop overlay')
+    for (const { alpha, at } of stops) {
+      if (at >= 28) {
+        assert.ok(
+          alpha >= 0.823,
+          `overlay is ${alpha} at ${at}% — below the 4.5:1 floor for white`,
+        )
+      }
+    }
+  })
+
+  test('the header image is only ever a guide-images path', () => {
+    // Anything else is refused by serve_guide_image for a logged-out
+    // visitor, so it would save cleanly and then be a broken panel on
+    // the one page it exists for. Enforced on the API; asserted here
+    // so the admin form and the API cannot drift apart about it.
+    const admin = readFileSync('src/app/admin/guides/page.tsx', 'utf8')
+    assert.match(admin, /\/api\/admin\/guides\/images/)
+  })
+})
+
+describe('the selected category pill passes contrast', () => {
+  test('it is teal-700, not navy and not teal-500', () => {
+    // White on teal-500 (#38A09E) measures 2.6:1 and fails AA. One
+    // step down to teal-700 (#246B6A) clears 5.4:1 and reads the same
+    // in context — the same substitution /tnlbook123 documents.
+    const src = readFileSync('src/app/guides/GuidesIndexClient.tsx', 'utf8')
+    assert.match(src, /\? 'rounded-full bg-teal-700 /)
+    assert.ok(!/\? 'rounded-full bg-navy-950 /.test(src))
+  })
+
+  test('the pills still say which one is pressed', () => {
+    const src = readFileSync('src/app/guides/GuidesIndexClient.tsx', 'utf8')
+    assert.match(src, /aria-pressed=\{on\}/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 5 · Labels
 // ---------------------------------------------------------------------------
 

@@ -127,10 +127,16 @@ class Guide(Base):
 class GuideSettings(Base):
     """One row, ever — see the CHECK.
 
-    Holds the Creator Starter Kit link and nothing else today. NULL
-    means the Starter Kit band on ``/guides`` and the card in every
-    Guide's sidebar do not render at all, which is the shipped state
-    until the kit exists.
+    Two settings today, both optional and both empty by default.
+
+    ``starter_kit_url`` — NULL means the Starter Kit band on
+    ``/guides`` and the card in every Guide's sidebar do not render at
+    all, which is the shipped state until the kit exists.
+
+    ``header_image_url`` — NULL means the /guides header is plain
+    navy. When set it sits behind the header card's content under a
+    navy gradient. Paired with alt text by a CHECK, because the form
+    is a UX constraint and a direct HTTP call bypasses it.
     """
 
     __tablename__ = "guide_settings"
@@ -139,6 +145,8 @@ class GuideSettings(Base):
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True)
     starter_kit_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    header_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    header_image_alt: Mapped[str | None] = mapped_column(String(300), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False,
         server_default=func.now(), onupdate=func.now(),
@@ -146,4 +154,10 @@ class GuideSettings(Base):
 
     __table_args__ = (
         CheckConstraint("id = 'singleton'", name="ck_guide_settings_singleton"),
+        CheckConstraint(
+            "header_image_url IS NULL "
+            "OR (header_image_alt IS NOT NULL "
+            "    AND length(trim(header_image_alt)) > 0)",
+            name="ck_guide_settings_header_alt_present",
+        ),
     )

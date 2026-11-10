@@ -49,7 +49,11 @@ from app.models.user import User
 # answer that drift apart. The function is pure and carries no World
 # Guide semantics.
 from app.models.world_guide import estimate_reading_time_minutes
-from app.services.guide_body import has_unservable_image, sanitize_guide_body
+from app.services.guide_body import (
+    GUIDE_IMAGE_PREFIX,
+    has_unservable_image,
+    sanitize_guide_body,
+)
 from app.services.rich_text import rich_text_to_plain
 
 router = APIRouter(prefix="/api/admin/guides", tags=["guides"])
@@ -165,6 +169,38 @@ def _validate_http_url(value: str | None, *, field: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _settings_read(row: GuideSettings) -> GuideSettingsRead:
+    return GuideSettingsRead(
+        starter_kit_url=row.starter_kit_url,
+        header_image_url=row.header_image_url,
+        header_image_alt=row.header_image_alt,
+        updated_at=row.updated_at,
+    )
+
+
+def _validate_guide_image_url(value: str | None) -> str | None:
+    """A Guide image, or nothing.
+
+    Constrained to the ``guide-images`` prefix rather than accepting
+    any URL. That prefix is the only one ``serve_guide_image`` will
+    hand to a logged-out visitor, so a header image stored anywhere
+    else would save cleanly and then be a broken image on the one
+    page it exists for.
+    """
+    cleaned = _blank_to_none(value)
+    if cleaned is None:
+        return None
+    if not cleaned.startswith(f"/api/uploads/{GUIDE_IMAGE_PREFIX}/"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The header image must be uploaded here — a link to "
+                "anywhere else cannot be shown to a logged-out visitor."
+            ),
+        )
+    return cleaned
+
+
 def _settings_row(db: Session) -> GuideSettings:
     """The one settings row, created if migration 187's seed is gone."""
     row = (
@@ -184,10 +220,7 @@ def get_settings(
     _: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> GuideSettingsRead:
-    row = _settings_row(db)
-    return GuideSettingsRead(
-        starter_kit_url=row.starter_kit_url, updated_at=row.updated_at,
-    )
+    return _settings_read(_settings_row(db))
 
 
 @router.put("/settings", response_model=GuideSettingsRead)
@@ -203,15 +236,35 @@ def update_settings(
     sidebar are taken back down.
     """
     row = _settings_row(db)
-    row.starter_kit_url = _validate_http_url(
-        body.starter_kit_url, field="starter_kit_url",
-    )
+    fields = body.model_dump(exclude_unset=True)
+
+    if "starter_kit_url" in fields:
+        row.starter_kit_url = _validate_http_url(
+            fields["starter_kit_url"], field="starter_kit_url",
+        )
+    if "header_image_url" in fields:
+        row.header_image_url = _validate_guide_image_url(
+            fields["header_image_url"],
+        )
+    if "header_image_alt" in fields:
+        row.header_image_alt = _blank_to_none(fields["header_image_alt"])
+
+    # Enforced by a CHECK too; raised here so the admin reads a
+    # sentence rather than an IntegrityError.
+    if row.header_image_url and not (row.header_image_alt or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="A header image needs alt text describing it.",
+        )
+    if not row.header_image_url:
+        # Clearing the image clears its description with it, rather
+        # than leaving a stale sentence behind for the next image.
+        row.header_image_alt = None
+
     row.updated_at = _now()
     db.commit()
     db.refresh(row)
-    return GuideSettingsRead(
-        starter_kit_url=row.starter_kit_url, updated_at=row.updated_at,
-    )
+    return _settings_read(row)
 
 
 # ---------------------------------------------------------------------------
@@ -228,18 +281,6 @@ def update_settings(
 #: list grew one: an SVG is a document that can carry script, and
 #: these render on public marketing pages rather than behind a login.
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
-
-#: Guide images get their own storage prefix and their own public read
-#: route (``serve_guide_image``). They used to go through
-#: ``save_media_file(space_slug="guides")``, which produced
-#: ``media/guides/…`` — a key the uploads authoriser reads as
-#: "the Asset Library of a Collective slugged *guides*". There is no
-#: such Collective, so every Guide image 404'd for everyone including
-#: administrators; and had anyone ever registered that slug, Guide
-#: artwork would have quietly fallen under their Collective's
-#: membership rules.
-GUIDE_IMAGE_PREFIX = "guide-images"
-
 
 @router.post("/images", status_code=201)
 async def upload_image(

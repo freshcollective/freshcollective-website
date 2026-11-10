@@ -155,18 +155,26 @@ class GuideFeature(BaseModel):
 
 class GuideSettingsRead(BaseModel):
     starter_kit_url: str | None
+    header_image_url: str | None
+    header_image_alt: str | None
     updated_at: datetime
 
 
 class GuideSettingsUpdate(BaseModel):
-    """The Creator Starter Kit link, or nothing.
+    """The Guides-wide settings. Every field optional, every field
+    clearable.
 
     An empty string is accepted and stored as ``None`` — clearing a
     text field by selecting its contents and deleting them is how a
     person clears a text field, and it should not be an error.
+
+    Both settings are sent together because the admin panel saves
+    them together; a field left out of the payload is left alone.
     """
 
     starter_kit_url: str | None = Field(default=None, max_length=2048)
+    header_image_url: str | None = Field(default=None, max_length=2048)
+    header_image_alt: str | None = Field(default=None, max_length=300)
 
 
 __all__ = [

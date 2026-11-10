@@ -63,7 +63,7 @@ from app.models.platform import (
     Space,
     SpaceMembership,
 )
-from app.models.guide import Guide
+from app.models.guide import Guide, GuideSettings
 from app.models.offering import (
     Offering,
     OfferingEntitlement,
@@ -600,8 +600,8 @@ def _authorise_offering_cover(user: User, file_path: str, db: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def guide_image_is_published(key: str, db: Session) -> bool:
-    """Does some *published* Guide point at this image?
+def guide_image_is_public(key: str, db: Session) -> bool:
+    """Is this image published somewhere a stranger can already see?
 
     Lives here with the other read rules even though the
     ``guide-images`` route answers for itself and never reaches
@@ -609,11 +609,18 @@ def guide_image_is_published(key: str, db: Session) -> bool:
     job, and splitting one namespace's rule into the route handler is
     how the matrix stops being readable in one place.
 
-    Two places a Guide can reference an image, and both count:
+    Three places, and all of them count:
 
-      * ``hero_image_url`` — an exact column match;
-      * the body, where an inline image is an ``<img src>`` inside
-        sanitised HTML, so the test is substring containment.
+      * a published Guide's ``hero_image_url`` — an exact column
+        match;
+      * a published Guide's body, where an inline image is an
+        ``<img src>`` inside sanitised HTML, so the test is substring
+        containment;
+      * the Guides index header image in ``guide_settings``, which
+        belongs to no Guide at all. It is the one reference that is
+        not a Guide, and leaving it out is how the header image would
+        have rendered for administrators and 404'd for everybody the
+        page is written for.
 
     ``strpos`` rather than ``LIKE``: stored filenames are
     ``{uuid}_{name}`` and ``_`` is a ``LIKE`` single-character
@@ -625,7 +632,7 @@ def guide_image_is_published(key: str, db: Session) -> bool:
     the Guide is published.
     """
     url = f"/api/uploads/{key}"
-    row = (
+    guide_row = (
         db.query(Guide.id)
         .filter(
             Guide.status == "published",
@@ -636,7 +643,17 @@ def guide_image_is_published(key: str, db: Session) -> bool:
         )
         .first()
     )
-    return row is not None
+    if guide_row is not None:
+        return True
+    settings_row = (
+        db.query(GuideSettings.id)
+        .filter(
+            GuideSettings.id == GuideSettings.SINGLETON_ID,
+            GuideSettings.header_image_url == url,
+        )
+        .first()
+    )
+    return settings_row is not None
 
 
 # ---------------------------------------------------------------------------
@@ -813,4 +830,4 @@ def authorize_upload(file_path: str, user: User | None, db: Session) -> bool:
     return False
 
 
-__all__ = ["authorize_upload", "guide_image_is_published"]
+__all__ = ["authorize_upload", "guide_image_is_public"]

@@ -61,7 +61,11 @@ export default function GuidesIndexClient({ guides }: { guides: Card[] }) {
               onClick={() => setActive(slug)}
               className={
                 on
-                  ? 'rounded-full bg-navy-950 px-5 py-2.5 text-[14.5px] font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2'
+                  // teal-700 (#246B6A) rather than teal-500: white on
+                  // teal-500 measures 2.6:1 and fails, where this
+                  // clears 5.4:1. The same step down /tnlbook123 uses
+                  // for its buttons, and for the same reason.
+                  ? 'rounded-full bg-teal-700 px-5 py-2.5 text-[14.5px] font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2'
                   : 'rounded-full border border-navy-100 bg-white px-5 py-2.5 text-[14.5px] font-medium text-navy-700 transition-colors hover:border-navy-200 hover:text-navy-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2'
               }
             >

@@ -53,13 +53,15 @@ class GuideArticle(BaseModel):
 class GuideIndex(BaseModel):
     """Everything ``/guides`` needs, in one request.
 
-    ``starter_kit_url`` travels with the content rather than sitting
-    behind a second endpoint, so the page never renders once without
-    the band and then again with it.
+    The settings travel with the content rather than sitting behind a
+    second endpoint, so the page never renders once without the
+    header image and then again with it.
     """
 
     guides: list[GuideCard]
     starter_kit_url: str | None
+    header_image_url: str | None
+    header_image_alt: str | None
 
 
 class GuideArticlePage(BaseModel):

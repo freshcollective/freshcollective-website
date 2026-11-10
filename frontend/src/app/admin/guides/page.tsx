@@ -67,7 +67,7 @@ export default function AdminGuidesPage() {
         </Link>
       </header>
 
-      <StarterKitPanel />
+      <GuidesSettingsPanel />
 
       <div className="mb-4 flex gap-2" role="group" aria-label="Filter by status">
         {FILTERS.map((f) => {
@@ -179,16 +179,29 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
+interface Settings {
+  starter_kit_url: string | null
+  header_image_url: string | null
+  header_image_alt: string | null
+}
+
 /**
- * The one setting that switches the Creator Starter Kit on.
+ * The settings that belong to Guides as a whole rather than to one
+ * Guide: the index header image and the Creator Starter Kit link.
  *
- * Sits above the list because it is the thing most likely to be
- * looked for and least likely to be found anywhere else. The help
- * text says plainly what empty means, so nobody has to deduce it
- * from the absence of a band on a public page.
+ * Sits above the list because these are the things most likely to be
+ * looked for and least likely to be found anywhere else, and each
+ * says plainly what leaving it empty does — so nobody has to deduce
+ * it from the absence of something on a public page.
+ *
+ * Both save through one endpoint and one button, because they are one
+ * database row and splitting them would mean two "Saved" messages for
+ * what reads as one screen.
  */
-function StarterKitPanel() {
-  const [url, setUrl] = useState('')
+function GuidesSettingsPanel() {
+  const [s, setS] = useState<Settings>({
+    starter_kit_url: '', header_image_url: null, header_image_alt: null,
+  })
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(
@@ -198,12 +211,39 @@ function StarterKitPanel() {
   useEffect(() => {
     fetch(apiUrl('/api/admin/guides/settings'), { credentials: 'include' })
       .then(async (r) => (r.ok ? r.json() : null))
-      .then((data: { starter_kit_url: string | null } | null) => {
-        setUrl(data?.starter_kit_url ?? '')
+      .then((data: Settings | null) => {
+        setS({
+          starter_kit_url: data?.starter_kit_url ?? '',
+          header_image_url: data?.header_image_url ?? null,
+          header_image_alt: data?.header_image_alt ?? null,
+        })
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
   }, [])
+
+  const headerNeedsAlt =
+    !!s.header_image_url && !(s.header_image_alt ?? '').trim()
+
+  async function uploadHeader(file: File | undefined) {
+    if (!file) return
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(apiUrl('/api/admin/guides/images'), {
+      method: 'POST', credentials: 'include', body: form,
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      setMessage({
+        tone: 'bad',
+        text: typeof data?.detail === 'string'
+          ? data.detail
+          : 'That image could not be uploaded.',
+      })
+      return
+    }
+    setS((prev) => ({ ...prev, header_image_url: data.url as string }))
+  }
 
   async function save() {
     setSaving(true)
@@ -213,25 +253,30 @@ function StarterKitPanel() {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ starter_kit_url: url.trim() || null }),
+        body: JSON.stringify({
+          starter_kit_url: (s.starter_kit_url ?? '').trim() || null,
+          header_image_url: s.header_image_url || null,
+          header_image_alt: (s.header_image_alt ?? '').trim() || null,
+        }),
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
         setMessage({
           tone: 'bad',
-          text: data?.detail ?? 'That link could not be saved.',
+          text: typeof data?.detail === 'string'
+            ? data.detail
+            : 'Those settings could not be saved.',
         })
       } else {
-        setUrl(data?.starter_kit_url ?? '')
-        setMessage({
-          tone: 'ok',
-          text: data?.starter_kit_url
-            ? 'Saved. The Starter Kit now appears on Guides.'
-            : 'Cleared. The Starter Kit is hidden again.',
+        setS({
+          starter_kit_url: data?.starter_kit_url ?? '',
+          header_image_url: data?.header_image_url ?? null,
+          header_image_alt: data?.header_image_alt ?? null,
         })
+        setMessage({ tone: 'ok', text: 'Saved. Guides shows it straight away.' })
       }
     } catch {
-      setMessage({ tone: 'bad', text: 'That link could not be saved.' })
+      setMessage({ tone: 'bad', text: 'Those settings could not be saved.' })
     } finally {
       setSaving(false)
     }
@@ -239,54 +284,125 @@ function StarterKitPanel() {
 
   return (
     <section
-      className="mb-6 rounded-2xl bg-white px-5 py-5"
+      className="mb-6 space-y-6 rounded-2xl bg-white px-5 py-5"
       style={{ boxShadow: '0 0 0 1px rgba(15,30,55,0.08)' }}
-      aria-labelledby="starter-kit-setting"
+      aria-labelledby="guides-settings"
     >
-      <h2 id="starter-kit-setting" className="text-[14px] font-semibold text-navy-950">
-        Creator Starter Kit link
+      <h2 id="guides-settings" className="text-[14px] font-semibold text-navy-950">
+        Guides settings
       </h2>
-      <p className="mt-1 max-w-[70ch] text-[13px] leading-[1.6] text-navy-700">
-        Leave this empty and the Starter Kit is hidden everywhere — no band at
-        the foot of Guides, no card in any Guide&apos;s sidebar. Add a link and
-        both appear.
-      </p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <label htmlFor="starter-kit-url" className="sr-only">
+      {/* ── Header image ───────────────────────────────────────── */}
+      <div>
+        <h3 className="text-[13px] font-semibold text-navy-950">
+          Guides header image
+        </h3>
+        <p className="mt-1 max-w-[70ch] text-[13px] leading-[1.6] text-navy-700">
+          Optional artwork behind the heading at the top of Guides. Leave it
+          empty for a plain navy header. A navy wash sits over the image so the
+          heading stays readable, so a calm, not-too-busy photograph works best.
+        </p>
+        <div className="mt-3 flex flex-wrap items-start gap-4">
+          <div className="h-[84px] w-[150px] shrink-0 overflow-hidden rounded-lg bg-navy-950">
+            {s.header_image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={s.header_image_url}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            )}
+          </div>
+          <div className="min-w-[240px] flex-1 space-y-2">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => uploadHeader(e.target.files?.[0])}
+              className="block w-full text-[13px] text-navy-700"
+              aria-label="Upload a Guides header image"
+            />
+            <label
+              htmlFor="header-alt"
+              className="block text-[12.5px] font-semibold text-navy-950"
+            >
+              Alt text (required with an image)
+            </label>
+            <input
+              id="header-alt"
+              value={s.header_image_alt ?? ''}
+              onChange={(e) => setS((p) => ({ ...p, header_image_alt: e.target.value }))}
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-[13.5px] text-navy-950 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200"
+            />
+            {s.header_image_url && (
+              <button
+                type="button"
+                onClick={() => setS((p) => ({
+                  ...p, header_image_url: null, header_image_alt: null,
+                }))}
+                className="text-[13px] text-red-700 hover:underline"
+              >
+                Remove image
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Starter Kit ────────────────────────────────────────── */}
+      <div>
+        <h3 className="text-[13px] font-semibold text-navy-950">
           Creator Starter Kit link
-        </label>
-        <input
-          id="starter-kit-url"
-          type="url"
-          value={url}
-          disabled={!loaded}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://… or /for-creators"
-          className="min-w-[260px] flex-1 rounded-lg border border-navy-100 px-3 py-2 text-[13.5px] text-navy-950 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200"
-        />
+        </h3>
+        <p className="mt-1 max-w-[70ch] text-[13px] leading-[1.6] text-navy-700">
+          Leave this empty and the Starter Kit is hidden everywhere — no band at
+          the foot of Guides, no card in any Guide&apos;s sidebar. Add a link and
+          both appear.
+        </p>
+        <div className="mt-3">
+          <label htmlFor="starter-kit-url" className="sr-only">
+            Creator Starter Kit link
+          </label>
+          <input
+            id="starter-kit-url"
+            type="url"
+            value={s.starter_kit_url ?? ''}
+            disabled={!loaded}
+            onChange={(e) => setS((p) => ({ ...p, starter_kit_url: e.target.value }))}
+            placeholder="https://… or /for-creators"
+            className="w-full rounded-lg border border-navy-100 px-3 py-2 text-[13.5px] text-navy-950 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200"
+          />
+        </div>
+      </div>
+
+      {headerNeedsAlt && (
+        <p role="alert" className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+          Saving is paused until the header image has alt text. Describe what
+          the image shows, for a reader who cannot see it.
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={save}
-          disabled={saving || !loaded}
+          disabled={saving || !loaded || headerNeedsAlt}
           className="rounded-lg bg-navy-950 px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-navy-900 disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : 'Save settings'}
         </button>
+        {message && (
+          <p
+            role="status"
+            className={
+              message.tone === 'ok'
+                ? 'text-[13px] text-teal-800'
+                : 'text-[13px] text-red-700'
+            }
+          >
+            {message.text}
+          </p>
+        )}
       </div>
-
-      {message && (
-        <p
-          role="status"
-          className={
-            message.tone === 'ok'
-              ? 'mt-2 text-[13px] text-teal-800'
-              : 'mt-2 text-[13px] text-red-700'
-          }
-        >
-          {message.text}
-        </p>
-      )}
     </section>
   )
 }

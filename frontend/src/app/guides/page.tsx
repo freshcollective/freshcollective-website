@@ -2,11 +2,11 @@ import type { Metadata } from 'next'
 
 import GuidesIndexClient from './GuidesIndexClient'
 import Container from '@/components/layout/Container'
+import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { StarterKitBand } from '@/components/guides/StarterKit'
 import { apiUrl } from '@/lib/api'
 import type { GuideIndexPayload } from '@/lib/guides'
-import { SERIF_HEADING } from '@/components/guides/serif'
 
 /**
  * /guides — the index.
@@ -21,19 +21,24 @@ import { SERIF_HEADING } from '@/components/guides/serif'
  * contrast from a tinted page — see ``GuideCard``.
  */
 
+/**
+ * The line under the heading, and the base of the page's description.
+ *
+ * One constant for both so they cannot drift — the meta description
+ * was previously a longer rewrite of the old subtitle and had to be
+ * changed in two places.
+ */
+const GUIDES_SUBTITLE =
+  'Ideas, stories and how-tos for anyone who brings people together.'
+
 export const metadata: Metadata = {
   title: 'Guides · Fresh Collective',
-  description:
-    'Practical, honest guidance for coaches, practitioners and teachers '
-    + 'building a home for their work, and for the people who gather '
-    + 'around it.',
+  description: `${GUIDES_SUBTITLE} Free, practical writing from Fresh Collective.`,
   alternates: { canonical: '/guides' },
   robots: { index: true, follow: true },
   openGraph: {
     title: 'Guides · Fresh Collective',
-    description:
-      'Practical, honest guidance for building a home for your work, and '
-      + 'for the people who gather around it.',
+    description: GUIDES_SUBTITLE,
     url: '/guides',
     type: 'website',
   },
@@ -58,15 +63,22 @@ export const metadata: Metadata = {
  */
 export const dynamic = 'force-dynamic'
 
+const EMPTY: GuideIndexPayload = {
+  guides: [],
+  starter_kit_url: null,
+  header_image_url: null,
+  header_image_alt: null,
+}
+
 async function loadGuides(): Promise<GuideIndexPayload> {
   try {
     const res = await fetch(apiUrl('/api/public/guides'), {
       cache: 'no-store',
     })
-    if (!res.ok) return { guides: [], starter_kit_url: null }
+    if (!res.ok) return EMPTY
     const data: unknown = await res.json()
     if (!data || typeof data !== 'object') {
-      return { guides: [], starter_kit_url: null }
+      return EMPTY
     }
     const payload = data as Partial<GuideIndexPayload>
     return {
@@ -75,39 +87,49 @@ async function loadGuides(): Promise<GuideIndexPayload> {
         typeof payload.starter_kit_url === 'string'
           ? payload.starter_kit_url
           : null,
+      header_image_url:
+        typeof payload.header_image_url === 'string'
+          ? payload.header_image_url
+          : null,
+      header_image_alt:
+        typeof payload.header_image_alt === 'string'
+          ? payload.header_image_alt
+          : null,
     }
   } catch {
     // An empty page beats a 500. Nothing here is private, so the
     // failure mode is "no Guides listed for a few minutes", not a
     // broken marketing surface.
-    return { guides: [], starter_kit_url: null }
+    return EMPTY
   }
 }
 
 export default async function GuidesIndexPage() {
-  const { guides, starter_kit_url } = await loadGuides()
+  const {
+    guides, starter_kit_url, header_image_url, header_image_alt,
+  } = await loadGuides()
 
   return (
     <SiteShell>
       <div className="bg-white">
-        <Container className="py-14 md:py-20">
-          <header className="mx-auto mb-12 max-w-[42rem] text-center md:mb-14">
-            <div
-              aria-hidden="true"
-              className="mx-auto mb-7 h-px w-10 bg-teal-500"
-            />
-            <h1
-              className="text-[44px] leading-[1.05] tracking-[-0.03em] text-navy-950 md:text-[56px]"
-              style={SERIF_HEADING}
-            >
-              Guides
-            </h1>
-            <p className="mx-auto mt-6 max-w-[34rem] font-serif text-[18px] italic leading-[1.6] text-navy-700 md:text-[19px]">
-              Practical, honest guidance for building a home for your work, and
-              for the people who gather around it.
-            </p>
-          </header>
+        {/* The same contained navy card Explore Collectives and
+            Discover Places use, including its ``h1`` — reused rather
+            than restyled, so the three destinations stay one family.
+            ``bandBackground`` is white because this page is white
+            throughout, where the member destinations sit on the warm
+            off-white. */}
+        <PageHero
+          title="Guides"
+          supportingCopy={GUIDES_SUBTITLE}
+          bandBackground="#FFFFFF"
+          backgroundImage={
+            header_image_url
+              ? { url: header_image_url, alt: header_image_alt ?? '' }
+              : null
+          }
+        />
 
+        <Container className="pb-14 pt-10 md:pb-20 md:pt-12">
           <GuidesIndexClient guides={guides} />
 
           <div className="mt-16 md:mt-20">

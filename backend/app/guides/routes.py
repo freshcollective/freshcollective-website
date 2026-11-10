@@ -39,6 +39,14 @@ def _published(db: Session) -> Query:
     return db.query(Guide).filter(Guide.status == "published")
 
 
+def _settings(db: Session) -> GuideSettings | None:
+    return (
+        db.query(GuideSettings)
+        .filter(GuideSettings.id == GuideSettings.SINGLETON_ID)
+        .first()
+    )
+
+
 def _starter_kit_url(db: Session) -> str | None:
     """The Creator Starter Kit link, or nothing.
 
@@ -49,11 +57,7 @@ def _starter_kit_url(db: Session) -> str | None:
     admin endpoint validates on write, and this is the second check
     for a row written before that validation existed.
     """
-    row = (
-        db.query(GuideSettings)
-        .filter(GuideSettings.id == GuideSettings.SINGLETON_ID)
-        .first()
-    )
+    row = _settings(db)
     value = (row.starter_kit_url or "").strip() if row else ""
     if not value:
         return None
@@ -106,9 +110,20 @@ def list_guides(db: Session = Depends(get_db)) -> GuideIndex:
         .order_by(Guide.published_at.desc().nullslast(), Guide.id)
         .all()
     )
+    settings_row = _settings(db)
+    header_url = (settings_row.header_image_url or "").strip() if settings_row else ""
     return GuideIndex(
         guides=[_card(g) for g in rows],
         starter_kit_url=_starter_kit_url(db),
+        # Same servability rule the heroes get: an image the browser
+        # could not load is reported absent rather than rendered as a
+        # broken panel behind the heading.
+        header_image_url=header_url if is_permitted_image_src(header_url) else None,
+        header_image_alt=(
+            settings_row.header_image_alt
+            if settings_row and is_permitted_image_src(header_url)
+            else None
+        ),
     )
 
 

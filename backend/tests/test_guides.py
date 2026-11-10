@@ -706,6 +706,125 @@ class TestStarterKitSetting:
 
 
 # ---------------------------------------------------------------------------
+# 9b · The Guides index header image
+# ---------------------------------------------------------------------------
+
+
+class TestHeaderImage:
+    """Optional artwork behind the /guides heading.
+
+    It is the one Guide image that belongs to no Guide — it lives on
+    the settings row — so the "is this published" rule had to learn
+    about it. Leaving it out is how the header would have rendered
+    for administrators and 404'd for everybody the page is for.
+    """
+
+    def test_it_starts_empty(self, client, public_client):
+        settings = client.get(f"{BASE}/settings").json()
+        assert settings["header_image_url"] is None
+        assert settings["header_image_alt"] is None
+        index = public_client.get(PUBLIC).json()
+        assert index["header_image_url"] is None
+        assert index["header_image_alt"] is None
+
+    def test_setting_it_reaches_the_public_index(self, client, public_client):
+        res = client.put(f"{BASE}/settings", json={
+            "header_image_url": GUIDE_IMAGE,
+            "header_image_alt": "Morning light over a quiet harbour",
+        })
+        assert res.status_code == 200, res.text
+        index = public_client.get(PUBLIC).json()
+        assert index["header_image_url"] == GUIDE_IMAGE
+        assert index["header_image_alt"] == "Morning light over a quiet harbour"
+
+    def test_an_anonymous_visitor_can_actually_load_it(
+        self, client, read_as, uploaded_image,
+    ):
+        """The invariant that the hero test established, applied to
+        the one image that is not attached to a Guide.
+
+        Fetched from the URL the *public index* advertises, with no
+        session — the whole point of the setting is a header a
+        logged-out reader sees.
+        """
+        client.put(f"{BASE}/settings", json={
+            "header_image_url": uploaded_image,
+            "header_image_alt": "Morning light",
+        })
+        index = read_as(PUBLIC).json()
+        url = index["header_image_url"]
+        assert url, "the public index dropped the header image"
+        assert read_as(url).status_code == 200, url
+
+    def test_alt_text_is_required_with_an_image(self, client):
+        res = client.put(f"{BASE}/settings", json={
+            "header_image_url": GUIDE_IMAGE,
+        })
+        assert res.status_code == 400
+        assert "alt" in res.json()["detail"].lower()
+
+    def test_clearing_the_image_clears_its_description(self, client):
+        """Otherwise the next image inherits a sentence describing the
+        last one, which is worse than no alt text at all."""
+        client.put(f"{BASE}/settings", json={
+            "header_image_url": GUIDE_IMAGE, "header_image_alt": "A harbour",
+        })
+        res = client.put(f"{BASE}/settings", json={"header_image_url": ""})
+        assert res.status_code == 200
+        assert res.json()["header_image_url"] is None
+        assert res.json()["header_image_alt"] is None
+
+    @pytest.mark.parametrize("bad", [
+        "https://images.example.com/header.jpg",
+        "/api/uploads/media/some-space/header.jpg",
+        "/api/uploads/covers/header.jpg",
+        "javascript:alert(1)",
+    ])
+    def test_it_must_be_an_uploaded_guide_image(self, client, bad):
+        """Anywhere else saves cleanly and is then a broken image on
+        the one page it exists for: ``guide-images`` is the only
+        prefix ``serve_guide_image`` hands to a logged-out visitor."""
+        res = client.put(f"{BASE}/settings", json={
+            "header_image_url": bad, "header_image_alt": "x",
+        })
+        assert res.status_code == 400
+
+    def test_it_is_admin_only_to_change(self, member_client):
+        res = member_client.put(f"{BASE}/settings", json={
+            "header_image_url": GUIDE_IMAGE, "header_image_alt": "x",
+        })
+        assert res.status_code == 403
+
+    def test_the_starter_kit_link_survives_a_header_image_save(self, client):
+        """The two settings share one row and one endpoint. Saving one
+        must not wipe the other — the payload sends what changed."""
+        client.put(f"{BASE}/settings", json={
+            "starter_kit_url": "https://example.com/kit",
+        })
+        client.put(f"{BASE}/settings", json={
+            "header_image_url": GUIDE_IMAGE, "header_image_alt": "A harbour",
+        })
+        settings = client.get(f"{BASE}/settings").json()
+        assert settings["starter_kit_url"] == "https://example.com/kit"
+        assert settings["header_image_url"] == GUIDE_IMAGE
+
+    def test_an_unservable_stored_value_is_reported_absent(
+        self, client, public_client, db,
+    ):
+        """Second gate on the way out, for a row written before the
+        write-side validation existed."""
+        from app.models.guide import GuideSettings as GS
+
+        row = db.query(GS).filter(GS.id == GS.SINGLETON_ID).one()
+        row.header_image_url = "/api/uploads/media/guides/legacy.png"
+        row.header_image_alt = "legacy"
+        db.flush()
+        index = public_client.get(PUBLIC).json()
+        assert index["header_image_url"] is None
+        assert index["header_image_alt"] is None
+
+
+# ---------------------------------------------------------------------------
 # 10 · The public payload
 # ---------------------------------------------------------------------------
 

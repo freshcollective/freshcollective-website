@@ -77,6 +77,9 @@ export interface GuideArticle {
 export interface GuideIndexPayload {
   guides: GuideCard[]
   starter_kit_url: string | null
+  /** Optional artwork behind the /guides header, set in the admin. */
+  header_image_url: string | null
+  header_image_alt: string | null
 }
 
 export interface GuideArticlePayload {
