@@ -267,6 +267,13 @@ _EXTENSION_SIGNATURES: dict[str, frozenset[str]] = {
     ".docx": frozenset({"zip-container"}),
     ".xlsx": frozenset({"zip-container"}),
     ".pptx": frozenset({"zip-container"}),
+    # An EPUB is a ZIP container, so it identifies as one. Without
+    # this entry ``check_signature`` falls into its ``expected is
+    # None`` branch and refuses every ebook as ``unsupported_type`` —
+    # *after* the upload had already been accepted, which is a file
+    # stuck in error rather than a format that does not work.
+    # Accepting a format is these two maps together, never one.
+    ".epub": frozenset({"zip-container"}),
     ".mp3": frozenset({"mp3"}),
     ".m4a": frozenset({"m4a"}),
     ".wav": frozenset({"wav"}),
@@ -279,6 +286,18 @@ _EXTENSION_SIGNATURES: dict[str, frozenset[str]] = {
 
 
 #: OOXML packages, by extension → the directory the format requires.
+#:
+#: ``.epub`` is deliberately absent, and so is it from ``_ZIP_FAMILY``
+#: in the validation service — an ebook is not inspected as an
+#: archive. Routing it through ``_check_zip_bundle`` would reject
+#: every valid one: the EPUB spec requires a first entry named
+#: ``mimetype`` with no extension, which ``_check_zip_member``
+#: refuses outright, and the ``.opf``, ``.ncx`` and ``.xhtml`` parts
+#: are not sellable members either. Inspecting one properly means an
+#: EPUB-shaped package check beside ``_check_ooxml_package`` —
+#: ``mimetype`` first and stored, ``META-INF/container.xml`` present
+#: — which is worth doing if ebooks become common, and is not done
+#: here.
 _OOXML_ROOTS: dict[str, str] = {
     ".docx": "word/",
     ".xlsx": "xl/",

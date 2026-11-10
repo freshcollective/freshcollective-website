@@ -119,6 +119,16 @@ OFFERING_ALLOWED_TYPES: dict[str, frozenset[str]] = {
     }),
     ".txt": frozenset({"text/plain"}),
     ".md": frozenset({"text/markdown", "text/plain"}),
+    # An ebook. A ZIP container underneath, like the Office formats
+    # above, and treated as a document rather than an archive: a book
+    # is one deliverable, so the ZIP-bundle plan gate below does not
+    # apply to it and its contents are not judged against bundle
+    # rules. ``_check_zip_member`` would reject every valid EPUB —
+    # the spec's first entry is a ``mimetype`` file with no extension
+    # at all, and ``.opf``/``.ncx``/``.xhtml`` are not sellable
+    # members. See the note in ``offering_validation`` for what
+    # inspecting one properly would take.
+    ".epub": frozenset({"application/epub+zip"}),
     # Spreadsheets
     ".xlsx": frozenset({
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

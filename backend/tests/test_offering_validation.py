@@ -102,6 +102,36 @@ def zip_of(entries: dict[str, bytes], **kw) -> bytes:
     return buf.getvalue()
 
 
+def epub(*, well_formed: bool = True) -> bytes:
+    """A minimal but real EPUB.
+
+    The shape matters to the tests below: the spec requires a first
+    entry named ``mimetype``, stored uncompressed, holding exactly
+    ``application/epub+zip``. That entry has no file extension, which
+    is precisely what the ZIP-bundle member rules refuse — so an
+    ebook has to be treated as a document rather than an archive, and
+    this fixture is what proves a genuine one survives.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        if well_formed:
+            z.writestr(
+                zipfile.ZipInfo("mimetype"), "application/epub+zip",
+                compress_type=zipfile.ZIP_STORED,
+            )
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?><container version="1.0" '
+            'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/></rootfiles>'
+            '</container>',
+        )
+        z.writestr("OEBPS/content.opf", "<package/>")
+        z.writestr("OEBPS/chapter1.xhtml", "<html><body><p>Hi</p></body></html>")
+    return buf.getvalue()
+
+
 def run(name: str, data: bytes, ctype: str | None = None, **kw):
     """Validate one file, inferring a plausible declared type."""
     ext = of.all_extensions(name)[-1]
@@ -164,6 +194,103 @@ class TestGenuineFilesPass:
         ids = {c.id for c in r.checks if c.outcome == "pass"}
         assert ov.required_check_ids() <= ids
         assert r.policy_version == ov.VALIDATION_POLICY_VERSION
+
+
+# ---------------------------------------------------------------------------
+# 1b · Ebooks
+# ---------------------------------------------------------------------------
+
+
+class TestEpub:
+    """``.epub`` is accepted, and accepting it took two maps.
+
+    An EPUB is a ZIP container, so it identifies as ``zip-container``.
+    Adding it to ``OFFERING_ALLOWED_TYPES`` alone would let the upload
+    through and then have ``check_signature`` refuse it as
+    ``unsupported_type`` — an accepted file stuck in error, which
+    looks like a broken feature rather than an unsupported format.
+    ``_EXTENSION_SIGNATURES`` is the other half.
+    """
+
+    def test_a_genuine_epub_passes_end_to_end(self):
+        r = run("field-guide.epub", epub(), "application/epub+zip")
+        assert r.status == VS.passed.value, (r.reason, r.message)
+
+    def test_a_mismatched_content_type_is_refused(self):
+        # The declared type is checked against the extension, not
+        # trusted on its own. ``application/zip`` is the plausible
+        # wrong answer — an EPUB really is a zip — which is exactly
+        # why the pair has to agree.
+        r = run("field-guide.epub", epub(), "application/zip")
+        assert r.status != VS.passed.value
+        assert r.reason in {"content_type_mismatch", "declared_type_mismatch"}, r.reason
+
+    def test_the_upload_gate_agrees_with_the_validator(self):
+        """Both halves of the switch, asserted together.
+
+        The upload gate and the post-upload validator are separate
+        code paths with separate tables, and a format present in one
+        and absent from the other is the failure this guards.
+        """
+        assert ".epub" in of.OFFERING_ALLOWED_TYPES
+        assert ".epub" in ov._EXTENSION_SIGNATURES
+        accepted = of.validate_offering_upload(
+            filename="field-guide.epub",
+            content_type="application/epub+zip",
+            byte_size=len(epub()),
+            limits=of.PLATFORM_LIMITS,
+        )
+        assert accepted.extension == ".epub"
+        assert accepted.content_type == "application/epub+zip"
+
+    def test_the_upload_gate_refuses_a_mismatched_content_type(self):
+        with pytest.raises(of.OfferingFileRejected) as exc:
+            of.validate_offering_upload(
+                filename="field-guide.epub",
+                content_type="application/zip",
+                byte_size=len(epub()),
+                limits=of.PLATFORM_LIMITS,
+            )
+        assert exc.value.reason == "content_type_mismatch"
+
+    def test_it_is_not_inspected_as_an_archive(self):
+        """Named rather than discovered.
+
+        An ebook's innards are not judged against bundle rules, and
+        they must not be: the spec's ``mimetype`` entry has no
+        extension, which ``_check_zip_member`` refuses outright. The
+        record should say the check ran and had nothing to do.
+        """
+        r = run("field-guide.epub", epub(), "application/epub+zip")
+        zip_check = next(c for c in r.checks if c.id == "zip_contents")
+        assert zip_check.outcome == "pass"
+        assert zip_check.detail == "not_applicable"
+
+    def test_an_epub_that_is_not_a_zip_at_all_is_refused(self):
+        r = run("fake.epub", b"this is just text, not a container",
+                "application/epub+zip")
+        assert r.status != VS.passed.value
+        assert r.reason == "signature_mismatch", r.reason
+
+    def test_it_stays_out_of_the_platform_wide_extension_list(self):
+        """Offerings-only, deliberately. The global list governs
+        avatars, Collective covers and the Media Library, and an
+        ebook has no business on any of them."""
+        from app.core.storage import ALLOWED_EXTENSIONS
+
+        assert ".epub" not in ALLOWED_EXTENSIONS
+
+    def test_an_epub_may_travel_inside_a_bundle(self):
+        """A consequence worth pinning rather than leaving implicit.
+
+        ``_ZIP_MEMBER_ALLOWED`` is derived from
+        ``OFFERING_ALLOWED_TYPES``, so adding a format here also makes
+        it a permitted member of a ZIP bundle. That is reasonable for
+        an ebook — and it is a side effect, so it is tested.
+        """
+        data = zip_of({"book.epub": epub(), "readme.txt": b"Thanks.\n"})
+        r = run("bundle.zip", data)
+        assert r.status == VS.passed.value, (r.reason, r.message)
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +393,13 @@ class TestOfficePolicy:
         for ext in (".doc", ".xls", ".ppt"):
             assert ext not in of.OFFERING_ALLOWED_TYPES, ext
 
-    def test_rtf_and_epub_are_out_of_phase_one(self):
-        for ext in (".rtf", ".epub"):
-            assert ext not in of.OFFERING_ALLOWED_TYPES, ext
+    def test_rtf_is_still_out(self):
+        """``.epub`` was here too, and is now accepted — see
+        ``TestEpub``. ``.rtf`` stays out: it carries OLE objects and
+        embedded-file constructs that nothing here inspects, so
+        accepting it would mean accepting an uninspected container."""
+        assert ".rtf" not in of.OFFERING_ALLOWED_TYPES
+        assert ".epub" in of.OFFERING_ALLOWED_TYPES
 
     def test_txt_and_md_are_kept(self):
         for ext in (".txt", ".md"):
