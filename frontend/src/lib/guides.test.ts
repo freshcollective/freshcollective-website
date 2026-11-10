@@ -650,22 +650,44 @@ describe('the /guides header is the shared one, with optional artwork', () => {
     assert.match(src, /linear-gradient\(90deg, #38A09E 0%, #FFFFFF 55%\)/)
   })
 
-  test('the overlay never thins below the contrast floor at the text', () => {
-    // 0.55 at the very top is above the artwork; by 28% — before the
-    // accent rule, let alone the heading — it is 0.84, above the
-    // 0.823 that white needs against a worst-case white image.
+  test('the overlay holds the dark value across the whole text band', () => {
+    // The trick that makes the contrast a guarantee. A straight ramp
+    // from 0.88 down towards 0.62 crosses the 0.823 that white needs
+    // for 4.5:1 at about 8.8% of the card's height — long before the
+    // heading ends. So the dark value is *held* to a fixed 200px
+    // from the top, which covers the heading and a two-line subtitle
+    // at every width however the copy wraps. A percentage cannot
+    // promise that; the phone is where it would break first.
     const src = readFileSync(HERO, 'utf8')
-    const stops = [...src.matchAll(/rgba\(7,24,36,(0\.\d+)\) (\d+)%/g)]
+    const pxStops = [...src.matchAll(/rgba\(7,24,36,(0?\.?\d+)\) (\d+)px/g)]
       .map((m) => ({ alpha: Number(m[1]), at: Number(m[2]) }))
-    assert.ok(stops.length >= 3, 'expected a multi-stop overlay')
-    for (const { alpha, at } of stops) {
-      if (at >= 28) {
-        assert.ok(
-          alpha >= 0.823,
-          `overlay is ${alpha} at ${at}% — below the 4.5:1 floor for white`,
-        )
-      }
+    assert.ok(
+      pxStops.length >= 2,
+      'the text band should be held in px, not percentages',
+    )
+    for (const { alpha, at } of pxStops) {
+      assert.ok(
+        alpha >= 0.823,
+        `overlay is ${alpha} at ${at}px — below the 4.5:1 floor for white`,
+      )
     }
+    const held = Math.max(...pxStops.map((s) => s.at))
+    assert.ok(held >= 180, `the dark band only reaches ${held}px`)
+  })
+
+  test('below the text it fades away so the artwork is seen', () => {
+    // The point of the image: the lower part of the card is where it
+    // shows, which is why nothing sits there and why the card has a
+    // minimum height to reserve the space.
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /rgba\(7,24,36,0\.00\) 100%/)
+    assert.match(src, /min-h-\[400px\]/)
+    assert.match(src, /pb-24/)
+  })
+
+  test('the artwork is anchored low, where it is on show', () => {
+    const src = readFileSync(HERO, 'utf8')
+    assert.match(src, /objectPosition: 'center 75%'/)
   })
 
   test('the header image is only ever a guide-images path', () => {

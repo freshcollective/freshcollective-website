@@ -69,7 +69,9 @@ interface Props {
    *
    * The overlay is never lighter than that 82% anywhere the text
    * sits, which is what makes the contrast a guarantee rather than a
-   * property of whichever image was uploaded.
+   * property of whichever image was uploaded. Below the text it
+   * fades away entirely, so the lower part of the card shows the
+   * artwork — which is the part the image is framed for.
    */
   backgroundImage?: BackgroundImage | null
   /** The band behind the card. Defaults to the warm off-white. */
@@ -91,7 +93,12 @@ export default function PageHero({
         <div
           className={
             hasArt
-              ? 'relative overflow-hidden rounded-2xl px-8 pb-10 pt-16 sm:px-10 sm:pb-12 sm:pt-24'
+              // Text at the top, generous room beneath it: the
+              // bottom of the card is where the artwork is meant to
+              // be seen, so it needs space that nothing sits on. The
+              // min-height is what reserves that space when the copy
+              // is short.
+              ? 'relative min-h-[400px] overflow-hidden rounded-2xl px-8 pb-24 pt-10 sm:min-h-[440px] sm:px-10 sm:pb-32 sm:pt-12'
               : 'relative overflow-hidden rounded-2xl px-8 py-10 sm:px-10 sm:py-12'
           }
           style={{
@@ -108,21 +115,35 @@ export default function PageHero({
                 src={backgroundImage!.url}
                 alt={backgroundImage!.alt}
                 {...(backgroundImage!.alt ? {} : { 'aria-hidden': true })}
-                className="absolute inset-0 h-full w-full object-cover object-center"
+                className="absolute inset-0 h-full w-full object-cover"
+                // Anchored low: the part of the artwork on show is
+                // the bottom of the card, so that is the part worth
+                // framing.
+                style={{ objectPosition: 'center 75%' }}
               />
-              {/* Lighter at the top so the artwork reads, settling to
-                  near-solid navy where the words are. Never below
-                  0.84 at the heading, which is the measured floor for
-                  white at 4.5:1 over a worst-case white image —
-                  see the prop's note. */}
+              {/* Darkest behind the words, fading out towards the
+                  bottom so the artwork is seen where nothing sits on
+                  it.
+
+                  The second stop is in **pixels, not a percentage**,
+                  and that is the whole trick. A straight ramp from
+                  0.88 to 0.62 over the top 40% of the card crosses
+                  the 0.823 that white needs for 4.5:1 at about 8.8%
+                  of the height — long before the heading ends — so
+                  the dark value has to be *held* across the text
+                  rather than ramped through it. 200px covers the
+                  heading and a two-line subtitle at every width,
+                  however the copy wraps, which a percentage cannot
+                  promise. The fade below it is proportional, so the
+                  curve still scales with the card. */}
               <div
                 aria-hidden="true"
                 className="absolute inset-0"
                 style={{
                   background:
-                    'linear-gradient(180deg, rgba(7,24,36,0.55) 0%, '
-                    + 'rgba(7,24,36,0.84) 28%, rgba(7,24,36,0.92) 60%, '
-                    + 'rgba(7,24,36,0.97) 100%)',
+                    'linear-gradient(180deg, rgba(7,24,36,0.88) 0px, '
+                    + 'rgba(7,24,36,0.86) 200px, rgba(7,24,36,0.62) 58%, '
+                    + 'rgba(7,24,36,0.15) 78%, rgba(7,24,36,0.00) 100%)',
                 }}
               />
             </>
