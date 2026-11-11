@@ -15,6 +15,7 @@ from app.core.public_url import public_app_url
 from app.services.rich_text import rich_text_to_plain
 from app.services import collective_header_image as _header_image
 from app.services import pathway_direct_offer as _direct_offer
+from app.spaces import booking_origin as _booking_origin
 from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
@@ -3386,6 +3387,7 @@ def get_event(
 
     booked_count = 0
     my_booking_status = None
+    my_booking_origin = None
     is_paid_event = getattr(event, 'booking_access_type', None) == 'paid_separately'
     if event.requires_booking:
         # For paid Gatherings, capacity math must include non-expired
@@ -3415,6 +3417,13 @@ def get_event(
             )
             if my_row:
                 my_booking_status = my_row.status.value if hasattr(my_row.status, "value") else my_row.status
+                # Stage 4B — and where that place came from. The status
+                # alone cannot tell a bought ticket from a seat a
+                # Payment Option earned, and the member surface was
+                # reading it as though it could.
+                my_booking_origin = _booking_origin.resolve_booking_origin(
+                    db, my_row,
+                )
 
     spots_remaining = None
     if event.capacity is not None:
@@ -3548,6 +3557,13 @@ def get_event(
         "booking_closes_at": event.booking_closes_at,
         "booking_note": event.booking_note,
         "my_booking_status": my_booking_status,
+        # Stage 4B — which arrangement earned the place above, so each
+        # card can show its own status instead of every card showing
+        # the booking's. ``None`` when there is no booking.
+        "my_booking_origin": (
+            my_booking_origin.as_payload()
+            if my_booking_origin is not None else None
+        ),
         "can_book": can_book,
         "can_cancel_booking": can_cancel_booking,
         # Stage 3 — Payment Options that include this Gathering, as

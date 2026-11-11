@@ -8,6 +8,7 @@ import {
 } from '@/lib/collectivePalette'
 import PaymentPlanConfirmDialog from '@/components/checkout/PaymentPlanConfirmDialog'
 import DiscountCodeField from '@/components/checkout/DiscountCodeField'
+import type { DiscountPreview } from '@/lib/discountPreview'
 import {
   planConfirmationCopy,
   type AnyPaymentSchedule,
@@ -48,6 +49,7 @@ import {
 export default function PurchaseScheduleButton({
   returnBase, paymentOptionId, paymentOptionScheduleId, label,
   palette, schedule, optionName, discountCodesEnabled = false,
+  onQuote,
 }: {
   /** Path the buyer returns to, e.g. ``/spaces/embody/about``.
    *  ``?checkout=success`` / ``?checkout=cancel`` are appended. */
@@ -66,6 +68,9 @@ export default function PurchaseScheduleButton({
    *  has not been taught to pass it shows no code box rather than one
    *  whose every submission is refused. */
   discountCodesEnabled?: boolean
+  /** Stage 4B — forwarded to the code field so the price row above
+   *  can show the discounted schedule as the primary amount. */
+  onQuote?: (preview: DiscountPreview | null) => void
   /** Optional Collective palette — button uses the primary hex
    *  so the CTA feels branded to the Collective. Falls back to
    *  the platform teal when the Space has no palette hydrated. */
@@ -77,10 +82,14 @@ export default function PurchaseScheduleButton({
   // Only ever a code. The amount is the server's business — see
   // ``DiscountCodeField``.
   const [discountCode, setDiscountCode] = useState<string | null>(null)
+  // Stage 4B — and the quote itself, for the confirmation step. On
+  // Apple Pay that dialog is the only place the member ever sees an
+  // amount, so it has to be the discounted one.
+  const [quote, setQuote] = useState<DiscountPreview | null>(null)
 
   // Only finite plans get the extra step. Pay-in-full goes straight
   // through — Stripe shows the amount for those itself.
-  const needsConfirm = schedule != null && planConfirmationCopy(schedule) != null
+  const needsConfirm = schedule != null && planConfirmationCopy(schedule, quote) != null
 
   // Stage 4 — a code may be used on a payment plan as well as a
   // pay-in-full purchase, so the gate is no longer the schedule type. It
@@ -158,6 +167,7 @@ export default function PurchaseScheduleButton({
             paymentOptionScheduleId,
           }}
           onChange={setDiscountCode}
+          onQuote={(p) => { setQuote(p); onQuote?.(p) }}
           disabled={busy}
         />
       )}
@@ -178,6 +188,7 @@ export default function PurchaseScheduleButton({
       {confirming && schedule && (
         <PaymentPlanConfirmDialog
           schedule={schedule}
+          preview={quote}
           optionName={optionName}
           busy={busy}
           accentHex={bg}

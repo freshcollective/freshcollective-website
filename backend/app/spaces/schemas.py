@@ -640,6 +640,19 @@ class EventSummary(BaseModel):
     sales_enabled: bool = False
 
 
+class BookingOriginOut(BaseModel):
+    """What produced the viewer's place — see ``spaces.booking_origin``.
+
+    ``kind`` is one of ``direct_ticket``, ``payment_option``,
+    ``series_pass``, ``creator_manual`` or ``other``. The Option fields
+    are set only for ``payment_option``.
+    """
+
+    kind: str
+    payment_option_id: str | None = None
+    payment_option_name: str | None = None
+
+
 class EventDetail(EventSummary):
     location_url: str | None = None
     recording_url: str | None = None
@@ -661,6 +674,13 @@ class EventDetail(EventSummary):
     # Stage 4 — may a member type a discount code on this surface?
     # Same resolution and the same caution as the Pathway field.
     discount_codes_enabled: bool = False
+    #: Stage 4B — where the viewer's place came from, when they have
+    #: one. ``my_booking_status`` says a place exists; this says which
+    #: arrangement produced it, so the Individual ticket card stops
+    #: claiming a seat a Payment Option earned. Read-only and purely
+    #: descriptive: nothing is granted or withheld on the strength of
+    #: it. ``None`` when there is no booking.
+    my_booking_origin: BookingOriginOut | None = None
 
 
 class SeriesBookingResponse(BaseModel):

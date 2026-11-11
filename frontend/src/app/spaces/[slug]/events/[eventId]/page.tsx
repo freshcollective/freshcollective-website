@@ -14,6 +14,7 @@ import PathwayWaysToJoin, { WaysToJoinCard } from '@/components/commerce/Pathway
 import PurchaseConfirmation from '@/components/commerce/PurchaseConfirmation'
 import { GatheringRecognition } from '@/components/connections/InContextRecognition'
 import GatheringTicketPurchaseClient from '@/components/spaces/GatheringTicketPurchaseClient'
+import { viewerOptionStatus } from '@/lib/gatheringPurchaseStatus'
 import {
   gatheringIcon, gatheringLabel, gatheringDescription,
   attendanceFormatLabel,
@@ -825,6 +826,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       isPast={isPast}
                       isCancelled={isCancelled}
                       initialMyBookingStatus={event.my_booking_status}
+                      bookingOrigin={event.my_booking_origin ?? null}
                       spotsRemaining={event.spots_remaining}
                       capacity={event.capacity}
                       discountCodesEnabled={event.discount_codes_enabled === true}
@@ -843,6 +845,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   isPast={isPast}
                   isCancelled={isCancelled}
                   initialMyBookingStatus={event.my_booking_status}
+                      bookingOrigin={event.my_booking_origin ?? null}
                   spotsRemaining={event.spots_remaining}
                   capacity={event.capacity}
                   discountCodesEnabled={event.discount_codes_enabled === true}
@@ -909,6 +912,13 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   showHeading={false}
                   returnBase={`/spaces/${slug}/events/${event.id}`}
                   discountCodesEnabled={event.discount_codes_enabled === true}
+                  // Stage 4B — the member's status travels with the
+                  // id of the arrangement that earned it, so it lands
+                  // on that card and nowhere else.
+                  viewerOptionStatus={viewerOptionStatus(
+                    event.my_booking_status,
+                    event.my_booking_origin ?? null,
+                  )}
                 />
               </div>
             )}

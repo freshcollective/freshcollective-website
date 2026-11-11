@@ -8,6 +8,7 @@ import {
   previewDiscount,
   stateFromPreview,
   type DiscountFieldState,
+  type DiscountPreview,
   type DiscountTarget,
 } from '@/lib/discountPreview'
 
@@ -39,12 +40,19 @@ import {
  * remainder.
  */
 export default function DiscountCodeField({
-  target, onChange, disabled,
+  target, onChange, onQuote, disabled,
 }: {
   /** What is being priced. See `DiscountTarget`. */
   target: DiscountTarget
   /** The applied code, or null when there is none to send. */
   onChange: (code: string | null) => void
+  /** Stage 4B — the server's quote, so the row above can show the
+   *  discounted schedule as the price and the original struck through.
+   *  Figures only ever travel outward for *display*: checkout still
+   *  sends the code alone and the server prices it again. Null
+   *  whenever there is no valid quote, which is what restores the
+   *  original price when a code is removed or rejected. */
+  onQuote?: (preview: DiscountPreview | null) => void
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -56,6 +64,7 @@ export default function DiscountCodeField({
     inFlight.current?.abort()
     setState({ status: 'empty' })
     onChange(null)
+    onQuote?.(null)
   }
 
   function apply() {
@@ -77,6 +86,7 @@ export default function DiscountCodeField({
         setState(next)
         setValue(preview.code)
         onChange(next.status === 'applied' ? preview.code : null)
+        onQuote?.(next.status === 'applied' ? preview : null)
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return
@@ -89,6 +99,7 @@ export default function DiscountCodeField({
           message: String((err as Error)?.message ?? err),
         })
         onChange(null)
+        onQuote?.(null)
       })
   }
 

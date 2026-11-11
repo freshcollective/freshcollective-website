@@ -263,3 +263,89 @@ describe('planConfirmationCopy', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Stage 4B — the last amount before Stripe, and the only one on Apple Pay
+// ---------------------------------------------------------------------------
+
+describe('planConfirmationCopy with a discount quote', () => {
+  const twoByFive = {
+    id: 's1',
+    schedule_type: 'recurring_installments' as const,
+    total_amount_cents: 1000,
+    installment_amount_cents: 500,
+    installment_count: 2,
+    interval: 'month',
+    currency: 'AUD',
+  }
+
+  function quote(over: Record<string, unknown> = {}) {
+    return {
+      valid: true,
+      code: 'STAGE4TEST3',
+      payment_mode: 'plan',
+      currency: 'AUD',
+      original_amount_cents: 1000,
+      discount_amount_cents: 400,
+      final_amount_cents: 600,
+      installment_count: 2,
+      installment_amount_cents: 300,
+      final_installment_amount_cents: 300,
+      ...over,
+    } as never
+  }
+
+  test('without a quote it still describes the list price', () => {
+    const c = planConfirmationCopy(twoByFive as never)!
+    assert.equal(c.firstCharge, 'A$5 charged after setup')
+    assert.equal(c.totalLine, 'A$10 total')
+  })
+
+  test('the production case: the member is told A$3, not A$5', () => {
+    const c = planConfirmationCopy(twoByFive as never, quote())!
+    assert.equal(c.firstCharge, 'A$3 charged after setup')
+    assert.equal(c.thenLine, 'Then 1 monthly payment of A$3')
+    assert.equal(c.totalLine, 'A$6 total')
+  })
+
+  test('an invalid quote falls back to the list price rather than guessing', () => {
+    const c = planConfirmationCopy(twoByFive as never, { valid: false } as never)!
+    assert.equal(c.firstCharge, 'A$5 charged after setup')
+  })
+
+  test('a pay-in-full quote never rewrites a plan', () => {
+    const c = planConfirmationCopy(
+      twoByFive as never, quote({ payment_mode: 'direct' }),
+    )!
+    assert.equal(c.firstCharge, 'A$5 charged after setup')
+  })
+
+  test('an uneven final instalment is disclosed, not averaged', () => {
+    // 3 x A$50 less A$20 — §10's worked example.
+    const threeByFifty = {
+      ...twoByFive, total_amount_cents: 15000,
+      installment_amount_cents: 5000, installment_count: 3,
+    }
+    const c = planConfirmationCopy(threeByFifty as never, quote({
+      original_amount_cents: 15000, discount_amount_cents: 2000,
+      final_amount_cents: 13000, installment_count: 3,
+      installment_amount_cents: 4333, final_installment_amount_cents: 4334,
+    }))!
+    assert.equal(c.firstCharge, 'A$43.33 charged after setup')
+    assert.equal(
+      c.thenLine,
+      'Then 1 monthly payment of A$43.33, and a final payment of A$43.34',
+    )
+    assert.equal(c.totalLine, 'A$130 total')
+  })
+
+  test('a two-payment uneven plan names the final payment alone', () => {
+    const c = planConfirmationCopy(twoByFive as never, quote({
+      final_amount_cents: 601, installment_amount_cents: 300,
+      final_installment_amount_cents: 301,
+    }))!
+    assert.equal(c.firstCharge, 'A$3 charged after setup')
+    assert.equal(c.thenLine, 'Then a final monthly payment of A$3.01')
+    assert.equal(c.totalLine, 'A$6.01 total')
+  })
+})

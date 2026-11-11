@@ -325,6 +325,20 @@ export interface WaysToJoinSchedule {
  *  `source` decides which checkout the button calls. A `'direct'`
  *  arrangement carries no Option identifiers at all, so substituting
  *  one arrangement's price for another's is not expressible. */
+/** Where a member's place at a Gathering came from. See the backend's
+ *  ``spaces/booking_origin.py`` for how each kind is resolved. */
+export interface BookingOrigin {
+  kind:
+    | 'direct_ticket'
+    | 'payment_option'
+    | 'series_pass'
+    | 'creator_manual'
+    | 'other'
+  /** Set only for ``payment_option``. */
+  payment_option_id: string | null
+  payment_option_name: string | null
+}
+
 export interface WaysToJoinArrangement {
   source: 'direct' | 'payment_option'
   name: string | null
@@ -419,6 +433,17 @@ export interface EventSummary {
   booking_closes_at: string | null
   booking_note: string | null
   my_booking_status: 'confirmed' | 'cancelled' | 'pending_payment' | null
+  /**
+   * Stage 4B — which arrangement produced the place above.
+   *
+   * ``my_booking_status`` says a place exists; it cannot say what
+   * bought it. Reading it as though it could is how the Individual
+   * ticket card came to announce "Payment in progress" for a Payment
+   * Option checkout the member had started elsewhere, and "Ticket
+   * purchased" for a ticket they never bought. ``null`` when there is
+   * no booking. Descriptive only — nothing is granted on its strength.
+   */
+  my_booking_origin?: BookingOrigin | null
   can_book: boolean
   can_cancel_booking: boolean
   recurrence_series_id: string | null

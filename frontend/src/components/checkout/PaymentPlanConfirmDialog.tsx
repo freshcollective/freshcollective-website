@@ -14,7 +14,8 @@ import { WG_DOC, wgHref } from '@/lib/worldGuide'
  * paid plan. This is the last screen before that redirect and the
  * place where the commitment can be stated plainly, so it does.
  *
- * Every figure is derived from the selected schedule. Nothing here is
+ * Every figure is the server's — the selected schedule, or the
+ * discount quote when a code has been applied. Nothing here is
  * hard-coded to any particular Payment Option.
  */
 
@@ -23,6 +24,7 @@ import {
   planConfirmationCopy,
   type AnyPaymentSchedule,
 } from '@/lib/paymentPlan'
+import type { DiscountPreview } from '@/lib/discountPreview'
 
 const NAVY = '#0C1826'
 const INK_BODY = 'rgba(12, 24, 38, 0.78)'
@@ -30,6 +32,7 @@ const INK_SOFT = 'rgba(12, 24, 38, 0.60)'
 
 export default function PaymentPlanConfirmDialog({
   schedule,
+  preview = null,
   optionName,
   busy = false,
   accentHex = '#38A09E',
@@ -37,6 +40,10 @@ export default function PaymentPlanConfirmDialog({
   onCancel,
 }: {
   schedule: AnyPaymentSchedule
+  /** Stage 4B — the server's discount quote, when one applies.
+   *  This dialog is the last amount a member reads before Stripe,
+   *  and on Apple Pay it is the only one they will see at all. */
+  preview?: DiscountPreview | null
   /** Payment Option name, shown so the member knows what the plan buys. */
   optionName?: string | null
   busy?: boolean
@@ -45,7 +52,7 @@ export default function PaymentPlanConfirmDialog({
   onCancel: () => void
 }) {
   const confirmRef = useRef<HTMLButtonElement | null>(null)
-  const copy = planConfirmationCopy(schedule)
+  const copy = planConfirmationCopy(schedule, preview)
 
   // Focus the primary action on open, and let Escape back out — this
   // is a commitment step, so it must be dismissible without a mouse.

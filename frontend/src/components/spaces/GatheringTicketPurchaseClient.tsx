@@ -6,6 +6,13 @@ import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
 import { formatMoneyCents } from '@/lib/formatMoney'
 import DiscountCodeField from '@/components/checkout/DiscountCodeField'
+import {
+  coveredByLabel,
+  coveredHeading,
+  ticketCardBlocksPurchase,
+  ticketCardState,
+} from '@/lib/gatheringPurchaseStatus'
+import type { BookingOrigin } from '@/types/platform'
 
 /**
  * GatheringTicketPurchaseClient
@@ -74,6 +81,13 @@ interface Props {
   isCancelled: boolean
   /** From EventSummary — 'confirmed' | 'cancelled' | 'pending_payment' | null */
   initialMyBookingStatus: 'confirmed' | 'cancelled' | 'pending_payment' | null
+  /** Stage 4B — which arrangement produced that booking.
+   *
+   *  Without it this card read every place as its own, and announced
+   *  "Payment in progress" for a Payment Option checkout started
+   *  elsewhere. Omitted on surfaces with only one way in, where the
+   *  question cannot arise. */
+  bookingOrigin?: BookingOrigin | null
   /** Backend's max(0, capacity - confirmed - active_holds). null = unlimited */
   spotsRemaining: number | null
   capacity: number | null
@@ -90,6 +104,7 @@ export default function GatheringTicketPurchaseClient({
   initialMyBookingStatus, spotsRemaining, capacity,
   headingProvided = false,
   discountCodesEnabled = false,
+  bookingOrigin = null,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -111,9 +126,27 @@ export default function GatheringTicketPurchaseClient({
   const pollingRef = useRef<{ startedAt: number; cancelled: boolean } | null>(null)
 
   const isConfirmed = myBookingStatus === 'confirmed'
-  const isPending = myBookingStatus === 'pending_payment'
+
+  // Stage 4B — what this card may claim.
+  //
+  // ``isConfirmed`` describes the member's *booking* and still drives
+  // the polling below, which is about the booking. What this card is
+  // allowed to say about itself is a narrower question: a place only
+  // counts as this card's when this card's arrangement produced it.
+  const cardState = ticketCardState(myBookingStatus, bookingOrigin)
+  const showsPurchased = cardState === 'purchased'
+  const showsPending = cardState === 'pending'
+  const showsCovered = cardState === 'covered' || cardState === 'held_elsewhere'
+  // A place is a place, however it was earned — so none of these may
+  // offer a second one. §6E.
+  const blocksPurchase = ticketCardBlocksPurchase(cardState)
+  // The one exception: a ticket checkout *this card* started may still
+  // be finished. ``blocksPurchase`` stops a second purchase; this
+  // allows the first one to complete.
+  const canOpenCheckout = cardState === 'available' || showsPending
+
   const isSoldOut =
-    !isConfirmed && capacity !== null && spotsRemaining !== null && spotsRemaining <= 0
+    !blocksPurchase && capacity !== null && spotsRemaining !== null && spotsRemaining <= 0
 
   // ── Success return: start bounded polling if not yet confirmed ─────────
   useEffect(() => {
@@ -360,7 +393,7 @@ export default function GatheringTicketPurchaseClient({
       )}
 
       {/* ── Confirmed: You're in card ─────────────────────────────────── */}
-      {isConfirmed && (
+      {showsPurchased && (
         <div
           className="mb-3 rounded-xl px-4 py-3"
           style={{
@@ -382,7 +415,7 @@ export default function GatheringTicketPurchaseClient({
       )}
 
       {/* ── Pending payment (rare — user closed Stripe with a live hold) ── */}
-      {isPending && !isConfirmed && returnState !== 'success' && returnState !== 'cancelled' && (
+      {showsPending && returnState !== 'success' && returnState !== 'cancelled' && (
         <div
           className="mb-3 rounded-xl px-4 py-3"
           style={{ background: 'rgba(212,176,72,0.10)', border: '1px solid rgba(212,176,72,0.30)' }}
@@ -397,8 +430,47 @@ export default function GatheringTicketPurchaseClient({
         </div>
       )}
 
+      {/* ── A place earned elsewhere ──────────────────────────────────
+          The member is going; this card simply did not sell them the
+          seat. Said plainly, and with the arrangement named where
+          there is a name worth giving, so the page stops implying they
+          bought a ticket they did not buy — and stops offering them a
+          second one. */}
+      {showsCovered && (
+        <div
+          className="mb-3 rounded-xl px-4 py-3"
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.15))',
+          }}
+        >
+          <p
+            className="text-sm font-semibold"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
+            {coveredHeading(cardState)}
+          </p>
+          {coveredByLabel(bookingOrigin) && (
+            <p
+              className="mt-1 text-[12.5px] leading-relaxed"
+              style={{ color: 'var(--fc-accent, #0f766e)' }}
+            >
+              {coveredByLabel(bookingOrigin)}
+            </p>
+          )}
+          <p
+            className="mt-1 text-[12.5px] leading-relaxed"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
+            {cardState === 'covered'
+              ? 'You don\u2019t need a separate ticket for this Gathering.'
+              : 'We\u2019re holding your place while that checkout is completed.'}
+          </p>
+        </div>
+      )}
+
       {/* ── Sold out ─────────────────────────────────────────────────── */}
-      {!isConfirmed && !isCancelled && !isPast && isSoldOut && (
+      {!blocksPurchase && !isCancelled && !isPast && isSoldOut && (
         <button
           disabled
           className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
@@ -408,14 +480,14 @@ export default function GatheringTicketPurchaseClient({
       )}
 
       {/* ── Sales disabled ────────────────────────────────────────────── */}
-      {!isConfirmed && !isCancelled && !isPast && !isSoldOut && !salesEnabled && (
+      {!blocksPurchase && !isCancelled && !isPast && !isSoldOut && !salesEnabled && (
         <div className="text-[12.5px] leading-relaxed text-black">
           This Gathering is being prepared for ticket sales. Check back soon.
         </div>
       )}
 
       {/* ── Signed-out purchase → auth ────────────────────────────────── */}
-      {!isConfirmed && !isCancelled && !isPast && !isSoldOut && salesEnabled && !isAuthenticated && (
+      {!blocksPurchase && !isCancelled && !isPast && !isSoldOut && salesEnabled && !isAuthenticated && (
         <div className="space-y-2">
           <Link
             href={loginHref}
@@ -443,8 +515,8 @@ export default function GatheringTicketPurchaseClient({
           existing pending payment is returning to a Session whose amount
           is already fixed, so offering a code there would imply it could
           still change the price. */}
-      {discountCodesEnabled && !isConfirmed && !isCancelled && !isPast
-        && !isSoldOut && salesEnabled && isAuthenticated && !isPending && (
+      {discountCodesEnabled && !blocksPurchase && !isCancelled && !isPast
+        && !isSoldOut && salesEnabled && isAuthenticated && (
         <div className="mb-2">
           <DiscountCodeField
             target={{ kind: 'gathering', targetId: eventId }}
@@ -453,7 +525,7 @@ export default function GatheringTicketPurchaseClient({
           />
         </div>
       )}
-      {!isConfirmed && !isCancelled && !isPast && !isSoldOut && salesEnabled && isAuthenticated && (
+      {canOpenCheckout && !isCancelled && !isPast && !isSoldOut && salesEnabled && isAuthenticated && (
         <button
           type="button"
           onClick={handleBuy}
@@ -461,7 +533,7 @@ export default function GatheringTicketPurchaseClient({
           className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
         >
-          {opening ? 'Opening checkout…' : (isPending ? 'Continue checkout' : 'Buy your ticket')}
+          {opening ? 'Opening checkout…' : (showsPending ? 'Continue checkout' : 'Buy your ticket')}
         </button>
       )}
 
@@ -469,7 +541,7 @@ export default function GatheringTicketPurchaseClient({
         <p className="mt-2 text-[12.5px] text-red-600">{error}</p>
       )}
 
-      {!isConfirmed && !isCancelled && !isPast && salesEnabled && (
+      {!blocksPurchase && !isCancelled && !isPast && salesEnabled && (
         <p className="mt-3 text-[12px] leading-relaxed text-black">
           Your ticket reserves one place and gives you access to this Gathering only.
         </p>

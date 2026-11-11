@@ -21,6 +21,8 @@
  * USD are never both rendered as a bare "$".
  */
 
+import type { DiscountPreview } from './discountPreview.ts'
+
 // Relative, with the extension: this is a *runtime* import and the
 // node:test harness resolves no path alias. `@/types/platform` below
 // is `import type` and is erased, which is why it can use the alias.
@@ -237,29 +239,68 @@ export interface PlanConfirmationCopy {
 
 export function planConfirmationCopy(
   schedule: AnyPaymentSchedule,
+  /**
+   * Stage 4B — the server's quote, when a code has been applied.
+   *
+   * This copy is the last thing a member reads before Stripe, and on
+   * Apple Pay it is the *only* amount they will see: a setup-mode
+   * wallet sheet has no amount to show and displays "Pending" instead.
+   * So it has to be the price they are actually committing to. Without
+   * the quote it described the list price, which after a discount was
+   * simply wrong — the member authorised A$3 having just been told
+   * A$5.
+   *
+   * Figures are the server's throughout, including the odd final
+   * instalment. Nothing here divides a total by a count.
+   */
+  preview?: DiscountPreview | null,
 ): PlanConfirmationCopy | null {
   if (schedule.schedule_type !== 'recurring_installments') return null
 
-  const amountCents = schedule.installment_amount_cents
-  const count = schedule.installment_count
+  const quoted =
+    preview && preview.valid && preview.payment_mode === 'plan'
+      ? preview
+      : null
+
+  const amountCents = quoted?.installment_amount_cents
+    ?? schedule.installment_amount_cents
+  const count = quoted?.installment_count ?? schedule.installment_count
   if (amountCents == null || count == null || count < 1) return null
 
-  const amount = formatMoney(amountCents, schedule.currency)
+  const currency = quoted?.currency ?? schedule.currency
+  const amount = formatMoney(amountCents, currency)
   const cadence = cadenceAdjective(schedule.interval)
   const remaining = count - 1
 
   // The total the schedule was saved with, when present; otherwise
   // derived. Never shown as a guess — if neither is available the
   // line is the per-payment figure alone.
-  const totalCents = schedule.total_amount_cents ?? amountCents * count
-  const totalLine = `${formatMoney(totalCents, schedule.currency)} total`
+  const totalCents = quoted?.final_amount_cents
+    ?? schedule.total_amount_cents ?? amountCents * count
+  const totalLine = `${formatMoney(totalCents, currency)} total`
 
+  // A discounted commitment rarely divides into equal cents, and the
+  // remainder rides on the last payment. Saying "2 payments of
+  // A$43.33" would be a small lie about the last one.
+  const finalCents = quoted?.final_installment_amount_cents ?? null
+  const unevenFinal =
+    finalCents != null && finalCents !== amountCents ? finalCents : null
+  const finalAmount = unevenFinal != null
+    ? formatMoney(unevenFinal, currency) : null
+
+  const middle = unevenFinal != null ? remaining - 1 : remaining
   const thenLine =
     remaining === 0
       ? 'This is the only payment.'
-      : remaining === 1
-        ? `Then 1 ${cadence} payment of ${amount}`
-        : `Then ${remaining} ${cadence} payments of ${amount}`
+      : unevenFinal != null
+        ? (middle === 0
+            ? `Then a final ${cadence} payment of ${finalAmount}`
+            : middle === 1
+              ? `Then 1 ${cadence} payment of ${amount}, and a final payment of ${finalAmount}`
+              : `Then ${middle} ${cadence} payments of ${amount}, and a final payment of ${finalAmount}`)
+        : remaining === 1
+          ? `Then 1 ${cadence} payment of ${amount}`
+          : `Then ${remaining} ${cadence} payments of ${amount}`
 
   return {
     firstCharge: `${amount} charged after setup`,

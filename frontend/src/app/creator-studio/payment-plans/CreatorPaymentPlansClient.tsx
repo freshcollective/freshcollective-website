@@ -23,6 +23,11 @@ import { useSearchParams } from 'next/navigation'
 
 import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import {
+  endedRemainingLabel,
+  planObligation,
+  uncollectedNote,
+} from '@/lib/planObligation'
 
 interface CreatorPurchasePlanSummary {
   id: string
@@ -231,6 +236,43 @@ interface CreatorPaymentPlansClientProps {
   // plans for the currently-selected Collective. Omitted preserves
   // the legacy creator-wide view.
   spaceSlug?: string | null
+}
+
+/**
+ * The "Remaining" cell.
+ *
+ * ``remaining_amount_cents`` is the server's ``total - paid`` and is
+ * shown unchanged for a plan that is still billing. Once billing has
+ * ended it is no longer a debt — a cancelled plan's Stripe schedule is
+ * cancelled, so nothing further can be collected — and presenting it
+ * as one told creators a member owed money they did not. The figure
+ * survives as history underneath. See ``lib/planObligation``.
+ */
+function RemainingCell({
+  plan, compact = false,
+}: {
+  plan: CreatorPurchasePlanSummary
+  compact?: boolean
+}) {
+  const obligation = planObligation(plan.status, plan.remaining_amount_cents)
+  if (obligation.collectible) {
+    return <>{fmt(obligation.collectibleCents, plan.currency)}</>
+  }
+  const note = uncollectedNote(
+    obligation, fmt(obligation.uncollectedCents, plan.currency),
+  )
+  return (
+    <>
+      <span className={compact ? '' : 'whitespace-nowrap'}>
+        {endedRemainingLabel(plan.status) ?? 'No further payments'}
+      </span>
+      {note && (
+        <span className="mt-0.5 block text-[11px] text-slate-500">
+          {note}
+        </span>
+      )}
+    </>
+  )
 }
 
 export default function CreatorPaymentPlansClient({
@@ -647,8 +689,8 @@ export default function CreatorPaymentPlansClient({
                         <td className="px-3 py-3 text-[12.5px] text-navy-900 whitespace-nowrap">
                           {fmt(plan.paid_amount_cents, plan.currency)}
                         </td>
-                        <td className="px-3 py-3 text-[12.5px] text-black whitespace-nowrap">
-                          {fmt(plan.remaining_amount_cents, plan.currency)}
+                        <td className="px-3 py-3 text-[12.5px] text-black">
+                          <RemainingCell plan={plan} />
                         </td>
                         <td className="px-3 py-3 text-[11.5px] whitespace-nowrap">
                           <KeyDate plan={plan} />
@@ -711,7 +753,7 @@ export default function CreatorPaymentPlansClient({
                       </div>
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Remaining</p>
-                        <p className="text-black">{fmt(plan.remaining_amount_cents, plan.currency)}</p>
+                        <p className="text-black"><RemainingCell plan={plan} compact /></p>
                       </div>
                     </div>
                     <div className="mt-2 text-[11.5px]">

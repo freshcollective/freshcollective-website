@@ -6,6 +6,7 @@ import * as ts from 'typescript'
 import {
   describeApplied,
   normaliseCodeInput,
+  priceDisplay,
   stateFromPreview,
   type DiscountPreview,
 } from './discountPreview.ts'
@@ -206,5 +207,107 @@ describe('the creator form describes what a code covers', () => {
     const form = readFileSync(FORM, 'utf8')
 
     assert.ok(!form.includes('everything you sell'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Stage 4B — the discounted schedule is the price; the original is history
+// ---------------------------------------------------------------------------
+
+describe('priceDisplay', () => {
+  const original = { line: '2 monthly payments of A$5', total: 'A$10 total' }
+
+  function planPreview(over: Record<string, unknown> = {}) {
+    return {
+      valid: true,
+      code: 'STAGE4TEST3',
+      payment_mode: 'plan',
+      currency: 'AUD',
+      original_amount_cents: 1000,
+      discount_amount_cents: 400,
+      final_amount_cents: 600,
+      installment_count: 2,
+      installment_amount_cents: 300,
+      final_installment_amount_cents: 300,
+      ...over,
+    } as never
+  }
+
+  test('with no code the original stands alone, nothing struck through', () => {
+    const d = priceDisplay(original, null)
+    assert.equal(d.primaryLine, '2 monthly payments of A$5')
+    assert.equal(d.primaryTotal, 'A$10 total')
+    assert.equal(d.strikeLine, null)
+    assert.equal(d.savingNote, null)
+  })
+
+  test('removing a code restores the original with no stale discount', () => {
+    // The same call the field makes on Remove.
+    const d = priceDisplay(original, undefined)
+    assert.equal(d.primaryLine, '2 monthly payments of A$5')
+    assert.equal(d.strikeTotal, null)
+    assert.equal(d.savingNote, null)
+  })
+
+  test('a fixed-amount discount makes A$3 primary and A$5 the comparison', () => {
+    const d = priceDisplay(original, planPreview())
+    assert.equal(d.primaryLine, '2 payments of A$3')
+    assert.equal(d.primaryTotal, 'A$6 total')
+    assert.equal(d.strikeLine, '2 monthly payments of A$5')
+    assert.equal(d.strikeTotal, 'A$10 total')
+    assert.equal(d.savingNote, 'STAGE4TEST3 applied — you save A$4')
+  })
+
+  test('a percentage discount reads the same way', () => {
+    const d = priceDisplay(original, planPreview({
+      code: 'HALF', discount_amount_cents: 500, final_amount_cents: 500,
+      installment_amount_cents: 250, final_installment_amount_cents: 250,
+    }))
+    assert.equal(d.primaryLine, '2 payments of A$2.50')
+    assert.equal(d.savingNote, 'HALF applied — you save A$5')
+  })
+
+  test('an uneven final instalment is named, never averaged', () => {
+    // §10's worked example: 3 x A$50 less A$20.
+    const d = priceDisplay(
+      { line: '3 monthly payments of A$50', total: 'A$150 total' },
+      planPreview({
+        code: 'TWENTY',
+        original_amount_cents: 15000, discount_amount_cents: 2000,
+        final_amount_cents: 13000, installment_count: 3,
+        installment_amount_cents: 4333,
+        final_installment_amount_cents: 4334,
+      }),
+    )
+    assert.equal(d.primaryLine, '2 payments of A$43.33, then A$43.34')
+    assert.equal(d.primaryTotal, 'A$130 total')
+    assert.ok(!d.primaryLine.includes('3 payments of A$43.33'))
+  })
+
+  test('a pay-in-full purchase shows one discounted amount', () => {
+    const d = priceDisplay(
+      { line: 'A$10', total: null },
+      planPreview({ payment_mode: 'direct', installment_count: null }),
+    )
+    assert.equal(d.primaryLine, 'A$6')
+    assert.equal(d.primaryTotal, null)
+    assert.equal(d.strikeLine, 'A$10')
+  })
+
+  test('an invalid code changes nothing on the row', () => {
+    const d = priceDisplay(original, { valid: false } as never)
+    assert.equal(d.primaryLine, '2 monthly payments of A$5')
+    assert.equal(d.savingNote, null)
+  })
+
+  test('a quote missing its figures changes nothing on the row', () => {
+    const d = priceDisplay(original, planPreview({ final_amount_cents: null }))
+    assert.equal(d.primaryLine, '2 monthly payments of A$5')
+    assert.equal(d.strikeLine, null)
+  })
+
+  test('a quote with no code still names the saving', () => {
+    const d = priceDisplay(original, planPreview({ code: '  ' }))
+    assert.equal(d.savingNote, 'You save A$4')
   })
 })

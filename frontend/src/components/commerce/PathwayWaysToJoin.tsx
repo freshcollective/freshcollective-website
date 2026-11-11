@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 import ScheduleChoice from '@/components/commerce/ScheduleChoice'
+import type { ViewerOptionStatus } from '@/lib/gatheringPurchaseStatus'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { formatMoneyCents } from '@/lib/formatMoney'
 import {
@@ -55,6 +56,7 @@ export default function PathwayWaysToJoin({
   showHeading = true,
   returnBase,
   discountCodesEnabled = false,
+  viewerOptionStatus = null,
 }: {
   spaceSlug: string
   /** Only needed when the list can contain a direct card — a
@@ -81,6 +83,15 @@ export default function PathwayWaysToJoin({
    *  so a surface that has not been taught to pass it shows no code box
    *  rather than one the server refuses. */
   discountCodesEnabled?: boolean
+  /** Stage 4B — the member's status, and which Option it belongs to.
+   *
+   *  Plain data rather than a predicate because the pages rendering
+   *  this are server components and these cards are client components.
+   *  Each card compares the id against its own, so the status lands on
+   *  one arrangement — being shown against all of them was the bug.
+   *  Omitted on surfaces that do not resolve it, where every card
+   *  renders exactly as before. */
+  viewerOptionStatus?: ViewerOptionStatus | null
 }) {
   const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
 
@@ -124,6 +135,7 @@ export default function PathwayWaysToJoin({
                 arrangement={a}
                 palette={palette}
                 discountCodesEnabled={discountCodesEnabled}
+                viewerOptionStatus={viewerOptionStatus}
               />
             )}
           </li>
@@ -242,14 +254,23 @@ function DirectCard({
 // ---------------------------------------------------------------------------
 
 function OptionCard({
-  returnBase, arrangement, palette, discountCodesEnabled,
+  returnBase, arrangement, palette, discountCodesEnabled, viewerOptionStatus,
 }: {
   returnBase: string
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
   discountCodesEnabled: boolean
+  viewerOptionStatus?: ViewerOptionStatus | null
 }) {
   const optionName = arrangement.name ?? 'Payment option'
+  // Stage 4B — this card's own status. Every other card resolves to
+  // null, which is the point.
+  const viewerStatus =
+    viewerOptionStatus
+    && arrangement.payment_option_id
+    && viewerOptionStatus.paymentOptionId === arrangement.payment_option_id
+      ? viewerOptionStatus.state
+      : null
 
   // The Pathway being viewed leads the list and is implicit in the
   // card's context, so only the *rest* is worth printing — but it must
@@ -275,6 +296,39 @@ function OptionCard({
           {shown.join(', ')}
           {extra > 0 && ` and ${extra} more`}
         </p>
+      )}
+
+      {viewerStatus === 'purchased' && (
+        <div
+          className="mt-3 rounded-xl px-3 py-2"
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.15))',
+          }}
+        >
+          <p
+            className="text-[13px] font-semibold"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
+            You&rsquo;ve purchased this
+          </p>
+        </div>
+      )}
+
+      {viewerStatus === 'pending' && (
+        <div
+          className="mt-3 rounded-xl px-3 py-2"
+          style={{ background: 'rgba(212,176,72,0.10)', border: '1px solid rgba(212,176,72,0.30)' }}
+        >
+          <p className="text-[13px] font-semibold" style={{ color: '#8A6A15' }}>
+            Payment in progress
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed" style={{ color: '#8A6A15' }}>
+            Complete your payment to confirm your place. Use the button
+            below to continue checkout &mdash; it returns you to the
+            same payment page rather than opening a second one.
+          </p>
+        </div>
       )}
 
       <div className="mt-3 space-y-3">

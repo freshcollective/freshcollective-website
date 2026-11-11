@@ -229,3 +229,80 @@ export function stateFromPreview(preview: DiscountPreview): DiscountFieldState {
     message: preview.message || 'That code cannot be used for this offer.',
   }
 }
+
+// ---------------------------------------------------------------------------
+// What the member is actually paying, and what they would have paid
+// ---------------------------------------------------------------------------
+
+/**
+ * The two prices a purchase row shows once a code is applied.
+ *
+ * The discounted figures are the commitment, so they are the primary
+ * ones; the original survives only as a struck-through comparison. Both
+ * were previously shown at equal weight in different parts of the card
+ * — the row said "2 monthly payments of A$5, A$10 total" while a note
+ * underneath said "2 payments of A$3 — A$6 total" — which left the
+ * member to work out which they had agreed to.
+ *
+ * Every figure is the server's. Nothing here divides, rounds or
+ * subtracts: a discounted commitment rarely splits into equal cents,
+ * and ``describeSchedule`` already names the odd final instalment
+ * rather than averaging it away.
+ *
+ * Returns the original unchanged, with nothing struck through, whenever
+ * there is no valid quote — which is also what makes removing a code
+ * restore the original price rather than leaving a stale discount on
+ * screen.
+ */
+export interface PriceDisplay {
+  /** The amount to show prominently: "2 payments of A$3" or "A$6". */
+  primaryLine: string
+  /** "A$6 total" for a plan; null when the line is already the total. */
+  primaryTotal: string | null
+  /** The superseded original, struck through. Null when undiscounted. */
+  strikeLine: string | null
+  strikeTotal: string | null
+  /** "STAGE4TEST3 applied — you save A$4". Null when undiscounted. */
+  savingNote: string | null
+}
+
+export function priceDisplay(
+  original: { line: string; total: string | null },
+  preview: DiscountPreview | null | undefined,
+): PriceDisplay {
+  const applied = preview ? describeApplied(preview) : null
+  if (!preview || !preview.valid || !applied) {
+    return {
+      primaryLine: original.line,
+      primaryTotal: original.total,
+      strikeLine: null,
+      strikeTotal: null,
+      savingNote: null,
+    }
+  }
+
+  const plan = describeSchedule(preview)
+  const code = (preview.code ?? '').trim()
+  const savingNote = code
+    ? `${code} applied — you save ${applied.saving}`
+    : `You save ${applied.saving}`
+
+  // A plan names its instalments; a one-off purchase is simply its
+  // total, and repeating that total underneath itself says nothing.
+  if (plan) {
+    return {
+      primaryLine: plan.line,
+      primaryTotal: `${plan.total} total`,
+      strikeLine: original.line,
+      strikeTotal: original.total,
+      savingNote,
+    }
+  }
+  return {
+    primaryLine: applied.final,
+    primaryTotal: null,
+    strikeLine: original.line,
+    strikeTotal: original.total,
+    savingNote,
+  }
+}

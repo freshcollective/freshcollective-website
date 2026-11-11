@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import {
   paletteHex,
   rgbaFromHex,
@@ -11,6 +12,7 @@ import {
   scheduleTotalLine,
 } from '@/lib/paymentPlan'
 import PurchaseScheduleButton from './PurchaseScheduleButton'
+import { priceDisplay, type DiscountPreview } from '@/lib/discountPreview'
 
 /**
  * One way to pay for a Payment Option — "Pay in full · $180", or
@@ -70,6 +72,14 @@ export default function ScheduleChoice({
   const kindLabel = scheduleKindLabel(schedule)
   const shortDesc = scheduleShortDescription(schedule)
   const totalLine = scheduleTotalLine(schedule)
+
+  // Stage 4B — the server's quote for *this* row, held here because
+  // this is where the price is printed. One per schedule, so a code
+  // priced against the payment plan cannot leave a stale figure on the
+  // pay-in-full row beside it: each row asks for its own quote and
+  // holds its own answer.
+  const [quote, setQuote] = useState<DiscountPreview | null>(null)
+  const price = priceDisplay({ line: shortDesc, total: totalLine }, quote)
   const label = ctaLabel ?? (
     schedule.schedule_type === 'recurring_installments'
       ? `Start payment plan · ${optionName}`
@@ -83,13 +93,33 @@ export default function ScheduleChoice({
           <span className="text-[12px] font-medium text-navy-900">
             {kindLabel}
           </span>
-          <span className="shrink-0 text-[13px] font-semibold text-navy-900">
-            {shortDesc}
+          <span className="shrink-0 text-right text-[13px] font-semibold text-navy-900">
+            {/* The superseded price first and quieter, so the eye lands
+                on what is actually being committed to. */}
+            {price.strikeLine && (
+              <span className="mr-1.5 font-normal text-slate-400 line-through">
+                {price.strikeLine}
+              </span>
+            )}
+            {price.primaryLine}
           </span>
         </div>
-        {totalLine && (
+        {(price.primaryTotal || price.strikeTotal) && (
           <p className="mt-0.5 text-right text-[11px] text-slate-500">
-            {totalLine}
+            {price.strikeTotal && price.primaryTotal && (
+              <span className="mr-1.5 text-slate-400 line-through">
+                {price.strikeTotal}
+              </span>
+            )}
+            {price.primaryTotal ?? price.strikeTotal}
+          </p>
+        )}
+        {price.savingNote && (
+          <p
+            className="mt-0.5 text-right text-[11px] font-medium"
+            style={{ color: primary }}
+          >
+            {price.savingNote}
           </p>
         )}
       </div>
@@ -102,6 +132,7 @@ export default function ScheduleChoice({
         schedule={schedule}
         optionName={optionName}
         discountCodesEnabled={discountCodesEnabled}
+        onQuote={setQuote}
       />
     </div>
   )
