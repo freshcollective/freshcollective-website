@@ -777,6 +777,12 @@ def create_unified_checkout_session(
         user=current_user,
         payment_option_id=body.payment_option_id,
         requested_schedule_id=body.payment_option_schedule_id,
+        # Stage 4A — so that reusing a live Stripe page cannot re-offer a
+        # price the member is no longer being quoted. The code is not
+        # validated or priced here; it is resolved from scratch below,
+        # after this returns. Passing it only narrows which pending
+        # setups count as "the same purchase, retried".
+        requested_discount_code=body.discount_code,
         now=now,
     )
     if _pending.kind == "reused" and _pending.checkout_url:
@@ -1130,6 +1136,11 @@ def create_pathway_checkout_session(
             user=current_user,
             payment_option_id=body.payment_option_id,
             requested_schedule_id=body.payment_option_schedule_id,
+            # Stage 4A — this wrapper establishes discounted plans too
+            # (``_hold_for_plan`` below), so it carried the same defect:
+            # reusing a live page priced without the code. Same argument
+            # as the unified endpoint.
+            requested_discount_code=body.discount_code,
             now=now,
         )
         if _pending.kind == "reused" and _pending.checkout_url:

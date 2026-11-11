@@ -18,11 +18,19 @@ other callers rely on it exactly as it is.
 Three verdicts, and the reasoning behind each:
 
 ``reused``
-    Same payment method, Session still open. The member is retrying —
-    they closed the tab, or came back to a stale page. Hand back the
-    Session they already have rather than opening a second one. A new
-    Session here would be a second payment page for one purchase, which
-    is how people end up paying twice.
+    Same payment method, *same price*, Session still open. The member is
+    retrying — they closed the tab, or came back to a stale page. Hand
+    back the Session they already have rather than opening a second one.
+    A new Session here would be a second payment page for one purchase,
+    which is how people end up paying twice.
+
+    The price has to match as well as the method, because the Session
+    belongs to a plan that was already priced. A member who priced the
+    arrangement at list price, walked away, then came back with a
+    discount code is not retrying the same purchase — and handing back
+    the old page would establish the undiscounted agreement while the
+    member had just accepted a discounted quote. See
+    ``requested_discount_code``.
 
 ``superseded``
     Different payment method, or the Session is dead. This is the
@@ -63,6 +71,7 @@ from sqlalchemy.orm import Session
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.models.user import User
 from app.services import finite_plan_release as release
+from app.services.discount_pricing import normalise_code
 from app.services.discount_stripe_sessions import (
     StripeStateChanged,
     StripeUnavailable,
@@ -143,6 +152,12 @@ def resolve_pending_setup(
     payment_option_id: str,
     requested_schedule_id: str | None,
     now: datetime,
+    #: Stage 4A. The code on the *incoming* request, exactly as the
+    #: member typed it, or ``None`` for an undiscounted request. Only
+    #: used to decide whether the pending plan was priced the same way;
+    #: it is never validated here and never priced here. Checkout
+    #: re-resolves it from scratch after this function returns.
+    requested_discount_code: str | None = None,
 ) -> SupersessionOutcome:
     """Decide what to do about an in-flight setup before a new checkout.
 
@@ -171,6 +186,33 @@ def resolve_pending_setup(
     same_method = (
         requested_schedule_id is not None
         and plan.payment_option_schedule_id == requested_schedule_id
+    )
+
+    # Stage 4A — and priced the same way.
+    #
+    # The pending plan's instalments were derived from whatever code it
+    # was established with (or from the list price, with none). Reusing
+    # its Stripe page silently re-offers that price. When the incoming
+    # request carries a different code, the member is being quoted
+    # something else, and the agreement they would end up with is not
+    # the one they accepted. That is the Stage 4A defect: a plan priced
+    # at A$10 was handed back to a member who had just accepted A$6,
+    # and because the reuse branch returns before checkout validates the
+    # code, no reservation was taken and no redemption was ever
+    # recorded.
+    #
+    # Compared on the normalised code rather than on the amount: the
+    # amount is recomputed from the live definition at checkout, so two
+    # requests with the same code are the same request even if the code
+    # has since been edited, while two different codes are different
+    # requests even when they happen to price identically today.
+    #
+    # ``normalise_code`` maps ``None`` and ``""`` both to ``""``, so an
+    # undiscounted request matches an undiscounted plan without a
+    # special case — and a member who *removes* a code before retrying
+    # is also correctly treated as having changed the arrangement.
+    same_price = normalise_code(requested_discount_code) == normalise_code(
+        (plan.discount_snapshot_json or {}).get("code")
     )
 
     # The Section C case: we hold no Session id, because Stripe errored
@@ -210,9 +252,11 @@ def resolve_pending_setup(
         )
         raise HTTPException(status_code=409, detail=_REAL)
 
-    # Retrying the same payment method on a page that is still live:
-    # send them back to it instead of opening another.
-    if same_method and state.status == "open":
+    # Retrying the same payment method at the same price on a page that
+    # is still live: send them back to it instead of opening another.
+    # A changed price falls through to supersede below, which expires
+    # this page first — so there is still only ever one way to pay.
+    if same_method and same_price and state.status == "open":
         url = _session_url(state.session_id)
         if url:
             logger.info(
