@@ -88,6 +88,7 @@ from app.models.platform import (
 )
 from sqlalchemy.orm import selectinload as _selectinload  # noqa: E402
 from app.models.user import User
+from app.spaces import member_option_purchases as _member_purchases
 from app.spaces.routes import router, _schedule_is_member_checkoutable
 from app.spaces.schemas import MemberPlanState
 
@@ -859,6 +860,19 @@ def list_member_series_payment_options(
         ):
             if oid:
                 held_option_ids.add(oid)
+
+    # Stage 4B.1 — the query above is Rule A only (an active
+    # AccessPass), so it missed two ways of already holding an Option:
+    # a Pathway-only Option paid for outright (Rules B and C), and —
+    # the reported case — an Option bought on a finite plan, which
+    # writes no pass at all (Rule D). Those cards kept offering
+    # checkout the till would refuse with a 409.
+    #
+    # Unioned rather than replaced: Rule A's answer is already correct
+    # where it applies, and this only adds the cases it cannot see.
+    held_option_ids |= _member_purchases.held_option_ids_in_space(
+        db, user=current_user, space_id=space.id, now=now,
+    )
 
     # Computed either way. With the display flag off it is
     # authoritative; with it on it is the shadow comparison's baseline,

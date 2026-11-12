@@ -4,7 +4,19 @@ import { useState } from 'react'
 
 import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 import ScheduleChoice from '@/components/commerce/ScheduleChoice'
+import Link from 'next/link'
 import type { ViewerOptionStatus } from '@/lib/gatheringPurchaseStatus'
+import { cadenceAdjective } from '@/lib/paymentPlan'
+import {
+  YOUR_WORLD,
+  hidesCheckout,
+  planProgressLines,
+  purchaseFor,
+  purchasedHeading,
+  purchasedStatusLine,
+  purchasedTone,
+} from '@/lib/purchasedOption'
+import type { MemberOptionPurchase } from '@/types/platform'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { formatMoneyCents } from '@/lib/formatMoney'
 import {
@@ -57,6 +69,7 @@ export default function PathwayWaysToJoin({
   returnBase,
   discountCodesEnabled = false,
   viewerOptionStatus = null,
+  myOptionPurchases = null,
 }: {
   spaceSlug: string
   /** Only needed when the list can contain a direct card — a
@@ -92,6 +105,12 @@ export default function PathwayWaysToJoin({
    *  Omitted on surfaces that do not resolve it, where every card
    *  renders exactly as before. */
   viewerOptionStatus?: ViewerOptionStatus | null
+  /** Stage 4B.1 — what the viewer has already bought among these
+   *  Options. A card with a purchase shows that purchase instead of
+   *  its schedules, so it stops selling what has been bought.
+   *  Omitted on surfaces that do not resolve it, where every card
+   *  renders exactly as before. */
+  myOptionPurchases?: MemberOptionPurchase[] | null
 }) {
   const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
 
@@ -136,6 +155,7 @@ export default function PathwayWaysToJoin({
                 palette={palette}
                 discountCodesEnabled={discountCodesEnabled}
                 viewerOptionStatus={viewerOptionStatus}
+                myOptionPurchases={myOptionPurchases}
               />
             )}
           </li>
@@ -255,14 +275,17 @@ function DirectCard({
 
 function OptionCard({
   returnBase, arrangement, palette, discountCodesEnabled, viewerOptionStatus,
+  myOptionPurchases,
 }: {
   returnBase: string
   arrangement: WaysToJoinArrangement
   palette?: CollectivePaletteMeta | null
   discountCodesEnabled: boolean
   viewerOptionStatus?: ViewerOptionStatus | null
+  myOptionPurchases?: MemberOptionPurchase[] | null
 }) {
   const optionName = arrangement.name ?? 'Payment option'
+  const primary = paletteHex('primary', palette ?? null) ?? '#0f766e'
   // Stage 4B — this card's own status. Every other card resolves to
   // null, which is the point.
   const viewerStatus =
@@ -271,6 +294,17 @@ function OptionCard({
     && viewerOptionStatus.paymentOptionId === arrangement.payment_option_id
       ? viewerOptionStatus.state
       : null
+
+  // Stage 4B.1 — what the viewer already owns of *this* Option, and
+  // whether that means the schedules below should still be on offer.
+  const purchase = purchaseFor(myOptionPurchases, arrangement.payment_option_id)
+  const purchased = hidesCheckout(purchase)
+  const tone = purchasedTone(purchase)
+  const progress = planProgressLines(
+    purchase?.plan ?? null,
+    formatMoneyCents,
+    cadenceAdjective(purchase?.plan?.interval ?? null),
+  )
 
   // The Pathway being viewed leads the list and is implicit in the
   // card's context, so only the *rest* is worth printing — but it must
@@ -298,7 +332,88 @@ function OptionCard({
         </p>
       )}
 
-      {viewerStatus === 'purchased' && (
+      {/* Stage 4B.1 — the purchase, in place of the sales pitch.
+          This card used to carry a correct "You've purchased this"
+          banner and then offer to sell the same arrangement again
+          underneath it. The figures are the member's own plan, so a
+          discounted agreement reads as they agreed it rather than as
+          the Option is priced today. */}
+      {purchased && tone && (
+        <div
+          className="mt-3 rounded-xl px-3 py-3"
+          style={
+            tone === 'attention'
+              ? { background: 'rgba(212,176,72,0.10)', border: '1px solid rgba(212,176,72,0.30)' }
+              : {
+                  background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+                  border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.15))',
+                }
+          }
+        >
+          <p
+            className="text-[13px] font-semibold"
+            style={{ color: tone === 'attention' ? '#8A6A15' : primary }}
+          >
+            {tone === 'joined' && '\u2713 '}
+            {purchasedHeading(tone, optionName)}
+          </p>
+          {purchasedStatusLine(purchase) && (
+            <p
+              className="mt-1 text-[12px] leading-relaxed"
+              style={{ color: tone === 'attention' ? '#8A6A15' : primary }}
+            >
+              {purchasedStatusLine(purchase)}
+            </p>
+          )}
+          {progress && (
+            <div className="mt-2 text-[12px] leading-relaxed text-navy-900">
+              <p className="font-medium">{progress.schedule}</p>
+              <p className="text-slate-600">{progress.total}</p>
+              <p className="mt-1 text-slate-600">{progress.progress}</p>
+              {progress.remaining && (
+                <p className="text-slate-600">{progress.remaining}</p>
+              )}
+            </div>
+          )}
+          {/* Pending setup keeps its existing recovery route: the
+              ordinary purchase button, which the backend answers by
+              handing back the live Stripe page rather than opening a
+              second one. Nothing about supersession is restated here. */}
+          {tone === 'setup' ? (
+            <div className="mt-3">
+              {arrangement.schedules
+                .filter((s) => s.id === purchase?.plan?.payment_option_schedule_id)
+                .map((s) => (
+                  <ScheduleChoice
+                    key={s.id}
+                    optionName={optionName}
+                    schedule={s}
+                    paymentOptionId={arrangement.payment_option_id ?? ''}
+                    returnBase={returnBase}
+                    palette={palette}
+                    discountCodesEnabled={false}
+                    withDivider={false}
+                    ctaLabel="Continue checkout"
+                  />
+                ))}
+            </div>
+          ) : (
+            <Link
+              href={YOUR_WORLD.href}
+              className="mt-3 inline-flex items-center justify-center rounded-xl px-3 py-2 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: primary }}
+            >
+              {YOUR_WORLD.label}
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* The Stage 4B booking-origin banner is the fallback for a
+          Gathering seat whose Option purchase this surface cannot see.
+          Suppressed when the purchase itself is in hand, so the card
+          carries one status label rather than two. */}
+      {!purchased && viewerStatus === 'purchased' && (
         <div
           className="mt-3 rounded-xl px-3 py-2"
           style={{
@@ -315,7 +430,7 @@ function OptionCard({
         </div>
       )}
 
-      {viewerStatus === 'pending' && (
+      {!purchased && viewerStatus === 'pending' && (
         <div
           className="mt-3 rounded-xl px-3 py-2"
           style={{ background: 'rgba(212,176,72,0.10)', border: '1px solid rgba(212,176,72,0.30)' }}
@@ -331,8 +446,8 @@ function OptionCard({
         </div>
       )}
 
-      <div className="mt-3 space-y-3">
-        {arrangement.schedules.map((s, i) => (
+      <div className={purchased ? 'hidden' : 'mt-3 space-y-3'}>
+        {!purchased && arrangement.schedules.map((s, i) => (
           <ScheduleChoice
             key={s.id}
             optionName={optionName}

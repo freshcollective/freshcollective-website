@@ -387,6 +387,9 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
                 isAuthenticated={isAuthenticated}
                 heading="Ways to join"
                 discountCodesEnabled={pathway.discount_codes_enabled === true}
+                // Stage 4B.1 — the viewer's existing purchases, so a
+                // card they already own stops offering checkout.
+                myOptionPurchases={pathway.my_option_purchases ?? null}
               />
             ) : pathway.payment_options.length > 0 ? (
               <PaymentOptionSelector

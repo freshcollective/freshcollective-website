@@ -255,6 +255,9 @@ export default async function PathwayAboutPage({ params }: Props) {
                 palette={collectivePalette}
                 isAuthenticated={isAuthenticated}
                 discountCodesEnabled={pathway.discount_codes_enabled === true}
+                // Stage 4B.1 — the viewer's existing purchases, so a
+                // card they already own stops offering checkout.
+                myOptionPurchases={pathway.my_option_purchases ?? null}
               />
               <p className="mt-3 text-center text-[11px] text-black">
                 Secure checkout via Stripe

@@ -475,6 +475,13 @@ class PathwayWithSteps(BaseModel):
     # render the recovery banner AND to suppress the standard
     # purchase CTAs (Rule D reality — no duplicate plan possible).
     member_plan_state: MemberPlanState | None = None
+    # Stage 4B.1 — the viewer's existing purchases among the
+    # arrangements above, so a card already bought stops offering
+    # checkout. Broader than ``member_plan_state``, which covers only
+    # plans needing attention: this covers every status and carries the
+    # agreed figures, because a purchased card must show the
+    # arrangement rather than today's list price.
+    my_option_purchases: list[MemberOptionPurchaseOut] = []
 
 
 # ── Knowledge Guide continuous view ──────────────────────────────────
@@ -640,6 +647,56 @@ class EventSummary(BaseModel):
     sales_enabled: bool = False
 
 
+class MemberPlanSummaryOut(BaseModel):
+    """Stage 4B.1 — the viewer's own agreement for one Payment Option.
+
+    Every figure is the ``PurchasePlan``'s, so a discounted plan reads
+    as the member agreed it and not as the Option is priced today. The
+    creator may have edited the Option or the discount code since.
+
+    Distinct from :class:`MemberPlanState`, which is deliberately narrow
+    and exists for the recovery banner on ``payment_problem`` /
+    ``suspended`` plans. This one covers every status and carries the
+    money, because the purchased card has to show the arrangement.
+    """
+
+    status: str
+    currency: str
+    installment_amount_cents: int
+    final_installment_amount_cents: int | None = None
+    installments_expected: int
+    installments_paid: int
+    total_expected_cents: int
+    paid_amount_cents: int
+    remaining_amount_cents: int
+    interval: str | None = None
+    interval_count: int | None = None
+    payment_option_schedule_id: str | None = None
+
+
+class MemberOptionPurchaseOut(BaseModel):
+    """Stage 4B.1 — what the viewer has already bought, per Option.
+
+    Present only for Options the viewer has actually purchased, so an
+    empty list means "nothing to say" and every card renders as before.
+    Strictly viewer-scoped: computed for the authenticated caller alone
+    and empty for a signed-out reader.
+
+    ``blocks_repurchase`` is the till's own verdict, from
+    ``checkout_orchestration.find_same_option_hold`` — the same
+    predicate that would answer a checkout attempt with a 409. The card
+    hides its buy buttons on exactly that signal, so the UI cannot
+    forbid a purchase the backend would have allowed, and a legitimate
+    repurchase (a completed, cancelled or failed plan) keeps working.
+    """
+
+    payment_option_id: str
+    #: ``plan`` or ``pay_in_full``.
+    kind: str
+    blocks_repurchase: bool
+    plan: MemberPlanSummaryOut | None = None
+
+
 class BookingOriginOut(BaseModel):
     """What produced the viewer's place — see ``spaces.booking_origin``.
 
@@ -681,6 +738,9 @@ class EventDetail(EventSummary):
     #: descriptive: nothing is granted or withheld on the strength of
     #: it. ``None`` when there is no booking.
     my_booking_origin: BookingOriginOut | None = None
+    #: Stage 4B.1 — the viewer's existing purchases of the Options
+    #: offered above, so a card already bought stops selling itself.
+    my_option_purchases: list[MemberOptionPurchaseOut] = []
 
 
 class SeriesBookingResponse(BaseModel):

@@ -16,6 +16,7 @@ from app.services.rich_text import rich_text_to_plain
 from app.services import collective_header_image as _header_image
 from app.services import pathway_direct_offer as _direct_offer
 from app.spaces import booking_origin as _booking_origin
+from app.spaces import member_option_purchases as _member_purchases
 from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
@@ -78,6 +79,7 @@ from app.spaces.schemas import (
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
+    MemberOptionPurchaseOut,
     WaysToJoinArrangementOut,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
@@ -3530,6 +3532,13 @@ def get_event(
     # creator/moderator membership. Platform ``creator`` role alone
     # no longer surfaces sensitive event detail for other creators'
     # gatherings.
+    _gathering_option_cards = [
+        a.as_payload()
+        for a in _pathway_ways_to_join.build_gathering_ways_to_join(
+            db, event=event,
+        )
+        if a.source != "direct"
+    ]
     is_caretaker = channel_perms.is_caretaker(current_user, space, db)
     has_confirmed_booking = my_booking_status == "confirmed"
     show_sensitive = bool(is_caretaker or has_confirmed_booking)
@@ -3573,12 +3582,23 @@ def get_event(
         # this surface shows the ticket alone, exactly as it does
         # today. The direct ticket is excluded here — it has its own
         # established booking control, which §9 says not to redesign.
-        "payment_option_ways_to_join": [
-            a.as_payload()
-            for a in _pathway_ways_to_join.build_gathering_ways_to_join(
-                db, event=event,
+        "payment_option_ways_to_join": _gathering_option_cards,
+        # Stage 4B.1 — and what the viewer has already bought among
+        # them. A card carrying "You've purchased this" was still
+        # showing "Purchase …" and "Start payment plan" underneath,
+        # because the catalogue has never known anything about the
+        # viewer. Empty for a signed-out reader.
+        "my_option_purchases": [
+            pur.as_payload()
+            for pur in _member_purchases.purchases_for_options(
+                db,
+                user=current_user,
+                payment_option_ids=[
+                    c["payment_option_id"] for c in _gathering_option_cards
+                    if c.get("payment_option_id")
+                ],
+                now=now,
             )
-            if a.source != "direct"
         ],
         # Stage 4 — set explicitly, never left to the schema default.
         "discount_codes_enabled": settings.universal_discount_codes_enabled,
@@ -4160,6 +4180,12 @@ def get_pathway_overview(
         for opt in published_options
     ]
 
+    # Stage 4B.1 — built once, so the cards and the viewer's purchases
+    # are answered about the same list rather than two reads of it.
+    _pathway_arrangements = _pathway_ways_to_join.build_ways_to_join(
+        db, pathway=pathway,
+    )
+
     return PathwayWithSteps(
         id=pathway.id,
         slug=pathway.slug,
@@ -4193,8 +4219,21 @@ def get_pathway_overview(
         # Stage 2C — the Ways to join cards, from the resolver.
         ways_to_join=[
             WaysToJoinArrangementOut(**a.as_payload())
-            for a in _pathway_ways_to_join.build_ways_to_join(
-                db, pathway=pathway,
+            for a in _pathway_arrangements
+        ],
+        # Stage 4B.1 — the viewer's existing purchases among the cards
+        # above, so one already bought stops offering checkout. Same
+        # field and same meaning as on the Gathering detail response.
+        my_option_purchases=[
+            MemberOptionPurchaseOut(**pur.as_payload())
+            for pur in _member_purchases.purchases_for_options(
+                db,
+                user=current_user,
+                payment_option_ids=[
+                    a.payment_option_id for a in _pathway_arrangements
+                    if a.payment_option_id
+                ],
+                now=datetime.utcnow(),
             )
         ],
         # Stage 4 — set explicitly, never left to the schema default.

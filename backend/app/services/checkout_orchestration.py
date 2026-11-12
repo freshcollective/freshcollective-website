@@ -464,6 +464,169 @@ def resolve_option_and_schedule(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class SameOptionHold:
+    """An existing purchase of this Option that bars buying it again.
+
+    ``rule`` names which of Rules A-D matched — ``pass``,
+    ``entitlement`` or ``plan`` — and ``detail`` is the member-facing
+    409 message, verbatim. ``plan_id`` is set only for Rule D.
+    """
+
+    rule: str
+    detail: str
+    plan_id: str | None = None
+
+
+def find_same_option_hold(
+    db: Session, *,
+    user: User,
+    payment_option: PaymentOption,
+    now: datetime,
+) -> "SameOptionHold | None":
+    """Why a repurchase of this Option would be refused, or ``None``.
+
+    Extracted from :func:`check_same_option_not_active` so the member
+    surface can ask the same question the till asks, rather than
+    keeping a second opinion about it. The rules, their order and
+    their wording are unchanged; the only difference is that this
+    returns the verdict instead of raising it.
+
+    Stage 4B.1 reads it to decide whether to keep offering checkout:
+    a button the till would refuse with a 409 is a button that should
+    not be there. Deciding it here rather than in the browser is what
+    keeps legitimate repurchase working — a completed, cancelled,
+    failed or suspended plan is absent from Rule D on purpose, so it
+    does not block, and nothing in the UI invents a restriction the
+    backend does not have.
+    """
+
+    # Rule A — AccessPass table: covers every Series-including
+    # option (Series-only, Series+bundled Pathway, multi-Series,
+    # legacy Series-attached term_pass). Also covers legacy
+    # pathway-attached term_pass options whose AccessPass carries
+    # ``payment_option_id``.
+    active_pass = (
+        db.query(AccessPass.id)
+        .filter(
+            AccessPass.user_id == user.id,
+            AccessPass.payment_option_id == payment_option.id,
+            AccessPass.status == AccessPassStatus.active,
+            or_(
+                AccessPass.valid_until.is_(None),
+                AccessPass.valid_until > now,
+            ),
+        )
+        .first()
+    )
+    if active_pass is not None:
+        return SameOptionHold(
+            rule="pass",
+            detail=(
+                "You already hold an active pass from this Payment "
+                "Option. If you need to change your plan, contact "
+                "support."
+            ),
+        )
+
+    # Rule B — Paid path: join via provider_checkout_session_id.
+    # Covers Pathway-only and multi-Pathway options paid through
+    # Stripe (unified or legacy pathway wrapper). Skipped for
+    # options whose only historic purchase by this user was free
+    # (no session id).
+    ent_via_session = (
+        db.query(PathwayEntitlement.id)
+        .join(
+            PaymentTransaction,
+            PaymentTransaction.provider_checkout_session_id
+            == PathwayEntitlement.stripe_checkout_session_id,
+        )
+        .filter(
+            PathwayEntitlement.user_id == user.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+            or_(
+                PathwayEntitlement.ends_at.is_(None),
+                PathwayEntitlement.ends_at > now,
+            ),
+            PaymentTransaction.payer_user_id == user.id,
+            PaymentTransaction.payment_option_id == payment_option.id,
+            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
+            PaymentTransaction.provider_checkout_session_id.isnot(None),
+        )
+        .first()
+    )
+    if ent_via_session is not None:
+        return SameOptionHold(
+            rule="entitlement",
+            detail=(
+                "You already have active access from this Payment "
+                "Option. If you need to change your plan, contact "
+                "support."
+            ),
+        )
+
+    # Rule C — Free single-Pathway path: join via the ledger's
+    # singular entitlement pointer, which the applier populates
+    # only when exactly one entitlement was produced.
+    ent_via_singular_ptr = (
+        db.query(PathwayEntitlement.id)
+        .join(
+            PaymentTransaction,
+            PaymentTransaction.entitlement_id == PathwayEntitlement.id,
+        )
+        .filter(
+            PathwayEntitlement.user_id == user.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+            or_(
+                PathwayEntitlement.ends_at.is_(None),
+                PathwayEntitlement.ends_at > now,
+            ),
+            PaymentTransaction.payer_user_id == user.id,
+            PaymentTransaction.payment_option_id == payment_option.id,
+            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
+        )
+        .first()
+    )
+    if ent_via_singular_ptr is not None:
+        return SameOptionHold(
+            rule="entitlement",
+            detail=(
+                "You already have active access from this Payment "
+                "Option. If you need to change your plan, contact "
+                "support."
+            ),
+        )
+
+    # Rule D — active finite-plan agreement. Blocks a second start
+    # of the same Payment Option while the previous plan is still
+    # "active-ish" (pending_setup / active / payment_problem). Does
+    # NOT block completed / cancelled / failed plans, so a legitimate
+    # future-term repurchase or retry after abandonment is allowed.
+    # Applies to BOTH pay-in-full and finite-plan checkout callers so
+    # a member on an active $20/week × 10 plan cannot separately buy
+    # the $200 once schedule of the same option.
+    active_plan = db.execute(
+        text(
+            "SELECT id FROM purchase_plans "
+            "WHERE member_user_id = :uid "
+            "AND payment_option_id = :oid "
+            "AND status IN ('pending_setup', 'active', 'payment_problem') "
+            "LIMIT 1"
+        ),
+        {"uid": user.id, "oid": payment_option.id},
+    ).first()
+    if active_plan is not None:
+        return SameOptionHold(
+            rule="plan",
+            plan_id=active_plan[0],
+            detail=(
+                "You already have a payment plan in progress for this "
+                "Payment Option. Contact support if you need to change it."
+            ),
+        )
+    return None
+
+
 def check_same_option_not_active(
     db: Session, *,
     user: User,
@@ -526,128 +689,11 @@ def check_same_option_not_active(
     Raises HTTPException(409) with a member-facing message when
     the guard fires.
     """
-    # Rule A — AccessPass table: covers every Series-including
-    # option (Series-only, Series+bundled Pathway, multi-Series,
-    # legacy Series-attached term_pass). Also covers legacy
-    # pathway-attached term_pass options whose AccessPass carries
-    # ``payment_option_id``.
-    active_pass = (
-        db.query(AccessPass.id)
-        .filter(
-            AccessPass.user_id == user.id,
-            AccessPass.payment_option_id == payment_option.id,
-            AccessPass.status == AccessPassStatus.active,
-            or_(
-                AccessPass.valid_until.is_(None),
-                AccessPass.valid_until > now,
-            ),
-        )
-        .first()
+    hold = find_same_option_hold(
+        db, user=user, payment_option=payment_option, now=now,
     )
-    if active_pass is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "You already hold an active pass from this Payment "
-                "Option. If you need to change your plan, contact "
-                "support."
-            ),
-        )
-
-    # Rule B — Paid path: join via provider_checkout_session_id.
-    # Covers Pathway-only and multi-Pathway options paid through
-    # Stripe (unified or legacy pathway wrapper). Skipped for
-    # options whose only historic purchase by this user was free
-    # (no session id).
-    ent_via_session = (
-        db.query(PathwayEntitlement.id)
-        .join(
-            PaymentTransaction,
-            PaymentTransaction.provider_checkout_session_id
-            == PathwayEntitlement.stripe_checkout_session_id,
-        )
-        .filter(
-            PathwayEntitlement.user_id == user.id,
-            PathwayEntitlement.status == EntitlementStatus.active,
-            or_(
-                PathwayEntitlement.ends_at.is_(None),
-                PathwayEntitlement.ends_at > now,
-            ),
-            PaymentTransaction.payer_user_id == user.id,
-            PaymentTransaction.payment_option_id == payment_option.id,
-            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
-            PaymentTransaction.provider_checkout_session_id.isnot(None),
-        )
-        .first()
-    )
-    if ent_via_session is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "You already have active access from this Payment "
-                "Option. If you need to change your plan, contact "
-                "support."
-            ),
-        )
-
-    # Rule C — Free single-Pathway path: join via the ledger's
-    # singular entitlement pointer, which the applier populates
-    # only when exactly one entitlement was produced.
-    ent_via_singular_ptr = (
-        db.query(PathwayEntitlement.id)
-        .join(
-            PaymentTransaction,
-            PaymentTransaction.entitlement_id == PathwayEntitlement.id,
-        )
-        .filter(
-            PathwayEntitlement.user_id == user.id,
-            PathwayEntitlement.status == EntitlementStatus.active,
-            or_(
-                PathwayEntitlement.ends_at.is_(None),
-                PathwayEntitlement.ends_at > now,
-            ),
-            PaymentTransaction.payer_user_id == user.id,
-            PaymentTransaction.payment_option_id == payment_option.id,
-            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
-        )
-        .first()
-    )
-    if ent_via_singular_ptr is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "You already have active access from this Payment "
-                "Option. If you need to change your plan, contact "
-                "support."
-            ),
-        )
-
-    # Rule D — active finite-plan agreement. Blocks a second start
-    # of the same Payment Option while the previous plan is still
-    # "active-ish" (pending_setup / active / payment_problem). Does
-    # NOT block completed / cancelled / failed plans, so a legitimate
-    # future-term repurchase or retry after abandonment is allowed.
-    # Applies to BOTH pay-in-full and finite-plan checkout callers so
-    # a member on an active $20/week × 10 plan cannot separately buy
-    # the $200 once schedule of the same option.
-    active_plan = db.execute(
-        text(
-            "SELECT id FROM purchase_plans "
-            "WHERE member_user_id = :uid "
-            "AND payment_option_id = :oid "
-            "AND status IN ('pending_setup', 'active', 'payment_problem') "
-            "LIMIT 1"
-        ),
-        {"uid": user.id, "oid": payment_option.id},
-    ).first()
-    if active_plan is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "You already have a payment plan in progress for this "
-                "Payment Option. Contact support if you need to change it."
-            ),
-        )
+    if hold is not None:
+        raise HTTPException(status_code=409, detail=hold.detail)
 
 
 def check_not_banned_or_raise(

@@ -297,6 +297,9 @@ export interface PathwayWithSteps {
    *  dropped by the backend. Empty for a free or members-only Pathway.
    *  A surface renders these and never derives a price of its own. */
   ways_to_join?: WaysToJoinArrangement[]
+  /** Stage 4B.1 — the viewer's purchases among the arrangements
+   *  above. Same field and meaning as on the Gathering payload. */
+  my_option_purchases?: MemberOptionPurchase[]
   /** Stage 4 — may a member type a discount code on this surface?
    *  Resolved server-side from UNIVERSAL_DISCOUNT_CODES_ENABLED. */
   discount_codes_enabled?: boolean
@@ -327,6 +330,36 @@ export interface WaysToJoinSchedule {
  *  one arrangement's price for another's is not expressible. */
 /** Where a member's place at a Gathering came from. See the backend's
  *  ``spaces/booking_origin.py`` for how each kind is resolved. */
+/** Stage 4B.1 — the viewer's own agreement for one Payment Option.
+ *  Every figure is their ``PurchasePlan``'s, so a discounted plan reads
+ *  as agreed rather than as the Option is priced today. */
+export interface MemberPlanSummary {
+  status: string
+  currency: string
+  installment_amount_cents: number
+  final_installment_amount_cents: number | null
+  installments_expected: number
+  installments_paid: number
+  total_expected_cents: number
+  paid_amount_cents: number
+  remaining_amount_cents: number
+  interval: string | null
+  interval_count: number | null
+  payment_option_schedule_id: string | null
+}
+
+/** Stage 4B.1 — what the viewer has already bought, per Option.
+ *
+ *  ``blocks_repurchase`` is the backend's own repurchase verdict, so
+ *  the card hides checkout exactly where the till would refuse it and
+ *  nowhere else. Absent for Options never bought. */
+export interface MemberOptionPurchase {
+  payment_option_id: string
+  kind: 'plan' | 'pay_in_full'
+  blocks_repurchase: boolean
+  plan: MemberPlanSummary | null
+}
+
 export interface BookingOrigin {
   kind:
     | 'direct_ticket'
@@ -444,6 +477,10 @@ export interface EventSummary {
    * no booking. Descriptive only — nothing is granted on its strength.
    */
   my_booking_origin?: BookingOrigin | null
+  /** Stage 4B.1 — the viewer's purchases of the Options offered on
+   *  this Gathering, so a card already bought stops selling itself.
+   *  Empty for a signed-out reader. */
+  my_option_purchases?: MemberOptionPurchase[]
   can_book: boolean
   can_cancel_booking: boolean
   recurrence_series_id: string | null

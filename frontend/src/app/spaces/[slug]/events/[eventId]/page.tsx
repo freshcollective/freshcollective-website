@@ -919,6 +919,9 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     event.my_booking_status,
                     event.my_booking_origin ?? null,
                   )}
+                  // Stage 4B.1 — what the viewer has already bought, so
+                  // a card they own stops offering to sell it again.
+                  myOptionPurchases={event.my_option_purchases ?? null}
                 />
               </div>
             )}
