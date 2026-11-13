@@ -859,7 +859,8 @@ def _system(
     declare(TemplateDeclaration(
         template_key=key, event_type=event, display_name=name,
         category=CATEGORY_MONEY_LABEL if key.startswith(
-            ("purchase.", "payment.", "access.", "creator.subscription"),
+            ("purchase.", "payment.", "access.", "creator.subscription",
+             "collective.membership."),
         ) else CATEGORY_ACCOUNT_LABEL,
         audience=audience, classification=SYSTEM, locked_notes=(why,),
         preview_variants=variants, internal=internal,
@@ -910,6 +911,55 @@ _system(
     "A member whose plan never started",
     "States that nothing was charged and no access was granted.",
 )
+# ── Paid Collective membership ───────────────────────────────────────
+# System, not editable, and for the same reason as the creator
+# subscription family: every one of these states a money or access fact
+# the billing system owns. A creator rewording "your membership is
+# still active" during a grace window could tell a member something
+# untrue about their own access.
+#
+# They are categorised under Purchases & billing by ``_system``'s own
+# prefix rule, which already covers ``access.`` and ``creator.
+# subscription``; ``collective.membership.`` is added to it below.
+_system(
+    "collective.membership.purchased.email_transactional",
+    "collective.membership.purchased", "Collective membership started",
+    "A member who has just paid to join a collective",
+    "States the agreed price and interval from their own subscription.",
+)
+_system(
+    "collective.membership.renewed.email_transactional",
+    "collective.membership.renewed", "Collective membership payment received",
+    "A member whose recurring membership payment succeeded",
+    "States the amount received and the period it covers.",
+)
+_system(
+    "collective.membership.payment_failed.email_transactional",
+    "collective.membership.payment_failed",
+    "Collective membership payment problem",
+    "A member whose membership payment failed",
+    "States the grace deadline and that access continues until then.",
+)
+_system(
+    "collective.membership.cancellation_scheduled.email_transactional",
+    "collective.membership.cancellation_scheduled",
+    "Collective membership will not renew",
+    "A member who cancelled their renewal",
+    "States the date access runs to — deliberately not an ending.",
+)
+_system(
+    "collective.membership.ended.email_transactional",
+    "collective.membership.ended", "Collective membership ended",
+    "A member whose paid membership has ended",
+    "States that access has ended and that separate purchases survive.",
+)
+_system(
+    "collective.membership.reactivated.email_transactional",
+    "collective.membership.reactivated", "Collective membership resumed",
+    "A member whose paused membership came back after a payment",
+    "States a billing and access state.",
+)
+
 _system(
     "creator.subscription.payment_failed.email_transactional",
     "creator.subscription.payment_failed", "Creator plan payment problem",

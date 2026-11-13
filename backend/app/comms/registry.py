@@ -262,6 +262,24 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("creator.subscription.cancellation_scheduled", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("creator.subscription.cancelled",              TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
 
+    # ── Paid Collective membership ───────────────────────────────────
+    # The member's own money and access, addressed to the person whose
+    # money and access it is. The creator is never a recipient: what
+    # they see is their Payments received ledger, and the rest of a
+    # member's billing is not theirs to be told.
+    #
+    # Split across two topics on purpose, mirroring the creator
+    # subscription family exactly. A receipt for something bought is a
+    # purchase; a change in billing *state* is an account notice. Both
+    # topics are already live, so this family needs no new topic and no
+    # change to ``comms_live_topics``.
+    EventDefinition("collective.membership.purchased",   TOPIC_PURCHASES, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.renewed",     TOPIC_PURCHASES, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.payment_failed",         TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.cancellation_scheduled", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.ended",                  TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.reactivated",            TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),
 
@@ -374,6 +392,18 @@ TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
     "creator.subscription.recovered",
     "creator.subscription.cancellation_scheduled",
     "creator.subscription.cancelled",
+
+    # ── Paid Collective membership ───────────────────────────────────
+    # Transactional for the same reason the creator family is: every
+    # one of these is "your money or your access has changed", and a
+    # preference that could silence a failed-payment notice would leave
+    # somebody losing access without warning.
+    "collective.membership.purchased",
+    "collective.membership.renewed",
+    "collective.membership.payment_failed",
+    "collective.membership.cancellation_scheduled",
+    "collective.membership.ended",
+    "collective.membership.reactivated",
 })
 
 

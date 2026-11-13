@@ -289,6 +289,25 @@ def activate_from_first_invoice(
         )
 
     db.flush()
+
+    # The message, last and never load-bearing. ``_safe_emit`` swallows
+    # its own failures: the payment and the membership are the facts of
+    # record, and a comms problem must not roll them back or leave
+    # Stripe retrying something already handled.
+    if txn is not None and needs_attention is None:
+        from app.services import collective_membership_emit as _emit
+
+        if membership in ("created", "reactivated"):
+            _emit.emit_membership_purchased(db, subscription=subscription)
+        elif membership == "unpaused":
+            _emit.emit_membership_reactivated(db, subscription=subscription)
+        else:
+            # Already a member, money arrived: a renewal. Keyed on the
+            # invoice, so a replay sends nothing.
+            _emit.emit_membership_renewed(
+                db, subscription=subscription, invoice_id=invoice_id,
+            )
+
     return ActivationOutcome(
         subscription=subscription, transaction=txn,
         applied=txn is not None, membership=membership,
@@ -409,7 +428,10 @@ def begin_payment_problem(
         )
         return subscription
 
-    if subscription.status != CollectiveMembershipStatus.past_due.value:
+    opened_window = (
+        subscription.status != CollectiveMembershipStatus.past_due.value
+    )
+    if opened_window:
         subscription.status = CollectiveMembershipStatus.past_due.value
         subscription.payment_problem_started_at = now
         subscription.grace_expires_at = now + GRACE_WINDOW
@@ -422,6 +444,11 @@ def begin_payment_problem(
         subscription.last_failed_invoice_id = invoice_id
     subscription.updated_at = now
     db.flush()
+
+    if opened_window:
+        from app.services import collective_membership_emit as _emit
+
+        _emit.emit_membership_payment_failed(db, subscription=subscription)
     return subscription
 
 
@@ -485,7 +512,11 @@ def schedule_cancellation(
             subscription.stripe_subscription_id, cancel_at_period_end=True,
         )
 
-    if subscription.status != CollectiveMembershipStatus.cancel_scheduled.value:
+    newly_scheduled = (
+        subscription.status
+        != CollectiveMembershipStatus.cancel_scheduled.value
+    )
+    if newly_scheduled:
         subscription.status = (
             CollectiveMembershipStatus.cancel_scheduled.value
         )
@@ -500,6 +531,13 @@ def schedule_cancellation(
     subscription.cancel_at_period_end = True
     subscription.updated_at = now
     db.flush()
+
+    if newly_scheduled:
+        from app.services import collective_membership_emit as _emit
+
+        _emit.emit_membership_cancellation_scheduled(
+            db, subscription=subscription,
+        )
     return subscription
 
 

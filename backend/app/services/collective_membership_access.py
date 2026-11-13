@@ -285,6 +285,13 @@ def end_subscription(
         subscription.updated_at = now
         db.flush()
 
+        # Said only where access actually stops — never where a
+        # cancellation is merely scheduled. Conflating the two is the
+        # specific mistake the brief names.
+        from app.services import collective_membership_emit as _emit
+
+        _emit.emit_membership_ended(db, subscription=subscription)
+
     return pause_membership_for_lapse(
         db, subscription=subscription, now=now,
         release_bookings=release_bookings,

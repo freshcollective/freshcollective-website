@@ -147,6 +147,19 @@ AUDITED: dict[str, str] = {
     # cannot switch sale notifications off today.
     "collective.purchase.received":                  LOCKED,
 
+    # ── Paid Collective membership ───────────────────────────────────
+    # Locked for the same reason the creator family is: each one states
+    # that the member's money moved or their access changed. A
+    # preference that could silence the failed-payment notice would
+    # leave somebody losing access with no warning, and a receipt is
+    # not something to opt out of.
+    "collective.membership.purchased":               LOCKED,
+    "collective.membership.renewed":                 LOCKED,
+    "collective.membership.payment_failed":          LOCKED,
+    "collective.membership.cancellation_scheduled":  LOCKED,
+    "collective.membership.ended":                   LOCKED,
+    "collective.membership.reactivated":             LOCKED,
+
     # ── Creator plan billing ─────────────────────────────────────────
     "creator.plan_activated":                        LOCKED,
     "creator.subscription.payment_failed":           LOCKED,
@@ -556,6 +569,12 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     "account.welcome_after_signup":                "editable",
     "collective.invitation.sent":                  "editable",
     "creator.plan_activated":                      "editable",
+    "collective.membership.purchased":             "system",
+    "collective.membership.renewed":               "system",
+    "collective.membership.payment_failed":        "system",
+    "collective.membership.cancellation_scheduled": "system",
+    "collective.membership.ended":                 "system",
+    "collective.membership.reactivated":           "system",
     "creator.subscription.cancellation_scheduled": "system",
     "creator.subscription.cancelled":              "system",
     "creator.subscription.payment_failed":         "system",
@@ -632,6 +651,13 @@ ACCOUNT_LOCKED_EMAILS = [
     "creator.subscription.recovered",
     "creator.subscription.cancellation_scheduled",
     "creator.subscription.cancelled",
+    # Stage 5A.3 — the Account-topic half of the paid Collective
+    # membership family. The two receipts sit on ``purchases`` and so
+    # are not Account emails.
+    "collective.membership.payment_failed",
+    "collective.membership.cancellation_scheduled",
+    "collective.membership.ended",
+    "collective.membership.reactivated",
 ]
 
 WELCOME = "account.welcome_after_signup"
@@ -713,10 +739,11 @@ class TestAccountCategoryIsUnlocked:
         }
 
     def test_every_lock_survives(self):
-        """Nineteen since ``collective.purchase.received`` — the creator
-        side of a sale — joined the money locks. The count is written out
-        so a lock cannot be added or lost without this test being read."""
-        assert len(TRANSACTIONAL_EVENT_TYPES) == 19
+        """Twenty-five since the six paid Collective membership events
+        joined: two receipts on ``purchases`` and four billing-state
+        notices on ``account``. The count is written out so a lock
+        cannot be added or lost without this test being read."""
+        assert len(TRANSACTIONAL_EVENT_TYPES) == 25
         assert set(TRANSACTIONAL_EVENT_TYPES) == set(LOCKED_EVENTS)
 
     @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)
