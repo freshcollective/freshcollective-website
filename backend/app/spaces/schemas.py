@@ -697,6 +697,20 @@ class MemberOptionPurchaseOut(BaseModel):
     plan: MemberPlanSummaryOut | None = None
 
 
+class MembershipCheckoutRequest(BaseModel):
+    """Opening recurring membership checkout for a Collective.
+
+    Carries only where to come back to. No amount, interval or currency
+    — those are the server's, read from the Collective and frozen onto
+    the agreement, so a client cannot influence what is charged even if
+    it tried. The same discipline as ``UnifiedCheckoutRequest``, where
+    only the discount *code* travels and never a price.
+    """
+
+    success_url: str
+    cancel_url: str
+
+
 class BookingOriginOut(BaseModel):
     """What produced the viewer's place — see ``spaces.booking_origin``.
 

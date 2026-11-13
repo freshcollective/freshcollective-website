@@ -351,6 +351,17 @@ class PaymentTransaction(Base):
     )
     provider_charge_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     provider_invoice_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Stage 5A — which period a recurring payment bought. NULL for every
+    # one-off purchase and for every row written before migration 189;
+    # a renewal differs from a first invoice by its period and nothing
+    # else, so the creator's Payments received needs it on the payment.
+    billing_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    billing_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
     provider_subscription_id: Mapped[str | None] = mapped_column(
         String(200), nullable=True
     )

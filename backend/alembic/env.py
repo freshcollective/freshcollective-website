@@ -26,6 +26,7 @@ import app.models.activity         # noqa: F401 — registers activity engine mo
 import app.models.place            # noqa: F401 — registers Place + SpacePlace models
 import app.models.purchase_intent  # noqa: F401 — registers PurchaseIntent (Stage 1 payment-first foundation)
 import app.models.purchase_plan    # noqa: F401 — registers PurchasePlan (FIP1 finite payment plan foundation)
+import app.models.collective_membership  # noqa: F401 — registers paid Collective membership (migration 189)
 import app.models.webhook_event    # noqa: F401 — registers WebhookEvent (FIP1 provider webhook idempotency)
 import app.models.community_care    # noqa: F401 — registers CommunityCare models (User FKs reference these)
 import app.models.access_grant_record  # noqa: F401 — registers AccessGrantRecord (FIP3 grant log, migration 119)

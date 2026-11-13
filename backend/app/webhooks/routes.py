@@ -60,6 +60,7 @@ from app.services.purchase_fulfilment import (
     validate_intent,
 )
 from app.services import business_events
+from app.webhooks import collective_membership_handlers as _cmem_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,15 @@ async def stripe_webhook(
         # gathering, pay-in-full pathway) continues to fall through to
         # the existing ``_handle_checkout_completed`` dispatcher.
         metadata = event_object.get("metadata") or {}
-        if metadata.get("purchase_type") == "creator_subscription":
+        # Stage 5A.1 — paid Collective membership claims its own events
+        # by metadata, ahead of the other two systems. It grants nothing
+        # here: a completed Session means a card was captured, and
+        # Stripe says separately whether it could be charged.
+        if _cmem_handlers.owns_event(event_object):
+            _cmem_handlers.handle_checkout_completed(
+                event_object, db, event_id=event["id"],
+            )
+        elif metadata.get("purchase_type") == "creator_subscription":
             from app.webhooks.creator_billing_handlers import (
                 handle_checkout_completed_creator_subscription,
             )
@@ -159,33 +168,48 @@ async def stripe_webhook(
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(event_object, db)
     elif event_type in ("invoice.paid", "invoice.payment_succeeded"):
-        # Try creator-subscription routing FIRST. The creator-billing
-        # handler retrieves the underlying Stripe Subscription and
-        # gates on ``metadata.purchase_type == 'creator_subscription'``;
-        # if the invoice belongs to a member finite-plan subscription
-        # instead, it returns False and we fall through to the FIP2/3
-        # handler. Isolation invariant per workstream amendment B.
-        from app.webhooks.creator_billing_handlers import (
-            handle_invoice_paid as _handle_creator_invoice_paid,
-        )
-        handled_creator = _handle_creator_invoice_paid(
-            event_object, db,
-            event_id=event["id"],
-            event_type=event_type,
-        )
-        if not handled_creator:
-            # FIP2 — first-invoice fulfilment for finite payment plans.
-            # FIP3 — later-instalment recording, recovery from
-            # payment_problem, completion transition; all inside the
-            # same handler which dispatches on plan.status.
-            from app.webhooks.finite_plan_handlers import (
-                handle_invoice_payment_succeeded,
+        # Stage 5A.1 — paid Collective membership claims its own invoices
+        # first, by metadata, and this is the authoritative membership
+        # activation. Placed inside this branch rather than beside it
+        # because this is the branch the event actually reaches: a
+        # branch of its own for that event name would be unreachable
+        # behind the tuple above, which is how the first attempt at this
+        # silently never fired.
+        #
+        # Claimed here means the two systems in the else below never see
+        # a membership invoice.
+        if _cmem_handlers.owns_event(event_object):
+            _cmem_handlers.handle_invoice_payment_succeeded(
+                event_object, db, event_id=event["id"],
             )
-            handle_invoice_payment_succeeded(
+        else:
+            # Try creator-subscription routing FIRST. The creator-billing
+            # handler retrieves the underlying Stripe Subscription and
+            # gates on ``metadata.purchase_type == 'creator_subscription'``;
+            # if the invoice belongs to a member finite-plan subscription
+            # instead, it returns False and we fall through to the FIP2/3
+            # handler. Isolation invariant per workstream amendment B.
+            from app.webhooks.creator_billing_handlers import (
+                handle_invoice_paid as _handle_creator_invoice_paid,
+            )
+            handled_creator = _handle_creator_invoice_paid(
                 event_object, db,
-                provider_event_id=event["id"],
-                event_livemode=event_livemode,
+                event_id=event["id"],
+                event_type=event_type,
             )
+            if not handled_creator:
+                # FIP2 — first-invoice fulfilment for finite payment plans.
+                # FIP3 — later-instalment recording, recovery from
+                # payment_problem, completion transition; all inside the
+                # same handler which dispatches on plan.status.
+                from app.webhooks.finite_plan_handlers import (
+                    handle_invoice_payment_succeeded,
+                )
+                handle_invoice_payment_succeeded(
+                    event_object, db,
+                    provider_event_id=event["id"],
+                    event_livemode=event_livemode,
+                )
     elif event_type == "invoice.payment_failed":
         # Creator-subscription failure → 7-day grace. Falls through to
         # finite-plan handler if the invoice belongs to a member sub.

@@ -264,6 +264,15 @@ class Space(Base):
         String(10), nullable=False, default="AUD", server_default="AUD"
     )
     pricing_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Stage 5A — the date from which belonging here must be paid for.
+    #
+    # NULL means no transition is set, which is every Collective today.
+    # A timestamp is the date existing free members have until. Read to
+    # describe the transition; nothing acts on it yet — no sweep, no
+    # pausing, no scheduling. That is Stage 5A.2.
+    paid_membership_effective_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
     # Access model — distinguishes join cost from what is included / paid separately inside
     has_paid_internal_content: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

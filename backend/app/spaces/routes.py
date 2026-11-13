@@ -17,6 +17,8 @@ from app.services import collective_header_image as _header_image
 from app.services import pathway_direct_offer as _direct_offer
 from app.spaces import booking_origin as _booking_origin
 from app.spaces import membership_pricing as _membership_pricing
+from app.services import collective_membership_billing as _cmem_billing
+from app.services import collective_membership_eligibility as _cmem_eligibility
 from app.spaces import member_option_purchases as _member_purchases
 from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
@@ -81,6 +83,7 @@ from app.spaces.schemas import (
     PathwaySummary,
     PathwayWithSteps,
     MemberOptionPurchaseOut,
+    MembershipCheckoutRequest,
     WaysToJoinArrangementOut,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
@@ -1725,6 +1728,91 @@ def leave_collective(
         offerings_retained=retained,
     )
 
+
+
+@router.post("/{slug}/membership/checkout", status_code=200)
+def start_membership_checkout(
+    slug: str,
+    body: MembershipCheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """Open Stripe Checkout for recurring membership of this Collective.
+
+    Grants nothing. A verified invoice does that — see
+    ``collective_membership_lifecycle.activate_from_first_invoice``. A
+    member who abandons this, or whose card fails, is not a member.
+
+    Three gates, in order, and none of them replaces another:
+
+    1. **The Collective's own door.** ``join_policy`` decides who may
+       ask, exactly as it does for free joining. An invite-only
+       Collective stays invite-only when it starts charging.
+    2. **Eligibility.** Bans, creator removals, admin revocations, a
+       paused membership — ``collective_membership_eligibility``, which
+       reuses checkout's own readmission block so it cannot answer
+       differently from every other paid door.
+    3. **Money.** Priced from the Collective's settings, never from the
+       request.
+
+    Behind ``paid_collective_membership_enabled``, the same flag as
+    Stage 5A.0's join gate, so a paid Collective can never have a closed
+    free door and no way to pay.
+    """
+    now = datetime.utcnow()
+    space = _get_space_by_slug_or_404(slug, db)
+
+    # 1 — the Collective's own joining restrictions, unchanged and
+    # unbypassed. Paid membership is an additional condition, not a
+    # replacement, and a paid door must not be a way around an
+    # invitation.
+    if not join_policy.allows_free_join(space.join_policy):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": join_policy.REASON_PURCHASE_REQUIRED,
+                "message": (
+                    "Membership of this collective comes with a purchase. "
+                    "Choose an option to join."
+                ),
+            },
+        )
+
+    # 2 — may this person buy it?
+    refusal = _cmem_eligibility.refusal_for(
+        db, user=current_user, space=space,
+    )
+    if refusal is not None:
+        raise HTTPException(
+            status_code=refusal.status_code,
+            detail={"code": refusal.code, "message": refusal.message},
+        )
+
+    # 3 — price it and open Stripe.
+    try:
+        outcome = _cmem_billing.open_membership_checkout(
+            db,
+            space=space,
+            member=current_user,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            now=now,
+        )
+    except _cmem_billing.MembershipBillingUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Membership payments are not configured on this server.",
+        ) from exc
+
+    db.commit()
+    return {
+        "checkout_url": outcome.checkout_url,
+        "subscription_id": outcome.subscription.id,
+        "reused": outcome.reused,
+        "amount_cents": outcome.subscription.amount_cents,
+        "currency": outcome.subscription.currency,
+        "interval": outcome.subscription.interval,
+    }
 
 @router.post("/{slug}/join", status_code=201)
 def join_space(
