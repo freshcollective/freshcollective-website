@@ -555,5 +555,52 @@ def map_stripe_status(stripe_status: str) -> CreatorSubscriptionStatus:
 
 
 def period_end_from_stripe(subscription: dict) -> datetime | None:
-    ts = subscription.get("current_period_end")
-    return datetime.utcfromtimestamp(ts) if ts else None
+    """When the current billing period ends, across Stripe API versions.
+
+    Stripe moved this. On ``2026-05-27.dahlia`` — the version this
+    account serves — a Subscription has **no top-level
+    ``current_period_end``**; it sits on each subscription *item*
+    instead. Reading only the top level returned ``None`` against the
+    real provider response, which silently emptied two things: the
+    renewal date on the creator's billing page, and
+    ``pending_downgrade_effective_at``, so a scheduled downgrade lost
+    the date it was scheduled for.
+
+    Both shapes are read, newest-first-by-presence rather than by
+    version sniffing: the top level when Stripe still sends it, the
+    items when it does not. A creator plan has exactly one item, but
+    the maximum is taken rather than the first so that a subscription
+    which somehow carries several cannot report a period ending before
+    one of its items does.
+
+    Returns ``None`` only when neither shape carries a usable value —
+    the same answer the caller already handles. Malformed values are
+    skipped rather than raised on: a webhook must not fail over a
+    field it can do without.
+    """
+    candidates: list[int] = []
+
+    top = subscription.get("current_period_end")
+    if isinstance(top, (int, float)) and top > 0:
+        candidates.append(int(top))
+
+    items = (subscription.get("items") or {}).get("data") or []
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("current_period_end")
+            if isinstance(value, (int, float)) and value > 0:
+                candidates.append(int(value))
+
+    if not candidates:
+        return None
+    try:
+        return datetime.utcfromtimestamp(max(candidates))
+    except (OverflowError, OSError, ValueError):     # pragma: no cover
+        # An out-of-range timestamp is not worth failing a webhook over.
+        logger.warning(
+            "stripe_creator_billing: unusable current_period_end %r on "
+            "subscription %s", max(candidates), subscription.get("id"),
+        )
+        return None
