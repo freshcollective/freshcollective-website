@@ -211,6 +211,15 @@ async def stripe_webhook(
                     event_livemode=event_livemode,
                 )
     elif event_type == "invoice.payment_failed":
+        # Stage 5A.2 — claimed first, by metadata. Starts Fresh
+        # Collective's own grace window and deliberately leaves access
+        # alone; the sweep ends it if nothing recovers.
+        if _cmem_handlers.owns_event(event_object):
+            _cmem_handlers.handle_invoice_payment_failed(
+                event_object, db, event_id=event["id"],
+            )
+            return {"received": True}
+
         # Creator-subscription failure → 7-day grace. Falls through to
         # finite-plan handler if the invoice belongs to a member sub.
         from app.webhooks.creator_billing_handlers import (
@@ -235,6 +244,16 @@ async def stripe_webhook(
                 event_livemode=event_livemode,
             )
     elif event_type == "customer.subscription.updated":
+        # Stage 5A.2 — mirrors Stripe's period and cancel-at-period-end
+        # onto the agreement. Status is not mirrored wholesale: the
+        # grace window is Fresh Collective's own policy and is longer
+        # than Stripe's ``past_due``.
+        if _cmem_handlers.owns_event(event_object):
+            _cmem_handlers.handle_subscription_updated(
+                event_object, db, event_id=event["id"],
+            )
+            return {"received": True}
+
         # Creator-subscription only; member finite-plan subscriptions
         # do not currently subscribe to this event type. Metadata gate
         # ensures isolation regardless.
@@ -247,6 +266,15 @@ async def stripe_webhook(
             event_type=event_type,
         )
     elif event_type == "customer.subscription.deleted":
+        # Stage 5A.2 — billing has stopped for good. Pauses the access
+        # it bought and releases only the bookings membership alone was
+        # holding. Reached whatever the feature flag says.
+        if _cmem_handlers.owns_event(event_object):
+            _cmem_handlers.handle_subscription_deleted(
+                event_object, db, event_id=event["id"],
+            )
+            return {"received": True}
+
         # Try creator-subscription routing FIRST. If the deleted sub
         # belongs to a member finite-plan, fall through to FIP3.
         from app.webhooks.creator_billing_handlers import (

@@ -19,6 +19,7 @@ from app.spaces import booking_origin as _booking_origin
 from app.spaces import membership_pricing as _membership_pricing
 from app.services import collective_membership_billing as _cmem_billing
 from app.services import collective_membership_eligibility as _cmem_eligibility
+from app.services import collective_membership_lifecycle as _cmem_lifecycle
 from app.spaces import member_option_purchases as _member_purchases
 from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
@@ -1812,6 +1813,103 @@ def start_membership_checkout(
         "amount_cents": outcome.subscription.amount_cents,
         "currency": outcome.subscription.currency,
         "interval": outcome.subscription.interval,
+    }
+
+
+def _my_live_membership_subscription(db, *, user, space):
+    """This member's own agreement with this Collective, or 404.
+
+    Scoped by both ids on the query, so a member cannot name somebody
+    else's agreement, another Collective's, or a creator subscription —
+    those live in a different table entirely. 404 rather than 403: an
+    agreement they do not hold is one that does not exist as far as
+    they are concerned.
+    """
+    from app.models.collective_membership import (
+        LIVE_STATUSES, CollectiveMembership,
+    )
+
+    row = (
+        db.query(CollectiveMembership)
+        .filter(
+            CollectiveMembership.user_id == user.id,
+            CollectiveMembership.space_id == space.id,
+            CollectiveMembership.status.in_(sorted(LIVE_STATUSES)),
+        )
+        .order_by(CollectiveMembership.created_at.desc())
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="You don't have a membership subscription here.",
+        )
+    return row
+
+
+@router.post("/{slug}/membership/cancel", status_code=200)
+def cancel_membership_renewal(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """Stop renewing. Keep the period already paid for.
+
+    Not the same as leaving: the member stays a member until the paid
+    period ends, and ``POST /{slug}/leave`` remains the way to go now.
+    Access is paused when the period expires, by Stripe's own
+    ``customer.subscription.deleted`` or by the reconciler if that
+    event never arrives.
+
+    Idempotent — cancelling twice preserves the first decision.
+
+    Deliberately not gated on the feature flag: an agreement that
+    exists must be stoppable whatever the flag says, and a switch that
+    could trap somebody in a subscription would be the wrong kind of
+    switch.
+    """
+    space = _get_space_by_slug_or_404(slug, db)
+    sub = _my_live_membership_subscription(db, user=current_user, space=space)
+    try:
+        _cmem_lifecycle.schedule_cancellation(
+            db, subscription=sub, now=datetime.utcnow(),
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return {
+        "status": sub.status,
+        "cancel_at_period_end": sub.cancel_at_period_end,
+        "access_until": sub.current_period_end,
+    }
+
+
+@router.post("/{slug}/membership/resume", status_code=200)
+def resume_membership_renewal(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """Change their mind, while the period is still running.
+
+    Reactivates the existing Stripe subscription rather than opening a
+    new one — the member's terms, price and period are all still valid,
+    and a new agreement would reprice them at today's list.
+    """
+    space = _get_space_by_slug_or_404(slug, db)
+    sub = _my_live_membership_subscription(db, user=current_user, space=space)
+    try:
+        _cmem_lifecycle.resume_cancelled_renewal(
+            db, subscription=sub, now=datetime.utcnow(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return {
+        "status": sub.status,
+        "cancel_at_period_end": sub.cancel_at_period_end,
+        "renews_at": sub.current_period_end,
     }
 
 @router.post("/{slug}/join", status_code=201)

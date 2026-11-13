@@ -109,6 +109,7 @@ from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.offering import OfferingEntitlement, OfferingEntitlementStatus
 from app.spaces import retained_reservations as _retained
 from app.services import business_events
+from app.services import collective_membership_lifecycle as _cmem_lifecycle
 from app.models.platform import (
     BookingStatus,
     EntitlementSource,
@@ -531,6 +532,30 @@ def end_membership(
     reverses moderation or traps a member who left — so there is nothing
     to forget. It validates itself; see ``RemovalDecision``.
     """
+    # Stage 5A.2 — stop the money first.
+    #
+    # Hooked here rather than in each route because this is the one
+    # point every ending passes through: a member leaving, a creator
+    # removing them, a ban. A fourth path added later gets this for
+    # free, and cannot forget it.
+    #
+    # Never raises. A member must be able to leave even when Stripe is
+    # unreachable — blocking the departure to protect the billing would
+    # have the priority backwards. A failure instead leaves the
+    # agreement live locally (because it is live at Stripe), logs an
+    # ERROR, and sets ``payment_action_required`` below so an operator
+    # and the reconciler can both find it.
+    _sweep = _cmem_lifecycle.cancel_live_subscriptions_for_member(
+        db,
+        user_id=membership.user_id,
+        space_id=space.id,
+        reason=f"membership_ended:{decision.kind}",
+        now=now,
+        actor_user_id=actor_user_id,
+    )
+    if _sweep.failed:
+        payment_action_required = True
+
     membership.status = SpaceMembershipStatus.removed
     membership.removal_kind = decision.kind
     membership.removal_reason = decision.reason

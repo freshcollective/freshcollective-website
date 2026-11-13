@@ -1,4 +1,4 @@
-"""Error reporting for the seven crons, including the failures that exit 0.
+"""Error reporting for every cron, including the failures that exit 0.
 
 What Phase 2 is actually for
 ----------------------------
@@ -118,6 +118,11 @@ EXPECTED_CRONS = {
     # BI-3: the nightly reporting rebuild. Its own service so a reporting
     # failure cannot delay money work.
     "fc-reporting-nightly",
+    # Stage 5A.2: paid Collective membership. The sweep that matters is
+    # a live subscription whose membership has already ended — somebody
+    # left and the Stripe cancel did not take — so a silent failure here
+    # is somebody being charged after they left.
+    "fc-collective-membership-reconciler",
 }
 
 
@@ -273,7 +278,7 @@ def _render_only_logger_names(path: pathlib.Path) -> list[str]:
 
 class TestEveryCronIsWired:
     def test_the_inventory_is_complete(self):
-        """The seven from the brief, and nothing unaccounted for."""
+        """Every cron on the blueprint, and nothing unaccounted for."""
         assert set(CRON_NAMES) == EXPECTED_CRONS, set(CRON_NAMES) ^ EXPECTED_CRONS
 
     @pytest.mark.parametrize("service", CRONS, ids=CRON_NAMES)

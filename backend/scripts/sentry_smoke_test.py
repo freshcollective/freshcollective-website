@@ -87,6 +87,7 @@ COMPONENTS = (
     "fc-connect-transfer-sweeper",
     "fc-connect-recovery-sweeper",
     "fc-reporting-nightly",
+    "fc-collective-membership-reconciler",
 )
 
 #: Fake, and recognisable as fake. ``.invalid`` is reserved by RFC 2606

@@ -470,6 +470,18 @@ services:
       # ``config.py:universal_discount_codes_enabled``).
       - key: UNIVERSAL_DISCOUNT_CODES_ENABLED
         sync: false
+      # Stage 5A — paid Collective membership. Governs both the payment
+      # requirement at the join door and the membership checkout, as
+      # one switch: a gate without a checkout makes a paid Collective
+      # unjoinable, and a checkout without a gate leaves the free door
+      # open beside it.
+      #
+      # Dashboard-owned (``sync: false``), never a ``value:`` entry — a
+      # blueprint sync would otherwise reassert the file's value over a
+      # deliberate Dashboard change, which has caused two incidents.
+      # Absent reads as the code default, which is off.
+      - key: PAID_COLLECTIVE_MEMBERSHIP_ENABLED
+        sync: false
       # ── Offerings rollout ────────────────────────────────────────
       # Two switches, both Dashboard-managed, for the same reason as
       # the two flags above: the Dashboard is the operational source
@@ -891,6 +903,57 @@ services:
       # its own Render service name, is what separates this job's
       # issues from the API's. Dashboard-owned; absent is a clean
       # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
+
+  # ── Paid Collective membership reconciliation ──────────────────────
+  # Stage 5A.2. Four sweeps webhooks normally make unnecessary and
+  # occasionally do not: a grace window that expired without recovery,
+  # a cancelled agreement whose paid period ran out, a Collective whose
+  # paid-membership date has arrived — and, the one that matters most,
+  # a live agreement whose membership has already ended. That last case
+  # is a member who left, was removed or was banned while the Stripe
+  # cancel failed, and this is the durable retry ``end_membership``
+  # promises. The job exits non-zero when it still cannot stop that
+  # billing, so the failure is visible rather than quiet.
+  #
+  # Charges nobody, subscribes nobody, emails nobody. Inert while
+  # PAID_COLLECTIVE_MEMBERSHIP_ENABLED is off, because no agreement
+  # exists for it to find — but deliberately not gated on the flag:
+  # an agreement that exists must be serviced whatever the flag says.
+  #
+  # Unlike the creator-subscription reconciler this one DOES call
+  # Stripe, so FC_JOB_REQUIRES_STRIPE is true and the key must be
+  # present for it to boot.
+  - type: cron
+    name: fc-collective-membership-reconciler
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/collective_membership_reconcile.py
+    envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: FC_JOB_REQUIRES_STRIPE
+        value: "true"
+      - key: APP_ENV
+        value: production
+      # Canonical public address for every member-facing link. Required
+      # on each APP_ENV=production service — ``_check_public_app_url``
+      # refuses to boot without it.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+      # Dashboard-owned, like every other Stripe secret on this
+      # blueprint. Never a ``value:`` entry — see the fc-api block.
+      - key: STRIPE_SECRET_KEY
+        sync: false
       - key: SENTRY_DSN
         sync: false
 

@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -229,8 +229,18 @@ def activate_from_first_invoice(
         subscription.stripe_subscription_id = stripe_subscription_id
     subscription.current_period_start = period_start
     subscription.current_period_end = period_end
-    if not already_active:
+
+    # Stage 5A.2 — a payment arriving against a problem clears it. The
+    # same path serves the first invoice, a renewal and a recovery,
+    # which is deliberate: all three are "money arrived for this
+    # agreement", and three code paths would eventually disagree about
+    # what that means.
+    recovered = recover_payment_problem(
+        db, subscription=subscription, now=now,
+    )
+    if not already_active and not recovered:
         subscription.status = CollectiveMembershipStatus.active.value
+    if subscription.activated_at is None:
         subscription.activated_at = now
     subscription.updated_at = now
 
@@ -247,13 +257,29 @@ def activate_from_first_invoice(
     else:
         membership = outcome.skipped_reason or "unchanged"
 
+    # Stage 5A.2 — the one case the shared grant deliberately will not
+    # handle. ``ensure_membership_for_purchase`` skips a ``paused`` row
+    # with ``status_paused`` because four other purchase paths share it
+    # and any of them unpausing a membership would reverse pauses that
+    # had nothing to do with that purchase. A membership payment for
+    # *this* Collective is the one thing that should, so it is done
+    # here and only here. A ``removed`` row is still refused above.
+    if membership == "status_paused":
+        from app.services import collective_membership_access as _access
+
+        membership = _access.reactivate_paused_membership(
+            db, subscription=subscription, now=now,
+        )
+
     # Money taken, membership withheld. ``ensure_membership_for_purchase``
     # refuses to overturn a creator's removal or an admin's revocation,
     # which is correct — and leaves a payment that needs a human. Named
     # here so the webhook can log it loudly rather than returning
     # success for something that is not.
     needs_attention = None
-    if membership not in ("created", "reactivated", "already_active"):
+    if membership not in (
+        "created", "reactivated", "already_active", "unpaused",
+    ):
         needs_attention = membership
         logger.error(
             "collective membership: PAID BUT NOT A MEMBER sub=%s user=%s "
@@ -336,3 +362,274 @@ def cancel_subscription_now(
         )
     db.flush()
     return subscription
+
+
+# ---------------------------------------------------------------------------
+# Stage 5A.2 — the rest of the lifecycle
+# ---------------------------------------------------------------------------
+
+#: Fresh Collective's own grace window after a failed renewal.
+#:
+#: Seven days, matching ``creator_billing_handlers._GRACE_WINDOW``
+#: exactly. Reused rather than chosen afresh because a member whose card
+#: fails should get the same consideration whichever subscription it
+#: was, and two numbers would eventually drift apart with nobody
+#: noticing.
+#:
+#: Note what this window is *not*: it is not Stripe's retry schedule.
+#: Stripe retries on its own cadence and may still be trying when this
+#: expires. Expiry here pauses **access**; it does not tell Stripe to
+#: stop, which is why ``end_subscription`` cancels at the provider when
+#: grace runs out rather than assuming silence means stopped.
+GRACE_WINDOW = timedelta(days=7)
+
+
+def begin_payment_problem(
+    db: Session, *,
+    subscription: CollectiveMembership,
+    invoice_id: str | None,
+    now: datetime,
+) -> CollectiveMembership:
+    """A renewal failed. Start the clock; leave access alone.
+
+    Access continues through the window — a card expiring is not a
+    reason to shut somebody out of their community the same afternoon.
+    ``SpaceMembership`` is deliberately untouched here.
+
+    Idempotent: a second failed invoice inside an open window does not
+    restart it, so repeated retries cannot extend grace indefinitely.
+    """
+    if subscription.status not in (
+        CollectiveMembershipStatus.active.value,
+        CollectiveMembershipStatus.past_due.value,
+    ):
+        logger.info(
+            "collective membership: ignoring payment failure for %s "
+            "agreement sub=%s", subscription.status, subscription.id,
+        )
+        return subscription
+
+    if subscription.status != CollectiveMembershipStatus.past_due.value:
+        subscription.status = CollectiveMembershipStatus.past_due.value
+        subscription.payment_problem_started_at = now
+        subscription.grace_expires_at = now + GRACE_WINDOW
+        logger.warning(
+            "collective membership: payment problem sub=%s user=%s space=%s "
+            "grace until %s", subscription.id, subscription.user_id,
+            subscription.space_id, subscription.grace_expires_at,
+        )
+    if invoice_id:
+        subscription.last_failed_invoice_id = invoice_id
+    subscription.updated_at = now
+    db.flush()
+    return subscription
+
+
+def recover_payment_problem(
+    db: Session, *, subscription: CollectiveMembership, now: datetime,
+) -> bool:
+    """A retry succeeded. Clear the problem and the clock.
+
+    Returns True when there was a problem to clear. Does not grant
+    membership — the caller's activation path does that, so recovery and
+    first payment take the same route to access.
+    """
+    if subscription.status != CollectiveMembershipStatus.past_due.value:
+        return False
+    subscription.status = CollectiveMembershipStatus.active.value
+    subscription.payment_problem_started_at = None
+    subscription.grace_expires_at = None
+    subscription.last_failed_invoice_id = None
+    subscription.updated_at = now
+    logger.info(
+        "collective membership: recovered sub=%s user=%s space=%s",
+        subscription.id, subscription.user_id, subscription.space_id,
+    )
+    db.flush()
+    return True
+
+
+def schedule_cancellation(
+    db: Session, *,
+    subscription: CollectiveMembership,
+    now: datetime,
+    actor_user_id: str | None = None,
+) -> CollectiveMembership:
+    """Stop renewing; keep the paid period.
+
+    The member keeps what they paid for and is not charged again. Access
+    ends when the period does, not today — which is why this does not
+    touch ``SpaceMembership`` and ``end_subscription`` does.
+
+    Provider first, and idempotent at both ends: Stripe accepts a
+    repeated ``cancel_at_period_end``, and a second call here preserves
+    the original ``cancelled_at``.
+    """
+    import stripe
+
+    from app.core.config import settings
+
+    if subscription.status not in (
+        CollectiveMembershipStatus.active.value,
+        CollectiveMembershipStatus.past_due.value,
+        CollectiveMembershipStatus.cancel_scheduled.value,
+    ):
+        raise ValueError(
+            f"cannot schedule cancellation of a {subscription.status} "
+            f"agreement ({subscription.id})"
+        )
+
+    if subscription.stripe_subscription_id:
+        stripe.api_key = settings.stripe_secret_key
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id, cancel_at_period_end=True,
+        )
+
+    if subscription.status != CollectiveMembershipStatus.cancel_scheduled.value:
+        subscription.status = (
+            CollectiveMembershipStatus.cancel_scheduled.value
+        )
+        subscription.cancelled_at = now
+        subscription.cancelled_reason = "member_cancelled_renewal"
+        logger.info(
+            "collective membership: renewal cancelled sub=%s user=%s "
+            "space=%s access until %s by %s",
+            subscription.id, subscription.user_id, subscription.space_id,
+            subscription.current_period_end, actor_user_id or "member",
+        )
+    subscription.cancel_at_period_end = True
+    subscription.updated_at = now
+    db.flush()
+    return subscription
+
+
+def resume_cancelled_renewal(
+    db: Session, *, subscription: CollectiveMembership, now: datetime,
+) -> CollectiveMembership:
+    """Undo a scheduled cancellation while the period is still running.
+
+    Reactivates the *existing* Stripe subscription rather than opening a
+    new agreement — the member's terms, price and period are all still
+    valid, and a new subscription would re-price them at today's list.
+    """
+    import stripe
+
+    from app.core.config import settings
+
+    if subscription.status != CollectiveMembershipStatus.cancel_scheduled.value:
+        raise ValueError(
+            f"nothing to resume on a {subscription.status} agreement "
+            f"({subscription.id})"
+        )
+    if subscription.stripe_subscription_id:
+        stripe.api_key = settings.stripe_secret_key
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id, cancel_at_period_end=False,
+        )
+    subscription.status = CollectiveMembershipStatus.active.value
+    subscription.cancel_at_period_end = False
+    subscription.cancelled_at = None
+    subscription.cancelled_reason = None
+    subscription.updated_at = now
+    logger.info(
+        "collective membership: renewal resumed sub=%s user=%s space=%s",
+        subscription.id, subscription.user_id, subscription.space_id,
+    )
+    db.flush()
+    return subscription
+
+
+# ---------------------------------------------------------------------------
+# Stopping the money when the membership ends — §7, §8, §9, §10
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CancellationSweep:
+    """What happened when a membership ended."""
+
+    cancelled: int = 0
+    #: Agreements Stripe would not cancel. Non-zero means somebody has
+    #: left and **billing may still be running** — the caller flags the
+    #: membership and the reconciler retries.
+    failed: int = 0
+
+
+def cancel_live_subscriptions_for_member(
+    db: Session, *,
+    user_id: str,
+    space_id: str,
+    reason: str,
+    now: datetime,
+    actor_user_id: str | None = None,
+) -> CancellationSweep:
+    """Stop future charges for one member in one Collective.
+
+    Called from ``membership_removal.end_membership`` — the single point
+    every ending passes through, whether the member left, a creator
+    removed them, or they were banned. Hooking there rather than in each
+    route is what stops a fourth path being added later that forgets.
+
+    **Never raises.** A member must be able to leave even when Stripe is
+    unreachable; blocking the departure to protect the billing would get
+    the priority backwards. But a failure is not swallowed either:
+
+    * the agreement is left **live locally**, because it is still live
+      at Stripe and the row should say so — marking it cancelled would
+      be the local-field lie §7 warns about;
+    * an ERROR is logged naming the member, the Collective and the
+      agreement;
+    * the count comes back so the caller can set
+      ``SpaceMembership.payment_action_required``, which is the durable
+      operator signal;
+    * ``reconcile_collective_memberships`` finds live agreements whose
+      membership has ended and retries.
+
+    Scoped to one member and one Collective. Another Collective's
+    agreement, and anybody else's, are outside the query.
+    """
+    live = (
+        db.query(CollectiveMembership)
+        .filter(
+            CollectiveMembership.user_id == user_id,
+            CollectiveMembership.space_id == space_id,
+            CollectiveMembership.status.in_(sorted(_CANCELLABLE_STATUSES)),
+        )
+        .all()
+    )
+    cancelled = failed = 0
+    for sub in live:
+        try:
+            cancel_subscription_now(
+                db, subscription=sub, reason=reason, now=now,
+                actor_user_id=actor_user_id,
+            )
+            cancelled += 1
+        except Exception:
+            failed += 1
+            logger.exception(
+                "collective membership: COULD NOT STOP BILLING for sub=%s "
+                "user=%s space=%s — the member's membership is ending and "
+                "Stripe may still charge them. Left live locally for the "
+                "reconciler to retry.",
+                sub.id, user_id, space_id,
+            )
+    if cancelled or failed:
+        logger.info(
+            "collective membership: departure sweep user=%s space=%s "
+            "cancelled=%d failed=%d reason=%r",
+            user_id, space_id, cancelled, failed, reason,
+        )
+    return CancellationSweep(cancelled=cancelled, failed=failed)
+
+
+#: Agreements worth cancelling when a membership ends: anything that
+#: could still take money. ``cancel_scheduled`` is included — the member
+#: stopped the renewal but the current period is still live at Stripe,
+#: and leaving outright should end it now rather than let it run.
+_CANCELLABLE_STATUSES: frozenset[str] = frozenset({
+    CollectiveMembershipStatus.pending.value,
+    CollectiveMembershipStatus.active.value,
+    CollectiveMembershipStatus.past_due.value,
+    CollectiveMembershipStatus.cancel_scheduled.value,
+})
