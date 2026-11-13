@@ -153,8 +153,11 @@ describe('pricing types mirror the backend guard', () => {
   })
 
   test('paid types are unselectable without the capability', () => {
-    const src = codeOnly(FORM)
-    assert.match(src, /disabled=\{commercial && !paidOffersEnabled/)
+    // Matched against whitespace-collapsed source: Stage 5A.0 added a
+    // retired-type clause ahead of this one and wrapped the expression
+    // over several lines. The guard is what matters, not its layout.
+    const src = codeOnly(FORM).replace(/\s+/g, ' ')
+    assert.match(src, /commercial && !paidOffersEnabled/)
   })
 
   test('a value already saved stays selectable', () => {

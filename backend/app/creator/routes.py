@@ -72,6 +72,7 @@ from app.creator.plan_guards import (
     is_platform_owner as _is_platform_owner,
 )
 from app.creator.schemas import (
+    RETIRED_PRICING_TYPES,
     MemberImportPreview,
     MemberImportResult,
     AboutBlockCreateRequest,
@@ -1569,6 +1570,32 @@ def create_space(
     return space
 
 
+def _refuse_retired_pricing_change(*, incoming: str, stored: str | None) -> None:
+    """Allow a retired pricing type to be kept, never to be adopted.
+
+    The creator settings form sends ``pricing_type`` on every save,
+    initialised from the Collective's own stored value, so a blanket
+    refusal would stop a creator holding ``coming_soon`` from saving any
+    setting at all — including the pricing change that would move them
+    off it. Refusing only a *change* to a retired value keeps the door
+    open in the one direction that matters.
+
+    See ``creator.schemas.RETIRED_PRICING_TYPES`` for why the schema
+    still accepts the value.
+    """
+    if incoming not in RETIRED_PRICING_TYPES:
+        return
+    if incoming == (stored or ""):
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "That pricing type is no longer available. Choose Free, "
+            "Invite only, or a paid membership type."
+        ),
+    )
+
+
 @router.get("/spaces/{slug}", response_model=SpaceDetail)
 def get_space(
     slug: str,
@@ -1685,6 +1712,14 @@ def update_space(
         )
         space.themes = body.themes
     if body.pricing_type is not None:
+        # Stage 5A.0 — a retired pricing type may be kept, never newly
+        # chosen. Checked here rather than at the schema because only
+        # here is the Collective's *current* value visible, and the
+        # difference between "resaving what you already have" and
+        # "choosing this" is the whole rule.
+        _refuse_retired_pricing_change(
+            incoming=body.pricing_type, stored=space.pricing_type,
+        )
         # Plan enforcement on the UPDATE path, not only on create. Without
         # this, a non-commercial plan could create a free Collective (which
         # the create-path guard allows) and then PATCH it to a paid pricing

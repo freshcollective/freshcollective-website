@@ -72,9 +72,28 @@ class SpaceCreateRequest(BaseModel):
         return v
 
 
-ALLOWED_PRICING_TYPES: set[str] = {
-    "free", "paid_one_time", "paid_monthly", "paid_annual", "invite_only", "coming_soon",
+#: Pricing types a creator may choose today.
+SELECTABLE_PRICING_TYPES: set[str] = {
+    "free", "paid_one_time", "paid_monthly", "paid_annual", "invite_only",
 }
+
+#: Retired, but still readable.
+#:
+#: ``coming_soon`` advertised "Paid — coming soon" while there was no way
+#: to charge for membership at all. Stage 5A builds that, so the holding
+#: state has nothing left to say and is no longer offered.
+#:
+#: It stays accepted *here* on purpose. The settings form resends
+#: ``pricing_type`` on every save, read from the Collective's own stored
+#: value — so rejecting it outright at the schema would lock a creator
+#: holding it out of saving anything at all, including the pricing change
+#: that would move them off it. The route refuses it only as a *change*;
+#: see ``_refuse_retired_pricing_change``.
+RETIRED_PRICING_TYPES: set[str] = {"coming_soon"}
+
+#: What the wire accepts. Selectable plus retired, so a historical value
+#: round-trips unchanged rather than failing validation.
+ALLOWED_PRICING_TYPES: set[str] = SELECTABLE_PRICING_TYPES | RETIRED_PRICING_TYPES
 
 
 class SpaceUpdateRequest(BaseModel):

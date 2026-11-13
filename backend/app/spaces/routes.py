@@ -16,6 +16,7 @@ from app.services.rich_text import rich_text_to_plain
 from app.services import collective_header_image as _header_image
 from app.services import pathway_direct_offer as _direct_offer
 from app.spaces import booking_origin as _booking_origin
+from app.spaces import membership_pricing as _membership_pricing
 from app.spaces import member_option_purchases as _member_purchases
 from app.spaces import pathway_arrangement_display as _pathway_ways_to_join
 from app.creator.plan_guards import guard_member_allowance
@@ -1775,6 +1776,32 @@ def join_space(
                 "message": (
                     "Membership of this collective comes with a purchase. "
                     "Choose an option to join."
+                ),
+            },
+        )
+
+    # Stage 5A.0 — and the fee, if this Collective charges for
+    # membership.
+    #
+    # An *additional* condition, deliberately after the policy check
+    # rather than folded into it: ``join_policy`` governs who may ask
+    # and this governs what it costs, and a Collective may require both
+    # an invitation and a fee. Neither overrides the other.
+    #
+    # Inert until ``paid_collective_membership_enabled`` is switched on,
+    # which is the same flag that enables the membership checkout — so
+    # this refusal can never be live without somewhere for the member
+    # to go, and the checkout can never be live while the free door is
+    # still open beside it. Every ban, removal and rejoin rule below is
+    # untouched and still runs.
+    if _membership_pricing.free_join_blocked_by_payment(space.pricing_type):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "code": _membership_pricing.REASON_MEMBERSHIP_PAYMENT_REQUIRED,
+                "message": (
+                    "Membership of this collective is paid. Choose a "
+                    "membership to join."
                 ),
             },
         )

@@ -118,13 +118,19 @@ const PRICING_TYPE_OPTIONS: {
   value: string
   label: string
   commercial: boolean
+  retired?: boolean
 }[] = [
   { value: 'free',          label: 'Free',                 commercial: false },
   { value: 'paid_one_time', label: 'Paid — one time',      commercial: true },
   { value: 'paid_monthly',  label: 'Paid — monthly',       commercial: true },
   { value: 'paid_annual',   label: 'Paid — annual',        commercial: true },
   { value: 'invite_only',   label: 'Invite only',          commercial: true },
-  { value: 'coming_soon',   label: 'Paid — coming soon',   commercial: true },
+  // Stage 5A.0 — retired. It advertised "paid, eventually" while there
+  // was no way to charge for membership; Stage 5A builds that, so the
+  // holding state has nothing left to say. Kept in this list rather
+  // than deleted so a Collective that still holds the value renders
+  // its own state truthfully — see `retired` below.
+  { value: 'coming_soon',   label: 'Paid — coming soon',   commercial: true, retired: true },
 ]
 
 function isPaidType(type: PricingType): boolean {
@@ -891,7 +897,17 @@ function isPaidType(type: PricingType): boolean {
               onChange={(e) => setPricingType(e.target.value as PricingType)}
               className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"
             >
-              {PRICING_TYPE_OPTIONS.map(({ value, label, commercial }) => (
+              {PRICING_TYPE_OPTIONS
+                // Stage 5A.0 — a retired type is hidden unless this
+                // Collective actually holds it. Dropping it outright
+                // would leave such a Collective's select with no
+                // matching option, so the browser would show the first
+                // one — Free — and the next save would silently convert
+                // a paid-intent Collective to free. Shown and disabled
+                // is the honest state: here is what you have, choose
+                // something else to change it.
+                .filter(({ value, retired }) => !retired || value === space.pricing_type)
+                .map(({ value, label, commercial, retired }) => (
                 <option
                   key={value}
                   value={value}
@@ -900,12 +916,22 @@ function isPaidType(type: PricingType): boolean {
                   // Collective that holds a paid type from an earlier
                   // plan would render a select that misreports its own
                   // state, with no way to move back to Free.
-                  disabled={commercial && !paidOffersEnabled && value !== space.pricing_type}
+                  disabled={
+                    retired
+                    || (commercial && !paidOffersEnabled && value !== space.pricing_type)
+                  }
                 >
                   {label}
                 </option>
               ))}
             </select>
+            {space.pricing_type === 'coming_soon' && (
+              <p className="mt-2 text-[12.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
+                &ldquo;Paid — coming soon&rdquo; is no longer offered. Your
+                Collective keeps it until you choose something else — paid
+                membership is being built now.
+              </p>
+            )}
             {!paidOffersEnabled && (
               <p className="mt-2 text-[12.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
                 Paid pricing is available on Creator plans.{' '}

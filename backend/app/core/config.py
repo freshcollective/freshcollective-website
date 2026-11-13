@@ -286,6 +286,18 @@ class Settings(BaseSettings):
     # new discounted plans; it never strands an established one.
     universal_discount_codes_enabled: bool = False
 
+    # Stage 5A — paid Collective membership billing.
+    #
+    # Governs BOTH the payment requirement at the join door and the
+    # membership checkout that Stage 5A.1 adds, deliberately as one
+    # switch: a gate without a checkout makes a paid Collective
+    # unjoinable, and a checkout without a gate leaves the free door
+    # open beside it. Neither half is safe alone, so neither half gets
+    # its own flag.
+    #
+    # Default off, and unrelated to ``universal_discount_codes_enabled``.
+    paid_collective_membership_enabled: bool = False
+
     # Stage 3 — how long a seat may stay reserved for a payment plan
     # that has never taken its first payment.
     #

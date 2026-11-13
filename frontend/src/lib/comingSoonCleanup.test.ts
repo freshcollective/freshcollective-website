@@ -165,11 +165,16 @@ describe('legitimate "coming soon" states are preserved', () => {
     )
   })
 
-  test('coming_soon is still a selectable Collective pricing type', () => {
-    assert.match(
-      read('app/creator-studio/settings/CollectiveSettingsForm.tsx'),
-      /value: 'coming_soon'/,
-    )
+  test('coming_soon is retired from selection but still rendered', () => {
+    // Stage 5A.0 changed this deliberately. The option stays in the
+    // list and stays labelled, because a Collective that holds the
+    // value must render its own state truthfully — dropping it would
+    // leave the select showing Free and convert them on the next save.
+    // What changed is that it is now marked `retired`, filtered out
+    // unless held, and disabled when shown.
+    const src = read('app/creator-studio/settings/CollectiveSettingsForm.tsx')
+    assert.match(src, /value: 'coming_soon'.*retired: true/)
+    assert.match(src, /!retired \|\| value === space\.pricing_type/)
   })
 
   test('the member-facing paid-access state is unchanged', () => {
