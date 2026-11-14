@@ -73,6 +73,10 @@ export default function CollectiveSettingsForm({ space, tab = 'details', paidOff
   // confirming. Holds the number it reported, so the warning names
   // the same figure the server counted rather than a stale one.
   const [transitionPrompt, setTransitionPrompt] = useState<number | null>(null)
+  // Set when the backend refuses a save that would make the Collective
+  // paid with no date. Highlights the field rather than leaving the
+  // creator to find it in a sentence.
+  const [needsTransitionDate, setNeedsTransitionDate] = useState(false)
   const [hasPaidInternalContent, setHasPaidInternalContent] = useState(space.has_paid_internal_content ?? false)
   const [includedAccessSummary, setIncludedAccessSummary] = useState(space.included_access_summary ?? '')
   const [paidContentSummary, setPaidContentSummary] = useState(space.paid_content_summary ?? '')
@@ -460,6 +464,21 @@ function supportsTransition(type: PricingType): boolean {
         // transition that would pause people. Surfaced as a
         // confirmation rather than an error, because the creator is
         // allowed to mean it — they just have to say so.
+        // Becoming paid without naming the day. Not a confirmation —
+        // there is nothing to confirm until a date is chosen — so it
+        // surfaces as an error pointing at the field.
+        if (
+          detail && typeof detail === 'object'
+          && (detail as { code?: string }).code
+            === 'membership_transition_date_required'
+        ) {
+          const d = detail as { message?: string }
+          setNeedsTransitionDate(true)
+          throw new Error(
+            d.message
+            ?? 'Choose the date your existing members must subscribe by.',
+          )
+        }
         if (
           detail && typeof detail === 'object'
           && (detail as { code?: string }).code
@@ -485,6 +504,7 @@ function supportsTransition(type: PricingType): boolean {
         setSaved(true)
         setTransitionAck(false)
         setTransitionPrompt(null)
+        setNeedsTransitionDate(false)
         router.refresh()
       }
     } catch (err) {
@@ -1043,8 +1063,7 @@ function supportsTransition(type: PricingType): boolean {
                 htmlFor="membership-effective-on"
                 className="mb-1.5 block text-[14px] font-semibold text-navy-900"
               >
-                Existing members pay from{' '}
-                <span className="font-normal text-black">(optional)</span>
+                Existing members must subscribe by
               </label>
               <input
                 id="membership-effective-on"
@@ -1056,49 +1075,44 @@ function supportsTransition(type: PricingType): boolean {
                   // given for the previous one no longer applies.
                   setTransitionAck(false)
                   setTransitionPrompt(null)
+                  setNeedsTransitionDate(false)
                 }}
                 aria-describedby="membership-effective-help"
-                className="block rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400"
+                aria-invalid={needsTransitionDate || undefined}
+                className={
+                  'block rounded-lg border bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400 '
+                  + (needsTransitionDate
+                    ? 'border-[#B0503C]'
+                    : 'border-slate-200')
+                }
               />
               <div
                 id="membership-effective-help"
                 className="mt-3 space-y-2 text-[13px] leading-relaxed"
                 style={{ color: 'rgba(12,24,38,0.72)' }}
               >
-                {effectiveOn ? (
-                  <>
-                    <p>
-                      From this date, belonging to{' '}
-                      <strong className="font-semibold text-navy-900">{space.name}</strong>{' '}
-                      needs a membership subscription. Members who
-                      haven&rsquo;t subscribed by then keep their place,
-                      their history and anything they&rsquo;ve bought
-                      separately &mdash; but their membership is paused
-                      until they do.
-                    </p>
-                    <p>
-                      Nobody is charged automatically, and nobody is
-                      subscribed without choosing to.{' '}
-                      <strong className="font-semibold text-navy-900">
-                        Telling your members is yours to do
-                      </strong>{' '}
-                      &mdash; Fresh Collective won&rsquo;t email them
-                      about this.
-                    </p>
-                    {space.members_needing_subscription > 0 && (
-                      <p>
-                        {space.members_needing_subscription === 1
-                          ? '1 current member has'
-                          : `${space.members_needing_subscription} current members have`}{' '}
-                        no subscription yet.
-                      </p>
-                    )}
-                  </>
-                ) : (
+                <p>
+                  Choose the date your existing members will need to
+                  subscribe to continue accessing this Collective.
+                  Anyone who hasn&rsquo;t subscribed by then will lose
+                  access to members-only experiences. Their history and
+                  separately purchased experiences will be preserved.
+                </p>
+                <p>
+                  Nobody is charged automatically, and nobody is
+                  subscribed without choosing to.{' '}
+                  <strong className="font-semibold text-navy-900">
+                    Telling your members is yours to do
+                  </strong>{' '}
+                  &mdash; Fresh Collective won&rsquo;t email them about
+                  this.
+                </p>
+                {space.members_needing_subscription > 0 && (
                   <p>
-                    Leave this empty and the fee applies to people
-                    joining from now on. Everyone already here carries
-                    on exactly as they are.
+                    {space.members_needing_subscription === 1
+                      ? '1 current member has'
+                      : `${space.members_needing_subscription} current members have`}{' '}
+                    no subscription yet.
                   </p>
                 )}
               </div>

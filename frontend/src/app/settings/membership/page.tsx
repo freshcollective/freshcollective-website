@@ -1,20 +1,24 @@
 import {
-  getMe, getMyMemberships, getRetainedReservations,
+  getMe, getMyMemberships, getMyMembershipSubscriptions,
+  getRetainedReservations,
 } from '@/lib/serverApi'
 import CollectivesList from './CollectivesList'
+import MembershipSubscriptions from './MembershipSubscriptions'
 import RetainedReservations from './RetainedReservations'
 import type {
-  UserProfile, SpaceMembership, RetainedReservation,
+  UserProfile, SpaceMembership, RetainedReservation, MembershipState,
 } from '@/types/platform'
 
 export default async function SettingsMembershipPage() {
-  const [profile, memberships, reservations]: [
+  const [profile, memberships, subscriptions, reservations]: [
     UserProfile | null,
     SpaceMembership[],
+    MembershipState[],
     RetainedReservation[],
   ] = await Promise.all([
     getMe(),
     getMyMemberships(),
+    getMyMembershipSubscriptions(),
     getRetainedReservations(),
   ])
 
@@ -58,20 +62,17 @@ export default async function SettingsMembershipPage() {
           there are none, which is the usual case. */}
       <RetainedReservations reservations={reservations} />
 
-      {/* Subscription placeholder */}
-      <section>
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
-          Subscription
-        </p>
-        <div className="overflow-hidden rounded-2xl border border-dashed border-border bg-white px-6 py-8 text-center">
-          <p className="text-[14px] text-black">
-            Subscription management coming soon.
+      {/* Paid memberships. Rendered only when there are any — a
+          member of nothing but free Collectives should not be shown
+          an empty billing section they will never use. */}
+      {subscriptions.length > 0 && (
+        <section>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
+            Paid memberships
           </p>
-          <p className="mt-1 text-[12px] text-black">
-            Billing and plan details will appear here once Stripe is connected.
-          </p>
-        </div>
-      </section>
+          <MembershipSubscriptions rows={subscriptions} />
+        </section>
+      )}
     </div>
   )
 }

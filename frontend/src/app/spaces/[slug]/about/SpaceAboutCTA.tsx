@@ -11,6 +11,7 @@ import {
 import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
 import JoiningDoors from './JoiningDoors'
+import SubscribeButton from '@/components/membership/SubscribeButton'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { JoinPolicy, JoiningOption, PricingType } from '@/types/platform'
 
@@ -233,10 +234,40 @@ export default function SpaceAboutCTA({
     )
   }
 
-  // Paid collective — link into the checkout prototype. The checkout
-  // page reads getMe() and branches logged-in vs logged-out onward,
-  // so this one entry point works for both cases.
+  // Paid collective. Monthly membership is a real recurring
+  // subscription and opens Stripe through the Stage 5A.1 endpoint;
+  // the server prices it, so nothing about the amount travels from
+  // here.
+  //
+  // Annual and one-off joining fees are NOT wired to a purchase
+  // journey yet (Stage 5A.3c), and the rule for those is that the
+  // page must not imply otherwise — a button that opened a checkout
+  // which refuses would be worse than saying so. They keep a link to
+  // the existing enquiry route rather than a payment action.
   if (isPaidPricingType(pricingType)) {
+    if (pricingType === 'paid_monthly') {
+      if (!isLoggedIn) {
+        return (
+          <div className="flex flex-col gap-2">
+            <Link
+              href={`/login?next=/spaces/${slug}/about`}
+              className={tealBtn}
+              style={tealStyle}
+            >
+              Sign in to join
+            </Link>
+          </div>
+        )
+      }
+      return (
+        <SubscribeButton
+          slug={slug}
+          label="Join collective"
+          className={tealBtn}
+          style={tealStyle}
+        />
+      )
+    }
     return (
       <div className="flex flex-col gap-2">
         <Link

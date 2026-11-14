@@ -21,7 +21,9 @@ from app.auth.schemas import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.models.platform import CreatorProfile, Space, SpaceMembership
+from app.models.platform import (
+    CreatorProfile, Space, SpaceMembership, SpaceMembershipStatus,
+)
 from app.core.config import settings
 from app.core.public_url import public_app_url
 from app.core.database import get_db
@@ -457,6 +459,77 @@ async def get_memberships(
             })
 
     return result
+
+
+@router.get("/me/membership-subscriptions")
+async def get_my_membership_subscriptions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Every Collective membership this member pays for, or must.
+
+    Separate from ``/me/memberships`` on purpose. That endpoint
+    answers "which Collectives am I in?" and six surfaces read it —
+    the dashboard, the world map, a Collective's own layout. Hanging
+    billing state off it would ship an agreement's price and renewal
+    date to five pages that have no use for them, and would tempt the
+    sixth into treating its membership list as a billing model.
+
+    Two populations, because the member needs both:
+
+    * every Collective they hold an **agreement** with, whatever its
+      state — including ``ended``, so "your membership has ended" can
+      be said rather than silently omitted;
+    * every Collective they are an active member of that **charges**
+      for membership and where they hold nothing — which is the
+      conversion prompt, and the one case where the member has
+      something to do and no record to hang it on.
+
+    Each row is the same view the Collective's own page uses, so the
+    two cannot describe the same agreement differently.
+    """
+    from app.models.collective_membership import CollectiveMembership
+    from app.services import collective_membership_view as _view
+    from app.spaces import membership_pricing
+
+    agreement_space_ids = {
+        row[0] for row in db.query(CollectiveMembership.space_id).filter(
+            CollectiveMembership.user_id == current_user.id,
+        )
+    }
+
+    member_rows = (
+        db.query(Space)
+        .join(SpaceMembership, SpaceMembership.space_id == Space.id)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .all()
+    )
+    convertible_ids = {
+        space.id for space in member_rows
+        if membership_pricing.transition_supported(space.pricing_type)
+        and space.creator_id != current_user.id
+    }
+
+    space_ids = agreement_space_ids | convertible_ids
+    if not space_ids:
+        return []
+
+    spaces = db.query(Space).filter(Space.id.in_(space_ids)).all()
+    views = [
+        _view.membership_state(db, user=current_user, space=space)
+        for space in spaces
+    ]
+    # Something to do first, then something to read.
+    return sorted(
+        views,
+        key=lambda v: (
+            not v["transition"]["action_needed"],
+            v["space"]["name"].lower(),
+        ),
+    )
 
 
 @router.post("/me/change-password")

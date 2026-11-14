@@ -1343,6 +1343,65 @@ export interface JoiningOption {
   sessions_total?: number | null
 }
 
+/**
+ * One member's own view of belonging to one Collective.
+ *
+ * Mirrors `collective_membership_view.membership_state`. Everything
+ * about money in `subscription` comes from the agreement the member
+ * actually signed, never from the Collective's current list price —
+ * a creator who re-priced yesterday has not re-priced them.
+ */
+export interface MembershipAgreement {
+  id: string
+  status: 'pending' | 'active' | 'past_due' | 'cancel_scheduled' | 'ended' | 'cancelled' | 'failed'
+  amount_cents: number
+  currency: string
+  interval: string
+  interval_count: number
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  /** When the next charge falls, or null when renewal is off. */
+  renews_at: string | null
+  /** When access runs out, or null when it is renewing. */
+  access_until: string | null
+  /** Only while recovery is running. */
+  grace_expires_at: string | null
+  started_at: string | null
+  ended_at: string | null
+}
+
+export interface MembershipState {
+  space: { id: string, slug: string, name: string }
+  is_member: boolean
+  membership_status: string | null
+  is_owner: boolean
+  offer: {
+    pricing_type: PricingType
+    amount_cents: number | null
+    currency: string
+    is_paid: boolean
+    /** Monthly and annual only — a one-off joining fee has no
+     *  subscription to open, so nothing may imply it does. */
+    subscribable: boolean
+  }
+  transition: {
+    effective_at: string | null
+    effective_on: string | null
+    has_passed: boolean
+    /** This member still has to do something about it. */
+    action_needed: boolean
+  }
+  subscription: MembershipAgreement | null
+  actions: {
+    can_subscribe: boolean
+    subscribe_refusal: string | null
+    can_cancel_renewal: boolean
+    can_resume: boolean
+    can_update_payment_method: boolean
+    can_continue_checkout: boolean
+  }
+}
+
 export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'
 
 export type ResourceType = 'link' | 'file' | 'replay' | 'guide' | 'template' | 'audio' | 'video' | 'other'

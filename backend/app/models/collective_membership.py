@@ -80,10 +80,28 @@ class CollectiveMembershipStatus(str, enum.Enum):
 #: Statuses that are, or could still become, billing. Mirrors the
 #: partial unique index in migration 189 exactly — if these two ever
 #: disagree the database wins, and a test asserts they do not.
+#:
+#: **Do not widen this to make a lookup work.** It is a statement
+#: about what the database permits to coexist, not about what a member
+#: may act on; see ``MANAGEABLE_STATUSES``.
 LIVE_STATUSES: frozenset[str] = frozenset({
     CollectiveMembershipStatus.pending.value,
     CollectiveMembershipStatus.active.value,
     CollectiveMembershipStatus.past_due.value,
+})
+
+#: Statuses a member can still *do* something about.
+#:
+#: ``LIVE_STATUSES`` plus ``cancel_scheduled``, and the difference is
+#: the point. A scheduled cancellation is not live — it cannot collide
+#: with a new agreement, so the unique index rightly ignores it — but
+#: it is the one state from which resuming is possible, and the only
+#: state in which "cancel again" should be the no-op its endpoint
+#: promises. Looking an agreement up for management through
+#: ``LIVE_STATUSES`` made both of those unreachable: the route answered
+#: 404 for the single status its own action required.
+MANAGEABLE_STATUSES: frozenset[str] = LIVE_STATUSES | frozenset({
+    CollectiveMembershipStatus.cancel_scheduled.value,
 })
 
 

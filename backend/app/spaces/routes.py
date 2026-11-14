@@ -18,6 +18,8 @@ from app.services import pathway_direct_offer as _direct_offer
 from app.spaces import booking_origin as _booking_origin
 from app.spaces import membership_pricing as _membership_pricing
 from app.services import collective_membership_billing as _cmem_billing
+from app.services import collective_membership_view as _cmem_view
+from app.services import collective_membership_payment_method as _cmem_pm
 from app.services import collective_membership_eligibility as _cmem_eligibility
 from app.services import collective_membership_lifecycle as _cmem_lifecycle
 from app.spaces import member_option_purchases as _member_purchases
@@ -85,6 +87,8 @@ from app.spaces.schemas import (
     PathwayWithSteps,
     MemberOptionPurchaseOut,
     MembershipCheckoutRequest,
+    MembershipPaymentMethodConfirm,
+    MembershipPaymentMethodRequest,
     WaysToJoinArrangementOut,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
@@ -1816,7 +1820,7 @@ def start_membership_checkout(
     }
 
 
-def _my_live_membership_subscription(db, *, user, space):
+def _my_manageable_membership_subscription(db, *, user, space):
     """This member's own agreement with this Collective, or 404.
 
     Scoped by both ids on the query, so a member cannot name somebody
@@ -1824,9 +1828,16 @@ def _my_live_membership_subscription(db, *, user, space):
     those live in a different table entirely. 404 rather than 403: an
     agreement they do not hold is one that does not exist as far as
     they are concerned.
+
+    Looks through ``MANAGEABLE_STATUSES`` rather than
+    ``LIVE_STATUSES``. This used to use the latter, which excludes
+    ``cancel_scheduled`` — so the resume endpoint answered 404 for the
+    only status it can act on, and cancelling twice answered 404
+    instead of the no-op its docstring promises. Both were unreachable
+    from the moment they were written.
     """
     from app.models.collective_membership import (
-        LIVE_STATUSES, CollectiveMembership,
+        MANAGEABLE_STATUSES, CollectiveMembership,
     )
 
     row = (
@@ -1834,7 +1845,7 @@ def _my_live_membership_subscription(db, *, user, space):
         .filter(
             CollectiveMembership.user_id == user.id,
             CollectiveMembership.space_id == space.id,
-            CollectiveMembership.status.in_(sorted(LIVE_STATUSES)),
+            CollectiveMembership.status.in_(sorted(MANAGEABLE_STATUSES)),
         )
         .order_by(CollectiveMembership.created_at.desc())
         .first()
@@ -1845,6 +1856,29 @@ def _my_live_membership_subscription(db, *, user, space):
             detail="You don't have a membership subscription here.",
         )
     return row
+
+
+@router.get("/{slug}/membership/state", status_code=200)
+def my_membership_state(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """What this member needs to know about belonging to this one
+    Collective: their membership, their agreement, the transition if
+    there is one, and which actions are open to them.
+
+    Their own, and only their own — the view is built from
+    ``current_user`` and cannot be asked about anybody else.
+
+    Not gated on the feature flag. A member who holds an agreement
+    must be able to read it whatever the flag says; what the flag
+    governs is whether a *new* one can be opened, and
+    ``actions.can_subscribe`` reports that honestly because it asks
+    the same eligibility service the checkout endpoint does.
+    """
+    space = _get_space_by_slug_or_404(slug, db)
+    return _cmem_view.membership_state(db, user=current_user, space=space)
 
 
 @router.post("/{slug}/membership/cancel", status_code=200)
@@ -1869,7 +1903,7 @@ def cancel_membership_renewal(
     switch.
     """
     space = _get_space_by_slug_or_404(slug, db)
-    sub = _my_live_membership_subscription(db, user=current_user, space=space)
+    sub = _my_manageable_membership_subscription(db, user=current_user, space=space)
     try:
         _cmem_lifecycle.schedule_cancellation(
             db, subscription=sub, now=datetime.utcnow(),
@@ -1885,6 +1919,65 @@ def cancel_membership_renewal(
     }
 
 
+@router.post("/{slug}/membership/payment-method", status_code=200)
+def start_membership_payment_method_update(
+    slug: str,
+    body: MembershipPaymentMethodRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """A hosted Stripe page for changing the card on *this* membership.
+
+    Scoped to one agreement, which is the whole point — see
+    ``collective_membership_payment_method`` for the verified reason a
+    Billing Portal session is not used.
+
+    Not gated on the membership billing flag: servicing an agreement
+    that already exists must not depend on a switch that governs
+    opening new ones.
+    """
+    space = _get_space_by_slug_or_404(slug, db)
+    sub = _my_manageable_membership_subscription(
+        db, user=current_user, space=space,
+    )
+    try:
+        url = _cmem_pm.open_collection_session(
+            subscription=sub, space=space,
+            success_url=body.success_url, cancel_url=body.cancel_url,
+        )
+    except _cmem_pm.PaymentMethodUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"checkout_url": url}
+
+
+@router.post("/{slug}/membership/payment-method/confirm", status_code=200)
+def confirm_membership_payment_method_update(
+    slug: str,
+    body: MembershipPaymentMethodConfirm,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_current_user),
+):
+    """Attach the card the member just entered, to this agreement only.
+
+    The member's return from Stripe is what triggers this, but the
+    *authority* is Stripe: the Session is re-read from the provider
+    and checked against this agreement in both directions before
+    anything is changed. A return URL is a navigation, not evidence.
+    """
+    space = _get_space_by_slug_or_404(slug, db)
+    sub = _my_manageable_membership_subscription(
+        db, user=current_user, space=space,
+    )
+    try:
+        outcome = _cmem_pm.apply_collected_method(
+            db, subscription=sub, session_id=body.session_id,
+        )
+    except _cmem_pm.PaymentMethodUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return outcome
+
+
 @router.post("/{slug}/membership/resume", status_code=200)
 def resume_membership_renewal(
     slug: str,
@@ -1898,7 +1991,7 @@ def resume_membership_renewal(
     and a new agreement would reprice them at today's list.
     """
     space = _get_space_by_slug_or_404(slug, db)
-    sub = _my_live_membership_subscription(db, user=current_user, space=space)
+    sub = _my_manageable_membership_subscription(db, user=current_user, space=space)
     try:
         _cmem_lifecycle.resume_cancelled_renewal(
             db, subscription=sub, now=datetime.utcnow(),

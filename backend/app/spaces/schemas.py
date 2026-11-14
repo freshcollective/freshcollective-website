@@ -697,6 +697,30 @@ class MemberOptionPurchaseOut(BaseModel):
     plan: MemberPlanSummaryOut | None = None
 
 
+class MembershipPaymentMethodRequest(BaseModel):
+    """Opening a hosted page to change the card on one membership.
+
+    Where to come back to, and nothing else. Which agreement is being
+    re-carded comes from the URL and the signed-in member, never from
+    the body — a request that could name an agreement is a request
+    that could name somebody else's.
+    """
+
+    success_url: str
+    cancel_url: str
+
+
+class MembershipPaymentMethodConfirm(BaseModel):
+    """The Stripe Session the member has just come back from.
+
+    An id, which is a claim rather than proof. The server re-reads the
+    Session from Stripe and checks it against the agreement in both
+    directions before anything moves.
+    """
+
+    session_id: str
+
+
 class MembershipCheckoutRequest(BaseModel):
     """Opening recurring membership checkout for a Collective.
 

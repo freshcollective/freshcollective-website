@@ -1628,9 +1628,14 @@ TRANSITION_NEEDS_ACK_CODE = "membership_transition_needs_acknowledgement"
 #: ``membership_pricing.transition_supported``.
 TRANSITION_UNSUPPORTED_CODE = "membership_transition_unsupported_pricing"
 
+#: Returned when a Collective with members to convert is made paid
+#: without naming the day they must have subscribed by.
+TRANSITION_DATE_REQUIRED_CODE = "membership_transition_date_required"
+
 
 def _apply_membership_transition_date(
     db: Session, *, space: Space, body: SpaceUpdateRequest, now: datetime,
+    pricing_before: str | None,
 ) -> None:
     """Store when membership starts having to be paid for.
 
@@ -1663,6 +1668,22 @@ def _apply_membership_transition_date(
 
     **A future date is always safe to set or move.** Nothing has
     happened yet, and the sweep ignores it until it is due.
+
+    **Becoming paid with members to convert requires a date.** Added
+    in 5A.3b, and it reverses 5A.3a's default rather than refining it.
+    Leaving the date empty used to mean "existing members carry on",
+    which read as permanent free membership and was not the product
+    decision: when a Collective starts charging, the people already in
+    it have to subscribe too, and the creator chooses when. Omission
+    is no longer a way to grant an indefinite exemption by accident.
+
+    It fires **only on the save that makes a Collective paid**, and
+    only when somebody would actually have to convert. Not on later
+    edits to an already-paid Collective — a creator fixing a typo in
+    their pricing note must not be made to re-decide a transition —
+    and not when there is nobody to convert. That narrowness is the
+    whole design: the demand lands once, at the moment it is a real
+    decision.
     """
     sent = body.model_fields_set
 
@@ -1690,37 +1711,70 @@ def _apply_membership_transition_date(
             )
         return
 
-    if "paid_membership_effective_on" not in sent:
-        return
+    if "paid_membership_effective_on" in sent:
+        chosen = body.paid_membership_effective_on
+        if chosen is None:
+            space.paid_membership_effective_at = None
+        else:
+            instant = membership_pricing.transition_instant(
+                chosen, space.timezone,
+            )
+            if instant is not None and instant <= now:
+                pending = len(
+                    collective_membership_access.members_without_agreement(
+                        db, space=space,
+                    )
+                )
+                if pending and not body.paid_membership_transition_ack:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": TRANSITION_NEEDS_ACK_CODE,
+                            "members_needing_subscription": pending,
+                            "message": (
+                                f"This date has already passed, so {pending} "
+                                f"current member(s) who have not subscribed "
+                                f"would lose access as soon as it takes "
+                                f"effect. Confirm that you mean to start "
+                                f"now, or choose a future date."
+                            ),
+                        },
+                    )
+            space.paid_membership_effective_at = instant
 
-    chosen = body.paid_membership_effective_on
-    if chosen is None:
-        space.paid_membership_effective_at = None
-        return
-
-    instant = membership_pricing.transition_instant(chosen, space.timezone)
-    if instant is not None and instant <= now:
+    # The Collective is becoming paid on *this* save, and nobody has
+    # said when the people already in it must have subscribed by.
+    #
+    # Asked here rather than at the schema because only here are both
+    # the before and the after visible, and the difference between
+    # "turning this on" and "editing something else on a Collective
+    # that was already paid" is the entire rule. An existing paid
+    # Collective is never re-asked.
+    if (
+        not membership_pricing.transition_supported(pricing_before)
+        and space.paid_membership_effective_at is None
+    ):
         pending = len(
             collective_membership_access.members_without_agreement(
                 db, space=space,
             )
         )
-        if pending and not body.paid_membership_transition_ack:
+        if pending:
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "code": TRANSITION_NEEDS_ACK_CODE,
+                    "code": TRANSITION_DATE_REQUIRED_CODE,
                     "members_needing_subscription": pending,
                     "message": (
-                        f"This date has already passed, so {pending} "
-                        f"current member(s) who have not subscribed "
-                        f"would lose access as soon as it takes effect. "
-                        f"Confirm that you mean to start now, or choose "
-                        f"a future date."
+                        f"Choose the date your existing members must "
+                        f"subscribe by. {pending} member(s) are in this "
+                        f"collective already, and they need a paid "
+                        f"membership to keep their access \u2014 leaving "
+                        f"the date empty would not make them free, it "
+                        f"would leave them without one."
                     ),
                 },
             )
-    space.paid_membership_effective_at = instant
 
 
 @router.get("/spaces/{slug}", response_model=SpaceDetail)
@@ -1742,6 +1796,9 @@ def update_space(
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
+    # Read before anything is applied: one transition rule turns on
+    # what the Collective *was*, not what it is becoming.
+    _pricing_type_before = space.pricing_type
     # Auto-managed collectives (World Builders): editable fields like
     # identity, about content, timezone and themes are allowed; access
     # and pricing fields are frozen because Fresh Collective owns them.
@@ -1874,6 +1931,7 @@ def update_space(
     # pricing type the save is leaving behind, not the one it found.
     _apply_membership_transition_date(
         db, space=space, body=body, now=datetime.utcnow(),
+        pricing_before=_pricing_type_before,
     )
     if body.has_paid_internal_content is not None:
         space.has_paid_internal_content = body.has_paid_internal_content

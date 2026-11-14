@@ -381,6 +381,24 @@ export const getMyMemberships = cache(async () => {
   return res.json()
 })
 
+/**
+ * Every Collective membership this member pays for, or must.
+ *
+ * Separate from ``getMyMemberships`` on purpose — see the endpoint's
+ * own note. That one answers "which Collectives am I in?" and is read
+ * by six surfaces; this one carries agreements and belongs to the one
+ * page that manages them.
+ *
+ * An empty list on failure, like its sibling: the Membership settings
+ * page showing no subscriptions is a far better failure than the page
+ * not rendering.
+ */
+export const getMyMembershipSubscriptions = cache(async () => {
+  const res = await fetchWithSession('/api/auth/me/membership-subscriptions')
+  if (!res.ok) return []
+  return res.json()
+})
+
 // ---------------------------------------------------------------------------
 // Ways to Connect
 // ---------------------------------------------------------------------------
