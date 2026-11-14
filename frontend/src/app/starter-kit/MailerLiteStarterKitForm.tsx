@@ -180,7 +180,7 @@ export default function MailerLiteStarterKitForm() {
                   type="submit"
                   className="primary w-full rounded-lg bg-teal-700 px-5 py-3 text-[15px] font-semibold text-white transition hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2"
                 >
-                  Send me the Starter Kit!
+                  Send me the kit
                 </button>
                 {/* MailerLite swaps these two while submitting. */}
                 <button

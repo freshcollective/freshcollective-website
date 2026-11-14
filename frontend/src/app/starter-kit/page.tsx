@@ -25,7 +25,7 @@ import MailerLiteStarterKitForm from './MailerLiteStarterKitForm'
  */
 
 export const metadata: Metadata = {
-  title: 'Creator Starter Kit',
+  title: 'Creator Starter Kit · Fresh Collective',
   description:
     'A free, printable workbook for coaches, teachers and practitioners: '
     + 'what to set up, what to say to your people, and a move plan.',
@@ -120,7 +120,7 @@ export default function StarterKitPage() {
                   className="text-[20px] text-navy-900"
                   style={SERIF_HEADING}
                 >
-                  Send me the kit
+                  Get your free copy
                 </h2>
                 <div className="mt-4">
                   <MailerLiteStarterKitForm />
