@@ -246,19 +246,9 @@ export default function SpaceAboutCTA({
   // the existing enquiry route rather than a payment action.
   if (isPaidPricingType(pricingType)) {
     if (pricingType === 'paid_monthly') {
-      if (!isLoggedIn) {
-        return (
-          <div className="flex flex-col gap-2">
-            <Link
-              href={`/login?next=/spaces/${slug}/about`}
-              className={tealBtn}
-              style={tealStyle}
-            >
-              Sign in to join
-            </Link>
-          </div>
-        )
-      }
+      // Signed out is already handled above, before this branch is
+      // reached — so by here the member is signed in and the action
+      // is a real checkout rather than a trip to the login page.
       return (
         <SubscribeButton
           slug={slug}
