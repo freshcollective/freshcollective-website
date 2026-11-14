@@ -108,6 +108,7 @@ const PUBLIC_PAGES = [
   '/real-journey',
   '/discover-places',
   '/guides',
+  '/starter-kit',
   '/leadershipbodychart',
   '/tnlbook',
   '/ecosystem-interest',

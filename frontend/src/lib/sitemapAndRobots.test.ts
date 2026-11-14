@@ -132,6 +132,18 @@ describe('which pages are offered', () => {
     assert.ok(publicPages().includes('/ecosystem-interest'))
   })
 
+  test('the Starter Kit opt-in is offered', () => {
+    // A public, signed-out page whose whole purpose is to be found —
+    // and one with no ``robots`` override of its own, so the site
+    // default applies and the sitemap entry is the only thing that
+    // advertises it.
+    assert.ok(publicPages().includes('/starter-kit'))
+    assert.doesNotMatch(
+      read('src/app/starter-kit/page.tsx'),
+      /robots:/,
+    )
+  })
+
   test('no signed-in or internal surface is offered', () => {
     const pages = publicPages()
     for (const closed of [

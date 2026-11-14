@@ -95,6 +95,7 @@ const TRACKED_EXACT: ReadonlySet<string> = new Set([
   // on it is sensitive — this is the same unlisted-means-unlisted
   // answer given to crawlers, kept consistent across both files.
   '/guides',
+  '/starter-kit',
   // Public discovery
   '/spaces',
   '/discover-places',

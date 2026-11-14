@@ -39,6 +39,7 @@ describe('public pages are tracked', () => {
     '/ecosystem-interest',
     '/tnlbook',
     '/guides',
+    '/starter-kit',
     '/spaces',
     '/discover-places',
     '/world-guide',
