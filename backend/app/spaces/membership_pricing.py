@@ -36,6 +36,7 @@ flag off, every Collective joins exactly as it does today.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime, time
 from typing import Final
 
 from app.core.config import settings
@@ -89,3 +90,69 @@ def free_join_blocked_by_payment(pricing_type: object) -> bool:
     route, which is worse than the gap it closes.
     """
     return is_paid_membership(pricing_type) and billing_enabled()
+
+
+# ---------------------------------------------------------------------------
+# The transition date
+# ---------------------------------------------------------------------------
+#
+# ``Space.paid_membership_effective_at`` is the moment belonging here
+# starts having to be paid for. A creator chooses a *day*; the sweep
+# needs an *instant*; the two are connected by the Collective's own
+# timezone, exactly as a discount code's expiry is
+# (``discount_pricing.resolve_expiry_instant``, whose shape these
+# mirror deliberately).
+#
+# The difference from an expiry is which end of the day is meant. An
+# expiry runs to the end of the chosen day — a code picked for the 31st
+# works all of the 31st. A transition *begins* on the chosen day: "from
+# 1 January, membership costs A$29" means members have through the 31st
+# of December and the new rule holds the moment the 1st starts. So this
+# resolves to the START of the local day where the expiry resolves to
+# the start of the following one.
+
+
+def transition_instant(
+    effective_on: date | None, timezone_name: str | None,
+) -> datetime | None:
+    """The UTC instant a transition chosen for ``effective_on`` begins.
+
+    Midnight at the start of that local day, returned UTC-naive to
+    match the ``DateTime(timezone=False)`` storage convention.
+
+    Melbourne, 1 Jan 2027 (AEDT, UTC+11):
+        → 1 Jan 2027 00:00 +11:00
+        → 2026-12-31 13:00 UTC
+
+    So existing members have through the whole of 31 December where
+    they live, and the requirement holds the moment the 1st begins
+    there — not when the 1st begins in UTC, thirteen hours later.
+    """
+    if effective_on is None:
+        return None
+    from app.services.discount_pricing import collective_timezone
+
+    tz = collective_timezone(timezone_name)
+    start_of_day_local = datetime.combine(effective_on, time.min, tzinfo=tz)
+    return start_of_day_local.astimezone(UTC).replace(tzinfo=None)
+
+
+def transition_date_in_timezone(
+    effective_at: datetime | None, timezone_name: str | None,
+) -> date | None:
+    """The calendar day a stored transition instant represents.
+
+    The inverse of :func:`transition_instant`, so a creator is shown
+    back the date they chose rather than whatever the instant looks
+    like in the reader's timezone. Exact rather than approximate: the
+    stored instant *is* the start of the chosen local day, so reading
+    it back in that timezone lands on the day itself whatever the
+    offset — no stepping back a microsecond, which an expiry needs and
+    this does not.
+    """
+    if effective_at is None:
+        return None
+    from app.services.discount_pricing import collective_timezone
+
+    tz = collective_timezone(timezone_name)
+    return effective_at.replace(tzinfo=UTC).astimezone(tz).date()

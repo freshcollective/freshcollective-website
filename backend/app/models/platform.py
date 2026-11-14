@@ -264,12 +264,23 @@ class Space(Base):
         String(10), nullable=False, default="AUD", server_default="AUD"
     )
     pricing_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    # Stage 5A — the date from which belonging here must be paid for.
+    # Stage 5A — the instant from which belonging here must be paid
+    # for, stored UTC-naive like every other timestamp on this model.
     #
-    # NULL means no transition is set, which is every Collective today.
-    # A timestamp is the date existing free members have until. Read to
-    # describe the transition; nothing acts on it yet — no sweep, no
-    # pausing, no scheduling. That is Stage 5A.2.
+    # NULL means no transition is set, and a paid Collective with no
+    # date never pauses anybody: it charges new joiners and leaves
+    # existing members where they are. A timestamp is the moment
+    # existing members had until — the start of the creator's chosen
+    # day in the Collective's own timezone, resolved by
+    # ``membership_pricing.transition_instant``.
+    #
+    # Acted on by ``collective_membership_reconcile`` (5A.2), which
+    # pauses members holding no agreement once it is due, and set
+    # through Collective Settings → Pricing (5A.3a). It is only ever
+    # meaningful alongside a paid ``pricing_type``: both the settings
+    # route and the sweep refuse the other combination, because a
+    # date on a free Collective would pause people out of something
+    # they cannot buy.
     paid_membership_effective_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )

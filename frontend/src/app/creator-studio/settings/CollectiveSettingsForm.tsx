@@ -58,6 +58,21 @@ export default function CollectiveSettingsForm({ space, tab = 'details', paidOff
     space.pricing_amount_cents ? String(Math.round(space.pricing_amount_cents / 100)) : ''
   )
   const [pricingNote, setPricingNote] = useState(space.pricing_note ?? '')
+  // The transition date, as the day the creator chose in their
+  // Collective's timezone. '' means no transition — a paid Collective
+  // that charges new joiners and leaves existing members alone.
+  const [effectiveOn, setEffectiveOn] = useState(
+    space.paid_membership_effective_on ?? '',
+  )
+  // Consent to a transition that takes effect at once. Deliberately
+  // not persisted and reset after every save: the backend asks again
+  // on the next request, and a checkbox left ticked from last week is
+  // not consent to today's change.
+  const [transitionAck, setTransitionAck] = useState(false)
+  // Set from the backend's 422 when an immediate transition needs
+  // confirming. Holds the number it reported, so the warning names
+  // the same figure the server counted rather than a stale one.
+  const [transitionPrompt, setTransitionPrompt] = useState<number | null>(null)
   const [hasPaidInternalContent, setHasPaidInternalContent] = useState(space.has_paid_internal_content ?? false)
   const [includedAccessSummary, setIncludedAccessSummary] = useState(space.included_access_summary ?? '')
   const [paidContentSummary, setPaidContentSummary] = useState(space.paid_content_summary ?? '')
@@ -410,6 +425,13 @@ function isPaidType(type: PricingType): boolean {
                   : null,
                 pricing_currency: 'AUD',
                 pricing_note: pricingNote.trim() || null,
+                // Always sent, including empty, so clearing a date is
+                // expressible — the backend reads an explicit null as
+                // "remove it" and an absent field as "leave alone".
+                // On a non-paid type the backend clears it regardless;
+                // a date only means something where there is a fee.
+                paid_membership_effective_on: effectiveOn || null,
+                paid_membership_transition_ack: transitionAck,
                 has_paid_internal_content: hasPaidInternalContent,
                 included_access_summary: includedAccessSummary.trim() || null,
                 paid_content_summary: paidContentSummary.trim() || null,
@@ -419,7 +441,21 @@ function isPaidType(type: PricingType): boolean {
 
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
-        throw new Error(typeof b.detail === 'string' ? b.detail : `Save failed (${res.status})`)
+        const detail: unknown = b.detail
+        // The one refusal with a conversation attached: an immediate
+        // transition that would pause people. Surfaced as a
+        // confirmation rather than an error, because the creator is
+        // allowed to mean it — they just have to say so.
+        if (
+          detail && typeof detail === 'object'
+          && (detail as { code?: string }).code
+            === 'membership_transition_needs_acknowledgement'
+        ) {
+          const d = detail as { message?: string; members_needing_subscription?: number }
+          setTransitionPrompt(d.members_needing_subscription ?? 0)
+          throw new Error(d.message ?? 'Confirm this change to continue.')
+        }
+        throw new Error(typeof detail === 'string' ? detail : `Save failed (${res.status})`)
       }
 
       const saved = await res.json() as { slug: string }
@@ -433,6 +469,8 @@ function isPaidType(type: PricingType): boolean {
         router.refresh()
       } else {
         setSaved(true)
+        setTransitionAck(false)
+        setTransitionPrompt(null)
         router.refresh()
       }
     } catch (err) {
@@ -964,6 +1002,124 @@ function isPaidType(type: PricingType): boolean {
                   AUD{pricingType === 'paid_monthly' ? ' / month' : pricingType === 'paid_annual' ? ' / year' : ''}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* ── When membership starts being paid for ──
+
+              Only for paid types: a date on a free Collective means
+              nothing, and the backend clears it. Placed under the
+              amount because the two are read together — what it costs,
+              and from when.
+
+              The whole panel is an explanation with a date in it,
+              rather than a date with help text. A creator setting this
+              is deciding what happens to people who already belong,
+              and the consequences are not guessable from a date
+              field. */}
+          {isPaidType(pricingType) && (
+            <div
+              className="rounded-xl border p-4"
+              style={{
+                borderColor: 'rgba(56,160,158,0.30)',
+                background: 'rgba(56,160,158,0.05)',
+              }}
+            >
+              <label
+                htmlFor="membership-effective-on"
+                className="mb-1.5 block text-[14px] font-semibold text-navy-900"
+              >
+                Existing members pay from{' '}
+                <span className="font-normal text-black">(optional)</span>
+              </label>
+              <input
+                id="membership-effective-on"
+                type="date"
+                value={effectiveOn}
+                onChange={(e) => {
+                  setEffectiveOn(e.target.value)
+                  // A changed date is a new decision; any confirmation
+                  // given for the previous one no longer applies.
+                  setTransitionAck(false)
+                  setTransitionPrompt(null)
+                }}
+                aria-describedby="membership-effective-help"
+                className="block rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400"
+              />
+              <div
+                id="membership-effective-help"
+                className="mt-3 space-y-2 text-[13px] leading-relaxed"
+                style={{ color: 'rgba(12,24,38,0.72)' }}
+              >
+                {effectiveOn ? (
+                  <>
+                    <p>
+                      From this date, belonging to{' '}
+                      <strong className="font-semibold text-navy-900">{space.name}</strong>{' '}
+                      needs a membership subscription. Members who
+                      haven&rsquo;t subscribed by then keep their place,
+                      their history and anything they&rsquo;ve bought
+                      separately &mdash; but their membership is paused
+                      until they do.
+                    </p>
+                    <p>
+                      Nobody is charged automatically, and nobody is
+                      subscribed without choosing to.{' '}
+                      <strong className="font-semibold text-navy-900">
+                        Telling your members is yours to do
+                      </strong>{' '}
+                      &mdash; Fresh Collective won&rsquo;t email them
+                      about this.
+                    </p>
+                    {space.members_needing_subscription > 0 && (
+                      <p>
+                        {space.members_needing_subscription === 1
+                          ? '1 current member has'
+                          : `${space.members_needing_subscription} current members have`}{' '}
+                        no subscription yet.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p>
+                    Leave this empty and the fee applies to people
+                    joining from now on. Everyone already here carries
+                    on exactly as they are.
+                  </p>
+                )}
+              </div>
+
+              {/* Shown only when the backend has refused an immediate
+                  transition. A date in the past is allowed, but not
+                  silently: changing a dropdown must not be the same
+                  gesture as pausing people today. */}
+              {transitionPrompt !== null && (
+                <div
+                  className="mt-3 rounded-lg border p-3"
+                  style={{
+                    borderColor: 'rgba(176,80,60,0.35)',
+                    background: 'rgba(176,80,60,0.06)',
+                  }}
+                >
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={transitionAck}
+                      onChange={(e) => setTransitionAck(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-teal-500"
+                    />
+                    <span className="text-[13px] leading-relaxed text-navy-900">
+                      This date has already passed, so it takes effect
+                      straight away.{' '}
+                      {transitionPrompt === 1
+                        ? '1 member who has'
+                        : `${transitionPrompt} members who have`}{' '}
+                      not subscribed will be paused as soon as it does.
+                      I understand, and I mean to start now.
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 

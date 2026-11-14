@@ -51,6 +51,7 @@ from app.models.platform import (
 )
 from app.services import collective_membership_access as access
 from app.services import collective_membership_lifecycle as lifecycle
+from app.spaces import membership_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -211,34 +212,26 @@ def _sweep_paid_transitions(
         .all()
     )
     for space in spaces:
-        members = (
-            db.query(SpaceMembership)
-            .filter(
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.status == SpaceMembershipStatus.active,
+        # A date on a Collective that does not charge for membership
+        # pauses people out of something they cannot buy their way back
+        # into: eligibility answers NOT_PAID, so there is no checkout to
+        # open. The settings route clears the date when pricing leaves
+        # paid, and this is the second half of that — a row already
+        # carrying the combination, however it got there, is skipped
+        # rather than acted on.
+        if not membership_pricing.is_paid_membership(space.pricing_type):
+            logger.info(
+                "membership reconcile: skipping transition for space=%s — "
+                "pricing_type=%s is not paid",
+                space.slug, space.pricing_type,
             )
-            .all()
-        )
+            continue
         space_id, space_slug = space.id, space.slug
-        for membership in members:
+        # The same predicate Creator Studio counts when it warns a
+        # creator what their date will do — see
+        # ``access.members_without_agreement``.
+        for membership in access.members_without_agreement(db, space=space):
             member_user_id = membership.user_id
-            if member_user_id == space.creator_id:
-                continue
-            paid = (
-                db.query(CollectiveMembership.id)
-                .filter(
-                    CollectiveMembership.user_id == membership.user_id,
-                    CollectiveMembership.space_id == space.id,
-                    CollectiveMembership.status.in_([
-                        CollectiveMembershipStatus.active.value,
-                        CollectiveMembershipStatus.past_due.value,
-                        CollectiveMembershipStatus.cancel_scheduled.value,
-                    ]),
-                )
-                .first()
-            )
-            if paid is not None:
-                continue
             try:
                 # A synthetic agreement carrying only the identity the
                 # pause needs. Nothing is written for it — this member

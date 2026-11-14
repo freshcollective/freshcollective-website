@@ -406,18 +406,25 @@ class TestWhoMaySubscribe:
             db, user=member, space=paid_space,
         ) is elig.NOT_PAID
 
-    def test_an_active_member_has_nothing_to_buy(
+    def test_an_active_member_holding_no_agreement_may_buy(
         self, db, paid_space, member,
     ):
+        """Stage 5A.3a §6 — reversed deliberately.
+
+        This asserted ``ALREADY_ACTIVE`` until 5A.3a, and the rule was
+        right while being a member of a paid Collective and paying for
+        it were the same fact. The free-to-paid transition separates
+        them: every existing member of a converting Collective is
+        active and holds nothing, and each has to be able to buy
+        without leaving first.
+        """
         db.add(SpaceMembership(
             id=_uid("sm"), space_id=paid_space.id, user_id=member.id,
             role="learner", status=SpaceMembershipStatus.active,
             source="joined", joined_at=NOW,
         ))
         db.flush()
-        assert elig.refusal_for(
-            db, user=member, space=paid_space,
-        ) is elig.ALREADY_ACTIVE
+        assert elig.refusal_for(db, user=member, space=paid_space) is None
 
     def test_a_creator_removal_cannot_be_bought_past(
         self, db, paid_space, member,
@@ -464,18 +471,25 @@ class TestWhoMaySubscribe:
             db, user=member, space=paid_space,
         ) is elig.NOT_ELIGIBLE
 
-    def test_a_paused_membership_cannot_be_bought_past_either(
+    def test_a_paused_membership_is_exactly_who_may_buy(
         self, db, paid_space, member,
     ):
+        """Stage 5A.3a §8 — also reversed, and for the same reason.
+
+        ``paused`` inside a paid Collective is this system's own doing:
+        the transition sweep, or a lapsed agreement. Refusing it left
+        the one group the sweep creates with no way back, while the
+        fulfilment path (``reactivate_paused_membership``) stood ready
+        to let them in. A creator's removal is still refused — the test
+        below this one holds that line.
+        """
         db.add(SpaceMembership(
             id=_uid("sm"), space_id=paid_space.id, user_id=member.id,
             role="learner", status=SpaceMembershipStatus.paused,
             source="joined", joined_at=NOW,
         ))
         db.flush()
-        assert elig.refusal_for(
-            db, user=member, space=paid_space,
-        ) is elig.NOT_ELIGIBLE
+        assert elig.refusal_for(db, user=member, space=paid_space) is None
 
     def test_an_auto_managed_collective_sells_no_membership(
         self, db, paid_space, member,

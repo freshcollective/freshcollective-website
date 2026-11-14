@@ -52,6 +52,70 @@ logger = logging.getLogger(__name__)
 MEMBERSHIP_ONLY_SOURCES: frozenset[str] = frozenset({"member"})
 
 
+#: Subscription statuses that satisfy a paid-membership requirement.
+#:
+#: Narrower than ``LIVE_STATUSES``, and deliberately: that set includes
+#: ``pending``, which is a checkout nobody has paid for yet. A pending
+#: agreement must not keep anybody's access when the transition date
+#: arrives — abandoning Stripe would otherwise be indistinguishable
+#: from paying. ``cancel_scheduled`` *is* here, because the period
+#: already paid for is still running.
+SATISFYING_STATUSES: frozenset[str] = frozenset({
+    CollectiveMembershipStatus.active.value,
+    CollectiveMembershipStatus.past_due.value,
+    CollectiveMembershipStatus.cancel_scheduled.value,
+})
+
+
+def holds_satisfying_agreement(
+    db: Session, *, user_id: str, space_id: str,
+) -> bool:
+    """Does this member already pay to belong here?"""
+    return (
+        db.query(CollectiveMembership.id)
+        .filter(
+            CollectiveMembership.user_id == user_id,
+            CollectiveMembership.space_id == space_id,
+            CollectiveMembership.status.in_(sorted(SATISFYING_STATUSES)),
+        )
+        .first()
+    ) is not None
+
+
+def members_without_agreement(
+    db: Session, *, space: Space,
+) -> list[SpaceMembership]:
+    """Active members who would be paused if the transition ran now.
+
+    One predicate, two readers: the transition sweep pauses exactly
+    these people, and Creator Studio counts them to tell a creator what
+    their date will do. Written once so the warning a creator is shown
+    cannot describe a different group from the one the sweep acts on —
+    a number that quietly disagreed with the behaviour would be worse
+    than no number at all.
+
+    The Collective's owner is never included. They are not paused (see
+    ``pause_membership_for_lapse``) and they cannot subscribe to their
+    own Collective, so counting them would overstate the impact by one
+    and name somebody who has nothing to do.
+    """
+    rows = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .all()
+    )
+    return [
+        row for row in rows
+        if row.user_id != space.creator_id
+        and not holds_satisfying_agreement(
+            db, user_id=row.user_id, space_id=space.id,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class LapseOutcome:
     membership_paused: bool

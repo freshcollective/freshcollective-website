@@ -993,6 +993,19 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   included_access_summary: string | null
   paid_content_summary: string | null
   derived_has_paid_internal_content: boolean
+  /** When membership starts having to be paid for.
+   *
+   *  `_at` is the authoritative UTC instant; `_on` is that instant
+   *  read back in the Collective's own timezone, which is the day the
+   *  creator chose and the only one worth showing them. Both null
+   *  when no transition is set — which is a paid Collective that
+   *  charges new joiners and leaves existing members alone. */
+  paid_membership_effective_at: string | null
+  paid_membership_effective_on: string | null
+  /** How many current members would be paused if that date passed
+   *  now: active, not the owner, holding no subscription. Zero on a
+   *  Collective that does not charge for membership. */
+  members_needing_subscription: number
   /** Whether learners can see each other. Edited on the Collective
    *  Home settings tab; enforced server-side for the Members tile,
    *  the Members nav tab, the directory itself and Recognition. */

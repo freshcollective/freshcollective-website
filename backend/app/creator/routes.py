@@ -33,6 +33,8 @@ from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.services import membership_removal
 from app.services import membership_grant
+from app.services import collective_membership_access
+from app.spaces import membership_pricing
 from app.services.creator_eligibility import is_eligible_creator
 from app.services.streaming_upload import (
     EmptyUpload,
@@ -332,6 +334,26 @@ def _space_detail_response(
     from app.services import offering_pilot as _offering_pilot
     data["offerings_available"] = _offering_pilot.offerings_available_for(space)
     data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
+    # The transition, as the creator needs to read it: the day they
+    # chose in their Collective's own timezone, and how many people
+    # that day would currently affect.
+    #
+    # The count is skipped entirely unless membership is paid. A free
+    # Collective has no transition to describe, and this response is
+    # built on every Creator Studio space fetch — so the common case
+    # pays nothing for a field it would always read as zero.
+    data['paid_membership_effective_on'] = (
+        membership_pricing.transition_date_in_timezone(
+            space.paid_membership_effective_at, space.timezone,
+        )
+    )
+    data['members_needing_subscription'] = (
+        len(collective_membership_access.members_without_agreement(
+            db, space=space,
+        ))
+        if membership_pricing.is_paid_membership(space.pricing_type)
+        else 0
+    )
     data['location_id'] = space.location_id
     data['atmosphere_keys'] = list(space.atmosphere_keys or [])
     data['identity_statement'] = space.identity_statement
@@ -1596,6 +1618,92 @@ def _refuse_retired_pricing_change(*, incoming: str, stored: str | None) -> None
     )
 
 
+#: Returned when an immediate transition would pause people and the
+#: creator has not said they mean it. A stable code so the form can
+#: raise its confirmation rather than parsing prose.
+TRANSITION_NEEDS_ACK_CODE = "membership_transition_needs_acknowledgement"
+
+
+def _apply_membership_transition_date(
+    db: Session, *, space: Space, body: SpaceUpdateRequest, now: datetime,
+) -> None:
+    """Store when membership starts having to be paid for.
+
+    Called **after** ``pricing_type`` has been applied, because every
+    rule here depends on what the Collective will be when the save
+    finishes, not on what it was when the request arrived. A creator
+    switching to Paid and naming a date does both in one PATCH.
+
+    Three rules, and the reasoning for each:
+
+    **A date only means something on a paid Collective.** If the save
+    leaves pricing anywhere else, any stored date is cleared — not
+    refused. Refused would be the trap ``coming_soon`` already taught
+    us: the form sends every pricing field on every save, so a creator
+    moving back to Free would send last month's date alongside it and
+    be unable to save anything at all. Clearing is also a correctness
+    requirement rather than tidiness — the sweep keys off the date, so
+    a free Collective carrying a past one would have its members
+    paused out of something they cannot buy their way back into. The
+    sweep now refuses that combination too; this is the near half of
+    the same guard.
+
+    **A date that has already passed takes effect at once.** That is
+    allowed — a creator may legitimately mean "from today" — but only
+    said out loud. Where members would actually be paused by it, an
+    unacknowledged request is refused, because changing a dropdown
+    must never be the same gesture as removing a hundred people's
+    access. Where nobody would be paused there is nothing to warn
+    about and nothing to acknowledge.
+
+    **A future date is always safe to set or move.** Nothing has
+    happened yet, and the sweep ignores it until it is due.
+    """
+    sent = body.model_fields_set
+
+    if not membership_pricing.is_paid_membership(space.pricing_type):
+        if space.paid_membership_effective_at is not None:
+            logger.info(
+                "membership transition: clearing date on space=%s — "
+                "pricing_type=%s is not paid",
+                space.slug, space.pricing_type,
+            )
+        space.paid_membership_effective_at = None
+        return
+
+    if "paid_membership_effective_on" not in sent:
+        return
+
+    chosen = body.paid_membership_effective_on
+    if chosen is None:
+        space.paid_membership_effective_at = None
+        return
+
+    instant = membership_pricing.transition_instant(chosen, space.timezone)
+    if instant is not None and instant <= now:
+        pending = len(
+            collective_membership_access.members_without_agreement(
+                db, space=space,
+            )
+        )
+        if pending and not body.paid_membership_transition_ack:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": TRANSITION_NEEDS_ACK_CODE,
+                    "members_needing_subscription": pending,
+                    "message": (
+                        f"This date has already passed, so {pending} "
+                        f"current member(s) who have not subscribed "
+                        f"would lose access as soon as it takes effect. "
+                        f"Confirm that you mean to start now, or choose "
+                        f"a future date."
+                    ),
+                },
+            )
+    space.paid_membership_effective_at = instant
+
+
 @router.get("/spaces/{slug}", response_model=SpaceDetail)
 def get_space(
     slug: str,
@@ -1631,6 +1739,15 @@ def update_space(
             "has_paid_internal_content",
             "included_access_summary",
             "paid_content_summary",
+            # Not a Space column — the stored field is
+            # ``paid_membership_effective_at``. Listed by its request
+            # name on purpose: this loop compares what was *sent*
+            # against the Collective, and a date sent here can never
+            # match, which is the refusal we want. An auto-managed
+            # Collective is locked to free pricing anyway, so the
+            # transition logic below would clear it regardless; this
+            # is the explicit 403 rather than the silent no-op.
+            "paid_membership_effective_on",
         )
         for _field in _AUTO_MANAGED_LOCKED_FIELDS:
             _incoming = getattr(body, _field, None)
@@ -1734,6 +1851,11 @@ def update_space(
         space.pricing_currency = body.pricing_currency
     if body.pricing_note is not None:
         space.pricing_note = body.pricing_note.strip() or None
+    # After pricing, never before: every rule in here reads the
+    # pricing type the save is leaving behind, not the one it found.
+    _apply_membership_transition_date(
+        db, space=space, body=body, now=datetime.utcnow(),
+    )
     if body.has_paid_internal_content is not None:
         space.has_paid_internal_content = body.has_paid_internal_content
     if body.included_access_summary is not None:

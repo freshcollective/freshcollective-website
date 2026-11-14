@@ -115,6 +115,25 @@ class SpaceUpdateRequest(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str | None = None
     pricing_note: str | None = None
+    #: The day membership starts having to be paid for, in the
+    #: Collective's own timezone. Stored as the UTC instant that day
+    #: begins there — see ``membership_pricing.transition_instant``.
+    #:
+    #: Explicit ``null`` clears it, and the route reads
+    #: ``model_fields_set`` to tell that apart from the field being
+    #: absent. The settings form sends every pricing field on every
+    #: save, so "absent" has to keep meaning "leave alone" or saving
+    #: the Pricing tab would wipe a date the creator set last week.
+    paid_membership_effective_on: date | None = None
+    #: Consent to a transition that takes effect immediately, where
+    #: existing members would be paused by it. Not stored: it is a
+    #: statement about *this request*, and the next save must ask
+    #: again rather than inherit an answer given once.
+    #:
+    #: A pricing dropdown is not consent to remove anybody's access —
+    #: so this is required, by the route, exactly when the date being
+    #: saved has already passed and there are members it would pause.
+    paid_membership_transition_ack: bool = False
     has_paid_internal_content: bool | None = None
     included_access_summary: str | None = None
     paid_content_summary: str | None = None
@@ -254,6 +273,22 @@ class SpaceDetail(BaseModel):
     included_access_summary: str | None = None
     paid_content_summary: str | None = None
     derived_has_paid_internal_content: bool = False
+    #: When membership starts having to be paid for. The instant is
+    #: authoritative and UTC; the date is that instant read back in
+    #: the Collective's timezone, so a creator is shown the day they
+    #: chose rather than whichever day it is in the reader's.
+    paid_membership_effective_at: datetime | None = None
+    paid_membership_effective_on: date | None = None
+    #: How many current members would be paused if that date passed
+    #: now: active, not the owner, holding no agreement that satisfies
+    #: the requirement. The same predicate the sweep acts on
+    #: (``collective_membership_access.members_without_agreement``), so
+    #: the warning cannot describe a different group from the one that
+    #: would actually be paused.
+    #:
+    #: Zero for a Collective that does not charge for membership —
+    #: answered without a query, since there is nothing to transition.
+    members_needing_subscription: int = 0
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
