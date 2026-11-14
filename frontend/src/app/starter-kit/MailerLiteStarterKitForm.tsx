@@ -63,6 +63,12 @@
 import Script from 'next/script'
 import { useEffect } from 'react'
 
+import {
+  HERO_PRIMARY_SHAPE_CLASS,
+  HERO_PRIMARY_SKIN_CLASS,
+  HERO_PRIMARY_STYLE_AA,
+} from '@/components/marketing/heroCtaButtons'
+
 const FORM_ID = '48497910'
 const ACTION =
   'https://assets.mailerlite.com/jsonp/998040/forms/204012058054755951/subscribe'
@@ -176,18 +182,37 @@ export default function MailerLiteStarterKitForm() {
               <input type="hidden" name="ml-submit" value="1" />
 
               <div className="ml-form-embedSubmit mt-5">
+                {/* The homepage's primary CTA, worn by a submit
+                    button: the same shape, glow, radius and padding,
+                    reused from ``heroCtaButtons`` rather than
+                    matched by eye, in the deeper teal that lets
+                    white type clear 4.5:1 — the homepage's own
+                    gradient manages 3.06:1 at best, and this is the
+                    only control on the page. ``primary`` stays first —
+                    MailerLite's script finds this button by that
+                    class to swap in the loading one below.
+
+                    The focus ring is kept from the old button. The
+                    hero links do without one; a form control that
+                    submits an address should not. */}
                 <button
                   type="submit"
-                  className="primary w-full rounded-lg bg-teal-700 px-5 py-3 text-[15px] font-semibold text-white transition hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2"
+                  className={
+                    `primary w-full text-[16px] ${HERO_PRIMARY_SHAPE_CLASS} ${HERO_PRIMARY_SKIN_CLASS} `
+                    + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2'
+                  }
+                  style={HERO_PRIMARY_STYLE_AA}
                 >
                   Send me the kit
                 </button>
-                {/* MailerLite swaps these two while submitting. */}
+                {/* MailerLite swaps these two while submitting. The
+                    same surface, so the swap is invisible apart from
+                    the spinner. */}
                 <button
                   disabled
-                  style={{ display: 'none' }}
+                  style={{ display: 'none', ...HERO_PRIMARY_STYLE_AA }}
                   type="button"
-                  className="loading w-full rounded-lg bg-teal-700 px-5 py-3 text-[15px] font-semibold text-white"
+                  className={`loading w-full text-[16px] ${HERO_PRIMARY_SHAPE_CLASS} ${HERO_PRIMARY_SKIN_CLASS}`}
                 >
                   <div className="ml-form-embedSubmitLoad" />
                   <span className="sr-only">Loading...</span>

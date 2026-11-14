@@ -4,6 +4,8 @@ import Container from '@/components/layout/Container'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { SERIF_HEADING } from '@/components/guides/serif'
+import { apiUrl } from '@/lib/api'
+import KitPreview from './KitPreview'
 import MailerLiteStarterKitForm from './MailerLiteStarterKitForm'
 
 /**
@@ -47,7 +49,53 @@ const INSIDE = [
   'Your first week in',
 ]
 
-export default function StarterKitPage() {
+/**
+ * The header artwork, read from Guides settings.
+ *
+ * Not a copy of the file. The sunset islands are set once, in
+ * ``GuideSettings``, and /guides reads them from
+ * ``/api/public/guides``; this page reads the same two fields from
+ * the same endpoint, so changing the image in Guides settings
+ * changes both headers and neither can end up showing artwork the
+ * other has moved on from. The alt text comes with it — it
+ * describes the artwork, which is the same artwork.
+ *
+ * The cost of that is one call per request for two fields on an
+ * endpoint that also builds the published Guides list. It is a
+ * marketing page that already reaches the server on every visit
+ * (``SiteShell`` reads cookies), and the alternative was a second
+ * public endpoint for a value one page already serves.
+ *
+ * No image is a supported state, not a failure: ``PageHero`` falls
+ * back to the plain navy card with its gradient heading, which is
+ * what this page shipped with. So an API that is down costs the
+ * artwork, never the page.
+ */
+async function loadHeaderImage(): Promise<{ url: string; alt: string } | null> {
+  try {
+    const res = await fetch(apiUrl('/api/public/guides'), { cache: 'no-store' })
+    if (!res.ok) return null
+    const data: unknown = await res.json()
+    if (!data || typeof data !== 'object') return null
+    const payload = data as { header_image_url?: unknown; header_image_alt?: unknown }
+    const url = typeof payload.header_image_url === 'string'
+      ? payload.header_image_url
+      : ''
+    if (!url) return null
+    return {
+      url,
+      alt: typeof payload.header_image_alt === 'string'
+        ? payload.header_image_alt
+        : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+export default async function StarterKitPage() {
+  const headerImage = await loadHeaderImage()
+
   return (
     <SiteShell>
       <div style={{ background: '#FFFFFF' }}>
@@ -59,6 +107,7 @@ export default function StarterKitPage() {
           bandBackground="#FFFFFF"
           align="center"
           accentTone="gold"
+          backgroundImage={headerImage}
         />
 
         <Container className="pb-16 pt-10 md:pb-24 md:pt-12">
@@ -68,6 +117,11 @@ export default function StarterKitPage() {
               to 900px. */}
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_380px] lg:gap-14">
             <div>
+              {/* Above the copy in both layouts — on a phone because
+                  the column stacks, on a desktop because the pages
+                  are the invitation and the paragraph explains them. */}
+              <KitPreview />
+
               <p className="text-[16.5px] leading-relaxed text-navy-900">
                 Ten printable pages to work through with a pen. By the end
                 you&rsquo;ll know what to set up, what to say to your people,
