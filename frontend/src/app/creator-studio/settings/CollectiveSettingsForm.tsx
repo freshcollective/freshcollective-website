@@ -150,6 +150,19 @@ const PRICING_TYPE_OPTIONS: {
 
 function isPaidType(type: PricingType): boolean {
     return type === 'paid_one_time' || type === 'paid_monthly' || type === 'paid_annual'
+}
+
+/**
+ * Can members of a Collective priced this way hold a subscription?
+ *
+ * Narrower than `isPaidType`, and the gap is `paid_one_time`: a
+ * one-off joining fee is a purchase, not an agreement, so there is
+ * nothing for a transition date to require. The backend refuses a
+ * date on it for the same reason — see
+ * `membership_pricing.transition_supported`.
+ */
+function supportsTransition(type: PricingType): boolean {
+    return type === 'paid_monthly' || type === 'paid_annual'
   }
 
   /**
@@ -430,7 +443,8 @@ function isPaidType(type: PricingType): boolean {
                 // "remove it" and an absent field as "leave alone".
                 // On a non-paid type the backend clears it regardless;
                 // a date only means something where there is a fee.
-                paid_membership_effective_on: effectiveOn || null,
+                paid_membership_effective_on:
+                  supportsTransition(pricingType) ? (effectiveOn || null) : null,
                 paid_membership_transition_ack: transitionAck,
                 has_paid_internal_content: hasPaidInternalContent,
                 included_access_summary: includedAccessSummary.trim() || null,
@@ -1017,7 +1031,7 @@ function isPaidType(type: PricingType): boolean {
               is deciding what happens to people who already belong,
               and the consequences are not guessable from a date
               field. */}
-          {isPaidType(pricingType) && (
+          {supportsTransition(pricingType) && (
             <div
               className="rounded-xl border p-4"
               style={{

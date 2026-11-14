@@ -71,6 +71,29 @@ def is_paid_membership(pricing_type: object) -> bool:
     )
 
 
+def transition_supported(pricing_type: object) -> bool:
+    """Can a member of this Collective hold an agreement that satisfies
+    a transition date?
+
+    Narrower than :func:`is_paid_membership`, and the gap is
+    ``paid_one_time``. That is a paid Collective — joining costs money
+    — but a one-off joining fee is a purchase, not a subscription, and
+    ``membership_pricing_terms.resolve`` refuses it for exactly that
+    reason. So there is no agreement for a member of one to hold, and
+    a transition date on it would pause everybody with nothing they
+    could buy to stop it.
+
+    That is the same fault as a date left on a free Collective, and it
+    is refused in the same two places: the settings route will not set
+    one, and the sweep will not act on one. If one-time membership
+    checkout is ever built, this predicate is the single thing to
+    widen.
+    """
+    return isinstance(pricing_type, str) and pricing_type.strip() in {
+        "paid_monthly", "paid_annual",
+    }
+
+
 def billing_enabled() -> bool:
     """Is paid Collective membership switched on for this deployment?
 

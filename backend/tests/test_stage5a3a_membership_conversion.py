@@ -537,8 +537,8 @@ class TestSettingTheDate:
         db.refresh(paid_space)
         assert paid_space.paid_membership_effective_at is None
 
-    @pytest.mark.parametrize("pricing_type", ["paid_monthly", "paid_annual", "paid_one_time"])
-    def test_every_paid_type_may_carry_one(
+    @pytest.mark.parametrize("pricing_type", ["paid_monthly", "paid_annual"])
+    def test_a_subscription_type_may_carry_one(
         self, client, db, paid_space, as_owner, monkeypatch, pricing_type,
     ):
         monkeypatch.setattr(
@@ -553,6 +553,47 @@ class TestSettingTheDate:
         assert res.status_code == 200, res.text
         db.refresh(paid_space)
         assert paid_space.paid_membership_effective_at is not None
+
+    def test_one_time_pricing_may_not_carry_one(
+        self, client, db, paid_space, as_owner, monkeypatch,
+    ):
+        """``paid_one_time`` is paid, but offers no subscription to
+        hold: ``membership_pricing_terms.resolve`` refuses a one-off
+        joining fee because it is a purchase, not an agreement. A date
+        on it would pause every member with nothing they could buy to
+        stop it — the same fault as a date on a free Collective, so it
+        is refused in the same two places."""
+        monkeypatch.setattr(
+            "app.creator.routes.guard_paid_offers_enabled",
+            lambda user, db, pricing_type: None,
+        )
+        res = _patch(
+            client, paid_space,
+            pricing_type="paid_one_time",
+            paid_membership_effective_on="2027-01-01",
+        )
+        assert res.status_code == 422, res.text
+        assert res.json()["detail"]["code"] == (
+            "membership_transition_unsupported_pricing"
+        )
+        db.refresh(paid_space)
+        assert paid_space.paid_membership_effective_at is None
+
+    def test_moving_to_one_time_clears_an_existing_date_silently(
+        self, client, db, paid_space, as_owner, monkeypatch,
+    ):
+        """Clearing is not refused, for the ``coming_soon`` reason: the
+        form resends every pricing field, so refusing would lock a
+        creator out of the very change that resolves it."""
+        monkeypatch.setattr(
+            "app.creator.routes.guard_paid_offers_enabled",
+            lambda user, db, pricing_type: None,
+        )
+        _patch(client, paid_space, paid_membership_effective_on="2027-01-01")
+        res = _patch(client, paid_space, pricing_type="paid_one_time")
+        assert res.status_code == 200, res.text
+        db.refresh(paid_space)
+        assert paid_space.paid_membership_effective_at is None
 
 
 class TestAnImmediateTransitionHasToBeMeant:
@@ -882,6 +923,18 @@ class TestTheTransitionSweep:
         date; this is the other half of the same guard."""
         _join(db, paid_space, member)
         paid_space.pricing_type = "free"
+        paid_space.paid_membership_effective_at = NOW - timedelta(days=1)
+        db.flush()
+        _sweep(db)
+        assert _status(db, paid_space, member) == SpaceMembershipStatus.active
+
+    def test_a_one_time_collective_is_skipped_too(
+        self, db, paid_space, member,
+    ):
+        """The far half of the same guard: however a row acquired this
+        combination, the sweep will not pause anybody over it."""
+        _join(db, paid_space, member)
+        paid_space.pricing_type = "paid_one_time"
         paid_space.paid_membership_effective_at = NOW - timedelta(days=1)
         db.flush()
         _sweep(db)

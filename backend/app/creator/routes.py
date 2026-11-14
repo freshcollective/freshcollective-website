@@ -1623,6 +1623,11 @@ def _refuse_retired_pricing_change(*, incoming: str, stored: str | None) -> None
 #: raise its confirmation rather than parsing prose.
 TRANSITION_NEEDS_ACK_CODE = "membership_transition_needs_acknowledgement"
 
+#: Returned when a date is asked for on pricing that offers no
+#: subscription to hold — ``paid_one_time`` today. See
+#: ``membership_pricing.transition_supported``.
+TRANSITION_UNSUPPORTED_CODE = "membership_transition_unsupported_pricing"
+
 
 def _apply_membership_transition_date(
     db: Session, *, space: Space, body: SpaceUpdateRequest, now: datetime,
@@ -1661,14 +1666,28 @@ def _apply_membership_transition_date(
     """
     sent = body.model_fields_set
 
-    if not membership_pricing.is_paid_membership(space.pricing_type):
+    if not membership_pricing.transition_supported(space.pricing_type):
         if space.paid_membership_effective_at is not None:
             logger.info(
                 "membership transition: clearing date on space=%s — "
-                "pricing_type=%s is not paid",
+                "pricing_type=%s offers no subscription to hold",
                 space.slug, space.pricing_type,
             )
         space.paid_membership_effective_at = None
+        # Clearing is silent; *asking* for one is refused, so a
+        # creator is told why rather than watching their date vanish.
+        if body.paid_membership_effective_on is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": TRANSITION_UNSUPPORTED_CODE,
+                    "message": (
+                        "A transition date needs a membership people can "
+                        "subscribe to. Choose monthly or annual membership, "
+                        "or leave the date empty."
+                    ),
+                },
+            )
         return
 
     if "paid_membership_effective_on" not in sent:

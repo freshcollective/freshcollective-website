@@ -219,10 +219,10 @@ def _sweep_paid_transitions(
         # paid, and this is the second half of that — a row already
         # carrying the combination, however it got there, is skipped
         # rather than acted on.
-        if not membership_pricing.is_paid_membership(space.pricing_type):
+        if not membership_pricing.transition_supported(space.pricing_type):
             logger.info(
                 "membership reconcile: skipping transition for space=%s — "
-                "pricing_type=%s is not paid",
+                "pricing_type=%s offers no subscription to hold",
                 space.slug, space.pricing_type,
             )
             continue
