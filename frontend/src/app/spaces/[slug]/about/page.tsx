@@ -1,5 +1,7 @@
 import {
   getMe,
+  getMyMemberships,
+  getMyMembershipState,
   getMySpaceAccess,
   getPublicCollectiveAbout,
   getSpace,
@@ -13,6 +15,7 @@ import {
   formatCollectiveAccessLabel,
   formatCollectivePricingSummary,
   formatPaidSeparatelyCopy,
+  isPaidPricingType,
 } from '@/lib/pricing'
 import {
   additionalPaidTitles,
@@ -20,10 +23,14 @@ import {
   listPhrase,
 } from '@/lib/joiningAccessSummary'
 import { formatGatheringDate } from '@/lib/dateTime'
+import { recognisesMembership } from '@/lib/membership'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
-import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
+import type {
+  EventSummary, MemberProfile, MembershipState, SpaceMembership,
+  SpaceResponse, UserProfile,
+} from '@/types/platform'
 import SpaceAboutCTA from './SpaceAboutCTA'
 import MarkdownBody from '@/components/ui/MarkdownBody'
 import type { Metadata } from 'next'
@@ -142,9 +149,37 @@ export default async function SpaceAboutPage({ params }: Props) {
   const creatorName    = space.creator_name ?? null
 
   const currentUserMember = me ? members.find((m) => m.id === me.id) : null
-  const isSpaceMember     = !!currentUserMember
+  // Membership comes from the viewer's own memberships, never from the
+  // directory above.
+  //
+  // The directory hides learners when ``show_member_directory`` is off
+  // — the default — so ``members.find(...)`` answered "not a member"
+  // for ordinary members, and a person already paying for this
+  // Collective was shown "Join collective". The comment on the counts
+  // a few lines up had already caught this for *numbers*; recognition
+  // was reading from the same filtered list.
+  //
+  // ``getMyMemberships`` is the layout's own fetch, deduplicated by
+  // ``cache()`` within a request, so this costs nothing extra. The
+  // directory lookup is kept only for the viewer's *role*, which it
+  // reports correctly: creators and moderators are never filtered out
+  // of it.
+  const myMemberships: SpaceMembership[] = me ? await getMyMemberships() : []
+  const isSpaceMember     = recognisesMembership({
+    memberships: myMemberships,
+    slug,
+    directoryMatch: !!currentUserMember,
+  })
   const currentUserRole   = currentUserMember?.space_role ?? null
   const canManage         = currentUserRole === 'creator' || currentUserRole === 'moderator'
+
+  // What this member may still have to do about paying. Only asked
+  // where membership is actually priced — a free Collective has no
+  // conversion to prompt, and this is an authenticated call on a page
+  // most visitors reach signed out.
+  const membershipState = (me && isPaidPricingType(space.pricing_type))
+    ? await getMyMembershipState(slug)
+    : null
 
   // Check if logged-in non-member has a pending access request or pending invite
   const myAccess = me && !isSpaceMember ? await getMySpaceAccess(slug) : null
@@ -582,6 +617,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 slug={slug}
                 isPublic={space.is_public}
                 isMember={isSpaceMember}
+                membershipState={membershipState as MembershipState | null}
                 isLoggedIn={!!me}
                 hasPendingRequest={myAccess?.has_pending_request ?? false}
                 hasPendingInvite={myAccess?.has_pending_invite ?? false}

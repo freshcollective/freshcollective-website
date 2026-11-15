@@ -874,3 +874,148 @@ class TestWhatTheMemberIsToldTheyBought:
         body = " ".join(rendered.paragraphs) if hasattr(rendered, "paragraphs") else str(rendered)
         assert "no renewal" in body
         assert "until you cancel" not in body
+
+
+# ===========================================================================
+# §18 / 5A.4a — A membership bought once survives a change to recurring
+# ===========================================================================
+
+
+class TestOneTimeMembershipSurvivesARepricing:
+    """The confirmed rule, which had no test of its own until now.
+
+    Someone paid once for *ongoing* membership. The creator later
+    decides membership should be monthly. The question that rule
+    answers is whether the earlier purchase still buys what it said it
+    bought — and it does: new members meet the new terms, and the
+    person who already paid is not re-charged, re-subscribed or
+    quietly paused.
+
+    It follows from the shared predicate rather than from a special
+    case: a one-time agreement is ``active``, and ``active`` satisfies
+    the transition sweep whatever the Collective's pricing has since
+    become. Written down here so that reasoning cannot be refactored
+    away by accident.
+    """
+
+    def _bought_once(self, db, space, member):
+        from app.webhooks import collective_membership_handlers as h
+        space.pricing_type = "paid_one_time"
+        space.pricing_amount_cents = 19_900
+        db.flush()
+        row = _agreement(
+            db, space, member,
+            status=CollectiveMembershipStatus.pending.value,
+            interval="one_time", amount_cents=19_900,
+            stripe_subscription_id=None, current_period_end=None,
+        )
+        h.handle_one_time_completed(
+            _paid_one_time_session(row.id), db, event_id="evt_once",
+        )
+        db.refresh(row)
+        assert row.status == CollectiveMembershipStatus.active.value
+        return row
+
+    def test_the_member_who_paid_once_is_not_paused_by_the_transition(
+        self, db, space, member,
+    ):
+        from app.services import collective_membership_reconcile as reconcile
+        from app.models.payment import PaymentTransaction
+
+        agreement = self._bought_once(db, space, member)
+        membership = db.query(SpaceMembership).filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == member.id,
+        ).one()
+        joined_at, membership_id = membership.joined_at, membership.id
+
+        # The creator moves to monthly and sets a deadline that passes.
+        space.pricing_type = "paid_monthly"
+        space.pricing_amount_cents = 2_900
+        space.paid_membership_effective_at = NOW - timedelta(minutes=1)
+        db.flush()
+
+        report = reconcile.ReconcileReport()
+        reconcile._sweep_paid_transitions(
+            db, now=datetime.utcnow(), report=report,
+        )
+
+        db.refresh(membership)
+        db.refresh(agreement)
+        assert membership.status == SpaceMembershipStatus.active
+        assert report.transitions_paused == 0
+        # Their agreement is untouched: still one-time, still the
+        # amount they agreed, still active.
+        assert agreement.interval == "one_time"
+        assert agreement.amount_cents == 19_900
+        assert agreement.status == CollectiveMembershipStatus.active.value
+        # Nothing was created on their behalf and nothing was charged.
+        assert db.query(CollectiveMembership).filter(
+            CollectiveMembership.space_id == space.id,
+            CollectiveMembership.user_id == member.id,
+        ).count() == 1
+        assert db.query(PaymentTransaction).filter(
+            PaymentTransaction.space_id == space.id,
+            PaymentTransaction.payer_user_id == member.id,
+        ).count() == 1
+        # And their history is the history they had.
+        assert (membership.id, membership.joined_at) == (membership_id, joined_at)
+
+    def test_a_member_who_never_paid_is_still_paused(
+        self, db, space, member, make_user,
+    ):
+        """The control. If the sweep spared everybody the first
+        assertion would pass for the wrong reason."""
+        from app.services import collective_membership_reconcile as reconcile
+
+        self._bought_once(db, space, member)
+        freeloader = make_user()
+        _join(db, space, freeloader)
+
+        space.pricing_type = "paid_monthly"
+        space.pricing_amount_cents = 2_900
+        space.paid_membership_effective_at = NOW - timedelta(minutes=1)
+        db.flush()
+
+        reconcile._sweep_paid_transitions(
+            db, now=datetime.utcnow(), report=reconcile.ReconcileReport(),
+        )
+        assert db.query(SpaceMembership).filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == freeloader.id,
+        ).one().status == SpaceMembershipStatus.paused
+
+    def test_leaving_ends_the_entitlement_so_returning_costs_again(
+        self, db, space, member, stripe_calls,
+    ):
+        """§18's second half. The payment stays in history; what it
+        bought does not follow them back in."""
+        from app.services import collective_membership_access as access
+        from app.services import collective_membership_reconcile as reconcile
+        from app.models.payment import PaymentTransaction
+
+        agreement = self._bought_once(db, space, member)
+        membership = db.query(SpaceMembership).filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == member.id,
+        ).one()
+
+        membership.status = SpaceMembershipStatus.removed
+        membership.removal_kind = "voluntary"
+        membership.removed_at = NOW
+        db.flush()
+        reconcile._sweep_billing_after_departure(
+            db, now=datetime.utcnow(), report=reconcile.ReconcileReport(),
+        )
+
+        db.refresh(agreement)
+        assert agreement.status != CollectiveMembershipStatus.active.value
+        # The old purchase no longer satisfies anything…
+        assert not access.holds_satisfying_agreement(
+            db, user_id=member.id, space_id=space.id,
+        )
+        # …but it is still on the record.
+        assert db.query(PaymentTransaction).filter(
+            PaymentTransaction.space_id == space.id,
+            PaymentTransaction.payer_user_id == member.id,
+        ).count() == 1

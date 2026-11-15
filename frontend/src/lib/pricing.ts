@@ -1,4 +1,8 @@
 import type { JoinPolicy, PricingType } from '@/types/platform'
+// Relative, like the other lib-to-lib imports that the node test
+// runner has to resolve: it has no tsconfig path mapping, so an
+// ``@/`` alias here breaks every test that imports this module.
+import { ONE_TIME_INTERVAL, formatRecurring } from './membership.ts'
 
 interface PricingSource {
   pricing_type: PricingType
@@ -53,6 +57,17 @@ interface FullPricingSource extends PricingSource {
   min_paid_pathway_price_cents?: number | null
 }
 
+/**
+ * Pathway prices, and nothing else any more.
+ *
+ * Collective *membership* amounts moved to the shared membership
+ * formatter, which names the currency ("A$29") instead of leaving a
+ * bare "$" that five currencies share. This one is left as it was on
+ * purpose: Pathway, Gathering, Offering and Payment Option pricing
+ * are outside Stage 5A.4a's brief, and changing them here would be
+ * the platform-wide money refactor it rules out. They carry the same
+ * ambiguity and are worth the same treatment later.
+ */
 function formatAmount(cents: number, currency: string): string {
   const amount = (cents / 100).toFixed(0)
   return `$${amount} ${currency || 'AUD'}`
@@ -104,12 +119,21 @@ export function formatCollectiveAccessLabel(space: PricingSource): string {
       return 'Invite only'
     case 'coming_soon':
       return 'Paid — coming soon'
+    // Membership amounts go through the shared membership formatter,
+    // so the About page, the settings card, the conversion prompt and
+    // Stripe's own checkout page all say the same thing.
     case 'paid_one_time':
-      return pricing_amount_cents ? formatAmount(pricing_amount_cents, currency) : 'Paid'
+      return pricing_amount_cents
+        ? formatRecurring(pricing_amount_cents, currency, ONE_TIME_INTERVAL)
+        : 'Paid'
     case 'paid_monthly':
-      return pricing_amount_cents ? `${formatAmount(pricing_amount_cents, currency)} / month` : 'Paid / month'
+      return pricing_amount_cents
+        ? formatRecurring(pricing_amount_cents, currency, 'month')
+        : 'Paid / month'
     case 'paid_annual':
-      return pricing_amount_cents ? `${formatAmount(pricing_amount_cents, currency)} / year` : 'Paid / year'
+      return pricing_amount_cents
+        ? formatRecurring(pricing_amount_cents, currency, 'year')
+        : 'Paid / year'
     default:
       return 'Free to join'
   }

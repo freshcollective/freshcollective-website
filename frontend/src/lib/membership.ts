@@ -11,22 +11,39 @@
 import type { MembershipState } from '@/types/platform'
 
 /**
- * An amount as the member agreed to it.
+ * An amount as the member agreed to it, with the currency said out loud.
  *
- * `Intl` with the real currency code rather than a bare `$`: an
- * agreement carries its own currency, and A$29 and US$29 are not the
- * same promise. Whole dollars when the cents are zero, because
- * "A$29/month" is what a creator wrote and "A$29.00/month" is not.
+ * The walkthrough found one amount written three ways — `$29/month`,
+ * `$29 AUD / month` and (on Stripe's own page) `A$29.00`. The first is
+ * the problem: at least five currencies use a bare `$`, so it tells a
+ * member the digits and leaves them guessing the money.
+ *
+ * `en-US` with `currencyDisplay: 'symbol'` is what produces the
+ * disambiguating forms — `A$29`, `NZ$29`, `£29`, `€29` — where the
+ * `en-AU` locale collapses AUD, USD and NZD all to `$`. The locale is
+ * a formatting choice, not a statement about the reader: it is picked
+ * because it is the one that distinguishes the dollars.
+ *
+ * USD is the single case `en-US` still renders bare, naturally enough,
+ * so it is named explicitly. Without that the ambiguity would simply
+ * move: a Collective charging USD would show `$29` to a member who
+ * has every reason to read it as Australian.
+ *
+ * Whole dollars carry no decimals, because `A$29/month` is what a
+ * creator typed and `A$29.00/month` is not; an amount with cents
+ * shows both.
  */
 export function formatMoney(cents: number, currency: string): string {
   const amount = cents / 100
-  return new Intl.NumberFormat('en-AU', {
+  const code = (currency || 'AUD').toUpperCase()
+  const formatted = new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: currency || 'AUD',
-    currencyDisplay: 'narrowSymbol',
+    currency: code,
+    currencyDisplay: 'symbol',
     minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
     maximumFractionDigits: 2,
   }).format(amount)
+  return code === 'USD' ? formatted.replace('$', 'US$') : formatted
 }
 
 /**
@@ -41,7 +58,7 @@ export function formatRecurring(
   cents: number, currency: string, interval: string, intervalCount = 1,
 ): string {
   const money = formatMoney(cents, currency)
-  if (interval === ONE_TIME_INTERVAL) return `${money} paid once`
+  if (interval === ONE_TIME_INTERVAL) return `${money} once`
   const every = intervalCount > 1 ? `${intervalCount} ${interval}s` : interval
   return `${money}/${every}`
 }
@@ -105,4 +122,46 @@ export function subscribeRefusalMessage(code: string | null): string | null {
     default:
       return 'Membership isn’t available to you right now.'
   }
+}
+
+
+/**
+ * Does the signed-in viewer belong to this Collective?
+ *
+ * The rule, as a function, because getting it wrong is what shipped
+ * "Join collective" to a paying member for six months.
+ *
+ * The viewer's **own memberships** are the authority. The member
+ * *directory* is not, and must never be: it is privacy-filtered and
+ * returns nothing for learners whenever `show_member_directory` is
+ * off, which is the default — so a member of a private-directory
+ * Collective looked like a stranger to their own Collective.
+ *
+ * The directory is still consulted as a second yes, never as a no.
+ * It reports creators and moderators faithfully, and an owner who
+ * predates auto-membership can appear there without a membership
+ * row. Either source saying "yes" is enough; only both staying
+ * silent means not a member.
+ */
+export function recognisesMembership(options: {
+  memberships: { space_slug: string }[]
+  slug: string
+  directoryMatch?: boolean
+}): boolean {
+  const { memberships, slug, directoryMatch = false } = options
+  return memberships.some((m) => m.space_slug === slug) || directoryMatch
+}
+
+/**
+ * Does this member still owe a subscription to keep their access?
+ *
+ * True only when all three hold: a transition is pending for them,
+ * they may actually subscribe, and there is therefore something to
+ * act on. False while the feature flag is off, because
+ * `can_subscribe` is false then — an action that cannot be completed
+ * should not be offered.
+ */
+export function owesConversion(state: MembershipState | null): boolean {
+  if (!state) return false
+  return state.transition.action_needed && state.actions.can_subscribe
 }

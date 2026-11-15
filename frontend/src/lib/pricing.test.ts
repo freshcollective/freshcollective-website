@@ -110,6 +110,11 @@ describe('an open Collective is untouched', () => {
   })
 
   test('every other pricing_type still renders exactly as it did', () => {
+    // Amended by Stage 5A.4a. The non-priced labels are unchanged;
+    // the priced one now names its currency, because "$45 AUD" was
+    // one of three spellings of the same money the authenticated
+    // walkthrough found across the product, and a bare "$" belongs to
+    // at least five currencies.
     const base = { ...openCollective, has_paid_internal_content: false,
       paid_content_summary: null }
     assert.equal(formatCollectiveAccessLabel(base), 'Free to join')
@@ -119,10 +124,10 @@ describe('an open Collective is untouched', () => {
       { ...base, pricing_type: 'coming_soon' }), 'Paid — coming soon')
     assert.equal(formatCollectiveAccessLabel(
       { ...base, pricing_type: 'paid_one_time', pricing_amount_cents: 4500 }),
-      '$45 AUD')
+      'A$45 once')
     assert.equal(formatCollectiveAccessLabel(
       { ...base, pricing_type: 'paid_monthly', pricing_amount_cents: 2000 }),
-      '$20 AUD / month')
+      'A$20/month')
     assert.equal(formatCollectivePricingSummary(base), 'Free to join · all included')
   })
 })

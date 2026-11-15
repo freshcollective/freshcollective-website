@@ -12,8 +12,11 @@ import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
 import JoiningDoors from './JoiningDoors'
 import SubscribeButton from '@/components/membership/SubscribeButton'
+import { formatDay, offerPhrase, owesConversion } from '@/lib/membership'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
-import type { JoinPolicy, JoiningOption, PricingType } from '@/types/platform'
+import type {
+  JoinPolicy, JoiningOption, MembershipState, PricingType,
+} from '@/types/platform'
 
 type CTAState = 'idle' | 'loading' | 'joined' | 'requested' | 'error'
 
@@ -39,6 +42,13 @@ interface Props {
   discountCodesEnabled?: boolean
   /** Collective palette, so the purchase CTAs feel like this place. */
   palette?: CollectivePaletteMeta | null
+  /**
+   * The viewer's own membership and billing state for this Collective,
+   * from `/membership/state`. Only fetched where membership is priced,
+   * so null means either "not applicable" or "signed out" — never
+   * "not a member", which `isMember` answers.
+   */
+  membershipState?: MembershipState | null
 }
 
 export default function SpaceAboutCTA({
@@ -55,6 +65,7 @@ export default function SpaceAboutCTA({
   joiningOptions = [],
   discountCodesEnabled = false,
   palette = null,
+  membershipState = null,
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<CTAState>('idle')
@@ -143,11 +154,52 @@ export default function SpaceAboutCTA({
     )
   }
 
-  // Already a member
+  // Already a member.
+  //
+  // Belonging and paying to belong are different facts, so this branch
+  // can carry both: someone who is inside still sees the way in, and a
+  // member of a Collective that has started charging *also* sees the
+  // subscription they now owe. Hiding the second because the first is
+  // true would leave a converting member with no way to act before
+  // their deadline — and showing only the second would tell somebody
+  // who already belongs that they do not.
   if (isMember) {
+    const owesSubscription = owesConversion(membershipState)
+    const deadline = membershipState?.transition.effective_on ?? null
     return (
       <div className="flex flex-col gap-2">
-        <Link href={`/spaces/${slug}`} className={tealBtn} style={tealStyle}>
+        {owesSubscription && (
+          <>
+            <p
+              className="rounded-xl border px-4 py-2.5 text-[13px] leading-relaxed"
+              style={{
+                borderColor: '#E6C4BA',
+                background: '#FBEDE9',
+                color: '#0C1826',
+              }}
+            >
+              {deadline
+                ? `Membership payment required from ${formatDay(deadline)}.`
+                : 'This collective now needs a paid membership.'}
+              {' '}Subscribe to keep access to members-only experiences.
+            </p>
+            <SubscribeButton
+              slug={slug}
+              label={
+                offerPhrase(membershipState!)
+                  ? `Subscribe — ${offerPhrase(membershipState!)}`
+                  : 'Subscribe'
+              }
+              className={tealBtn}
+              style={tealStyle}
+            />
+          </>
+        )}
+        <Link
+          href={`/spaces/${slug}`}
+          className={owesSubscription ? ghostBtn : tealBtn}
+          style={owesSubscription ? undefined : tealStyle}
+        >
           Enter collective
         </Link>
         {canManage && (

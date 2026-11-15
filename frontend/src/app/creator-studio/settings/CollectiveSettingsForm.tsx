@@ -123,6 +123,48 @@ export default function CollectiveSettingsForm({ space, tab = 'details', paidOff
   const [saved, setSaved] = useState(false)
 
   /**
+ * What the chosen pricing arrangement actually means, in a sentence.
+ *
+ * Replaces "Payment processing will be connected separately", which
+ * was true when the tab was built and stopped being true once Stage
+ * 5A connected it. A creator reading that today would reasonably
+ * conclude their price was decorative.
+ *
+ * Two things each line is careful not to say. It does not promise
+ * that membership includes everything inside the Collective — the
+ * per-experience access settings decide that, and a creator who
+ * believed otherwise would price their work wrongly. And it describes
+ * the *arrangement* rather than announcing that checkout is live,
+ * because paid membership is still behind a flag; the sentence stays
+ * true either way.
+ */
+function pricingBlurb(type: PricingType): string {
+  const separately =
+    ' You can still offer individual experiences for separate purchase.'
+  switch (type) {
+    case 'paid_monthly':
+      return 'Members pay this amount each month to belong to your'
+        + ' Collective.' + separately
+    case 'paid_annual':
+      return 'Members pay this amount each year to belong to your'
+        + ' Collective.' + separately
+    case 'paid_one_time':
+      return 'Members pay this amount once for ongoing membership in'
+        + ' your Collective.' + separately
+    case 'invite_only':
+      return 'People can only join your Collective by invitation.'
+        + separately
+    case 'coming_soon':
+      return 'This pricing type is no longer offered. Choose Free,'
+        + ' Invite only, or a paid membership type.'
+    case 'free':
+    default:
+      return 'Anyone can join your Collective without paying.'
+        + separately
+  }
+}
+
+/**
  * The Pricing tab's options, and which require a commercial plan.
  *
  * "commercial" mirrors the backend guard exactly:
@@ -954,7 +996,7 @@ function supportsTransition(type: PricingType): boolean {
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Public pricing</h2>
         <p className="mb-5 text-[14px] text-black">
-          Shown publicly so people understand the cost before joining. Payment processing will be connected separately.
+          {pricingBlurb(pricingType)}
         </p>
 
         <div className="space-y-4">

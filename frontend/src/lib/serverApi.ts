@@ -382,6 +382,25 @@ export const getMyMemberships = cache(async () => {
 })
 
 /**
+ * The signed-in viewer's own membership state for one Collective.
+ *
+ * Authoritative, unlike the member *directory*: the directory is
+ * privacy-filtered and returns nothing for learners when
+ * `show_member_directory` is off, which is the default. Deriving
+ * "am I a member" from it told a paying member they were not one —
+ * see the Stage 5A.4 walkthrough.
+ *
+ * Null on any failure, and callers must treat null as "unknown"
+ * rather than "not a member": an About page that hides someone's own
+ * membership because a fetch failed is the bug this replaced.
+ */
+export const getMyMembershipState = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/membership/state`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+/**
  * Every Collective membership this member pays for, or must.
  *
  * Separate from ``getMyMemberships`` on purpose — see the endpoint's
