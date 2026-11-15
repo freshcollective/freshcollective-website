@@ -1971,6 +1971,7 @@ def confirm_membership_payment_method_update(
     try:
         outcome = _cmem_pm.apply_collected_method(
             db, subscription=sub, session_id=body.session_id,
+            now=datetime.utcnow(),
         )
     except _cmem_pm.PaymentMethodUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

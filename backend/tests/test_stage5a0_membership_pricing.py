@@ -301,14 +301,34 @@ class TestAdoptingTheRetiredTypeIsRefused:
 class TestNoMemberIsTouched:
     def test_no_membership_status_is_changed_anywhere_in_this_stage(self):
         """§7 — the transition is designed, not activated. Nothing in
-        5A.0 may pause, convert or enrol anybody."""
+        5A.0 may pause, convert or enrol anybody.
+
+        Scans the module's **code**, with comments and docstrings
+        removed. It used to scan the raw source and broke the moment a
+        docstring explained *why* a date on an unbuyable Collective
+        would have paused people — which is prose about the rule, not
+        an act against a member. Banning the word rather than the use
+        makes a module harder to explain than to misuse, which is
+        backwards.
+        """
         import inspect
+        import io as _io
+        import tokenize
+
         src = inspect.getsource(mp)
+        code = "".join(
+            token.string if token.type not in (
+                tokenize.COMMENT, tokenize.STRING,
+            ) else " "
+            for token in tokenize.generate_tokens(
+                _io.StringIO(src).readline,
+            )
+        )
         for forbidden in (
             "SpaceMembershipStatus", "paused", "ensure_membership_for_purchase",
             "db.add", "db.commit", "Stripe", "stripe",
         ):
-            assert forbidden not in src, forbidden
+            assert forbidden not in code, forbidden
 
     def test_an_existing_member_of_a_newly_paid_collective_keeps_access(
         self, db, make_user, make_space, monkeypatch,

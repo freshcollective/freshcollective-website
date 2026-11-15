@@ -306,6 +306,38 @@ def raw_connection(engine: Engine):
 
 
 # ---------------------------------------------------------------------------
+# Stripe: blocked by default, opt-in for provider validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _stripe_is_not_reachable(request, monkeypatch):
+    """Every test is cut off from Stripe unless it asks not to be.
+
+    Autouse and unconditional, because the failure this prevents is a
+    *missing* mock — and a guard you have to remember to apply protects
+    exactly the tests that already remembered.
+
+    A test marked ``stripe_provider`` is let through, but only when
+    ``FC_STRIPE_PROVIDER_TESTS=1`` is also set and the configured key
+    is a test key. Two gates rather than one: the env var alone would
+    arm an entire run, and the marker alone would let ``pytest -k``
+    reach the network.
+    """
+    from tests import stripe_guard
+
+    if request.node.get_closest_marker(stripe_guard.MARKER):
+        if not stripe_guard.opted_in():
+            pytest.skip(
+                f"provider validation: set {stripe_guard.OPT_IN_ENV}=1 to run"
+            )
+        stripe_guard.assert_test_mode_credentials()
+        return
+
+    stripe_guard.block_stripe(monkeypatch)
+
+
+# ---------------------------------------------------------------------------
 # Small factories — enough to build the objects the ticket tests need
 # ---------------------------------------------------------------------------
 

@@ -1358,6 +1358,10 @@ export interface MembershipAgreement {
   currency: string
   interval: string
   interval_count: number
+  /** Paid once, with nothing to renew. Every surface branches on
+   *  this: no renewal date, no cancel-renewal, no card to keep
+   *  current — each would imply a future charge that is not coming. */
+  is_one_time: boolean
   current_period_end: string | null
   cancel_at_period_end: boolean
   /** When the next charge falls, or null when renewal is off. */

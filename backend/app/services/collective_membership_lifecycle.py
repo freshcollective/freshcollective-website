@@ -38,7 +38,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.collective_membership import (
-    CollectiveMembership, CollectiveMembershipStatus,
+    CollectiveMembership, CollectiveMembershipStatus, is_one_time,
 )
 from app.models.payment import (
     PaymentFulfilmentStatus, PaymentProvider, PaymentTransaction,
@@ -108,6 +108,7 @@ def record_membership_payment(
     period_start: datetime | None,
     period_end: datetime | None,
     now: datetime,
+    transaction_type: PaymentTransactionType | None = None,
 ) -> PaymentTransaction | None:
     """One ledger row per paid invoice, or ``None`` if already recorded.
 
@@ -146,7 +147,10 @@ def record_membership_payment(
     platform_fee = round(gross * subscription.platform_fee_basis_points / 10000)
     txn = PaymentTransaction(
         id=str(uuid.uuid4()),
-        transaction_type=PaymentTransactionType.member_collective_subscription,
+        transaction_type=(
+            transaction_type
+            or PaymentTransactionType.member_collective_subscription
+        ),
         status=PaymentTransactionStatus.succeeded,
         payment_provider=PaymentProvider.stripe,
         fulfilment_status=PaymentFulfilmentStatus.applied,
@@ -193,6 +197,7 @@ def activate_from_first_invoice(
     period_start: datetime | None,
     period_end: datetime | None,
     now: datetime,
+    transaction_type: PaymentTransactionType | None = None,
 ) -> ActivationOutcome:
     """Record the first payment and make the buyer a member.
 
@@ -217,6 +222,7 @@ def activate_from_first_invoice(
         period_start=period_start,
         period_end=period_end,
         now=now,
+        transaction_type=transaction_type,
     )
 
     if already_active and txn is None:
@@ -312,6 +318,52 @@ def activate_from_first_invoice(
         subscription=subscription, transaction=txn,
         applied=txn is not None, membership=membership,
         needs_attention=needs_attention,
+    )
+
+
+def activate_from_one_time_payment(
+    db: Session, *,
+    subscription: CollectiveMembership,
+    session_id: str,
+    amount_cents: int,
+    currency: str,
+    charge_id: str | None,
+    payment_intent_id: str | None,
+    now: datetime,
+) -> ActivationOutcome:
+    """A one-off joining fee has been paid. Make them a member.
+
+    Deliberately the *same* path as a first invoice rather than a
+    parallel one. Everything that matters is identical — record the
+    money, set the agreement active, grant or unpause the membership,
+    refuse to overturn a removal, send one message — and the two
+    things that differ are expressed as arguments rather than as a
+    second implementation:
+
+    * the ledger is keyed on the **Checkout Session** instead of an
+      invoice, which is what makes a duplicate webhook harmless;
+    * there are no billing periods, so ``current_period_end`` stays
+      NULL — which is what every surface reads to know there is no
+      renewal to show, cancel, or re-card.
+
+    The transaction type is ``member_collective_purchase``, not
+    ``member_collective_subscription``, so Payments received can tell
+    a one-off joining fee from a recurring one without inspecting the
+    agreement behind it.
+    """
+    return activate_from_first_invoice(
+        db,
+        subscription=subscription,
+        invoice_id=session_id,
+        invoice_amount_cents=amount_cents,
+        invoice_currency=currency,
+        stripe_subscription_id=None,
+        charge_id=charge_id,
+        payment_intent_id=payment_intent_id,
+        period_start=None,
+        period_end=None,
+        now=now,
+        transaction_type=PaymentTransactionType.member_collective_purchase,
     )
 
 
@@ -496,6 +548,14 @@ def schedule_cancellation(
 
     from app.core.config import settings
 
+    if is_one_time(subscription):
+        # Nothing renews, so there is nothing to stop renewing. Leaving
+        # the Collective is the action that ends a one-off membership,
+        # and it is a different action with different consequences.
+        raise ValueError(
+            "a one-time membership has no renewal to cancel; leaving the "
+            "collective is what ends it"
+        )
     if subscription.status not in (
         CollectiveMembershipStatus.active.value,
         CollectiveMembershipStatus.past_due.value,
@@ -554,6 +614,10 @@ def resume_cancelled_renewal(
 
     from app.core.config import settings
 
+    if is_one_time(subscription):
+        raise ValueError(
+            "a one-time membership has no renewal to resume"
+        )
     if subscription.status != CollectiveMembershipStatus.cancel_scheduled.value:
         raise ValueError(
             f"nothing to resume on a {subscription.status} agreement "

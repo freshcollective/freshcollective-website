@@ -22,10 +22,11 @@ from app.models.platform import Space
 
 #: ``pricing_type`` → Stripe recurring interval.
 #:
-#: ``paid_one_time`` is deliberately absent. A one-off joining fee is a
-#: purchase, not a subscription, and Stage 5A.0's review recommended it
-#: travel the existing pay-in-full path rather than this one. Reaching
-#: here with it is a routing mistake and says so.
+#: ``paid_one_time`` is absent here and handled by
+#: :func:`resolve_any` instead, because it has no interval to map: it
+#: buys membership once and never renews. Reaching :func:`resolve`
+#: with it is still a routing mistake and still says so — the
+#: subscription path must never be handed a one-off fee.
 _INTERVALS: Final[dict[str, str]] = {
     "paid_monthly": "month",
     "paid_annual": "year",
@@ -43,6 +44,12 @@ class AgreedTerms:
     interval_count: int
     amount_cents: int
     currency: str
+
+    @property
+    def is_one_time(self) -> bool:
+        from app.models.collective_membership import ONE_TIME_INTERVAL
+
+        return self.interval == ONE_TIME_INTERVAL
 
 
 def resolve(space: Space) -> AgreedTerms:
@@ -86,6 +93,48 @@ def resolve(space: Space) -> AgreedTerms:
 
     return AgreedTerms(
         interval=interval,
+        interval_count=1,
+        amount_cents=amount,
+        currency=currency,
+    )
+
+
+def resolve_any(space: Space) -> AgreedTerms:
+    """The terms for whichever paid arrangement this Collective uses.
+
+    One entry point for all three, so a caller does not have to know
+    which kind it is before asking. Recurring types go through
+    :func:`resolve` unchanged; a one-off fee is validated by the same
+    amount and currency rules and comes back carrying
+    ``ONE_TIME_INTERVAL``, which is what every downstream surface
+    branches on.
+    """
+    from app.models.collective_membership import ONE_TIME_INTERVAL
+
+    pricing_type = (space.pricing_type or "").strip()
+    if pricing_type != "paid_one_time":
+        return resolve(space)
+
+    amount = space.pricing_amount_cents
+    currency = (space.pricing_currency or "").strip()
+    if not amount or amount < MIN_AMOUNT_CENTS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This collective's membership price isn't set up yet. "
+                "Please contact the collective's creator."
+            ),
+        )
+    if not currency:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This collective's membership currency isn't set up yet. "
+                "Please contact the collective's creator."
+            ),
+        )
+    return AgreedTerms(
+        interval=ONE_TIME_INTERVAL,
         interval_count=1,
         amount_cents=amount,
         currency=currency,

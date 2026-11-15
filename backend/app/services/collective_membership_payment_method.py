@@ -37,13 +37,14 @@ That probe also turned up the one API detail worth remembering: a
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import stripe
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.collective_membership import (
-    CollectiveMembership, CollectiveMembershipStatus,
+    CollectiveMembership, CollectiveMembershipStatus, is_one_time,
 )
 from app.models.platform import Space
 
@@ -83,6 +84,13 @@ def open_collection_session(
     agreements, which is a different question and a different module.
     """
     _bind_key()
+    if is_one_time(subscription):
+        # Nothing will ever be charged again, so there is no card to
+        # keep current. Offering the member one would imply a future
+        # payment that is not coming.
+        raise PaymentMethodUnavailable(
+            "a one-time membership has no recurring payment to update"
+        )
     if not subscription.stripe_customer_id:
         raise PaymentMethodUnavailable(
             f"agreement {subscription.id} has no Stripe customer"
@@ -116,57 +124,141 @@ def open_collection_session(
     return session.url
 
 
-def apply_collected_method(
-    db: Session, *, subscription: CollectiveMembership, session_id: str,
+def _session_field(session: object, name: str) -> object:
+    """Read a field from a Stripe object or a webhook's plain dict.
+
+    The two completion paths hand this module different shapes — the
+    return page retrieves a ``StripeObject``, the webhook unpacks the
+    event into a dict — and neither should have to convert for the
+    other.
+    """
+    if isinstance(session, dict):
+        return session.get(name)
+    return getattr(session, name, None)
+
+
+def apply_session(
+    db: Session, *, subscription: CollectiveMembership, session: object,
+    now: datetime,
 ) -> dict:
-    """Attach the card the member just entered to **this** agreement.
+    """Attach the card from this Session to **this** agreement.
+
+    The one place a membership's payment method is ever changed. Both
+    completion paths call it — the member returning from Stripe, and
+    the ``checkout.session.completed`` webhook for the setup Session —
+    so there is one set of checks and one outcome rather than two
+    implementations that might disagree.
 
     Ownership is checked in both directions before anything moves: the
     Session must name this agreement in its metadata, *and* belong to
     this agreement's Stripe Customer. One alone is not enough — the
-    first without the second would trust a value we put in a payload,
-    and the second without the first would accept any Session the
-    member happens to own, including one minted for a different
+    first without the second would trust a value we put into a
+    payload, and the second without the first would accept any Session
+    the member happens to own, including one minted for a different
     Collective's membership.
 
-    Safe to repeat: setting the same default twice is the same state.
+    **Idempotent by Session**, which is what lets the two paths race
+    safely. Whichever arrives first attaches the card and records the
+    Session; the other recognises that Session as already applied and
+    changes nothing. A duplicate webhook, a refreshed return page, or
+    both at once settle on the same state. A *different* Session is
+    applied — see migration 190 for why last-completed-wins is the
+    rule, and why it is a product decision rather than an oversight.
     """
-    _bind_key()
-    session = stripe.checkout.Session.retrieve(
-        session_id, expand=["setup_intent"],
-    )
-
-    meta = dict(getattr(session, "metadata", None) or {})
+    meta = dict(_session_field(session, "metadata") or {})
     if meta.get("purchase_type") != METADATA_PURCHASE_TYPE:
         raise PaymentMethodUnavailable("not a payment-method session")
     if meta.get("collective_membership_id") != subscription.id:
         raise PaymentMethodUnavailable("session belongs to another agreement")
-    if session.customer != subscription.stripe_customer_id:
+    if _session_field(session, "customer") != subscription.stripe_customer_id:
         raise PaymentMethodUnavailable("session belongs to another customer")
 
-    setup_intent = session.setup_intent
-    payment_method = getattr(setup_intent, "payment_method", None)
-    if isinstance(payment_method, str):
-        payment_method_id = payment_method
-    else:
-        payment_method_id = getattr(payment_method, "id", None)
+    session_id = _session_field(session, "id")
+    if (
+        session_id
+        and subscription.payment_method_setup_session_id == session_id
+    ):
+        # The other path got here first. Not an error, and not a
+        # reason to call Stripe again.
+        return {
+            "updated": True, "already_applied": True, "payment_retried": False,
+        }
+
+    # An agreement that has stopped has no card to change. Reported
+    # rather than raised: a webhook for a member who cancelled while
+    # inside Stripe's form is an ordinary race, not a fault.
+    if subscription.status in (
+        CollectiveMembershipStatus.ended.value,
+        CollectiveMembershipStatus.cancelled.value,
+        CollectiveMembershipStatus.failed.value,
+    ):
+        return {
+            "updated": False, "reason": f"agreement_{subscription.status}",
+        }
+    if not subscription.stripe_subscription_id:
+        return {"updated": False, "reason": "no_stripe_subscription"}
+
+    payment_method_id = _resolve_payment_method(session)
     if not payment_method_id:
         # The member reached the return URL without completing, or
         # Stripe has not finished. Reported rather than guessed at.
         return {"updated": False, "reason": "no_payment_method_yet"}
 
+    _bind_key()
     stripe.Subscription.modify(
         subscription.stripe_subscription_id,
         default_payment_method=payment_method_id,
     )
+    subscription.payment_method_setup_session_id = (
+        session_id if isinstance(session_id, str) else None
+    )
+    subscription.payment_method_updated_at = now
+    subscription.updated_at = now
+    db.flush()
     logger.info(
         "collective membership: payment method updated sub=%s user=%s "
-        "space=%s", subscription.id, subscription.user_id,
-        subscription.space_id,
+        "space=%s session=%s", subscription.id, subscription.user_id,
+        subscription.space_id, session_id,
     )
 
     retried = _retry_open_invoice(subscription)
-    return {"updated": True, "payment_retried": retried}
+    return {"updated": True, "already_applied": False, "payment_retried": retried}
+
+
+def _resolve_payment_method(session: object) -> str | None:
+    """The card Stripe collected, from either shape of Session.
+
+    A webhook's Session carries ``setup_intent`` as a bare id, so the
+    SetupIntent is fetched when that is all there is. The return path
+    expands it and this costs nothing.
+    """
+    setup_intent = _session_field(session, "setup_intent")
+    if setup_intent is None:
+        return None
+    if isinstance(setup_intent, str):
+        _bind_key()
+        setup_intent = stripe.SetupIntent.retrieve(setup_intent)
+    payment_method = _session_field(setup_intent, "payment_method")
+    if isinstance(payment_method, str):
+        return payment_method
+    return getattr(payment_method, "id", None)
+
+
+def apply_collected_method(
+    db: Session, *, subscription: CollectiveMembership, session_id: str,
+    now: datetime,
+) -> dict:
+    """The member has come back from Stripe. Re-read and apply.
+
+    A return URL is a navigation, not evidence, so the Session is
+    fetched from the provider rather than trusted from the query
+    string. Everything after that is :func:`apply_session`.
+    """
+    _bind_key()
+    session = stripe.checkout.Session.retrieve(
+        session_id, expand=["setup_intent"],
+    )
+    return apply_session(db, subscription=subscription, session=session, now=now)
 
 
 def _retry_open_invoice(subscription: CollectiveMembership) -> bool:

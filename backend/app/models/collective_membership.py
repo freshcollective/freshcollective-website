@@ -77,6 +77,30 @@ class CollectiveMembershipStatus(str, enum.Enum):
     failed = "failed"
 
 
+#: The ``interval`` of an agreement that never renews.
+#:
+#: A one-off joining fee is recorded as an agreement so that one
+#: predicate can answer "does this member pay to be here?" for every
+#: arrangement — the transition sweep, eligibility and the settings
+#: page all ask it, and a second table would mean three places
+#: learning about a fourth kind of membership.
+#:
+#: It is emphatically **not** a subscription: there is no Stripe
+#: Subscription behind it, ``current_period_end`` stays NULL, and
+#: every surface that offers renewal, cancellation of renewal, or a
+#: payment method to change must refuse it. ``is_one_time`` is how
+#: they ask.
+ONE_TIME_INTERVAL: str = "one_time"
+
+
+def is_one_time(subscription: "CollectiveMembership | None") -> bool:
+    """Was this paid for once, with nothing to renew?"""
+    return (
+        subscription is not None
+        and (subscription.interval or "") == ONE_TIME_INTERVAL
+    )
+
+
 #: Statuses that are, or could still become, billing. Mirrors the
 #: partial unique index in migration 189 exactly — if these two ever
 #: disagree the database wins, and a test asserts they do not.
@@ -149,6 +173,17 @@ class CollectiveMembership(Base):
     )
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false",
+    )
+    # Which card change has already been applied, so the member's
+    # return from Stripe and the setup webhook converge on one outcome
+    # instead of racing. See migration 190 — including the rule that
+    # the last setup a member *completes* wins, rather than the most
+    # recently created one.
+    payment_method_setup_session_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+    payment_method_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
     )
 
     # ── Creator payment context, frozen at subscribe ────────────────

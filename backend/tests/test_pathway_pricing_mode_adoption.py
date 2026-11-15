@@ -577,6 +577,30 @@ class TestGrantsFirstOptionsReachTheMemberProjection:
 
 
 class TestCheckoutAcceptsAGrantsFirstOption:
+    @pytest.fixture(autouse=True)
+    def _stripe_is_mocked(self, monkeypatch):
+        """These tests are about authorisation, not about Stripe.
+
+        They reached the real test-mode API until the Stage 5A.3c
+        guard stopped them: the assertions here are "not a 404" and
+        "not this message", both of which a failed Stripe call
+        satisfies, so the network trip was invisible. Mocked now, so
+        the checkout they assert about is the one they describe.
+        """
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(
+            "stripe.checkout.Session.create",
+            lambda **kw: SimpleNamespace(
+                id="cs_test_mocked", url="https://stripe.test/mocked",
+                payment_intent="pi_test_mocked",
+            ),
+        )
+        monkeypatch.setattr(
+            "stripe.Customer.create",
+            lambda **kw: SimpleNamespace(id="cus_test_mocked"),
+        )
+
     def _buy(self, client, make_user, pathway, option, schedule_id):
         from app.auth.dependencies import get_verified_current_user
 

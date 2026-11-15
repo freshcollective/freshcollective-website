@@ -130,7 +130,23 @@ async def stripe_webhook(
         # by metadata, ahead of the other two systems. It grants nothing
         # here: a completed Session means a card was captured, and
         # Stripe says separately whether it could be charged.
-        if _cmem_handlers.owns_event(event_object):
+        # A membership card change, which is also a
+        # ``checkout.session.completed`` but must never be mistaken for
+        # a purchase — one attaches a card, the other grants
+        # membership. Asked first, and by its own discriminator.
+        if _cmem_handlers.owns_payment_method_event(event_object):
+            _cmem_handlers.handle_payment_method_setup_completed(
+                event_object, db, event_id=event["id"],
+            )
+        elif _cmem_handlers.owns_one_time_event(event_object):
+            # A one-off joining fee. This event IS the payment — no
+            # invoice follows it — so unlike the subscription branch
+            # below, it does grant membership when Stripe reports the
+            # Session paid.
+            _cmem_handlers.handle_one_time_completed(
+                event_object, db, event_id=event["id"],
+            )
+        elif _cmem_handlers.owns_event(event_object):
             _cmem_handlers.handle_checkout_completed(
                 event_object, db, event_id=event["id"],
             )

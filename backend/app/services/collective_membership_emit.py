@@ -31,7 +31,9 @@ from typing import TYPE_CHECKING, Any, Callable
 from sqlalchemy.orm import Session
 
 from app.core.public_url import public_app_url
-from app.models.collective_membership import CollectiveMembership
+from app.models.collective_membership import (
+    CollectiveMembership, is_one_time,
+)
 from app.models.platform import Space
 from app.models.user import User
 
@@ -77,7 +79,11 @@ def _money(cents: int | None, currency: str | None) -> str:
     )
 
 
-_INTERVALS = {"month": "per month", "year": "per year"}
+#: How an agreement's interval is said to a member.
+#:
+#: ``one_time`` reads "once", not "per once" — the templates compose
+#: this straight after the amount, so "A$199 once" is the sentence.
+_INTERVALS = {"month": "per month", "year": "per year", "one_time": "once"}
 
 
 def _base_payload(
@@ -94,7 +100,13 @@ def _base_payload(
         # The agreement, not the catalogue.
         "amount_label": _money(sub.amount_cents, sub.currency),
         "interval_label": _INTERVALS.get(sub.interval, ""),
-        "one_time": False,
+        # Derived, not assumed. This was hard-coded False while a
+        # one-off joining fee could not be bought; once 5A.3c made it
+        # buyable, leaving it would have told somebody who paid once
+        # that their membership "continues until you cancel it" —
+        # the misleading renewal reference §13 forbids, sent to the
+        # one member it is least true of.
+        "one_time": is_one_time(sub),
     }
 
 

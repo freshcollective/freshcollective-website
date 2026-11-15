@@ -245,29 +245,21 @@ export default function SpaceAboutCTA({
   // which refuses would be worse than saying so. They keep a link to
   // the existing enquiry route rather than a payment action.
   if (isPaidPricingType(pricingType)) {
-    if (pricingType === 'paid_monthly') {
-      // Signed out is already handled above, before this branch is
-      // reached — so by here the member is signed in and the action
-      // is a real checkout rather than a trip to the login page.
-      return (
-        <SubscribeButton
-          slug={slug}
-          label="Join collective"
-          className={tealBtn}
-          style={tealStyle}
-        />
-      )
-    }
+    // Signed out is already handled above, before this branch is
+    // reached — so by here the member is signed in and the action is
+    // a real checkout rather than a trip to the login page.
+    //
+    // All three paid arrangements open the same endpoint: the server
+    // reads the Collective's pricing and chooses subscription or
+    // payment mode. Asking the browser to know which would be asking
+    // it to know a price, which is the one thing it must not.
     return (
-      <div className="flex flex-col gap-2">
-        <Link
-          href={`/checkout/member?collective=${slug}`}
-          className={tealBtn}
-          style={tealStyle}
-        >
-          Join collective
-        </Link>
-      </div>
+      <SubscribeButton
+        slug={slug}
+        label="Join collective"
+        className={tealBtn}
+        style={tealStyle}
+      />
     )
   }
 

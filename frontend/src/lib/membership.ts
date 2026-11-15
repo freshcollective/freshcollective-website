@@ -29,13 +29,25 @@ export function formatMoney(cents: number, currency: string): string {
   }).format(amount)
 }
 
-/** "A$29/month" — the price and the commitment in one phrase. */
+/**
+ * "A$29/month", "A$290/year", or "A$199 paid once".
+ *
+ * The commitment travels with the price deliberately. A bare "A$199"
+ * beside a membership reads as a subscription to anyone who has seen
+ * one, and the whole point of the one-time arrangement is that it is
+ * not.
+ */
 export function formatRecurring(
   cents: number, currency: string, interval: string, intervalCount = 1,
 ): string {
+  const money = formatMoney(cents, currency)
+  if (interval === ONE_TIME_INTERVAL) return `${money} paid once`
   const every = intervalCount > 1 ? `${intervalCount} ${interval}s` : interval
-  return `${formatMoney(cents, currency)}/${every}`
+  return `${money}/${every}`
 }
+
+/** Matches the backend's ``ONE_TIME_INTERVAL``. */
+export const ONE_TIME_INTERVAL = 'one_time'
 
 /** A date a person can read, in their own locale's long form. */
 export function formatDay(iso: string | null): string | null {
@@ -57,10 +69,12 @@ export function formatDay(iso: string | null): string | null {
 export function offerPhrase(state: MembershipState): string | null {
   const { offer } = state
   if (!offer.is_paid || !offer.amount_cents) return null
-  const interval = offer.pricing_type === 'paid_annual' ? 'year' : 'month'
   if (offer.pricing_type === 'paid_one_time') {
-    return formatMoney(offer.amount_cents, offer.currency)
+    return formatRecurring(
+      offer.amount_cents, offer.currency, ONE_TIME_INTERVAL,
+    )
   }
+  const interval = offer.pricing_type === 'paid_annual' ? 'year' : 'month'
   return formatRecurring(offer.amount_cents, offer.currency, interval)
 }
 

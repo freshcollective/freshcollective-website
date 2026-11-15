@@ -124,6 +124,23 @@ class TestDispatcherRejectsStripeObjectGetBug:
             event_object=invoice_obj,
         )
         monkeypatch.setattr(stripe.Webhook, "construct_event", lambda **_: event)
+        # The "does not exist" above used to be produced by *asking
+        # Stripe*: the test named a subscription id absent from the
+        # test-mode account and let the real API's 404 drive the
+        # handler into SkipWebhookEvent. That made a dispatcher test
+        # depend on the network and on one account's contents. The
+        # same provider error is raised locally instead, so the branch
+        # under test is reached identically without leaving the
+        # process.
+        def _no_such_subscription(subscription_id, **_kw):
+            raise stripe.InvalidRequestError(
+                f"No such subscription: '{subscription_id}'",
+                param="id", code="resource_missing", http_status=404,
+            )
+
+        monkeypatch.setattr(
+            stripe.Subscription, "retrieve", _no_such_subscription,
+        )
 
         resp = client.post(
             "/api/webhooks/stripe",

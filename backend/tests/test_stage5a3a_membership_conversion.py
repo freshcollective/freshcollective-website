@@ -554,15 +554,19 @@ class TestSettingTheDate:
         db.refresh(paid_space)
         assert paid_space.paid_membership_effective_at is not None
 
-    def test_one_time_pricing_may_not_carry_one(
+    def test_one_time_pricing_may_now_carry_one(
         self, client, db, paid_space, as_owner, monkeypatch,
     ):
-        """``paid_one_time`` is paid, but offers no subscription to
-        hold: ``membership_pricing_terms.resolve`` refuses a one-off
-        joining fee because it is a purchase, not an agreement. A date
-        on it would pause every member with nothing they could buy to
-        stop it — the same fault as a date on a free Collective, so it
-        is refused in the same two places."""
+        """Reversed by Stage 5A.3c, and only because its condition was
+        met.
+
+        This asserted a 422 while ``paid_one_time`` was paid but
+        unbuyable: a date on it would have paused every member with
+        nothing they could purchase to stop it. 5A.3c built the
+        one-time checkout, so there is now something to buy, and the
+        restriction has nothing left to protect. The guard was always
+        "no date without a way to pay it" — not "no date on one-time".
+        """
         monkeypatch.setattr(
             "app.creator.routes.guard_paid_offers_enabled",
             lambda user, db, pricing_type: None,
@@ -572,19 +576,15 @@ class TestSettingTheDate:
             pricing_type="paid_one_time",
             paid_membership_effective_on="2027-01-01",
         )
-        assert res.status_code == 422, res.text
-        assert res.json()["detail"]["code"] == (
-            "membership_transition_unsupported_pricing"
-        )
+        assert res.status_code == 200, res.text
         db.refresh(paid_space)
-        assert paid_space.paid_membership_effective_at is None
+        assert paid_space.paid_membership_effective_at is not None
 
-    def test_moving_to_one_time_clears_an_existing_date_silently(
+    def test_moving_to_one_time_keeps_an_existing_date(
         self, client, db, paid_space, as_owner, monkeypatch,
     ):
-        """Clearing is not refused, for the ``coming_soon`` reason: the
-        form resends every pricing field, so refusing would lock a
-        creator out of the very change that resolves it."""
+        """Also reversed: the date is only cleared where it would be
+        meaningless, and on a one-time Collective it no longer is."""
         monkeypatch.setattr(
             "app.creator.routes.guard_paid_offers_enabled",
             lambda user, db, pricing_type: None,
@@ -593,7 +593,7 @@ class TestSettingTheDate:
         res = _patch(client, paid_space, pricing_type="paid_one_time")
         assert res.status_code == 200, res.text
         db.refresh(paid_space)
-        assert paid_space.paid_membership_effective_at is None
+        assert paid_space.paid_membership_effective_at is not None
 
 
 class TestAnImmediateTransitionHasToBeMeant:
@@ -928,14 +928,36 @@ class TestTheTransitionSweep:
         _sweep(db)
         assert _status(db, paid_space, member) == SpaceMembershipStatus.active
 
-    def test_a_one_time_collective_is_skipped_too(
+    def test_a_one_time_collective_is_now_swept_like_any_other(
         self, db, paid_space, member,
     ):
-        """The far half of the same guard: however a row acquired this
-        combination, the sweep will not pause anybody over it."""
+        """The other half of the 5A.3c reversal.
+
+        The sweep skipped one-time Collectives while nobody could buy
+        a one-time membership. Now that they can, a member who has not
+        is in exactly the position the sweep exists for — and the test
+        below shows a member who *has* bought one is left alone.
+        """
         _join(db, paid_space, member)
         paid_space.pricing_type = "paid_one_time"
         paid_space.paid_membership_effective_at = NOW - timedelta(days=1)
+        db.flush()
+        _sweep(db)
+        assert _status(db, paid_space, member) == SpaceMembershipStatus.paused
+
+    def test_a_paid_one_time_membership_satisfies_the_transition(
+        self, db, paid_space, member,
+    ):
+        """§7 — "members with valid one-time membership purchases
+        remain active"."""
+        from app.models.collective_membership import ONE_TIME_INTERVAL
+        _join(db, paid_space, member)
+        paid_space.pricing_type = "paid_one_time"
+        paid_space.paid_membership_effective_at = NOW - timedelta(days=1)
+        row = _agreement(
+            db, paid_space, member, CollectiveMembershipStatus.active.value,
+        )
+        row.interval = ONE_TIME_INTERVAL
         db.flush()
         _sweep(db)
         assert _status(db, paid_space, member) == SpaceMembershipStatus.active

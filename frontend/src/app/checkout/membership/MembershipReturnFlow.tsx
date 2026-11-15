@@ -201,7 +201,9 @@ export default function MembershipReturnFlow({
                   sub.amount_cents, sub.currency, sub.interval,
                   sub.interval_count,
                 )}
-                {sub.renews_at
+                {sub.is_one_time
+                  ? '. There are no recurring payments.'
+                  : sub.renews_at
                   ? `. Next payment: ${formatDay(sub.renews_at)}.`
                   : '.'}
               </p>

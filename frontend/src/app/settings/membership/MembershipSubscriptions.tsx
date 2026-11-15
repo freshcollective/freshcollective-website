@@ -152,8 +152,21 @@ export default function MembershipSubscriptions({
             </div>
 
             <div className="mt-3 text-[13px] leading-relaxed text-black">
+              {/* Paid once. Said explicitly rather than by the
+                  absence of a renewal line — "no recurring payments"
+                  is the reassurance somebody wants, and an empty
+                  space does not give it. */}
+              {sub?.is_one_time && sub.status === 'active' && (
+                <p>
+                  Membership active.{' '}
+                  <strong className="font-semibold text-navy-900">
+                    No recurring payments.
+                  </strong>
+                </p>
+              )}
+
               {/* Active and renewing. */}
-              {sub?.status === 'active' && sub.renews_at && (
+              {sub?.status === 'active' && !sub.is_one_time && sub.renews_at && (
                 <p>Next payment: {formatDay(sub.renews_at)}.</p>
               )}
 
@@ -193,7 +206,20 @@ export default function MembershipSubscriptions({
                 </p>
               )}
 
-              {(sub?.status === 'ended' || sub?.status === 'cancelled') && (
+              {/* A one-off fee that has ended did not expire — the
+                  member left, or was removed. Saying "ended" without
+                  that would read as a subscription running out. */}
+              {sub?.is_one_time
+                && (sub.status === 'ended' || sub.status === 'cancelled') && (
+                <p>
+                  Joining {space.name} again needs a new membership
+                  payment. Your earlier payment stays in your history,
+                  and anything you bought separately is still yours.
+                </p>
+              )}
+
+              {!sub?.is_one_time
+                && (sub?.status === 'ended' || sub?.status === 'cancelled') && (
                 <p>
                   <strong className="font-semibold text-navy-900">
                     Your paid membership has ended.

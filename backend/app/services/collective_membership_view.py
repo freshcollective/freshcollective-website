@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from app.models.collective_membership import (
     CollectiveMembership, CollectiveMembershipStatus, MANAGEABLE_STATUSES,
+    is_one_time,
 )
 from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus
 from app.models.user import User
@@ -98,6 +99,7 @@ def agreement_view(subscription: CollectiveMembership | None) -> dict | None:
     """The member's own agreement, in the terms they agreed to."""
     if subscription is None:
         return None
+    one_time = is_one_time(subscription)
     return {
         "id": subscription.id,
         "status": subscription.status,
@@ -105,13 +107,18 @@ def agreement_view(subscription: CollectiveMembership | None) -> dict | None:
         "currency": subscription.currency,
         "interval": subscription.interval,
         "interval_count": subscription.interval_count,
+        # The field every surface branches on. A one-off joining fee
+        # must never be shown with a renewal date, a cancel-renewal
+        # action, or a card to keep current — each of those implies a
+        # future charge that is not coming.
+        "is_one_time": one_time,
         # One instant, two meanings, named for both so a page does not
         # have to decide what to call it: it is when the paid period
         # runs out, which is the renewal date unless renewal is off.
         "current_period_end": _iso(subscription.current_period_end),
         "cancel_at_period_end": bool(subscription.cancel_at_period_end),
         "renews_at": (
-            None if subscription.cancel_at_period_end
+            None if (one_time or subscription.cancel_at_period_end)
             else _iso(subscription.current_period_end)
         ),
         "access_until": (
@@ -155,6 +162,7 @@ def membership_state(
         subscription = find_latest(db, user_id=user.id, space_id=space.id)
 
     status = subscription.status if subscription is not None else None
+    one_time = is_one_time(subscription)
     refusal = elig.refusal_for(db, user=user, space=space)
     is_owner = space.creator_id == user.id
 
@@ -210,15 +218,18 @@ def membership_state(
             # a button shown here cannot lead to a door that refuses.
             "can_subscribe": refusal is None,
             "subscribe_refusal": None if refusal is None else refusal.code,
-            "can_cancel_renewal": status in (
+            # All three are about a *future* charge, so all three are
+            # false for a fee that has already been paid in full.
+            "can_cancel_renewal": not one_time and status in (
                 CollectiveMembershipStatus.active.value,
                 CollectiveMembershipStatus.past_due.value,
             ),
-            "can_resume": (
+            "can_resume": not one_time and (
                 status == CollectiveMembershipStatus.cancel_scheduled.value
             ),
             "can_update_payment_method": (
-                status in _HAS_PAYMENT_METHOD_TO_MANAGE
+                not one_time
+                and status in _HAS_PAYMENT_METHOD_TO_MANAGE
                 and bool(subscription and subscription.stripe_subscription_id)
             ),
             "can_continue_checkout": (

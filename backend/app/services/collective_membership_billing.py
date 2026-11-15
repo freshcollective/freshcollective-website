@@ -225,8 +225,15 @@ def open_membership_checkout(
     Caller is responsible for eligibility — see
     ``collective_membership_eligibility``. This function assumes the
     member may join and concerns itself only with money.
+
+    Branches on the arrangement rather than making the caller know
+    which one a Collective uses: a monthly or annual fee opens a
+    ``mode='subscription'`` Session, a one-off joining fee opens
+    ``mode='payment'``. Everything after that — the agreement row, the
+    fee context, the supersede-rather-than-reuse rule — is shared,
+    because none of it differs between paying once and paying monthly.
     """
-    agreed = terms.resolve(space)
+    agreed = terms.resolve_any(space)
 
     existing = find_live_subscription(
         db, user_id=member.id, space_id=space.id,
@@ -280,14 +287,24 @@ def open_membership_checkout(
     db.flush()
 
     try:
-        product_id, price_id = _create_price(row, space=space)
-        row.stripe_product_id = product_id
-        row.stripe_price_id = price_id
         row.stripe_customer_id = resolve_customer_id(db, user=member)
-        session = _create_session(
-            row, space=space, member=member,
-            success_url=success_url, cancel_url=cancel_url,
-        )
+        if agreed.is_one_time:
+            # No Price and no Product: a one-off fee is priced inline
+            # on the Session. Minting a recurring Price for something
+            # that never recurs would leave an object in Stripe that
+            # looks like a subscription nobody is subscribed to.
+            session = _create_one_time_session(
+                row, space=space, member=member,
+                success_url=success_url, cancel_url=cancel_url,
+            )
+        else:
+            product_id, price_id = _create_price(row, space=space)
+            row.stripe_product_id = product_id
+            row.stripe_price_id = price_id
+            session = _create_session(
+                row, space=space, member=member,
+                success_url=success_url, cancel_url=cancel_url,
+            )
     except Exception:
         # The agreement is left ``pending`` with no Session. It grants
         # nothing, blocks nothing a retry needs — the retry supersedes
@@ -308,6 +325,62 @@ def open_membership_checkout(
     )
     return CheckoutOutcome(
         subscription=row, checkout_url=session.url, reused=False,
+    )
+
+
+#: Marks a Stripe object as a one-off joining fee rather than a
+#: subscription. A separate discriminator from
+#: ``METADATA_PURCHASE_TYPE`` so the webhook can tell a single payment
+#: from the first invoice of a recurring agreement — they arrive as
+#: the same event and mean different things.
+METADATA_ONE_TIME_TYPE = "collective_membership_one_time"
+
+
+def _create_one_time_session(
+    row: CollectiveMembership, *,
+    space: Space,
+    member: User,
+    success_url: str,
+    cancel_url: str,
+) -> Any:
+    """Stripe-hosted checkout for a one-off joining fee.
+
+    ``mode='payment'``, priced inline from the agreement rather than
+    from a Price object, because there is nothing recurring to
+    describe. The amount still comes from the frozen row, never from
+    the request.
+
+    The fee split travels on ``payment_intent_data`` the same way the
+    rest of the pay-in-full platform does it — the platform is the
+    merchant of record and the creator is paid by a separate transfer,
+    so the metadata is what later reconciles the two.
+    """
+    _bind_key()
+    meta = {
+        "purchase_type": METADATA_ONE_TIME_TYPE,
+        "collective_membership_id": row.id,
+        "space_id": space.id,
+        "member_user_id": member.id,
+    }
+    return stripe.checkout.Session.create(
+        mode="payment",
+        customer=row.stripe_customer_id,
+        line_items=[{
+            "quantity": 1,
+            "price_data": {
+                "currency": (row.currency or "AUD").lower(),
+                "unit_amount": row.amount_cents,
+                "product_data": {
+                    "name": f"{space.name} — membership",
+                    "description": "One-time membership payment",
+                },
+            },
+        }],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=meta,
+        payment_intent_data={"metadata": meta},
+        idempotency_key=_idem(row.id, "one_time_session"),
     )
 
 

@@ -147,6 +147,142 @@ def _find_by_metadata(
     return None
 
 
+def owns_payment_method_event(obj: dict[str, Any]) -> bool:
+    """Is this the setup Session for a membership card change?
+
+    A different discriminator from :func:`owns_event` on purpose. Both
+    arrive as ``checkout.session.completed``, and conflating them would
+    let a card-change Session be read as a subscription purchase —
+    which grants membership.
+    """
+    from app.services.collective_membership_payment_method import (
+        METADATA_PURCHASE_TYPE as PM_TYPE,
+    )
+
+    meta = obj.get("metadata") or {}
+    return meta.get("purchase_type") == PM_TYPE
+
+
+def handle_payment_method_setup_completed(
+    obj: dict[str, Any], db: Session, *, event_id: str,
+) -> None:
+    """The member finished Stripe's card form — attach it, whatever
+    they did next.
+
+    The gap this closes: until now the card was attached when the
+    member *returned* to Fresh Collective. Someone who completed the
+    form and closed the tab never returned, so the card they had just
+    entered was never attached to anything, and they had every reason
+    to think it was.
+
+    This and the return page call the same service, which is
+    idempotent by Session — so whichever arrives first attaches the
+    card and the other recognises it as done. Neither is the
+    authority over the other; the service is.
+
+    A Session that resolves to no agreement, or to one that has since
+    ended, is logged and dropped. A webhook is not a place to raise
+    about a race that has already resolved itself.
+    """
+    from app.services import collective_membership_payment_method as _pm
+
+    row = _find_by_metadata(db, obj)
+    if row is None:
+        logger.info(
+            "collective membership: payment-method session %s names no "
+            "agreement — ignored", obj.get("id"),
+        )
+        return
+
+    try:
+        outcome = _pm.apply_session(
+            db, subscription=row, session=obj, now=datetime.utcnow(),
+        )
+    except _pm.PaymentMethodUnavailable as exc:
+        # Ownership did not check out. Loud, because the only ways to
+        # get here are a Session we did not mint and a bug.
+        logger.error(
+            "collective membership: refusing payment-method webhook "
+            "session=%s sub=%s — %s", obj.get("id"), row.id, exc,
+        )
+        return
+
+    logger.info(
+        "collective membership: payment-method webhook event=%s sub=%s "
+        "outcome=%s", event_id, row.id, outcome,
+    )
+
+
+def owns_one_time_event(obj: dict[str, Any]) -> bool:
+    """Is this the Session for a one-off joining fee?
+
+    Its own discriminator, because a one-off fee and the first invoice
+    of a subscription arrive as the same event type and mean different
+    things — one is the whole payment, the other is the first of many.
+    """
+    from app.services.collective_membership_billing import (
+        METADATA_ONE_TIME_TYPE,
+    )
+
+    meta = obj.get("metadata") or {}
+    return meta.get("purchase_type") == METADATA_ONE_TIME_TYPE
+
+
+def handle_one_time_completed(
+    obj: dict[str, Any], db: Session, *, event_id: str,
+) -> None:
+    """A one-off joining fee was paid — record it and admit them.
+
+    Unlike the subscription path, this event *is* the payment: there
+    is no invoice following it, so a Session Stripe reports as paid is
+    the evidence. ``payment_status`` is checked rather than assumed —
+    a completed Session with an unpaid status is a member who reached
+    the end of the form without the charge succeeding, and admitting
+    them would be granting membership for nothing.
+
+    Replay-safe: the ledger is keyed on the Session id, so a duplicate
+    delivery records no second payment and grants no second
+    membership.
+    """
+    from app.services import collective_membership_lifecycle as _lifecycle
+
+    row = _find_by_metadata(db, obj)
+    if row is None:
+        logger.info(
+            "collective membership: one-time session %s names no agreement "
+            "— ignored", obj.get("id"),
+        )
+        return
+
+    payment_status = obj.get("payment_status")
+    if payment_status != "paid":
+        logger.info(
+            "collective membership: one-time session %s is %s, not paid — "
+            "nothing granted", obj.get("id"), payment_status,
+        )
+        return
+
+    session_id = obj.get("id")
+    outcome = _lifecycle.activate_from_one_time_payment(
+        db,
+        subscription=row,
+        session_id=str(session_id),
+        amount_cents=int(obj.get("amount_total") or row.amount_cents),
+        currency=(obj.get("currency") or row.currency or "AUD").upper(),
+        charge_id=None,
+        payment_intent_id=(
+            obj.get("payment_intent")
+            if isinstance(obj.get("payment_intent"), str) else None
+        ),
+        now=datetime.utcnow(),
+    )
+    logger.info(
+        "collective membership: one-time payment event=%s sub=%s "
+        "applied=%s membership=%s",
+        event_id, row.id, outcome.applied, outcome.membership,
+    )
+
+
 def handle_checkout_completed(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:
