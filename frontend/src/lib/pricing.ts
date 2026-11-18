@@ -275,3 +275,98 @@ export function formatCollectivePrice(space: PricingSource): string {
 export function isPaidPricingType(type: PricingType): boolean {
   return type === 'paid_one_time' || type === 'paid_monthly' || type === 'paid_annual'
 }
+
+
+/**
+ * The largest membership amount the form will accept, in cents.
+ *
+ * ``spaces.pricing_amount_cents`` is a PostgreSQL ``INTEGER``, so the
+ * hard ceiling is 2,147,483,647 cents. This sits well below it: a
+ * Collective membership priced above a million dollars is a typo, and
+ * catching it here turns a database error into a sentence.
+ */
+export const MEMBERSHIP_AMOUNT_MAX_CENTS = 99_999_999
+
+/**
+ * A typed membership amount, as integer cents.
+ *
+ * Why this is a function rather than four lines in the form
+ * ----------------------------------------------------------
+ *
+ * The input is where a creator says what their work costs, and it had
+ * two faults that only a parser can fix together. ``step="1"`` meant
+ * the browser refused "5.99" outright, offering 5 or 6; and the form
+ * re-read a stored amount with ``Math.round(cents / 100)``, so a price
+ * with cents came back as a whole dollar and the next save wrote that
+ * rounded figure to the database. Fixing only the first would have made
+ * the second worse — decimals could be entered, then silently lost on
+ * the next visit.
+ *
+ * So parsing, validation and the rounding rule live in one place with
+ * tests, and the form asks this function rather than deciding for
+ * itself.
+ *
+ * ``Math.round`` is doing real work: ``parseFloat('5.99') * 100`` is
+ * 598.9999999999999 in binary floating point, and truncating it would
+ * store A$5.98. Rounding is what makes the stored integer match what
+ * the creator typed.
+ *
+ * An empty field is not an error — it means "no amount set", which is
+ * how a creator clears a price. The caller decides whether that is
+ * acceptable for the pricing type it is saving.
+ */
+export function parseMembershipAmountCents(input: string): {
+  cents: number | null
+  error: string | null
+} {
+  const raw = input.trim()
+  if (!raw) return { cents: null, error: null }
+
+  // A leading decimal point is what someone typing ".99" means, and
+  // refusing it would be pedantry rather than validation.
+  const normalised = raw.startsWith('.') ? `0${raw}` : raw
+
+  // Digits, optionally followed by one or two decimal places. This is
+  // also what rejects a negative (no leading minus), exponent notation
+  // and a third decimal place — each of which would otherwise be
+  // silently rounded into a price the creator did not choose.
+  if (!/^\d+(\.\d{1,2})?$/.test(normalised)) {
+    return {
+      cents: null,
+      error:
+        'Enter an amount in dollars and cents, using numbers only — '
+        + 'for example 29.50. Two decimal places at most.',
+    }
+  }
+
+  const cents = Math.round(Number(normalised) * 100)
+  if (cents === 0) {
+    return {
+      cents: null,
+      error:
+        'Enter an amount greater than zero, or clear the field to '
+        + 'remove the price.',
+    }
+  }
+  if (cents > MEMBERSHIP_AMOUNT_MAX_CENTS) {
+    return {
+      cents: null,
+      error: 'That amount is too large. Enter up to 999,999.99.',
+    }
+  }
+  return { cents, error: null }
+}
+
+/**
+ * A stored amount, as the creator should see it in the input.
+ *
+ * Whole dollars stay whole ("49", not "49.00") because that is what a
+ * creator typed; an amount with cents keeps both digits. The old
+ * ``Math.round(cents / 100)`` lost the cents entirely, which is the
+ * half of the defect that survived a reload.
+ */
+export function membershipAmountToInput(cents: number | null | undefined): string {
+  if (cents == null || cents <= 0) return ''
+  const dollars = cents / 100
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)
+}

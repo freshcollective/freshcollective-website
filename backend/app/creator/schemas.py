@@ -96,6 +96,14 @@ RETIRED_PRICING_TYPES: set[str] = {"coming_soon"}
 ALLOWED_PRICING_TYPES: set[str] = SELECTABLE_PRICING_TYPES | RETIRED_PRICING_TYPES
 
 
+#: Largest Collective membership amount accepted, in cents.
+#:
+#: Mirrors ``MEMBERSHIP_AMOUNT_MAX_CENTS`` in the Creator Studio form.
+#: Well under the ``INTEGER`` column ceiling, so a typo is refused with
+#: a 422 rather than overflowing the database.
+MEMBERSHIP_AMOUNT_MAX_CENTS: int = 99_999_999
+
+
 class SpaceUpdateRequest(BaseModel):
     name: str | None = None
     slug: str | None = None
@@ -112,7 +120,21 @@ class SpaceUpdateRequest(BaseModel):
     themes: list[str] | None = None
     # Public pricing display
     pricing_type: str | None = None
-    pricing_amount_cents: int | None = None
+    #: Collective membership price, in integer cents.
+    #:
+    #: Bounded on both ends because neither bound was enforced and the
+    #: column is a PostgreSQL ``INTEGER``: a negative price is not a
+    #: price, and anything past 2,147,483,647 cents reaches the database
+    #: as an overflow — a 500 where a 422 belongs. The ceiling here is
+    #: the same one the Creator Studio form applies, so the two agree
+    #: rather than each having an opinion.
+    #:
+    #: Precision cannot be wrong at this layer: the wire format is
+    #: already integer cents, so "5.99" has been resolved before it
+    #: arrives. The form owns that conversion and is tested on it.
+    pricing_amount_cents: int | None = Field(
+        default=None, ge=0, le=MEMBERSHIP_AMOUNT_MAX_CENTS,
+    )
     pricing_currency: str | None = None
     pricing_note: str | None = None
     #: The day membership starts having to be paid for, in the

@@ -31,6 +31,7 @@ Run with::
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 from fastapi import HTTPException
 
 from app.core.config import settings
@@ -353,3 +354,89 @@ class TestNoMemberIsTouched:
             .one()
         )
         assert row.status is SpaceMembershipStatus.active
+
+
+# ===========================================================================
+# §5A.4b — the membership amount is bounded, and agrees with the form
+# ===========================================================================
+
+
+class TestMembershipAmountBounds:
+    """What the wire will accept as a Collective membership price.
+
+    Stage 5A.4b found the Creator Studio input carrying ``step="1"``,
+    so a creator could not type 5.99 at all. Fixing the form raised the
+    question this class answers: the backend had *no* bound either, so
+    a negative price was accepted and a large enough one reached a
+    PostgreSQL ``INTEGER`` column as an overflow — a 500 where a 422
+    belongs.
+
+    Precision is deliberately not tested here, and cannot be: the wire
+    format is integer cents, so "5.99" has already become 599 before
+    this schema sees it. That conversion is the form's job and is
+    tested in ``frontend/src/lib/pricing.test.ts``.
+    """
+
+    def _request(self, cents):
+        from app.creator.schemas import SpaceUpdateRequest
+        return SpaceUpdateRequest(pricing_amount_cents=cents)
+
+    def test_the_reported_amount_is_accepted(self):
+        assert self._request(599).pricing_amount_cents == 599
+
+    @pytest.mark.parametrize("cents", [1, 100, 599, 2_950, 14_995, 99_999_999])
+    def test_every_sensible_amount_is_accepted(self, cents):
+        assert self._request(cents).pricing_amount_cents == cents
+
+    @pytest.mark.parametrize("cents", [-1, -599, -99_999_999])
+    def test_a_negative_amount_is_refused(self, cents):
+        with pytest.raises(ValidationError):
+            self._request(cents)
+
+    def test_an_amount_past_the_ceiling_is_refused(self):
+        from app.creator.schemas import MEMBERSHIP_AMOUNT_MAX_CENTS
+        with pytest.raises(ValidationError):
+            self._request(MEMBERSHIP_AMOUNT_MAX_CENTS + 1)
+
+    def test_the_ceiling_sits_below_the_integer_column(self):
+        """The bound exists to keep the database out of it."""
+        from app.creator.schemas import MEMBERSHIP_AMOUNT_MAX_CENTS
+        assert MEMBERSHIP_AMOUNT_MAX_CENTS < 2_147_483_647
+
+    def test_the_two_sides_agree_on_the_ceiling(self):
+        """The form and the schema must not hold different opinions.
+
+        Read out of the frontend source rather than duplicated here, so
+        changing one without the other fails this test.
+        """
+        import pathlib
+        import re
+        from app.creator.schemas import MEMBERSHIP_AMOUNT_MAX_CENTS
+
+        source = (
+            pathlib.Path(__file__).resolve().parents[2]
+            / "frontend" / "src" / "lib" / "pricing.ts"
+        )
+        if not source.exists():   # backend-only checkout
+            pytest.skip("frontend source not present")
+        match = re.search(
+            r"MEMBERSHIP_AMOUNT_MAX_CENTS\s*=\s*([0-9_]+)", source.read_text(),
+        )
+        assert match, "frontend ceiling constant not found"
+        assert int(match.group(1).replace("_", "")) == MEMBERSHIP_AMOUNT_MAX_CENTS
+
+    def test_no_amount_is_still_allowed(self):
+        """Clearing a price is how a Collective goes back to free."""
+        assert self._request(None).pricing_amount_cents is None
+
+    @pytest.mark.parametrize(
+        "pricing_type", ["paid_monthly", "paid_annual", "paid_one_time"],
+    )
+    def test_the_same_bound_applies_to_every_paid_arrangement(self, pricing_type):
+        """One control, three arrangements — the field is shared, and
+        this is what says so."""
+        from app.creator.schemas import SpaceUpdateRequest
+        ok = SpaceUpdateRequest(pricing_type=pricing_type, pricing_amount_cents=599)
+        assert ok.pricing_amount_cents == 599
+        with pytest.raises(ValidationError):
+            SpaceUpdateRequest(pricing_type=pricing_type, pricing_amount_cents=-1)

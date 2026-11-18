@@ -9,6 +9,10 @@ import {
   normalisePreference,
 } from '@/lib/collectiveHeaderImage'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
+import {
+  membershipAmountToInput,
+  parseMembershipAmountCents,
+} from '@/lib/pricing'
 import type { CreatorSpaceDetail, PricingType } from '@/types/platform'
 import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 
@@ -55,7 +59,7 @@ export default function CollectiveSettingsForm({ space, tab = 'details', paidOff
   // Pricing
   const [pricingType, setPricingType] = useState<PricingType>(space.pricing_type ?? 'free')
   const [pricingAmountDisplay, setPricingAmountDisplay] = useState<string>(
-    space.pricing_amount_cents ? String(Math.round(space.pricing_amount_cents / 100)) : ''
+    membershipAmountToInput(space.pricing_amount_cents)
   )
   const [pricingNote, setPricingNote] = useState(space.pricing_note ?? '')
   // The transition date, as the day the creator chose in their
@@ -453,6 +457,23 @@ function supportsTransition(type: PricingType): boolean {
       return
     }
 
+    // The membership amount, checked before anything is sent.
+    //
+    // The browser's own ``step`` validation catches most of this, but it
+    // is not the authority: a field can be filled programmatically, and
+    // an auto-managed Collective never sends pricing at all. Parsing
+    // here means the stored value is always integer cents the creator
+    // actually chose.
+    const amountIsRelevant = !isAutoManaged && isPaidType(pricingType)
+    const parsed = amountIsRelevant
+      ? parseMembershipAmountCents(pricingAmountDisplay)
+      : { cents: null, error: null }
+    if (parsed.error) {
+      setError(parsed.error)
+      return
+    }
+    const parsedAmountCents = parsed.cents
+
     setSaving(true)
     setError(null)
     setSaved(false)
@@ -479,9 +500,7 @@ function supportsTransition(type: PricingType): boolean {
                 is_public: isPublic,
                 status,
                 pricing_type: pricingType,
-                pricing_amount_cents: isPaidType(pricingType) && pricingAmountDisplay
-                  ? Math.round(parseFloat(pricingAmountDisplay) * 100) || null
-                  : null,
+                pricing_amount_cents: parsedAmountCents,
                 pricing_currency: 'AUD',
                 pricing_note: pricingNote.trim() || null,
                 // Always sent, including empty, so clearing a date is
@@ -1062,14 +1081,17 @@ function supportsTransition(type: PricingType): boolean {
               <label htmlFor="pricing-amount" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
                 Amount (AUD)
               </label>
+              {/* Cents are a real price, not an edge case: ``step="1"``
+                  made the browser refuse 5.99 and offer 5 or 6. */}
               <div className="flex items-center gap-2">
                 <span className="text-[15px] text-black">$</span>
                 <input
                   id="pricing-amount"
                   type="number"
                   min="0"
-                  step="1"
-                  placeholder="e.g. 49"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="e.g. 29.50"
                   value={pricingAmountDisplay}
                   onChange={(e) => setPricingAmountDisplay(e.target.value)}
                   className="w-36 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"

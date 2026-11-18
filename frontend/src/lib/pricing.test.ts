@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
+  MEMBERSHIP_AMOUNT_MAX_CENTS,
   formatAccessFallbackCopy,
   formatCollectiveAccessLabel,
   formatCollectivePricingSummary,
   formatPaidSeparatelyCopy,
+  membershipAmountToInput,
+  parseMembershipAmountCents,
 } from './pricing.ts'
 
 /**
@@ -660,5 +663,110 @@ describe('the paid-separately branch is untouched by that change', () => {
       read('app/spaces/[slug]/about/page.tsx'),
       /formatPaidSeparatelyCopy\(space\)/,
     )
+  })
+})
+
+
+/**
+ * The membership amount field — the Stage 5A.4b defect, pinned.
+ *
+ * Two faults, which had to be fixed together. ``step="1"`` meant the
+ * browser refused "5.99" and offered 5 or 6, so a creator could not
+ * price in cents at all. And the form re-read a stored amount with
+ * ``Math.round(cents / 100)``, so an amount with cents came back as a
+ * whole dollar and the next save wrote that rounded figure down.
+ * Fixing only the first would have made the second worse.
+ */
+describe('parseMembershipAmountCents', () => {
+  test('the reported case: 5.99 is accepted and stored as 599 cents', () => {
+    assert.deepEqual(parseMembershipAmountCents('5.99'), { cents: 599, error: null })
+  })
+
+  test('binary floating point does not cost a cent', () => {
+    // parseFloat('5.99') * 100 is 598.9999999999999. Truncating would
+    // store A$5.98 — the rounding is what makes the integer match the
+    // number the creator typed.
+    assert.equal(parseMembershipAmountCents('5.99').cents, 599)
+    assert.equal(parseMembershipAmountCents('29.50').cents, 2950)
+    assert.equal(parseMembershipAmountCents('149.95').cents, 14995)
+    assert.equal(parseMembershipAmountCents('0.07').cents, 7)
+  })
+
+  test('whole dollars still work', () => {
+    assert.deepEqual(parseMembershipAmountCents('49'), { cents: 4900, error: null })
+  })
+
+  test('an empty field means no amount, not an error', () => {
+    assert.deepEqual(parseMembershipAmountCents(''), { cents: null, error: null })
+    assert.deepEqual(parseMembershipAmountCents('   '), { cents: null, error: null })
+  })
+
+  test('a leading decimal point is understood, not refused', () => {
+    assert.equal(parseMembershipAmountCents('.99').cents, 99)
+  })
+
+  test('a third decimal place is refused rather than rounded away', () => {
+    // Silently rounding 29.999 to A$30.00 would charge a price nobody
+    // chose, which is the failure this whole function exists to avoid.
+    const r = parseMembershipAmountCents('29.999')
+    assert.equal(r.cents, null)
+    assert.match(r.error ?? '', /two decimal places/i)
+  })
+
+  test('a negative amount is refused', () => {
+    assert.equal(parseMembershipAmountCents('-5').cents, null)
+    assert.equal(parseMembershipAmountCents('-5.99').cents, null)
+  })
+
+  test('zero is refused, with the way out named', () => {
+    const r = parseMembershipAmountCents('0')
+    assert.equal(r.cents, null)
+    assert.match(r.error ?? '', /clear the field/i)
+  })
+
+  test('text and exponent notation are refused', () => {
+    for (const bad of ['abc', '1e5', '5,99', '$5.99', '5.9.9', '--1']) {
+      assert.equal(parseMembershipAmountCents(bad).cents, null, bad)
+    }
+  })
+
+  test('an amount past the ceiling is refused rather than overflowing the column', () => {
+    const over = String((MEMBERSHIP_AMOUNT_MAX_CENTS + 100) / 100)
+    const r = parseMembershipAmountCents(over)
+    assert.equal(r.cents, null)
+    assert.match(r.error ?? '', /too large/i)
+    // and the ceiling itself is accepted
+    assert.equal(
+      parseMembershipAmountCents(String(MEMBERSHIP_AMOUNT_MAX_CENTS / 100)).cents,
+      MEMBERSHIP_AMOUNT_MAX_CENTS,
+    )
+  })
+})
+
+describe('membershipAmountToInput — the reload half of the defect', () => {
+  test('cents survive a round trip', () => {
+    // The old form did Math.round(599 / 100) and showed "6". Saving
+    // again then wrote 600 to the database.
+    assert.equal(membershipAmountToInput(599), '5.99')
+    assert.equal(parseMembershipAmountCents(membershipAmountToInput(599)).cents, 599)
+  })
+
+  test('whole dollars stay whole', () => {
+    assert.equal(membershipAmountToInput(4900), '49')
+  })
+
+  test('nothing set reads as an empty field', () => {
+    assert.equal(membershipAmountToInput(null), '')
+    assert.equal(membershipAmountToInput(undefined), '')
+    assert.equal(membershipAmountToInput(0), '')
+  })
+
+  test('every amount survives the round trip, not just the examples', () => {
+    for (const cents of [1, 7, 99, 100, 599, 2950, 14995, 100000, MEMBERSHIP_AMOUNT_MAX_CENTS]) {
+      assert.equal(
+        parseMembershipAmountCents(membershipAmountToInput(cents)).cents, cents,
+        `round trip failed for ${cents}`,
+      )
+    }
   })
 })
