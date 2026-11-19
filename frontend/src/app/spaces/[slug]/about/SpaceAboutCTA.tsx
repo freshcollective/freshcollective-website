@@ -12,7 +12,9 @@ import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
 import JoiningDoors from './JoiningDoors'
 import SubscribeButton from '@/components/membership/SubscribeButton'
-import { formatDay, offerPhrase, owesConversion } from '@/lib/membership'
+import {
+  formatDay, offerPhrase, owesConversion, paidJoinAction,
+} from '@/lib/membership'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type {
   JoinPolicy, JoiningOption, MembershipState, PricingType,
@@ -305,13 +307,30 @@ export default function SpaceAboutCTA({
     // reads the Collective's pricing and chooses subscription or
     // payment mode. Asking the browser to know which would be asking
     // it to know a price, which is the one thing it must not.
+    //
+    // What the button says, and whether there is one at all, comes
+    // from ``paidJoinAction`` — the backend's ``can_subscribe`` is the
+    // authority, and the label quotes the Collective's own offer. This
+    // branch stays above the ``isPublic`` one below on purpose: a
+    // public paid Collective must never fall through to free joining.
+    const action = paidJoinAction(membershipState)
+    if (action.kind === 'subscribe') {
+      return (
+        <SubscribeButton
+          slug={slug}
+          label={action.label}
+          className={tealBtn}
+          style={tealStyle}
+        />
+      )
+    }
+    // Not actionable, and deliberately not a free-join button: this
+    // Collective charges for membership whether or not it can be
+    // bought this minute.
     return (
-      <SubscribeButton
-        slug={slug}
-        label="Join collective"
-        className={tealBtn}
-        style={tealStyle}
-      />
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[13px] font-medium text-slate-500">
+        {action.message}
+      </div>
     )
   }
 

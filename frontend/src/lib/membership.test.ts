@@ -15,9 +15,13 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
 import {
   formatMoney, formatRecurring, offerPhrase, owesConversion,
-  recognisesMembership, subscribeRefusalMessage,
+  paidJoinAction, recognisesMembership, subscribeRefusalMessage,
 } from './membership.ts'
 import type { MembershipState } from '../types/platform.ts'
 
@@ -248,5 +252,167 @@ describe('subscribeRefusalMessage', () => {
 
   test('no refusal is no message', () => {
     assert.equal(subscribeRefusalMessage(null), null)
+  })
+})
+
+
+// ===========================================================================
+// Stage 5A.4b — the paid Collective CTA
+// ===========================================================================
+
+/**
+ * The defect, pinned twice over.
+ *
+ * Production showed **"Join collective"** on a Collective charging
+ * A$5.99/month. The control was the membership checkout all along —
+ * the right action wearing the free one's words — and it was rendered
+ * whether or not billing was switched on, so with the flag off it was
+ * a door that refuses.
+ */
+function paid(over: Partial<MembershipState['actions']> = {},
+              offer?: Partial<MembershipState['offer']>): MembershipState {
+  return state({
+    is_member: false,
+    offer: {
+      pricing_type: 'paid_monthly', amount_cents: 599, currency: 'AUD',
+      is_paid: true, subscribable: true, ...offer,
+    },
+    actions: { ...state().actions, can_subscribe: true, ...over },
+  } as Partial<MembershipState>)
+}
+
+describe('paidJoinAction — what the button says', () => {
+  test('the reported case: the price is on the button, not "Join collective"', () => {
+    const a = paidJoinAction(paid())
+    assert.equal(a.kind, 'subscribe')
+    assert.equal(a.kind === 'subscribe' && a.label, 'Subscribe — A$5.99/month')
+    assert.notEqual(a.kind === 'subscribe' && a.label, 'Join collective')
+  })
+
+  test('annual membership says per year', () => {
+    const a = paidJoinAction(paid({}, {
+      pricing_type: 'paid_annual', amount_cents: 999,
+    }))
+    assert.equal(a.kind === 'subscribe' && a.label, 'Subscribe — A$9.99/year')
+  })
+
+  test('a one-time membership says once, never per-anything', () => {
+    const a = paidJoinAction(paid({}, {
+      pricing_type: 'paid_one_time', amount_cents: 799,
+    }))
+    assert.equal(a.kind === 'subscribe' && a.label, 'Subscribe — A$7.99 once')
+  })
+
+  test('an offer with no amount still offers a usable button', () => {
+    const a = paidJoinAction(paid({}, { amount_cents: null, is_paid: false }))
+    assert.equal(a.kind === 'subscribe' && a.label, 'Subscribe')
+  })
+
+  test('the label never hard-codes an amount', () => {
+    // A$5.99 is this test Collective's price, not the product's.
+    const a = paidJoinAction(paid({}, { amount_cents: 12345 }))
+    assert.equal(a.kind === 'subscribe' && a.label, 'Subscribe — A$123.45/month')
+  })
+})
+
+describe('paidJoinAction — whether there is a button at all', () => {
+  test('can_subscribe true is what opens the door', () => {
+    assert.equal(paidJoinAction(paid({ can_subscribe: true })).kind, 'subscribe')
+  })
+
+  test('billing off offers no action, and says why', () => {
+    const a = paidJoinAction(paid({
+      can_subscribe: false, subscribe_refusal: 'membership_billing_unavailable',
+    }))
+    assert.equal(a.kind, 'unavailable')
+    assert.match(a.kind === 'unavailable' ? a.message : '', /isn.t available yet/)
+  })
+
+  test('each refusal gets its own sentence rather than a button', () => {
+    for (const [code, pattern] of [
+      ['already_subscribed', /already have a membership/i],
+      ['membership_own_collective', /your collective/i],
+      ['membership_auto_managed', /managed by Fresh Collective/i],
+      ['membership_not_available_to_you', /cannot be purchased/i],
+    ] as const) {
+      const a = paidJoinAction(paid({ can_subscribe: false, subscribe_refusal: code }))
+      assert.equal(a.kind, 'unavailable', code)
+      assert.match(a.kind === 'unavailable' ? a.message : '', pattern, code)
+    }
+  })
+
+  test('a removed or banned member is refused without a code leaking why', () => {
+    const a = paidJoinAction(paid({
+      can_subscribe: false, subscribe_refusal: 'membership_not_eligible',
+    }))
+    assert.equal(a.kind, 'unavailable')
+    assert.match(a.kind === 'unavailable' ? a.message : '', /isn.t available to you/i)
+  })
+
+  test('unknown eligibility is not a reason to offer checkout', () => {
+    // The state fetch failed. Guessing "yes" is the failure this
+    // function exists to stop.
+    const a = paidJoinAction(null)
+    assert.equal(a.kind, 'unavailable')
+    assert.ok((a.kind === 'unavailable' ? a.message : '').length > 0)
+  })
+
+  test('can_subscribe is required to be exactly true', () => {
+    for (const v of [undefined, null, 0, '', 'true'] as unknown[]) {
+      const s = paid()
+      ;(s.actions as Record<string, unknown>).can_subscribe = v
+      assert.equal(paidJoinAction(s).kind, 'unavailable', String(v))
+    }
+  })
+})
+
+/**
+ * Branch order in the CTA, asserted against the source.
+ *
+ * These are ordering guarantees no unit test of a pure function can
+ * make, and getting them wrong is how a paid Collective would start
+ * offering free membership. Matched on code rather than prose — a
+ * comment mentioning "isPublic" must not satisfy them.
+ */
+describe('SpaceAboutCTA branch order', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url))
+  const cta = readFileSync(
+    join(HERE, '..', 'app', 'spaces', '[slug]', 'about', 'SpaceAboutCTA.tsx'),
+    'utf8',
+  )
+  const at = (needle: string) => {
+    const i = cta.indexOf(needle)
+    assert.notEqual(i, -1, `not found in source: ${needle}`)
+    return i
+  }
+
+  test('a purchase_required Collective is handled before paid pricing', () => {
+    assert.ok(at("joinPolicy === 'purchase_required'") < at('isPaidPricingType(pricingType)'))
+  })
+
+  test('paid pricing is handled before the public free-join branch', () => {
+    // If this inverts, a public paid Collective offers free joining.
+    assert.ok(at('isPaidPricingType(pricingType)') < at('if (isPublic) {'))
+  })
+
+  test('the signed-out branch comes before paid pricing', () => {
+    assert.ok(at('if (!isLoggedIn) {') < at('isPaidPricingType(pricingType)'))
+  })
+
+  test('an existing member is handled before any join door', () => {
+    assert.ok(at('if (isMember) {') < at('isPaidPricingType(pricingType)'))
+  })
+
+  test('the paid branch asks paidJoinAction rather than deciding itself', () => {
+    assert.match(cta, /const action = paidJoinAction\(membershipState\)/)
+  })
+
+  test('the free-join label is gone from the paid branch', () => {
+    // The whole defect: SubscribeButton carrying the free door's words.
+    assert.doesNotMatch(cta, /label="Join collective"/)
+  })
+
+  test('checkout still goes through SubscribeButton', () => {
+    assert.match(cta, /<SubscribeButton\b/)
   })
 })

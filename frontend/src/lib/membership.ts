@@ -165,3 +165,55 @@ export function owesConversion(state: MembershipState | null): boolean {
   if (!state) return false
   return state.transition.action_needed && state.actions.can_subscribe
 }
+
+
+/**
+ * What a signed-in non-member should be offered on a paid Collective.
+ *
+ * Two faults this replaces, both found in production on 18 November.
+ *
+ * The button was labelled **"Join collective"** while actually being
+ * the membership checkout — the right action wearing the words of the
+ * free one. A member on a Collective charging A$5.99/month was invited
+ * to "join" and would have been taken to Stripe.
+ *
+ * And it was rendered unconditionally, so with billing switched off it
+ * was a door that refuses: the checkout answers
+ * ``membership_billing_unavailable`` and the button reports it only
+ * after being pressed. ``owesConversion`` already refuses to offer an
+ * action that cannot complete; this is the same rule applied to the
+ * other side of the same page.
+ *
+ * ``can_subscribe`` is the authority and is asked for strictly, which
+ * also decides the cases that have no opinion of their own: a banned
+ * or removed member, an auto-managed Collective, somebody already
+ * subscribed. Each arrives here as ``false`` plus a refusal code, and
+ * each gets the sentence that belongs to it rather than a button.
+ *
+ * A **null** state — the fetch failed, so eligibility is unknown —
+ * deliberately reads as "not yet". Offering checkout on a guess is the
+ * failure this function exists to stop, and the quiet notice is the
+ * honest answer when the page cannot say.
+ */
+export type PaidJoinAction =
+  | { kind: 'subscribe'; label: string }
+  | { kind: 'unavailable'; message: string }
+
+export function paidJoinAction(state: MembershipState | null): PaidJoinAction {
+  if (state?.actions.can_subscribe === true) {
+    // The price belongs on the button. ``offerPhrase`` reads the
+    // Collective's own offer, so monthly, annual and one-time each say
+    // what they are — and nothing here knows an amount.
+    const phrase = offerPhrase(state)
+    return {
+      kind: 'subscribe',
+      label: phrase ? `Subscribe — ${phrase}` : 'Subscribe',
+    }
+  }
+  return {
+    kind: 'unavailable',
+    message:
+      subscribeRefusalMessage(state?.actions.subscribe_refusal ?? null)
+      ?? 'Membership isn’t available right now.',
+  }
+}
