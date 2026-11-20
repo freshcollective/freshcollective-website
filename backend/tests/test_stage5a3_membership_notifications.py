@@ -311,3 +311,92 @@ class TestAReplaySendsNothing:
                      "cancellation_scheduled", "ended", "reactivated"):
             fn = f"def emit_membership_{name}("
             assert src[:src.index(fn)].rstrip().endswith("@_safe_emit"), name
+
+
+# ---------------------------------------------------------------------------
+# §5A.4b — where an in-app membership notification goes when tapped
+# ---------------------------------------------------------------------------
+
+
+def _render_in_app(db, event_type, ctx):
+    import app.comms.templates  # noqa: F401
+    from app.comms.templates.registry import get_template_for
+    from app.comms.routing.resolver import ResolvedRecipient
+
+    template = get_template_for(event_type, "in_app")
+    recipient = ResolvedRecipient(
+        user_id="u", role_in_event="member", human_reason="",
+        template_context=ctx,
+    )
+    return template.render(db, None, recipient)
+
+
+class TestInAppNotificationsCarryADestination:
+    """The first real membership notification arrived unclickable.
+
+    ``InAppProvider`` reads ``metadata["url"]`` as the click-through
+    destination and treats it as optional, so a template that omits it
+    produces a notification with nowhere to go. All six omitted it.
+    """
+
+    #: Event type -> which context URL it should send the member to.
+    DESTINATIONS = [
+        # Just joined: show them the thing they joined.
+        ("collective.membership.purchased", "collective_url"),
+        # Money moved, or is about to: show them the agreement.
+        ("collective.membership.renewed", "membership_url"),
+        ("collective.membership.payment_failed", "membership_url"),
+        ("collective.membership.cancellation_scheduled", "membership_url"),
+        ("collective.membership.ended", "membership_url"),
+        # Access restored: back to the Collective.
+        ("collective.membership.reactivated", "collective_url"),
+    ]
+
+    @pytest.mark.parametrize("event_type,ctx_key", DESTINATIONS)
+    def test_each_in_app_message_goes_somewhere_useful(
+        self, db, event_type, ctx_key,
+    ):
+        ctx = dict(BASE_CTX)
+        ctx["access_until"] = "2026-12-20"
+        rendered = _render_in_app(db, event_type, ctx)
+        assert rendered.metadata.get("url") == ctx[ctx_key], event_type
+
+    @pytest.mark.parametrize("event_type,_ctx_key", DESTINATIONS)
+    def test_the_url_is_never_missing_or_blank(
+        self, db, event_type, _ctx_key,
+    ):
+        ctx = dict(BASE_CTX)
+        ctx["access_until"] = "2026-12-20"
+        rendered = _render_in_app(db, event_type, ctx)
+        url = rendered.metadata.get("url")
+        assert isinstance(url, str) and url.strip(), event_type
+
+    @pytest.mark.parametrize("event_type,_ctx_key", DESTINATIONS)
+    def test_the_notification_type_still_identifies_the_event(
+        self, db, event_type, _ctx_key,
+    ):
+        """``notification_type`` is required by the provider — adding a
+        url must not have displaced it."""
+        ctx = dict(BASE_CTX)
+        ctx["access_until"] = "2026-12-20"
+        rendered = _render_in_app(db, event_type, ctx)
+        assert rendered.metadata.get("notification_type", "").startswith(
+            "collective_membership_",
+        ), event_type
+
+    def test_a_missing_context_url_degrades_to_empty_not_a_crash(self, db):
+        """A notification with no link is worse than one with a link and
+        far better than an exception during delivery."""
+        ctx = {k: v for k, v in BASE_CTX.items() if k != "collective_url"}
+        rendered = _render_in_app(db, "collective.membership.purchased", ctx)
+        assert rendered.metadata.get("url") == ""
+
+    def test_the_urls_come_from_the_payload_not_from_here(self):
+        """No template assembles a URL. ``_base_payload`` builds both
+        through ``public_app_url``, which is the canonical source for
+        anything a member clicks."""
+        import inspect
+        from app.comms.templates import collective_membership as mod
+        source = inspect.getsource(mod)
+        assert "/settings/membership" not in source
+        assert "/spaces/" not in source

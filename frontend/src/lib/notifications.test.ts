@@ -137,3 +137,74 @@ describe('the Communications Layer gathering notifications (FC-209)', () => {
     assert.equal(notificationLabel('series_published'), 'New series')
   })
 })
+
+
+/**
+ * Stage 5A.4b — the membership notification that went nowhere.
+ *
+ * The in-app templates stored no ``url``, so ``notificationDestination``
+ * fell through to the category default. The six membership types were
+ * not in the type map either, so they resolved to ``update`` — whose
+ * destination is ``/notifications``. Tapping one navigated to the page
+ * the member was already looking at, which reads as nothing happening.
+ */
+describe('Collective membership notifications navigate', () => {
+  const TYPES = [
+    'collective_membership_purchased',
+    'collective_membership_renewed',
+    'collective_membership_payment_failed',
+    'collective_membership_cancellation_scheduled',
+    'collective_membership_ended',
+    'collective_membership_reactivated',
+  ]
+
+  it('never sends a membership notification to /notifications', () => {
+    // The exact symptom: a destination equal to the page it is on.
+    for (const notification_type of TYPES) {
+      const dest = notificationDestination(build({ notification_type }))
+      assert.notEqual(dest, '/notifications', notification_type)
+      assert.ok(dest && dest.length > 0, notification_type)
+    }
+  })
+
+  it('falls back to the membership page when no url was stored', () => {
+    // This is what makes the already-delivered notification work
+    // without rewriting a production row.
+    for (const notification_type of TYPES) {
+      assert.equal(
+        notificationDestination(build({ notification_type, url: null })),
+        '/settings/membership',
+        notification_type,
+      )
+    }
+  })
+
+  it('a stored url always wins over the fallback', () => {
+    // New notifications carry the per-event destination from the
+    // backend — the Collective for purchased and reactivated.
+    assert.equal(
+      notificationDestination(build({
+        notification_type: 'collective_membership_purchased',
+        url: 'https://freshcollective.au/spaces/toms-test-collective',
+      })),
+      'https://freshcollective.au/spaces/toms-test-collective',
+    )
+  })
+
+  it('each type is labelled and tinted rather than reading as Update', () => {
+    for (const notification_type of TYPES) {
+      assert.equal(notificationLabel(notification_type), 'Membership', notification_type)
+      const tint = notificationTint(notification_type)
+      assert.ok(tint.bg && tint.fg && tint.icon, notification_type)
+    }
+  })
+
+  it('no other notification type changed destination', () => {
+    assert.equal(notificationDestination(build({
+      notification_type: 'event_registration', url: null,
+    })), '/dashboard')
+    assert.equal(notificationDestination(build({
+      notification_type: 'unknown_future_type', url: null,
+    })), '/notifications')
+  })
+})

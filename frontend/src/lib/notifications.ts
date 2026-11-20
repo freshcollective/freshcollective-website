@@ -17,6 +17,7 @@ import type { NotificationItem } from '@/types/platform'
 // category. Anything unrecognised falls back to 'update' — a neutral
 // category that never surfaces a raw type string.
 export type NotificationCategory =
+  | 'membership'
   | 'conversation'
   | 'gathering'
   | 'pathway'
@@ -30,6 +31,7 @@ export type NotificationCategory =
 // Warmer than the raw slate scheme — reads as belonging to the Fresh
 // Collective world rather than a generic notification tray.
 const TINT: Record<NotificationCategory, { bg: string; fg: string; label: string; icon: string }> = {
+  membership:   { bg: 'rgba(56, 160, 158, 0.12)', fg: '#0f766e', label: 'Membership',     icon: '❖' },
   conversation: { bg: 'rgba(56, 160, 158, 0.12)', fg: '#0f766e', label: 'Conversation',    icon: '💬' },
   gathering:    { bg: 'rgba(212, 176, 72, 0.16)', fg: '#8a6a1f', label: 'Gathering',       icon: '📅' },
   pathway:      { bg: 'rgba(94, 63, 145, 0.12)',  fg: '#5C4577', label: 'Pathway',         icon: '🧭' },
@@ -48,6 +50,16 @@ type TypeMeta = { category: NotificationCategory; label?: string }
 
 const TYPE_MAP: Record<string, TypeMeta> = {
   // Conversations
+  // Paid Collective membership. Without these the types fell through
+  // to the 'update' default, whose destination is /notifications — so
+  // tapping one navigated to the page you were already on, which read
+  // as nothing happening at all.
+  collective_membership_purchased:              { category: 'membership', label: 'Membership' },
+  collective_membership_renewed:                { category: 'membership', label: 'Membership' },
+  collective_membership_payment_failed:         { category: 'membership', label: 'Membership' },
+  collective_membership_cancellation_scheduled: { category: 'membership', label: 'Membership' },
+  collective_membership_ended:                  { category: 'membership', label: 'Membership' },
+  collective_membership_reactivated:            { category: 'membership', label: 'Membership' },
   comment_reply:   { category: 'conversation', label: 'Reply' },
   new_post:        { category: 'conversation', label: 'Conversation' },
   mention:         { category: 'conversation', label: 'Mention' },
@@ -128,6 +140,11 @@ export function notificationDestination(notif: NotificationItem): string {
   if (notif.url && notif.url.trim().length > 0) return notif.url
   const { category } = metaFor(notif.notification_type)
   switch (category) {
+    // The fallback, for notifications stored before the templates
+    // carried a url. It cannot reach the Collective — a notification
+    // row holds no slug — so it goes to the one page that is right for
+    // every membership event and names the Collective on it.
+    case 'membership': return '/settings/membership'
     case 'plan':       return '/creator-studio'
     case 'gathering':  return '/dashboard'
     case 'pathway':    return '/dashboard'

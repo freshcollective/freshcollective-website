@@ -172,7 +172,16 @@ class MembershipPurchasedInApp:
         return RenderedPayload(
             to="", subject=f"You've joined {_collective(ctx)}",
             body_html="", body_text="Your membership is active.",
-            metadata={"notification_type": "collective_membership_purchased"},
+            metadata={
+                # Where this notification goes when tapped. The
+                # provider reads ``metadata["url"]`` as the
+                # click-through destination and treats it as optional —
+                # which is why these six arrived unclickable. Both URLs
+                # are already built by ``_base_payload`` through
+                # ``public_app_url``, so nothing is assembled here.
+                "notification_type": "collective_membership_purchased",
+                "url": ctx.get("collective_url") or "",
+            },
         )
 
 
@@ -219,7 +228,10 @@ class MembershipRenewedInApp:
         return RenderedPayload(
             to="", subject=f"{_collective(ctx)} membership payment received",
             body_html="", body_text="Your membership payment was received.",
-            metadata={"notification_type": "collective_membership_renewed"},
+            metadata={
+                "notification_type": "collective_membership_renewed",
+                "url": ctx.get("membership_url") or "",
+            },
         )
 
 
@@ -278,6 +290,7 @@ class MembershipPaymentFailedInApp:
             body_text="Update your payment details to keep your membership.",
             metadata={
                 "notification_type": "collective_membership_payment_failed",
+                "url": ctx.get("membership_url") or "",
             },
         )
 
@@ -339,6 +352,7 @@ class MembershipCancellationScheduledInApp:
             metadata={
                 "notification_type":
                     "collective_membership_cancellation_scheduled",
+                "url": ctx.get("membership_url") or "",
             },
         )
 
@@ -387,7 +401,10 @@ class MembershipEndedInApp:
             to="", subject=f"Your {_collective(ctx)} membership has ended",
             body_html="",
             body_text="Anything you bought separately is still yours.",
-            metadata={"notification_type": "collective_membership_ended"},
+            metadata={
+                "notification_type": "collective_membership_ended",
+                "url": ctx.get("membership_url") or "",
+            },
         )
 
 
@@ -432,5 +449,6 @@ class MembershipReactivatedInApp:
             body_html="", body_text="Your access has resumed.",
             metadata={
                 "notification_type": "collective_membership_reactivated",
+                "url": ctx.get("collective_url") or "",
             },
         )
