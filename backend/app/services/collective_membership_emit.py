@@ -170,6 +170,12 @@ def _base_payload(
         "first_name": ((getattr(user, "name", "") or "").split(" ") or [""])[0],
         "collective_name": space.name if space else "",
         "collective_url": public_app_url(f"/spaces/{slug}") if slug else "",
+        #: The Collective's own timezone, so a date a member reads is
+        #: the date where the Collective lives rather than in UTC.
+        #: There is no per-member timezone to use; this is the same
+        #: reference ``membership_pricing.transition_instant`` already
+        #: treats as authoritative for membership dates.
+        "collective_timezone": (getattr(space, "timezone", None) or ""),
         "membership_url": public_app_url("/settings/membership"),
         # The agreement, not the catalogue.
         "amount_label": _money(sub.amount_cents, sub.currency),

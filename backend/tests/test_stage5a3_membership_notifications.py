@@ -224,11 +224,16 @@ class TestWhatTheCopyMayClaim:
         assert "20 December 2026" in out.body_text
 
     def test_cancellation_scheduled_is_not_an_ending(self, db):
+        # Reworded in 5A.4b — the promise is unchanged, the words are
+        # not. "won't renew" read as a renewal that had *failed*, so
+        # the copy now says the member did this and that it worked.
+        # This test keeps asserting the meaning: no further charge,
+        # access until the stated date, and not an ending.
         out = _render(db, "collective.membership.cancellation_scheduled", {
             **BASE_CTX, "access_until": "2026-12-13T00:00:00",
         })
-        assert "won't be charged again" in out.body_text
-        assert "stays active until 13 December 2026" in out.body_text
+        assert "no further payments will be taken" in out.body_text
+        assert "continue to have access until 13 December 2026" in out.body_text
         assert "has ended" not in out.body_text
 
     def test_ended_says_so_and_protects_what_was_bought(self, db):
@@ -400,3 +405,103 @@ class TestInAppNotificationsCarryADestination:
         source = inspect.getsource(mod)
         assert "/settings/membership" not in source
         assert "/spaces/" not in source
+
+
+# ---------------------------------------------------------------------------
+# §5A.4b — the cancellation notice says who cancelled, and that it worked
+# ---------------------------------------------------------------------------
+
+
+class TestCancellationWordingIsNotAFailureNotice:
+    """"Your X membership won't renew" read like a renewal that had
+    failed rather than one the member had just stopped on purpose.
+
+    Sophie cancelled hers in production and the heading was the one
+    thing that looked wrong.
+    """
+
+    SCHEDULED = "collective.membership.cancellation_scheduled"
+
+    def _ctx(self, **over):
+        ctx = dict(BASE_CTX)
+        # 14:00 UTC on the 20th is already the 21st in Melbourne — the
+        # case that proves the date is localised rather than raw.
+        ctx["access_until"] = "2026-12-20T14:00:00"
+        ctx["collective_timezone"] = "Australia/Melbourne"
+        ctx.update(over)
+        return ctx
+
+    def test_the_email_subject_names_the_collective_and_the_outcome(self, db):
+        out = _render(db, self.SCHEDULED, self._ctx())
+        assert out.subject == (
+            "Your Life in Full Colour membership renewal has been cancelled"
+        )
+        assert "won't renew" not in out.subject
+
+    def test_the_email_heading_is_distinct_from_the_subject(self, db):
+        """The Collective is named in the inbox; the page does not
+        repeat it."""
+        out = _render(db, self.SCHEDULED, self._ctx())
+        assert "Your membership renewal has been cancelled" in out.body_html
+
+    def test_the_email_says_the_member_did_this_and_it_worked(self, db):
+        out = _render(db, self.SCHEDULED, self._ctx())
+        assert (
+            "You've successfully cancelled your membership renewal for "
+            "Life in Full Colour." in out.body_text
+        )
+
+    def test_the_email_carries_all_four_facts(self, db):
+        out = _render(db, self.SCHEDULED, self._ctx())
+        for fragment in (
+            "continue to have access until 21 December 2026",
+            "no further payments will be taken",
+            "lose access to the Collective and its included Pathways "
+            "and Gatherings",
+            "still be able to access any Offerings you've purchased "
+            "separately",
+            "resume your membership renewal any time before "
+            "21 December 2026",
+        ):
+            assert fragment in out.body_text, fragment
+
+    def test_the_in_app_message_matches_the_email(self, db):
+        out = _render_in_app(db, self.SCHEDULED, self._ctx())
+        assert out.subject == (
+            "You've successfully cancelled your renewal for "
+            "Life in Full Colour."
+        )
+        assert out.body_text == "You'll retain access until 21 December 2026."
+        assert out.metadata["url"] == BASE_CTX["membership_url"]
+
+    def test_the_date_is_the_collective_s_day_not_the_UTC_one(self, db):
+        """Without the timezone this would read 20 December — a day
+        early, on the one notice where the date is the whole point."""
+        without = _render(db, self.SCHEDULED, self._ctx(collective_timezone=""))
+        assert "20 December 2026" in without.body_text
+        with_tz = _render(db, self.SCHEDULED, self._ctx())
+        assert "21 December 2026" in with_tz.body_text
+
+    def test_an_unknown_timezone_still_renders_a_date(self, db):
+        out = _render(db, self.SCHEDULED, self._ctx(
+            collective_timezone="Not/AZone"))
+        assert "December 2026" in out.body_text
+
+    def test_a_missing_date_degrades_to_a_sentence_not_a_gap(self, db):
+        ctx = self._ctx()
+        ctx["access_until"] = None
+        email = _render(db, self.SCHEDULED, ctx)
+        assert "the end of the period you've paid for" in email.body_text
+        assert "until ," not in email.body_text
+        in_app = _render_in_app(db, self.SCHEDULED, ctx)
+        assert in_app.body_text == (
+            "You'll retain access until the end of your paid period."
+        )
+
+    def test_nothing_claims_the_membership_has_already_ended(self, db):
+        """The distinction the whole message rests on."""
+        out = _render(db, self.SCHEDULED, self._ctx())
+        lowered = out.body_text.lower()
+        assert "has ended" not in lowered
+        assert "membership ended" not in lowered
+        assert "refund" not in lowered

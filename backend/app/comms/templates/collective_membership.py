@@ -29,7 +29,7 @@ for a member paying a creator:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -60,14 +60,32 @@ def _collective(ctx: dict) -> str:
     return (ctx.get("collective_name") or "").strip() or "this collective"
 
 
-def _fmt_date(iso: str | None) -> str:
-    """'5 September 2026', or empty when absent. Never raises."""
+def _fmt_date(iso: str | None, tz_name: str | None = None) -> str:
+    """'5 September 2026', or empty when absent. Never raises.
+
+    Rendered in ``tz_name`` when one is given. Stored instants are
+    UTC-naive, so a period ending late in the UTC day is already
+    tomorrow where the member is — formatting the raw instant would
+    show them a date a day early, which on a cancellation notice is
+    the difference between keeping access and believing it has gone.
+
+    There is no per-member timezone on this platform. The Collective's
+    is the reference ``membership_pricing.transition_instant`` already
+    treats as authoritative for membership dates, so it is the one
+    used here too. Without a name, behaviour is unchanged.
+    """
     if not iso:
         return ""
     try:
         dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
     except Exception:
         return ""
+    if tz_name:
+        from app.services.discount_pricing import collective_timezone
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        dt = dt.astimezone(collective_timezone(tz_name))
     return dt.strftime("%-d %B %Y")
 
 
@@ -93,8 +111,13 @@ def _manage(ctx: dict) -> str:
 def _payload(
     db: Session, *, subject: str, greeting: str, opening: str,
     paragraphs: list[str], action: tuple[str, str] | None,
-    signoff: str, notification_type: str,
+    signoff: str, notification_type: str, heading: str | None = None,
 ) -> RenderedPayload:
+    """``heading`` defaults to the subject, which is right for most of
+    these. A cancellation says more in the inbox than it needs to on
+    the page — the Collective is named in the subject line so it is
+    identifiable at a glance, and the heading, read with that Collective
+    already in mind, does not repeat it."""
     body_text = "\n\n".join(
         [greeting, *[p for p in paragraphs if p]]
         + ([f"{action[0]}:\n{action[1]}"] if action and action[1] else [])
@@ -103,7 +126,7 @@ def _payload(
     body_html = render_email_shell(
         db=db,
         preheader=opening,
-        heading=subject,
+        heading=heading or subject,
         greeting=greeting,
         body_paragraphs=[p for p in paragraphs if p],
         action=action if action and action[1] else None,
@@ -308,24 +331,43 @@ class MembershipCancellationScheduledEmail:
     def render(self, db, event, recipient) -> RenderedPayload:
         ctx = recipient.template_context
         name = _collective(ctx)
-        until = _fmt_date(ctx.get("access_until"))
-        subject = f"Your {name} membership won't renew"
-        opening = "You won't be charged again."
-        # The distinction §15 names: this is not an ending.
+        until = _fmt_date(
+            ctx.get("access_until"), ctx.get("collective_timezone"),
+        )
+        # "won't renew" read as a renewal that had failed rather than
+        # one the member had just stopped on purpose. Every line now
+        # says who did this and that it worked.
+        subject = f"Your {name} membership renewal has been cancelled"
+        heading = "Your membership renewal has been cancelled"
+        opening = (
+            f"You've successfully cancelled your membership renewal for "
+            f"{name}."
+        )
         keeps = (
-            f"Your membership stays active until {until}, and you keep full "
-            "access until then."
+            f"You'll continue to have access until {until}, and no further "
+            "payments will be taken."
             if until else
-            "Your membership stays active until the end of the period "
-            "you've paid for, and you keep full access until then."
+            "You'll continue to have access until the end of the period "
+            "you've paid for, and no further payments will be taken."
+        )
+        # Said here as well as in the confirmation dialog, because an
+        # email is what a member keeps and comes back to.
+        after = (
+            "After that date, you'll lose access to the Collective and its "
+            "included Pathways and Gatherings. You'll still be able to "
+            "access any Offerings you've purchased separately."
         )
         resume = (
-            "Changed your mind? You can turn renewal back on any time "
-            "before then."
+            f"Changed your mind? You can resume your membership renewal any "
+            f"time before {until} in your Fresh Collective account settings."
+            if until else
+            "Changed your mind? You can resume your membership renewal any "
+            "time before then in your Fresh Collective account settings."
         )
         return _payload(
-            db, subject=subject, greeting=_greeting(ctx.get("first_name")),
-            opening=opening, paragraphs=[opening, keeps, resume],
+            db, subject=subject, heading=heading,
+            greeting=_greeting(ctx.get("first_name")),
+            opening=opening, paragraphs=[opening, keeps, after, resume],
             action=("Manage your membership", _manage(ctx)),
             signoff="",
             notification_type=(
@@ -341,13 +383,20 @@ class MembershipCancellationScheduledInApp:
 
     def render(self, db, event, recipient) -> RenderedPayload:
         ctx = recipient.template_context
-        until = _fmt_date(ctx.get("access_until"))
+        until = _fmt_date(
+            ctx.get("access_until"), ctx.get("collective_timezone"),
+        )
+        # Same two facts as the email, in the length a notification has.
         return RenderedPayload(
-            to="", subject=f"{_collective(ctx)} membership won't renew",
+            to="",
+            subject=(
+                f"You've successfully cancelled your renewal for "
+                f"{_collective(ctx)}."
+            ),
             body_html="",
             body_text=(
-                f"You keep access until {until}." if until
-                else "You keep access until the end of your paid period."
+                f"You'll retain access until {until}." if until
+                else "You'll retain access until the end of your paid period."
             ),
             metadata={
                 "notification_type":
