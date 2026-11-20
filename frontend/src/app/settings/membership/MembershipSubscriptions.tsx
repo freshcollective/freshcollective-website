@@ -321,20 +321,31 @@ export default function MembershipSubscriptions({
                 className="mt-3 rounded-xl border px-4 py-3"
                 style={{ borderColor: '#E6C4BA', background: '#FBEDE9' }}
               >
-                <p className="text-[13px] leading-relaxed text-navy-900">
-                  Stop renewing your membership of {space.name}?
-                  {sub?.current_period_end && (
+                <p className="text-[13px] font-semibold leading-relaxed text-navy-900">
+                  Are you sure you want to cancel your membership?
+                </p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-navy-900">
+                  If you cancel today, you’ll keep access to{' '}
+                  <strong className="font-semibold">{space.name}</strong>{' '}
+                  {sub?.current_period_end ? (
                     <>
-                      {' '}You’ll keep access until{' '}
+                      until{' '}
                       <strong className="font-semibold">
                         {formatDay(sub.current_period_end)}
                       </strong>
-                      , and you won’t be charged again.
                     </>
-                  )}{' '}
-                  This isn’t the same as leaving — you stay a member
-                  until then, and nothing you’ve bought separately is
-                  affected.
+                  ) : (
+                    <>until the end of your paid period</>
+                  )}
+                  , with no further payments.
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-navy-900">
+                  After that date, you’ll lose access to the Collective and
+                  any included Pathways and Gatherings.
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-navy-900">
+                  You’ll still have access to any Offerings you’ve
+                  purchased separately.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
@@ -349,7 +360,7 @@ export default function MembershipSubscriptions({
                     className={PRIMARY}
                     style={PRIMARY_STYLE}
                   >
-                    {working ? 'Cancelling…' : 'Yes, stop renewing'}
+                    {working ? 'Cancelling…' : 'Yes, cancel my membership'}
                   </button>
                   <button
                     type="button"
