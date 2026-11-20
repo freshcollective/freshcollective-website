@@ -19,6 +19,7 @@ from app.spaces import booking_origin as _booking_origin
 from app.spaces import membership_pricing as _membership_pricing
 from app.services import collective_membership_billing as _cmem_billing
 from app.services import collective_membership_view as _cmem_view
+from app.services import collective_membership_emit as _cmem_emit
 from app.services import collective_membership_payment_method as _cmem_pm
 from app.services import collective_membership_eligibility as _cmem_eligibility
 from app.services import collective_membership_lifecycle as _cmem_lifecycle
@@ -1726,6 +1727,9 @@ def leave_collective(
         note="Revoked when the member left the collective",
     )
     db.commit()
+    # Only after the commit: routing opens its own session
+    # and looks the event up by id.
+    _cmem_emit.route_pending(db)
 
     return LeaveCollectiveResponse(
         left=True,
@@ -1912,6 +1916,9 @@ def cancel_membership_renewal(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
+    # Only after the commit: routing opens its own session
+    # and looks the event up by id.
+    _cmem_emit.route_pending(db)
     return {
         "status": sub.status,
         "cancel_at_period_end": sub.cancel_at_period_end,

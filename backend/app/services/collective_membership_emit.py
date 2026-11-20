@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Final
 
 from sqlalchemy.orm import Session
 
@@ -43,11 +43,76 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#: Session key holding events emitted here and not yet routed.
+#:
+#: Routing cannot run inside the transaction that produced the event.
+#: ``_route_event_bg`` opens its **own** session and looks the event up
+#: by id, so an event that is merely flushed is invisible to it — it
+#: logs "event … vanished before routing" and delivers nothing. The
+#: queue exists so the decision to route survives until after the
+#: commit, which is the only moment it can succeed.
+_PENDING_ROUTING: Final = "collective_membership_pending_routing"
+
+
+def _queue_for_routing(db: Session, event: "CommunicationEvent | None") -> None:
+    """Remember an emitted event so it can be routed after the commit."""
+    if event is None:
+        return
+    db.info.setdefault(_PENDING_ROUTING, []).append(event)
+
+
+def route_pending(db: Session) -> int:
+    """Schedule routing for every membership event this session committed.
+
+    **Call only after a successful commit.** The caller owns the
+    transaction and only the caller knows it succeeded; this function
+    deliberately does not commit, check, or guess.
+
+    ``schedule_routing_if_needed`` is the one call every other trigger
+    site in the codebase makes after ``emit()`` — twenty-four modules
+    do, and membership did not, which is why the first real membership
+    payment produced an event that was written, committed, and never
+    delivered. ``background_tasks=None`` runs it inline, matching
+    ``creator_billing_handlers``: a webhook has no request-scoped
+    background tasks to hang it on.
+
+    Never raises. A message that cannot be scheduled must not turn a
+    collected payment into a failed one.
+    """
+    pending = db.info.pop(_PENDING_ROUTING, [])
+    if not pending:
+        return 0
+    from app.comms.rollout import schedule_routing_if_needed
+
+    routed = 0
+    for event in pending:
+        try:
+            schedule_routing_if_needed(None, event, event.event_type)
+            routed += 1
+        except Exception:
+            logger.exception(
+                "collective_membership_emit: could not schedule routing "
+                "for event %s — the membership and the payment are "
+                "unaffected and the event remains routable",
+                getattr(event, "id", "?"),
+            )
+    return routed
+
+
+def discard_pending(db: Session) -> None:
+    """Forget queued events after a rollback.
+
+    The events went away with the transaction. Routing them would ask
+    the delivery layer for rows that no longer exist.
+    """
+    db.info.pop(_PENDING_ROUTING, None)
+
+
 def _safe_emit(fn: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(fn)
     def _wrapped(*args: Any, **kwargs: Any) -> "CommunicationEvent | None":
         try:
-            return fn(*args, **kwargs)
+            event = fn(*args, **kwargs)
         except Exception:
             logger.exception(
                 "collective_membership_emit: %s failed — the membership "
@@ -55,6 +120,15 @@ def _safe_emit(fn: Callable[..., Any]) -> Callable[..., Any]:
                 "transition", fn.__name__,
             )
             return None
+        # Queued here rather than at each call site, so all six
+        # notifications are covered by one rule and a seventh cannot
+        # be added without it.
+        db = kwargs.get("db")
+        if db is None and args and isinstance(args[0], Session):
+            db = args[0]
+        if db is not None:
+            _queue_for_routing(db, event)
+        return event
     return _wrapped
 
 

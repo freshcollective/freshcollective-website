@@ -268,6 +268,8 @@ from app.services.schedule_validation import (
 )
 from app.spaces.schemas import SpaceSummary
 
+from app.services import collective_membership_emit as _cmem_emit
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/creator", tags=["creator"])
@@ -6623,6 +6625,9 @@ def remove_member_with_reason(
         payment_action_required=payment_action_required,
     )
     db.commit()
+    # Only after the commit: routing opens its own session
+    # and looks the event up by id.
+    _cmem_emit.route_pending(db)
 
     return RemoveMemberResponse(
         removed=True,

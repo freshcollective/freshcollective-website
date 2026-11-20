@@ -53,6 +53,8 @@ from app.services import collective_membership_access as access
 from app.services import collective_membership_lifecycle as lifecycle
 from app.spaces import membership_pricing
 
+from app.services import collective_membership_emit as _emit
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,8 +106,10 @@ def _sweep_grace_expired(
             report.grace_expired += 1
             report.bookings_released += outcome.bookings_released
             db.commit()
+            _emit.route_pending(db)
         except Exception as exc:
             db.rollback()
+            _emit.discard_pending(db)
             report.errors.append(f"grace_expired {sub_id}: {exc}")
             logger.exception(
                 "membership reconcile: could not end lapsed sub=%s", sub_id,
@@ -134,8 +138,10 @@ def _sweep_period_elapsed(
             report.period_elapsed += 1
             report.bookings_released += outcome.bookings_released
             db.commit()
+            _emit.route_pending(db)
         except Exception as exc:
             db.rollback()
+            _emit.discard_pending(db)
             report.errors.append(f"period_elapsed {sub_id}: {exc}")
             logger.exception(
                 "membership reconcile: could not close expired sub=%s", sub_id,
@@ -180,8 +186,10 @@ def _sweep_billing_after_departure(
                 sub_id, user_id, space_id,
             )
             db.commit()
+            _emit.route_pending(db)
         except Exception as exc:
             db.rollback()
+            _emit.discard_pending(db)
             report.billing_after_departure_failed += 1
             report.errors.append(f"billing_after_departure {sub_id}: {exc}")
             logger.exception(
@@ -252,8 +260,10 @@ def _sweep_paid_transitions(
                     report.transitions_paused += 1
                 report.bookings_released += outcome.bookings_released
                 db.commit()
+                _emit.route_pending(db)
             except Exception as exc:
                 db.rollback()
+                _emit.discard_pending(db)
                 report.errors.append(
                     f"paid_transition {space_slug}/{member_user_id}: {exc}"
                 )

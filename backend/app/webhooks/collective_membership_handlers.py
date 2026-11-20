@@ -206,16 +206,24 @@ def _commits(fn: Callable[..., bool]) -> Callable[..., bool]:
             raise TypeError(
                 f"{fn.__name__} takes a Session; _commits found none",
             )
+        from app.services import collective_membership_emit as _emit
         try:
             claimed = fn(*args, **kwargs)
         except Exception:
             db.rollback()
+            _emit.discard_pending(db)
             logger.exception(
                 "collective membership: %s failed — rolled back, "
                 "returning an error so Stripe retries", fn.__name__,
             )
             raise
         db.commit()
+        # Only now. Routing opens its own session and looks the event
+        # up by id, so scheduling it before this line would hand the
+        # delivery layer a row no other session can see — written,
+        # committed nowhere, never sent. Strictly after the commit is
+        # the only order that works.
+        _emit.route_pending(db)
         return claimed
     return _wrapped
 
