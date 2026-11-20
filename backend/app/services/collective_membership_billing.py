@@ -250,6 +250,37 @@ def open_membership_checkout(
             return CheckoutOutcome(
                 subscription=existing, checkout_url=reuse, reused=True,
             )
+        # Never supersede an agreement that may already have been paid.
+        #
+        # This is the 19 November incident's second half. The member had
+        # completed Checkout and been charged A$5.99; the agreement was
+        # still ``pending`` only because the webhook's work was never
+        # committed. Reuse refuses a Session that is not ``open``, and
+        # the next line used to supersede it and open a *new* one — a
+        # second Stripe subscription and a second recurring charge,
+        # while the first went on billing.
+        #
+        # A member who has paid and is waiting must never be offered
+        # another charge as the way out. Superseding is now allowed
+        # only when we positively know nothing was taken.
+        blocked = _payment_may_already_be_taken(existing)
+        if blocked is not None:
+            logger.warning(
+                "collective membership: refusing a second checkout for "
+                "sub=%s user=%s space=%s — %s",
+                existing.id, member.id, space.id, blocked,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "membership_payment_verifying",
+                    "message": (
+                        "Your payment is being confirmed. Your membership "
+                        "will start as soon as that is done — please do "
+                        "not pay again."
+                    ),
+                },
+            )
         # Priced differently, or the page is gone. Supersede rather than
         # hand back an agreement the member is no longer being quoted —
         # the Stage 4A lesson, applied before it can bite again.
@@ -382,6 +413,46 @@ def _create_one_time_session(
         payment_intent_data={"metadata": meta},
         idempotency_key=_idem(row.id, "one_time_session"),
     )
+
+
+def _payment_may_already_be_taken(
+    existing: CollectiveMembership,
+) -> str | None:
+    """Why this pending agreement must not be superseded, or ``None``.
+
+    Answers conservatively, because the two mistakes are not equal: a
+    member told to wait a few minutes for a payment that was never
+    taken is inconvenienced, and a member charged twice for one
+    membership is harmed.
+
+    Three ways to know, in order of certainty:
+
+    * ``stripe_subscription_id`` is set. ``checkout.session.completed``
+      writes it, and that event means Stripe captured a card and
+      created a subscription. Nothing else sets it.
+    * The Checkout Session reports ``complete`` — paid, and awaiting
+      the invoice we have not finished processing.
+    * The Session cannot be read at all. Previously this superseded,
+      on the reasoning that a fresh page is safe; that reasoning was
+      about *reuse*, where the risk is an outdated price. Here the risk
+      is a duplicate charge, so an unknown Session is treated as
+      possibly paid.
+
+    An ``open`` Session is a genuinely abandoned checkout and an
+    ``expired`` one is dead: both supersede exactly as before.
+    """
+    if existing.stripe_subscription_id:
+        return "a Stripe subscription already exists for this agreement"
+    if not existing.stripe_checkout_session_id:
+        # Nothing was ever opened, so nothing can have been paid.
+        return None
+    state = _inspect_session(existing.stripe_checkout_session_id)
+    if state is None:
+        return "its Checkout Session could not be read"
+    status = state.get("status")
+    if status in ("open", "expired"):
+        return None
+    return f"its Checkout Session reports {status!r}"
 
 
 def _reuse_if_still_valid(

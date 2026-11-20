@@ -95,6 +95,30 @@ def find_latest(
     )
 
 
+def awaiting_payment_verification(
+    subscription: CollectiveMembership | None,
+) -> bool:
+    """Has this member paid and not yet been made a member?
+
+    ``checkout.session.completed`` writes ``stripe_subscription_id``
+    and grants nothing — the invoice does that. So a **pending**
+    agreement that already carries one is the exact shape of "charged,
+    waiting on us", and it is what separates a checkout somebody
+    abandoned from one we have not finished.
+
+    It is the difference between telling a member "nothing has been
+    charged" and telling them the truth. On 19 November the first was
+    said to somebody whose card had been debited A$5.99.
+    """
+    if subscription is None:
+        return False
+    status = getattr(subscription.status, "value", subscription.status)
+    return bool(
+        status == CollectiveMembershipStatus.pending.value
+        and subscription.stripe_subscription_id
+    )
+
+
 def agreement_view(subscription: CollectiveMembership | None) -> dict | None:
     """The member's own agreement, in the terms they agreed to."""
     if subscription is None:
@@ -112,6 +136,10 @@ def agreement_view(subscription: CollectiveMembership | None) -> dict | None:
         # action, or a card to keep current — each of those implies a
         # future charge that is not coming.
         "is_one_time": one_time,
+        #: Paid, and waiting on fulfilment rather than on the member.
+        "awaiting_payment_verification": awaiting_payment_verification(
+            subscription,
+        ),
         # One instant, two meanings, named for both so a page does not
         # have to decide what to call it: it is when the paid period
         # runs out, which is the renewal date unless renewal is off.
@@ -232,8 +260,14 @@ def membership_state(
                 and status in _HAS_PAYMENT_METHOD_TO_MANAGE
                 and bool(subscription and subscription.stripe_subscription_id)
             ),
+            # A pending agreement is only resumable when nothing was
+            # taken. Once Stripe has created a subscription for it the
+            # member has paid and is waiting on us, and offering them
+            # "Continue checkout" would be offering a second charge —
+            # the 19 November incident.
             "can_continue_checkout": (
                 status == CollectiveMembershipStatus.pending.value
+                and not awaiting_payment_verification(subscription)
             ),
         },
     }

@@ -116,6 +116,9 @@ export function subscribeRefusalMessage(code: string | null): string | null {
       return 'This is your collective — your membership of it never lapses.'
     case 'membership_auto_managed':
       return 'Membership of this collective is managed by Fresh Collective.'
+    case 'membership_payment_verifying':
+      return 'Your payment is being confirmed — please don’t pay again. '
+        + 'Your membership will start as soon as it clears.'
     case 'membership_not_available_to_you':
       return 'Membership of this collective cannot be purchased right now. '
         + 'Please contact the collective’s creator.'

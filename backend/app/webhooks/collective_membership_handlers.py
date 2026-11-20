@@ -34,9 +34,10 @@ which is the checkout route's business, not servicing one.
 
 from __future__ import annotations
 
+import functools
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
@@ -163,6 +164,63 @@ def owns_payment_method_event(obj: dict[str, Any]) -> bool:
     return meta.get("purchase_type") == PM_TYPE
 
 
+def _commits(fn: Callable[..., bool]) -> Callable[..., bool]:
+    """Make a handler own its transaction.
+
+    Why this exists
+    ---------------
+    Every service below is written to *not* commit —
+    ``activate_from_first_invoice`` says so in its own docstring: "the
+    webhook owns the transaction, so the money and the membership land
+    together or not at all." That contract was correct and nothing
+    fulfilled it. ``stripe_webhook`` never committed on this path and
+    ``get_db`` only closes, so a verified payment was built in the
+    session, flushed, and discarded when the request ended — while
+    Stripe received 200 and never retried.
+
+    That is how A$5.99 was collected on 19 November against an
+    agreement that stayed ``pending``. The sibling systems never had
+    the fault because they commit inside their own handlers
+    (``finite_plan_handlers`` in nineteen places,
+    ``creator_billing_handlers`` in five); this module had none.
+
+    Rolling back and re-raising, rather than swallowing
+    ---------------------------------------------------
+    A handler that fails must leave nothing behind and must *not*
+    answer 200. Re-raising reaches FastAPI as a 500, which is what
+    makes Stripe retry — and every path here is replay-safe by design
+    (the ledger is keyed on the invoice, an ``active`` agreement
+    short-circuits, and messages dedupe on the agreement). Silently
+    acknowledging a failure is the one outcome that loses money, which
+    is precisely what happened.
+    """
+    @functools.wraps(fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> bool:
+        db: Session | None = kwargs.get("db")
+        if db is None:
+            for candidate in args:
+                if isinstance(candidate, Session):
+                    db = candidate
+                    break
+        if db is None:                       # pragma: no cover - misuse
+            raise TypeError(
+                f"{fn.__name__} takes a Session; _commits found none",
+            )
+        try:
+            claimed = fn(*args, **kwargs)
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "collective membership: %s failed — rolled back, "
+                "returning an error so Stripe retries", fn.__name__,
+            )
+            raise
+        db.commit()
+        return claimed
+    return _wrapped
+
+
+@_commits
 def handle_payment_method_setup_completed(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> None:
@@ -228,6 +286,7 @@ def owns_one_time_event(obj: dict[str, Any]) -> bool:
     return meta.get("purchase_type") == METADATA_ONE_TIME_TYPE
 
 
+@_commits
 def handle_one_time_completed(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> None:
@@ -283,6 +342,7 @@ def handle_one_time_completed(
     )
 
 
+@_commits
 def handle_checkout_completed(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:
@@ -318,6 +378,7 @@ def _ts(value: Any) -> datetime | None:
     return datetime.utcfromtimestamp(value) if isinstance(value, int) else None
 
 
+@_commits
 def handle_invoice_payment_succeeded(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:
@@ -385,6 +446,7 @@ def handle_invoice_payment_succeeded(
 # ---------------------------------------------------------------------------
 
 
+@_commits
 def handle_invoice_payment_failed(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:
@@ -410,6 +472,7 @@ def handle_invoice_payment_failed(
     return True
 
 
+@_commits
 def handle_subscription_updated(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:
@@ -470,6 +533,7 @@ def handle_subscription_updated(
     return True
 
 
+@_commits
 def handle_subscription_deleted(
     obj: dict[str, Any], db: Session, *, event_id: str,
 ) -> bool:

@@ -198,7 +198,22 @@ export default function MembershipSubscriptions({
                 </p>
               )}
 
-              {sub?.status === 'pending' && (
+              {/* Two very different situations wore the same sentence.
+                  A member who abandoned checkout has not been charged;
+                  a member whose payment we have not finished verifying
+                  has. Telling the second group "nothing has been
+                  charged" is how a debited card was described as an
+                  unfinished checkout on 19 November. */}
+              {sub?.status === 'pending' && sub.awaiting_payment_verification && (
+                <p>
+                  Your payment has gone through and we’re confirming it.
+                  Your membership of {space.name} will start as soon as
+                  that’s done — there’s nothing more to pay, and nothing
+                  for you to do.
+                </p>
+              )}
+
+              {sub?.status === 'pending' && !sub.awaiting_payment_verification && (
                 <p>
                   You started joining {space.name} but the payment wasn’t
                   finished, so there’s no membership yet and nothing has

@@ -354,7 +354,7 @@ def end_subscription(
         # specific mistake the brief names.
         from app.services import collective_membership_emit as _emit
 
-        _emit.emit_membership_ended(db, subscription=subscription)
+        _emit.emit_membership_ended(db, sub=subscription)
 
     return pause_membership_for_lapse(
         db, subscription=subscription, now=now,

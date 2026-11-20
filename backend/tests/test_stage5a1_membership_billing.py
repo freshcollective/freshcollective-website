@@ -347,16 +347,36 @@ class TestDuplicateAndRetryProtection:
             second = _open(db, paid_space, member)
         assert second.subscription.id != first.id
 
-    def test_an_unreadable_page_is_replaced_not_reused(
+    def test_an_unreadable_page_is_refused_not_replaced(
         self, db, paid_space, member, stripe_spy,
     ):
-        """Unreadable is treated as unusable: a fresh page is safe, an
-        unknown one is not."""
-        first = _open(db, paid_space, member).subscription
+        """Changed deliberately on 2026-11-20 — see Stage 5A.4b.
+
+        This test used to assert the opposite, on the reasoning that
+        "a fresh page is safe, an unknown one is not". That was written
+        when the only risk of reusing a stale page was an outdated
+        price. The risk of *replacing* an unknown one turned out to be
+        larger: on 19 November a member was charged A$5.99 against an
+        agreement that stayed ``pending``, and superseding it would
+        have opened a second subscription beside the one already
+        billing.
+
+        So an unreadable Session is now treated as possibly paid. A
+        member briefly unable to start a new checkout because Stripe is
+        unreachable is a far smaller harm than a member charged twice,
+        and they are told their payment is being confirmed rather than
+        left guessing. ``open`` and ``expired`` are unchanged — both
+        are positively known not to have been paid.
+        """
+        from fastapi import HTTPException
+
+        _open(db, paid_space, member)
         with patch.object(billing, "_inspect_session", return_value=None), \
              patch("stripe.checkout.Session.expire"):
-            second = _open(db, paid_space, member)
-        assert second.subscription.id != first.id
+            with pytest.raises(HTTPException) as caught:
+                _open(db, paid_space, member)
+        assert caught.value.status_code == 409
+        assert caught.value.detail["code"] == "membership_payment_verifying"
 
     def test_the_database_permits_only_one_live_agreement(
         self, db, paid_space, member, stripe_spy,

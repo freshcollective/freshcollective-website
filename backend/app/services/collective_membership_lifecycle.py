@@ -304,14 +304,14 @@ def activate_from_first_invoice(
         from app.services import collective_membership_emit as _emit
 
         if membership in ("created", "reactivated"):
-            _emit.emit_membership_purchased(db, subscription=subscription)
+            _emit.emit_membership_purchased(db, sub=subscription)
         elif membership == "unpaused":
-            _emit.emit_membership_reactivated(db, subscription=subscription)
+            _emit.emit_membership_reactivated(db, sub=subscription)
         else:
             # Already a member, money arrived: a renewal. Keyed on the
             # invoice, so a replay sends nothing.
             _emit.emit_membership_renewed(
-                db, subscription=subscription, invoice_id=invoice_id,
+                db, sub=subscription, invoice_id=invoice_id,
             )
 
     return ActivationOutcome(
@@ -500,7 +500,7 @@ def begin_payment_problem(
     if opened_window:
         from app.services import collective_membership_emit as _emit
 
-        _emit.emit_membership_payment_failed(db, subscription=subscription)
+        _emit.emit_membership_payment_failed(db, sub=subscription)
     return subscription
 
 
@@ -596,7 +596,7 @@ def schedule_cancellation(
         from app.services import collective_membership_emit as _emit
 
         _emit.emit_membership_cancellation_scheduled(
-            db, subscription=subscription,
+            db, sub=subscription,
         )
     return subscription
 
