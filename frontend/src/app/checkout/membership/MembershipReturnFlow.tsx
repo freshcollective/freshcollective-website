@@ -204,7 +204,13 @@ export default function MembershipReturnFlow({
                 {sub.is_one_time
                   ? '. There are no recurring payments.'
                   : sub.renews_at
-                  ? `. Next payment: ${formatDay(sub.renews_at)}.`
+                  // The Collective's timezone, the same one Account
+                  // Settings and the emails use. Without it this page
+                  // fell back to the reader's own zone and could name a
+                  // different day for the same payment.
+                  ? `. Next payment: ${formatDay(
+                      sub.renews_at, state?.space.timezone,
+                    )}.`
                   : '.'}
               </p>
               {backToCollective}
