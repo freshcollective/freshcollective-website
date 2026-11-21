@@ -581,6 +581,23 @@ def handle_subscription_deleted(
     outcome = access.pause_membership_for_lapse(
         db, subscription=row, now=now,
     )
+
+    # Told here as well as in ``end_subscription``, because this is the
+    # path that normally runs. Stripe's ``customer.subscription.deleted``
+    # almost always beats the reconciler's sweep, which then finds the
+    # agreement already ended and skips — so the member lost access
+    # without being told. Whether somebody hears that their membership
+    # ended should not depend on which of two paths got there first.
+    #
+    # Only on the transition: the early return above covers an agreement
+    # already closed, so a replayed ``subscription.deleted`` never
+    # reaches this line. The dedupe key — ``cmem_ended:<id>:<ended_at>``
+    # — is the second guard, and it is what keeps this safe alongside
+    # the reconciler emitting for the same agreement.
+    from app.services import collective_membership_emit as _cm_emit
+
+    _cm_emit.emit_membership_ended(db, sub=row)
+
     logger.info(
         "collective membership: ended sub=%s user=%s space=%s "
         "paused=%s bookings_released=%d%s",

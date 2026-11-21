@@ -181,7 +181,9 @@ export default function SpaceAboutCTA({
               }}
             >
               {deadline
-                ? `Membership payment required from ${formatDay(deadline)}.`
+                ? `Membership payment required from ${formatDay(
+                    deadline, membershipState?.space?.timezone,
+                  )}.`
                 : 'This collective now needs a paid membership.'}
               {' '}Subscribe to keep access to members-only experiences.
             </p>

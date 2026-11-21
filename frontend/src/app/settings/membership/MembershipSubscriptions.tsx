@@ -25,7 +25,9 @@ import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import { formatDay, formatRecurring, offerPhrase } from '@/lib/membership'
+import {
+  formatDay, formatMoment, formatRecurring, offerPhrase,
+} from '@/lib/membership'
 import SubscribeButton from '@/components/membership/SubscribeButton'
 import type { MembershipState } from '@/types/platform'
 
@@ -167,7 +169,7 @@ export default function MembershipSubscriptions({
 
               {/* Active and renewing. */}
               {sub?.status === 'active' && !sub.is_one_time && sub.renews_at && (
-                <p>Next payment: {formatDay(sub.renews_at)}.</p>
+                <p>Next payment: {formatDay(sub.renews_at, space.timezone)}.</p>
               )}
 
               {/* Cancelled, but still inside the paid period. The
@@ -176,7 +178,8 @@ export default function MembershipSubscriptions({
                 <p>
                   <strong className="font-semibold text-navy-900">
                     Your membership is active until{' '}
-                    {formatDay(sub.access_until) ?? 'the end of your paid period'}.
+                    {formatMoment(sub.access_until, space.timezone)
+                      ?? 'the end of your paid period'}.
                   </strong>{' '}
                   Your subscription won’t renew, and you won’t be charged
                   again. You can keep using {space.name} until then.
@@ -192,7 +195,7 @@ export default function MembershipSubscriptions({
                   </strong>{' '}
                   Your membership stays active while we try again
                   {sub.grace_expires_at
-                    ? `, until ${formatDay(sub.grace_expires_at)}`
+                    ? `, until ${formatMoment(sub.grace_expires_at, space.timezone)}`
                     : ''}
                   . Updating your payment method is the quickest fix.
                 </p>
@@ -248,7 +251,9 @@ export default function MembershipSubscriptions({
                 <p>
                   {transition.has_passed
                     ? `${space.name} now needs a paid membership.`
-                    : `Membership payment required from ${formatDay(transition.effective_at)}.`}{' '}
+                    : `Membership payment required from ${formatDay(
+                        transition.effective_at, space.timezone,
+                      )}.`}{' '}
                   Subscribe to keep access to members-only experiences.
                   Your history and anything you’ve bought separately stay
                   as they are.
@@ -331,7 +336,7 @@ export default function MembershipSubscriptions({
                     <>
                       until{' '}
                       <strong className="font-semibold">
-                        {formatDay(sub.current_period_end)}
+                        {formatMoment(sub.current_period_end, space.timezone)}
                       </strong>
                     </>
                   ) : (

@@ -41,6 +41,7 @@ from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 _PURCHASED   = "collective.membership.purchased"
+_RENEWAL_RESUMED = "collective.membership.renewal_resumed"
 _RENEWED     = "collective.membership.renewed"
 _FAILED      = "collective.membership.payment_failed"
 _SCHEDULED   = "collective.membership.cancellation_scheduled"
@@ -87,6 +88,34 @@ def _fmt_date(iso: str | None, tz_name: str | None = None) -> str:
             dt = dt.replace(tzinfo=UTC)
         dt = dt.astimezone(collective_timezone(tz_name))
     return dt.strftime("%-d %B %Y")
+
+
+def _fmt_datetime(iso: str | None, tz_name: str | None = None) -> str:
+    """'21 December 2026 at 1:00 am', or empty when absent.
+
+    For the moment access *stops*, where a bare calendar date is a
+    small lie: a membership ending at 1:00 am on the 21st does not give
+    anybody the 21st, and "until 21 December" says it does. Payment
+    dates keep the plain date — they are day-level facts and a time on
+    them is noise.
+
+    No timezone abbreviation. "AEDT" means nothing to most readers and
+    the date is already rendered where they are.
+    """
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except Exception:
+        return ""
+    if tz_name:
+        from app.services.discount_pricing import collective_timezone
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        dt = dt.astimezone(collective_timezone(tz_name))
+    hour = dt.strftime("%-I:%M %p").lower()
+    return f"{dt.strftime('%-d %B %Y')} at {hour}"
 
 
 def _terms(ctx: dict) -> str:
@@ -166,7 +195,9 @@ class MembershipPurchasedEmail:
                 "There's nothing further to pay and no renewal."
             )
         else:
-            renews = _fmt_date(ctx.get("next_renewal_at"))
+            renews = _fmt_date(
+                ctx.get("next_renewal_at"), ctx.get("collective_timezone"),
+            )
             money = (
                 f"Your membership costs {terms} and continues until you "
                 "cancel it."
@@ -231,7 +262,9 @@ class MembershipRenewedEmail:
             f"for {name}."
         )
         detail = f"This covers {period}." if period else ""
-        renews = _fmt_date(ctx.get("next_renewal_at"))
+        renews = _fmt_date(
+            ctx.get("next_renewal_at"), ctx.get("collective_timezone"),
+        )
         next_up = f"Your next payment is on {renews}." if renews else ""
         return _payload(
             db, subject=subject, greeting=_greeting(ctx.get("first_name")),
@@ -271,7 +304,9 @@ class MembershipPaymentFailedEmail:
     def render(self, db, event, recipient) -> RenderedPayload:
         ctx = recipient.template_context
         name = _collective(ctx)
-        deadline = _fmt_date(ctx.get("grace_expires_at"))
+        deadline = _fmt_datetime(
+            ctx.get("grace_expires_at"), ctx.get("collective_timezone"),
+        )
         subject = f"There's a problem with your {name} membership payment"
         opening = (
             f"We couldn't process your latest membership payment for {name}."
@@ -331,7 +366,10 @@ class MembershipCancellationScheduledEmail:
     def render(self, db, event, recipient) -> RenderedPayload:
         ctx = recipient.template_context
         name = _collective(ctx)
-        until = _fmt_date(
+        # Access stops at a moment, not on a day. "until 21 December"
+        # promises somebody the whole of the 21st when a period ending
+        # at 1:00 am gives them an hour of it.
+        until = _fmt_datetime(
             ctx.get("access_until"), ctx.get("collective_timezone"),
         )
         # "won't renew" read as a renewal that had failed rather than
@@ -383,7 +421,10 @@ class MembershipCancellationScheduledInApp:
 
     def render(self, db, event, recipient) -> RenderedPayload:
         ctx = recipient.template_context
-        until = _fmt_date(
+        # Access stops at a moment, not on a day. "until 21 December"
+        # promises somebody the whole of the 21st when a period ending
+        # at 1:00 am gives them an hour of it.
+        until = _fmt_datetime(
             ctx.get("access_until"), ctx.get("collective_timezone"),
         )
         # Same two facts as the email, in the length a notification has.
@@ -475,7 +516,9 @@ class MembershipReactivatedEmail:
             f"Your membership of {name} is active again and your access "
             "has resumed."
         )
-        renews = _fmt_date(ctx.get("next_renewal_at"))
+        renews = _fmt_date(
+            ctx.get("next_renewal_at"), ctx.get("collective_timezone"),
+        )
         next_up = f"Your next payment is on {renews}." if renews else ""
         return _payload(
             db, subject=subject, greeting=_greeting(ctx.get("first_name")),
@@ -499,5 +542,79 @@ class MembershipReactivatedInApp:
             metadata={
                 "notification_type": "collective_membership_reactivated",
                 "url": ctx.get("collective_url") or "",
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Renewal resumed — they changed their mind, without ever losing access
+# ---------------------------------------------------------------------------
+
+
+@template_for(_RENEWAL_RESUMED, CHANNEL_EMAIL_TRANSACTIONAL)
+class MembershipRenewalResumedEmail:
+    key = f"{_RENEWAL_RESUMED}.email_transactional"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _collective(ctx)
+        tz = ctx.get("collective_timezone")
+        when = _fmt_date(ctx.get("next_renewal_at"), tz)
+        amount = (ctx.get("amount_label") or "").strip()
+        subject = f"Your {name} membership renewal is back on"
+        heading = "Your membership renewal is back on"
+        opening = (
+            f"You've successfully resumed your membership renewal for "
+            f"{name}."
+        )
+        # A next payment the member can check against their own bank.
+        # Both halves are optional because an agreement can be missing
+        # either, and half a sentence is worse than a general one.
+        if amount and when:
+            continues = (
+                f"Your membership will continue automatically, with your "
+                f"next payment of {amount} scheduled for {when}."
+            )
+        elif when:
+            continues = (
+                f"Your membership will continue automatically, with your "
+                f"next payment scheduled for {when}."
+            )
+        else:
+            continues = "Your membership will continue automatically."
+        nothing = "You don't need to do anything else."
+        return _payload(
+            db, subject=subject, heading=heading,
+            greeting=_greeting(ctx.get("first_name")),
+            opening=opening, paragraphs=[opening, continues, nothing],
+            action=("Manage your membership", _manage(ctx)),
+            signoff="",
+            notification_type="collective_membership_renewal_resumed",
+        )
+
+
+@template_for(_RENEWAL_RESUMED, CHANNEL_IN_APP)
+class MembershipRenewalResumedInApp:
+    key = f"{_RENEWAL_RESUMED}.in_app"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        when = _fmt_date(
+            ctx.get("next_renewal_at"), ctx.get("collective_timezone"),
+        )
+        return RenderedPayload(
+            to="",
+            subject=f"Your {_collective(ctx)} membership renewal is back on.",
+            body_html="",
+            body_text=(
+                f"Your membership will continue, with your next payment "
+                f"scheduled for {when}." if when
+                else "Your membership will continue as before."
+            ),
+            metadata={
+                "notification_type": "collective_membership_renewal_resumed",
+                "url": ctx.get("membership_url") or "",
             },
         )

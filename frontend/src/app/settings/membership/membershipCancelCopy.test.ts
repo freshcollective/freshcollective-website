@@ -34,8 +34,12 @@ describe('cancellation confirmation copy', () => {
   it('promises access until the paid period ends, with no further payments', () => {
     assert.match(source, /you’ll keep access to/)
     assert.match(source, /with no further payments/)
-    // The date is rendered, never hard-coded.
-    assert.match(source, /formatDay\(sub\.current_period_end\)/)
+    // The date is rendered, never hard-coded — and as a *moment*,
+    // in the Collective's timezone, since this is when access stops.
+    assert.match(
+      source,
+      /formatMoment\(sub\.current_period_end, space\.timezone\)/,
+    )
   })
 
   it('says what is lost after that date', () => {

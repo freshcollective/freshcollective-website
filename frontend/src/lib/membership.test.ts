@@ -20,8 +20,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
-  formatMoney, formatRecurring, offerPhrase, owesConversion,
-  paidJoinAction, recognisesMembership, subscribeRefusalMessage,
+  formatDay, formatMoment, formatMoney, formatRecurring, offerPhrase,
+  owesConversion, paidJoinAction, recognisesMembership,
+  subscribeRefusalMessage,
 } from './membership.ts'
 import type { MembershipState } from '../types/platform.ts'
 
@@ -414,5 +415,111 @@ describe('SpaceAboutCTA branch order', () => {
 
   test('checkout still goes through SubscribeButton', () => {
     assert.match(cta, /<SubscribeButton\b/)
+  })
+})
+
+
+// ===========================================================================
+// Stage 5A.4b — one period, one date, everywhere
+// ===========================================================================
+
+/**
+ * Production showed 20 December in Account Settings and 21 December in
+ * the cancellation email, for the same Stripe period.
+ *
+ * Two causes, both here. Membership instants arrive UTC-naive
+ * ("2026-12-20T14:00:00", no offset) because the columns are
+ * `DateTime(timezone=False)`, and `new Date()` reads a bare string like
+ * that as *local* time. And nothing passed a timezone, so the browser's
+ * own was used — a different answer for every reader.
+ */
+const MELBOURNE = 'Australia/Melbourne'
+const PERTH = 'Australia/Perth'
+//: 14:00 UTC on the 20th — already 01:00 on the 21st in Melbourne.
+const CROSSES_MIDNIGHT = '2026-12-20T14:00:00'
+
+describe('formatDay — payment dates', () => {
+  test('a naive instant is read as UTC, not as browser-local', () => {
+    // The bug: without the Z this parsed as 14:00 local and rendered
+    // the 20th wherever the reader happened to be.
+    assert.equal(formatDay(CROSSES_MIDNIGHT, MELBOURNE), '21 December 2026')
+  })
+
+  test('an instant that already carries a zone is unchanged', () => {
+    assert.equal(
+      formatDay('2026-12-20T14:00:00Z', MELBOURNE), '21 December 2026',
+    )
+  })
+
+  test('the Collective’s timezone decides, not the reader’s', () => {
+    // Same instant, two Collectives, two correct answers.
+    assert.equal(formatDay(CROSSES_MIDNIGHT, MELBOURNE), '21 December 2026')
+    assert.equal(formatDay(CROSSES_MIDNIGHT, PERTH), '20 December 2026')
+  })
+
+  test('daylight saving is applied, not assumed', () => {
+    // 1 July is AEST (+10); 1 January is AEDT (+11). A fixed offset
+    // would get one of these wrong.
+    assert.equal(formatDay('2026-06-30T14:30:00', MELBOURNE), '1 July 2026')
+    assert.equal(formatDay('2026-12-31T13:30:00', MELBOURNE), '1 January 2027')
+  })
+
+  test('an unknown timezone renders a date rather than throwing', () => {
+    // Intl raises RangeError on a bad timeZone. A date that cannot be
+    // displayed must not take the page with it.
+    assert.ok(formatDay(CROSSES_MIDNIGHT, 'Not/AZone'))
+    assert.ok(formatDay(CROSSES_MIDNIGHT, ''))
+  })
+
+  test('nothing in, nothing out', () => {
+    assert.equal(formatDay(null, MELBOURNE), null)
+    assert.equal(formatDay('not a date', MELBOURNE), null)
+  })
+})
+
+describe('formatMoment — when access actually stops', () => {
+  test('carries the time, because the date alone overpromises', () => {
+    // "until 21 December" tells someone whose access ends at 1:00 am
+    // that they have the whole day. They have an hour of it.
+    assert.equal(
+      formatMoment(CROSSES_MIDNIGHT, MELBOURNE),
+      '21 December 2026 at 1:00 am',
+    )
+  })
+
+  test('agrees with the backend, to the minute', () => {
+    // The backend renders '21 December 2026 at 1:00 am' for this exact
+    // instant and timezone. Both surfaces must say the same thing.
+    assert.equal(
+      formatMoment(CROSSES_MIDNIGHT, MELBOURNE),
+      '21 December 2026 at 1:00 am',
+    )
+  })
+
+  test('no timezone abbreviation is shown', () => {
+    const out = formatMoment(CROSSES_MIDNIGHT, MELBOURNE) ?? ''
+    assert.doesNotMatch(out, /AEDT|AEST|GMT|UTC|\+1[01]/)
+  })
+
+  test('an afternoon moment reads as pm', () => {
+    assert.match(formatMoment('2026-12-20T05:30:00', MELBOURNE) ?? '', /pm$/)
+  })
+
+  test('an unknown timezone still produces a moment', () => {
+    assert.ok(formatMoment(CROSSES_MIDNIGHT, 'Not/AZone'))
+  })
+
+  test('nothing in, nothing out', () => {
+    assert.equal(formatMoment(null, MELBOURNE), null)
+  })
+})
+
+describe('the two helpers answer the same question differently', () => {
+  test('a payment date is a day; an expiry is a moment', () => {
+    assert.equal(formatDay(CROSSES_MIDNIGHT, MELBOURNE), '21 December 2026')
+    assert.equal(
+      formatMoment(CROSSES_MIDNIGHT, MELBOURNE),
+      '21 December 2026 at 1:00 am',
+    )
   })
 })

@@ -959,6 +959,13 @@ _system(
     "A member whose paused membership came back after a payment",
     "States a billing and access state.",
 )
+_system(
+    "collective.membership.renewal_resumed.email_transactional",
+    "collective.membership.renewal_resumed",
+    "Collective membership renewal resumed",
+    "A member who turned renewal back on before their period ended",
+    "States the next payment amount and date from their own agreement.",
+)
 
 _system(
     "creator.subscription.payment_failed.email_transactional",

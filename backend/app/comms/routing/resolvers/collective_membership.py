@@ -41,8 +41,21 @@ def _member(
 
 #: Every message names the Collective and the terms the member agreed
 #: to — never the creator's current advertised price.
+#:
+#: ``collective_timezone`` is here rather than on the one template that
+#: needs it, because *every* membership message carries a date and all
+#: of them were rendering it in UTC. A period ending at 14:00 on the
+#: 20th is already the 21st in Melbourne, so members were being told a
+#: date before the one they keep.
+#:
+#: Worth knowing how that survived review: the context is whitelisted
+#: here, key by key, and a template asking for something absent from
+#: this tuple silently gets ``None``. The first fix put the timezone in
+#: the template and tested it with a hand-built context — proving the
+#: template and not the pipeline. Anything added to a template's
+#: expectations has to be added here too.
 _COMMON = ("first_name", "collective_name", "collective_url", "amount_label",
-           "interval_label", "membership_url")
+           "interval_label", "membership_url", "collective_timezone")
 
 
 @resolver_for("collective.membership.purchased")
@@ -113,6 +126,20 @@ class MembershipEndedResolver:
             event,
             "Your collective membership has ended.",
             _COMMON,
+        )
+
+
+@resolver_for("collective.membership.renewal_resumed")
+class MembershipRenewalResumedResolver:
+    event_type = "collective.membership.renewal_resumed"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        return _member(
+            event,
+            "You turned renewal back on for a collective membership.",
+            _COMMON + ("next_renewal_at",),
         )
 
 

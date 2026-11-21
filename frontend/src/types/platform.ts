@@ -1377,7 +1377,9 @@ export interface MembershipAgreement {
 }
 
 export interface MembershipState {
-  space: { id: string, slug: string, name: string }
+  /** ``timezone`` is the Collective's own — the reference every
+   *  membership date is rendered in, on screen and in email. */
+  space: { id: string, slug: string, name: string, timezone?: string | null }
   is_member: boolean
   membership_status: string | null
   is_owner: boolean

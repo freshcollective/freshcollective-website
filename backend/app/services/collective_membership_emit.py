@@ -320,6 +320,41 @@ def emit_membership_ended(
 
 
 @_safe_emit
+def emit_membership_renewal_resumed(
+    db: Session, *, sub: CollectiveMembership,
+) -> "CommunicationEvent | None":
+    """They turned renewal back on before the period ran out.
+
+    Not :func:`emit_membership_reactivated`, which says access has been
+    *restored*. This member never lost access — they changed their mind
+    while still inside the period they had paid for, and telling them
+    their access was back would invent an interruption that never
+    happened.
+
+    Keyed on the agreement and the period it was resumed within, so
+    cancelling and resuming twice inside one period confirms once while
+    a genuine second period can confirm again.
+    """
+    from app.comms import Source, emit as comms_emit
+
+    payload = _base_payload(db, sub)
+    payload["next_renewal_at"] = _iso(sub.current_period_end)
+    return comms_emit(
+        db,
+        event_type="collective.membership.renewal_resumed",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=sub.user_id,
+        subject_type="collective_membership",
+        subject_id=sub.id,
+        context={"collective_membership_id": sub.id},
+        payload=payload,
+        dedupe_key=(
+            f"cmem_renewal_resumed:{sub.id}:{_iso(sub.current_period_end)}"
+        ),
+    )
+
+
+@_safe_emit
 def emit_membership_reactivated(
     db: Session, *, sub: CollectiveMembership,
 ) -> "CommunicationEvent | None":

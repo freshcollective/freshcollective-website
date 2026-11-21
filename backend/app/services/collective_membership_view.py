@@ -204,6 +204,12 @@ def membership_state(
             "id": space.id,
             "slug": space.slug,
             "name": space.name,
+            #: So the browser renders membership dates in the same
+            #: timezone the emails use. Without it the client parses a
+            #: naive UTC instant as local time and two surfaces show
+            #: two different days for one period — which is exactly
+            #: what production did.
+            "timezone": getattr(space, "timezone", None) or "",
         },
         "is_member": member_status == SpaceMembershipStatus.active.value,
         "membership_status": member_status,

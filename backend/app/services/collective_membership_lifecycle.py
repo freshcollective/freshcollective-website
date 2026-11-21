@@ -618,6 +618,22 @@ def resume_cancelled_renewal(
         raise ValueError(
             "a one-time membership has no renewal to resume"
         )
+    # Already resumed is success, not an error.
+    #
+    # A member who double-clicks, or retries after a slow response, has
+    # asked for a state the agreement is already in. Answering 409 told
+    # them something had gone wrong when nothing had. Cancelling has
+    # always been idempotent; this makes the pair symmetrical.
+    #
+    # Narrow on purpose: *only* an active agreement that is genuinely
+    # not winding down. Every other status still raises, because
+    # "resume" means nothing on an ended, cancelled or pending one and
+    # silently succeeding there would hide a real problem.
+    if (
+        subscription.status == CollectiveMembershipStatus.active.value
+        and not subscription.cancel_at_period_end
+    ):
+        return subscription
     if subscription.status != CollectiveMembershipStatus.cancel_scheduled.value:
         raise ValueError(
             f"nothing to resume on a {subscription.status} agreement "
@@ -638,6 +654,14 @@ def resume_cancelled_renewal(
         subscription.id, subscription.user_id, subscription.space_id,
     )
     db.flush()
+
+    # Only reached when a scheduled cancellation was actually reversed:
+    # the early return above means an already-active agreement never
+    # gets here, so a repeated request confirms once. The dedupe key
+    # carries the period as a second guard.
+    from app.services import collective_membership_emit as _emit
+
+    _emit.emit_membership_renewal_resumed(db, sub=subscription)
     return subscription
 
 

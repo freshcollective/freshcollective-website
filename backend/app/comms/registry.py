@@ -279,6 +279,12 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("collective.membership.cancellation_scheduled", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("collective.membership.ended",                  TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("collective.membership.reactivated",            TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    # Distinct from ``reactivated`` on purpose. Reactivated means
+    # access came *back* after a lapse; this member never lost it —
+    # they simply turned renewal on again before their period ran
+    # out. Telling them their access had been restored would invent
+    # an interruption that never happened.
+    EventDefinition("collective.membership.renewal_resumed",        TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
 
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),
@@ -404,6 +410,7 @@ TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
     "collective.membership.cancellation_scheduled",
     "collective.membership.ended",
     "collective.membership.reactivated",
+    "collective.membership.renewal_resumed",
 })
 
 

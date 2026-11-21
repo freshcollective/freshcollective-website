@@ -67,13 +67,89 @@ export function formatRecurring(
 export const ONE_TIME_INTERVAL = 'one_time'
 
 /** A date a person can read, in their own locale's long form. */
-export function formatDay(iso: string | null): string | null {
+/**
+ * A stored instant, as a `Date`.
+ *
+ * Membership timestamps arrive UTC-naive — "2026-12-20T14:00:00", no
+ * offset — because the columns are `DateTime(timezone=False)`.
+ * `new Date()` reads a bare string like that as **local** time, so a
+ * browser in Melbourne turned 14:00 UTC into 14:00 local and showed
+ * the 20th while the email, correctly, said the 21st. That split is
+ * the one production produced.
+ */
+function parseInstant(iso: string | null | undefined): Date | null {
   if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-AU', {
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(iso)
+  const d = new Date(hasZone ? iso : `${iso}Z`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * A membership date, in the Collective's timezone.
+ *
+ * `timeZone` comes from the Collective — there is no per-member one —
+ * and is the same reference the emails use, so the two surfaces agree.
+ * An unknown or malformed zone falls back to rendering without one
+ * rather than throwing: `Intl` raises `RangeError` on a bad timeZone,
+ * and a date that cannot be displayed must not take the page with it.
+ *
+ * Use for **payment** dates. For the moment access stops, use
+ * {@link formatMoment} — a bare date promises a whole day that a
+ * period ending at 1:00 am does not give.
+ */
+export function formatDay(
+  iso: string | null, timeZone?: string | null,
+): string | null {
+  const d = parseInstant(iso)
+  if (!d) return null
+  const opts: Intl.DateTimeFormatOptions = {
     day: 'numeric', month: 'long', year: 'numeric',
-  })
+  }
+  if (timeZone) {
+    try {
+      return d.toLocaleDateString('en-AU', { ...opts, timeZone })
+    } catch {
+      // Unknown zone — fall through to the zone-less rendering.
+    }
+  }
+  return d.toLocaleDateString('en-AU', opts)
+}
+
+/**
+ * The moment access ends — date and time, in the Collective's zone.
+ *
+ * "until 21 December" tells somebody whose period ends at 1:00 am that
+ * they have the whole of the 21st. They have an hour of it. No
+ * timezone abbreviation: "AEDT" means little to most readers and the
+ * time is already rendered where the Collective is.
+ */
+export function formatMoment(
+  iso: string | null, timeZone?: string | null,
+): string | null {
+  const d = parseInstant(iso)
+  if (!d) return null
+  const dayOpts: Intl.DateTimeFormatOptions = {
+    day: 'numeric', month: 'long', year: 'numeric',
+  }
+  const timeOpts: Intl.DateTimeFormatOptions = {
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }
+  const render = (zone?: string) => {
+    const z = zone ? { timeZone: zone } : {}
+    const day = d.toLocaleDateString('en-AU', { ...dayOpts, ...z })
+    const time = d
+      .toLocaleTimeString('en-AU', { ...timeOpts, ...z })
+      .replace(/\s*([ap])\.?m\.?$/i, (_m, p) => ` ${p.toLowerCase()}m`)
+    return `${day} at ${time}`
+  }
+  if (timeZone) {
+    try {
+      return render(timeZone)
+    } catch {
+      // Unknown zone — fall through.
+    }
+  }
+  return render()
 }
 
 /**

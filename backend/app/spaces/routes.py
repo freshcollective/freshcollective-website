@@ -2007,6 +2007,9 @@ def resume_membership_renewal(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
+    # Only after the commit: routing opens its own session
+    # and looks the event up by id.
+    _cmem_emit.route_pending(db)
     return {
         "status": sub.status,
         "cancel_at_period_end": sub.cancel_at_period_end,

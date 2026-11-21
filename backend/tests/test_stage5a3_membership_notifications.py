@@ -454,14 +454,14 @@ class TestCancellationWordingIsNotAFailureNotice:
     def test_the_email_carries_all_four_facts(self, db):
         out = _render(db, self.SCHEDULED, self._ctx())
         for fragment in (
-            "continue to have access until 21 December 2026",
+            "continue to have access until 21 December 2026 at 1:00 am",
             "no further payments will be taken",
             "lose access to the Collective and its included Pathways "
             "and Gatherings",
             "still be able to access any Offerings you've purchased "
             "separately",
             "resume your membership renewal any time before "
-            "21 December 2026",
+            "21 December 2026 at 1:00 am",
         ):
             assert fragment in out.body_text, fragment
 
@@ -471,7 +471,11 @@ class TestCancellationWordingIsNotAFailureNotice:
             "You've successfully cancelled your renewal for "
             "Life in Full Colour."
         )
-        assert out.body_text == "You'll retain access until 21 December 2026."
+        # Date *and* time, from 5A.4b's expiry rule: a period ending at
+        # 1:00 am does not give anybody the whole of the 21st.
+        assert out.body_text == (
+            "You'll retain access until 21 December 2026 at 1:00 am."
+        )
         assert out.metadata["url"] == BASE_CTX["membership_url"]
 
     def test_the_date_is_the_collective_s_day_not_the_UTC_one(self, db):
@@ -480,7 +484,7 @@ class TestCancellationWordingIsNotAFailureNotice:
         without = _render(db, self.SCHEDULED, self._ctx(collective_timezone=""))
         assert "20 December 2026" in without.body_text
         with_tz = _render(db, self.SCHEDULED, self._ctx())
-        assert "21 December 2026" in with_tz.body_text
+        assert "21 December 2026 at 1:00 am" in with_tz.body_text
 
     def test_an_unknown_timezone_still_renders_a_date(self, db):
         out = _render(db, self.SCHEDULED, self._ctx(
@@ -505,3 +509,83 @@ class TestCancellationWordingIsNotAFailureNotice:
         assert "has ended" not in lowered
         assert "membership ended" not in lowered
         assert "refund" not in lowered
+
+
+# ---------------------------------------------------------------------------
+# §5A.4b — the context a template actually receives
+# ---------------------------------------------------------------------------
+
+
+class TestTheResolverSuppliesWhatTemplatesRead:
+    """Rendering with a hand-built context proves the template, not the
+    pipeline.
+
+    ``_member`` whitelists the context key by key, so a template asking
+    for something the resolver does not list silently gets ``None``.
+    That is how the first timezone fix shipped looking correct and
+    rendering UTC: the test built its own context and the resolver
+    never carried ``collective_timezone`` at all.
+
+    These drive the real resolver instead.
+    """
+
+    EVENTS = [
+        "collective.membership.purchased",
+        "collective.membership.renewed",
+        "collective.membership.payment_failed",
+        "collective.membership.cancellation_scheduled",
+        "collective.membership.ended",
+        "collective.membership.reactivated",
+        "collective.membership.renewal_resumed",
+    ]
+
+    def _resolved(self, db, event_type, payload):
+        import app.comms.templates  # noqa: F401
+        from app.comms.models import CommunicationEvent
+        from app.comms.routing.resolver import get_resolver_for
+
+        event = CommunicationEvent(
+            id=f"evt_{abs(hash(event_type)) % 10**8}",
+            event_type=event_type, topic_key="account",
+            category_key="account", source_type="fresh_collective",
+            actor_user_id="u_member", subject_type="collective_membership",
+            subject_id="cmem_x", context={}, payload=payload,
+        )
+        resolver = get_resolver_for(event_type)
+        assert resolver is not None, f"no resolver registered: {event_type}"
+        return resolver.resolve(db, event)
+
+    @pytest.mark.parametrize("event_type", EVENTS)
+    def test_the_collective_timezone_reaches_every_template(
+        self, db, event_type,
+    ):
+        payload = dict(BASE_CTX)
+        payload["collective_timezone"] = "Australia/Melbourne"
+        payload["access_until"] = "2026-12-20T14:00:00"
+        payload["next_renewal_at"] = "2026-12-20T14:00:00"
+        payload["grace_expires_at"] = "2026-12-20T14:00:00"
+        recipients = self._resolved(db, event_type, payload)
+        assert recipients, event_type
+        assert recipients[0].template_context.get(
+            "collective_timezone") == "Australia/Melbourne", event_type
+
+    def test_the_cancellation_date_is_localised_through_the_real_pipeline(
+        self, db,
+    ):
+        """End to end: payload in, rendered sentence out. 14:00 UTC on
+        the 20th is 1:00 am on the 21st in Melbourne."""
+        import app.comms.templates  # noqa: F401
+        from app.comms.templates.registry import get_template_for
+
+        payload = dict(BASE_CTX)
+        payload["collective_timezone"] = "Australia/Melbourne"
+        payload["access_until"] = "2026-12-20T14:00:00"
+        recipient = self._resolved(
+            db, "collective.membership.cancellation_scheduled", payload,
+        )[0]
+        out = get_template_for(
+            "collective.membership.cancellation_scheduled",
+            "email_transactional",
+        ).render(db, None, recipient)
+        assert "21 December 2026 at 1:00 am" in out.body_text
+        assert "20 December" not in out.body_text
