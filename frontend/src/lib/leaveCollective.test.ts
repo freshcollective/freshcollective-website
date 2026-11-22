@@ -387,3 +387,70 @@ describe('the component contract', () => {
     }
   })
 })
+
+
+/**
+ * Stage 5A close — the dialog names the subscription it cancels.
+ *
+ * Until now it listed every access consequence and never mentioned
+ * that leaving a *paid* Collective cancels a live subscription
+ * immediately, with the current period unrefunded. A member could end
+ * an A$5.99/month membership without being told either fact.
+ */
+describe('leaving a paid Collective states the billing consequences', () => {
+  const paid = (over: Partial<DeparturePreview> = {}): DeparturePreview => ({
+    can_leave: true, blocked_reason: null, live_payment_plans: 0,
+    active_passes: 0, unused_credits: 0, future_bookings: 0,
+    purchased_future_bookings: 0, purchased_pathways: 0,
+    membership_gated_paid_pathways: 0, offerings_retained: 0,
+    membership_amount_cents: 599, membership_currency: 'AUD',
+    membership_interval: 'month', membership_interval_count: 1,
+    ...over,
+  })
+
+  test('names the amount and interval from the agreement', () => {
+    const text = departureConsequenceLines(paid()).join(' ')
+    assert.match(text, /A\$5\.99\/month membership is cancelled immediately/)
+  })
+
+  test('does not promise payments have stopped before Stripe confirms', () => {
+    const text = departureConsequenceLines(paid()).join(' ')
+    assert.match(text, /Once Stripe confirms it, no further payments/)
+  })
+
+  test('says the paid period is not refunded', () => {
+    assert.match(
+      departureConsequenceLines(paid()).join(' '),
+      /period you’ve already paid for isn’t refunded/,
+    )
+  })
+
+  test('distinguishes leaving from cancelling renewal', () => {
+    assert.match(
+      departureConsequenceLines(paid()).join(' '),
+      /Cancelling renewal instead would keep your access/,
+    )
+  })
+
+  test('still promises what survives and the way back', () => {
+    const text = departureConsequenceLines(paid()).join(' ')
+    assert.match(text, /stays available to you/)
+    assert.match(text, /rejoin this Collective later/)
+  })
+
+  test('uses the agreement’s own terms, not a fixed price', () => {
+    const text = departureConsequenceLines(paid({
+      membership_amount_cents: 9900, membership_interval: 'year',
+    })).join(' ')
+    assert.match(text, /A\$99\/year/)
+  })
+
+  test('says nothing about billing on a free Collective', () => {
+    const text = departureConsequenceLines(paid({
+      membership_amount_cents: null, membership_currency: null,
+      membership_interval: null,
+    })).join(' ')
+    assert.doesNotMatch(text, /cancelled immediately|isn’t refunded|Stripe/)
+    assert.match(text, /lose access to this Collective/)
+  })
+})

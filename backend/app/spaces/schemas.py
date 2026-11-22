@@ -1105,6 +1105,13 @@ class DeparturePreview(BaseModel):
     membership_gated_paid_pathways: int = 0
     #: Offerings kept in Your Collection regardless.
     offerings_retained: int = 0
+    #: The paid membership this departure would cancel, if any. Null
+    #: throughout for a free Collective, so the dialog says nothing
+    #: about billing rather than something vague.
+    membership_amount_cents: int | None = None
+    membership_currency: str | None = None
+    membership_interval: str | None = None
+    membership_interval_count: int = 1
 
 
 class LeaveCollectiveResponse(BaseModel):

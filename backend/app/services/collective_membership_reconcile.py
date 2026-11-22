@@ -180,6 +180,9 @@ def _sweep_billing_after_departure(
                 reason="reconcile:membership_already_ended", now=now,
             )
             report.billing_after_departure += 1
+            # Closes the departure notice that could only say the
+            # cancellation was still being finalised.
+            _emit.emit_departure_billing_stopped(db, sub=sub)
             logger.warning(
                 "membership reconcile: stopped billing that outlived a "
                 "departure sub=%s user=%s space=%s",

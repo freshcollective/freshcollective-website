@@ -157,6 +157,34 @@ class MembershipPaymentMethodUpdatedResolver:
         )
 
 
+@resolver_for("collective.membership.voluntary_departure")
+class MembershipVoluntaryDepartureResolver:
+    event_type = "collective.membership.voluntary_departure"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        return _member(
+            event,
+            "You left a collective you were paying to belong to.",
+            _COMMON + ("billing_cancelled", "offerings_retained"),
+        )
+
+
+@resolver_for("collective.membership.departure_billing_stopped")
+class MembershipDepartureBillingStoppedResolver:
+    event_type = "collective.membership.departure_billing_stopped"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        return _member(
+            event,
+            "The billing on a collective you left has now been stopped.",
+            _COMMON,
+        )
+
+
 @resolver_for("collective.membership.reactivated")
 class MembershipReactivatedResolver:
     event_type = "collective.membership.reactivated"

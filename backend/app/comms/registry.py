@@ -289,6 +289,14 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # purchase: no money moves, but somebody who did not make the
     # change needs to find out that it happened.
     EventDefinition("collective.membership.payment_method_updated", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    # Leaving is not the same as a membership running out, so it does
+    # not reuse ``ended``: one is the member's own decision taken a
+    # moment ago, the other is something that happened to them. The
+    # follow-up exists because billing cancellation can outlive the
+    # departure, and a member told "we are still finalising it" is
+    # owed the sentence that closes it.
+    EventDefinition("collective.membership.voluntary_departure",    TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("collective.membership.departure_billing_stopped", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
 
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),
@@ -416,6 +424,8 @@ TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
     "collective.membership.reactivated",
     "collective.membership.renewal_resumed",
     "collective.membership.payment_method_updated",
+    "collective.membership.voluntary_departure",
+    "collective.membership.departure_billing_stopped",
 })
 
 

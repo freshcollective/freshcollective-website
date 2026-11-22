@@ -960,6 +960,20 @@ _system(
     "States a billing and access state.",
 )
 _system(
+    "collective.membership.voluntary_departure.email_transactional",
+    "collective.membership.voluntary_departure",
+    "Left a collective",
+    "A member who chose to leave a collective they paid to belong to",
+    "Confirms the departure and the state of the billing cancellation.",
+)
+_system(
+    "collective.membership.departure_billing_stopped.email_transactional",
+    "collective.membership.departure_billing_stopped",
+    "Collective billing stopped after departure",
+    "A member whose billing took a retry to stop after they left",
+    "Closes a departure notice that could only say 'being finalised'.",
+)
+_system(
     "collective.membership.payment_method_updated.email_transactional",
     "collective.membership.payment_method_updated",
     "Collective membership payment method updated",

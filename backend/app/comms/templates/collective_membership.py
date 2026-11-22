@@ -43,6 +43,10 @@ from app.comms.templates.registry import template_for
 _PURCHASED   = "collective.membership.purchased"
 _RENEWAL_RESUMED = "collective.membership.renewal_resumed"
 _PM_UPDATED = "collective.membership.payment_method_updated"
+_DEPARTED = "collective.membership.voluntary_departure"
+_DEPARTURE_BILLING_STOPPED = (
+    "collective.membership.departure_billing_stopped"
+)
 _RENEWED     = "collective.membership.renewed"
 _FAILED      = "collective.membership.payment_failed"
 _SCHEDULED   = "collective.membership.cancellation_scheduled"
@@ -690,6 +694,149 @@ class MembershipPaymentMethodUpdatedInApp:
             metadata={
                 "notification_type":
                     "collective_membership_payment_method_updated",
+                "url": ctx.get("membership_url") or "",
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Voluntary departure — their decision, and what it did to the billing
+# ---------------------------------------------------------------------------
+
+
+def _departure_billing_line(ctx: dict) -> str:
+    """What to promise about future payments, and nothing more.
+
+    Cancelling at Stripe can fail while the departure succeeds, by
+    design — a member must be able to leave when Stripe is
+    unreachable. Telling them payments have stopped when we have not
+    managed to stop them is the one sentence this message must not
+    contain.
+    """
+    if ctx.get("billing_cancelled"):
+        return (
+            "Your membership subscription has been cancelled, so no "
+            "further payments will be taken."
+        )
+    return (
+        "We're still finalising the cancellation of your membership "
+        "subscription with our payment provider. We'll confirm as soon "
+        "as it's done, and you don't need to do anything."
+    )
+
+
+@template_for(_DEPARTED, CHANNEL_EMAIL_TRANSACTIONAL)
+class MembershipVoluntaryDepartureEmail:
+    key = f"{_DEPARTED}.email_transactional"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _collective(ctx)
+        subject = f"You've left {name}"
+        heading = "You've left this collective"
+        opening = f"You've left {name}, and your membership has ended."
+        lost = (
+            "Its Pathways, Gatherings and member-only spaces are no longer "
+            "available to you."
+        )
+        kept = (
+            "Anything you bought separately stays yours — Offerings in Your "
+            "Collection, and any other purchases you made outright."
+        )
+        back = (
+            f"You're welcome to rejoin {name} later, subject to its "
+            "membership requirements."
+        )
+        return _payload(
+            db, subject=subject, heading=heading,
+            greeting=_greeting(ctx.get("first_name")),
+            opening=opening,
+            paragraphs=[opening, _departure_billing_line(ctx), lost, kept, back],
+            action=("Manage your memberships", _manage(ctx)),
+            signoff="",
+            notification_type="collective_membership_voluntary_departure",
+        )
+
+
+@template_for(_DEPARTED, CHANNEL_IN_APP)
+class MembershipVoluntaryDepartureInApp:
+    key = f"{_DEPARTED}.in_app"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        return RenderedPayload(
+            to="", subject=f"You've left {_collective(ctx)}",
+            body_html="",
+            body_text=(
+                "Your membership has ended. "
+                + ("Your subscription is cancelled and no further payments "
+                   "will be taken."
+                   if ctx.get("billing_cancelled") else
+                   "We're still finalising the cancellation of your "
+                   "subscription and will confirm when it's done.")
+            ),
+            metadata={
+                "notification_type":
+                    "collective_membership_voluntary_departure",
+                "url": ctx.get("membership_url") or "",
+            },
+        )
+
+
+@template_for(_DEPARTURE_BILLING_STOPPED, CHANNEL_EMAIL_TRANSACTIONAL)
+class MembershipDepartureBillingStoppedEmail:
+    key = f"{_DEPARTURE_BILLING_STOPPED}.email_transactional"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _collective(ctx)
+        subject = f"Your {name} membership payments have stopped"
+        heading = "Your membership payments have stopped"
+        # Deliberately refers back. The member was told this was being
+        # finalised; this closes that sentence rather than arriving as
+        # news about a membership they already know they left.
+        opening = (
+            f"The membership subscription for {name} has now been "
+            "cancelled with our payment provider, so no further payments "
+            "will be taken."
+        )
+        context_line = (
+            "You left this collective earlier, and this confirms the part "
+            "we were still finalising. Nothing else has changed."
+        )
+        return _payload(
+            db, subject=subject, heading=heading,
+            greeting=_greeting(ctx.get("first_name")),
+            opening=opening, paragraphs=[opening, context_line],
+            action=("Manage your memberships", _manage(ctx)),
+            signoff="",
+            notification_type=(
+                "collective_membership_departure_billing_stopped"
+            ),
+        )
+
+
+@template_for(_DEPARTURE_BILLING_STOPPED, CHANNEL_IN_APP)
+class MembershipDepartureBillingStoppedInApp:
+    key = f"{_DEPARTURE_BILLING_STOPPED}.in_app"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        return RenderedPayload(
+            to="",
+            subject=f"{_collective(ctx)} payments have stopped",
+            body_html="",
+            body_text=(
+                "The subscription cancellation we were finalising is "
+                "complete. No further payments will be taken."
+            ),
+            metadata={
+                "notification_type":
+                    "collective_membership_departure_billing_stopped",
                 "url": ctx.get("membership_url") or "",
             },
         )

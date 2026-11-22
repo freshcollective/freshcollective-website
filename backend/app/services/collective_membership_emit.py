@@ -320,6 +320,73 @@ def emit_membership_ended(
 
 
 @_safe_emit
+def emit_voluntary_departure(
+    db: Session, *, sub: CollectiveMembership, billing_cancelled: bool,
+    departed_at: Any, offerings_retained: int = 0,
+) -> "CommunicationEvent | None":
+    """They chose to leave, and here is what that did to the billing.
+
+    Not :func:`emit_membership_ended`, which describes a membership
+    running out — something that happened *to* a member. This one is
+    their own decision, taken a moment ago, and the wording has to
+    match or it reads as a notice about somebody else's action.
+
+    ``billing_cancelled`` carries the honest outcome rather than an
+    assumption. Cancelling at Stripe can fail while the departure
+    itself succeeds — deliberately, because a member must be able to
+    leave even when Stripe is unreachable — and in that case the
+    message says the cancellation is still being finalised instead of
+    promising that payments have stopped.
+
+    Keyed on the departure instant, so a member who leaves, rejoins
+    and leaves again is told each time.
+    """
+    from app.comms import Source, emit as comms_emit
+
+    payload = _base_payload(db, sub)
+    payload["billing_cancelled"] = bool(billing_cancelled)
+    payload["offerings_retained"] = int(offerings_retained or 0)
+    return comms_emit(
+        db,
+        event_type="collective.membership.voluntary_departure",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=sub.user_id,
+        subject_type="collective_membership",
+        subject_id=sub.id,
+        context={"collective_membership_id": sub.id},
+        payload=payload,
+        dedupe_key=f"cmem_departed:{sub.id}:{_iso(departed_at)}",
+    )
+
+
+@_safe_emit
+def emit_departure_billing_stopped(
+    db: Session, *, sub: CollectiveMembership,
+) -> "CommunicationEvent | None":
+    """The retry worked. Said only to somebody who was told it hadn't.
+
+    Reached from the reconciler's billing-after-departure sweep, which
+    only ever picks up agreements still live after the member has
+    gone — exactly the case where the departure notice had to say the
+    cancellation was still being finalised. It closes that sentence
+    rather than contradicting it.
+    """
+    from app.comms import Source, emit as comms_emit
+
+    return comms_emit(
+        db,
+        event_type="collective.membership.departure_billing_stopped",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=sub.user_id,
+        subject_type="collective_membership",
+        subject_id=sub.id,
+        context={"collective_membership_id": sub.id},
+        payload=_base_payload(db, sub),
+        dedupe_key=f"cmem_departure_billing_stopped:{sub.id}",
+    )
+
+
+@_safe_emit
 def emit_membership_payment_method_updated(
     db: Session, *, sub: CollectiveMembership, setup_session_id: str,
 ) -> "CommunicationEvent | None":

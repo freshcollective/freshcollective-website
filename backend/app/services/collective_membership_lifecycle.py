@@ -681,6 +681,27 @@ class CancellationSweep:
     failed: int = 0
 
 
+def most_recent_agreement_for_member(
+    db: Session, *, user_id: str, space_id: str,
+) -> CollectiveMembership | None:
+    """This member's latest agreement here, whatever state it is in.
+
+    The departure message is sent *after* the agreement has been
+    cancelled, so it cannot look for a live one. Latest-by-creation
+    rather than latest-by-status: the terms it quotes are the ones the
+    member was actually paying.
+    """
+    return (
+        db.query(CollectiveMembership)
+        .filter(
+            CollectiveMembership.user_id == user_id,
+            CollectiveMembership.space_id == space_id,
+        )
+        .order_by(CollectiveMembership.created_at.desc())
+        .first()
+    )
+
+
 def cancel_live_subscriptions_for_member(
     db: Session, *,
     user_id: str,

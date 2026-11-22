@@ -36,6 +36,8 @@
  * line rather than being folded into the general warning.
  */
 
+import { formatRecurring } from './membership.ts'
+
 export interface DeparturePreview {
   can_leave: boolean
   blocked_reason: string | null
@@ -47,6 +49,12 @@ export interface DeparturePreview {
   purchased_pathways: number
   membership_gated_paid_pathways: number
   offerings_retained: number
+  /** The paid membership this departure cancels. Null on a free
+   *  Collective, where the dialog says nothing about billing. */
+  membership_amount_cents?: number | null
+  membership_currency?: string | null
+  membership_interval?: string | null
+  membership_interval_count?: number
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -102,9 +110,32 @@ export function departureConsequenceLines(
   preview: DeparturePreview,
 ): string[] {
   const lines: string[] = [
-    'You’ll lose access to this Collective’s Pathways, Gatherings and '
-    + 'member-only community spaces.',
+    'You’ll leave straight away, and lose access to this Collective’s '
+    + 'Pathways, Gatherings and member-only community spaces.',
   ]
+
+  // The paid membership, named with its own terms. Absent on a free
+  // Collective, where there is no billing to describe — and the
+  // dialog said nothing about any of this until 5A's close, which
+  // left a member cancelling a live subscription without being told
+  // so.
+  const cents = preview.membership_amount_cents
+  const currency = preview.membership_currency
+  const interval = preview.membership_interval
+  const paid = (cents && currency && interval)
+    ? formatRecurring(
+        cents, currency, interval, preview.membership_interval_count ?? 1,
+      )
+    : null
+  if (paid) {
+    lines.push(
+      `Your ${paid} membership is cancelled immediately. Once Stripe `
+      + 'confirms it, no further payments will be taken.',
+      'The period you’ve already paid for isn’t refunded. Cancelling '
+      + 'renewal instead would keep your access until that period '
+      + 'runs out.',
+    )
+  }
 
   const gated = preview.membership_gated_paid_pathways
   if (gated > 0) {
@@ -174,8 +205,9 @@ export function departureConsequenceLines(
       ? `The ${preview.offerings_retained} `
         + `${plural(preview.offerings_retained, 'Offering', 'Offerings')} `
         + 'you’ve acquired will stay in Your Collection.'
-      : 'Any Offerings you’ve already added to Your Collection will remain '
-        + 'available to you.',
+      : 'Anything you bought separately stays available to you — '
+        + 'Offerings remain in Your Collection, along with any other '
+        + 'purchases you made outright.',
   )
 
   // Last: the way back. Phrased as a right with a condition, not a

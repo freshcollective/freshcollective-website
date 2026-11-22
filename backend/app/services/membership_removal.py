@@ -308,6 +308,14 @@ class DepartureConsequences:
     #: Purchased Pathway access that does NOT survive, because the
     #: platform gates ``included_with_offer`` on active membership.
     membership_gated_paid_pathways: int = 0
+    #: The paid membership this departure would cancel, if there is
+    #: one. Carried so the dialog can name the amount and interval
+    #: rather than describing the subscription in the abstract — or,
+    #: for a free Collective, say nothing about billing at all.
+    membership_amount_cents: int | None = None
+    membership_currency: str | None = None
+    membership_interval: str | None = None
+    membership_interval_count: int = 1
     #: Offerings kept in Your Collection. Always kept; counted so the
     #: dialog can say how many rather than make a bare promise.
     offerings_retained: int = 0
@@ -470,7 +478,40 @@ def summarise_departure(
             db, user_id=user_id, space_id=space_id,
         ),
         offerings_retained=offerings,
+        **_paid_membership_terms(db, user_id=user_id, space_id=space_id),
     )
+
+
+def _paid_membership_terms(
+    db: Session, *, user_id: str, space_id: str,
+) -> dict:
+    """The live agreement's own terms, or empty for a free Collective.
+
+    The amount the member agreed to, never the Collective's current
+    list price — somebody who joined at A$5.99 is leaving A$5.99
+    whatever the creator charges today.
+    """
+    from app.models.collective_membership import (
+        CollectiveMembership, MANAGEABLE_STATUSES,
+    )
+
+    row = (
+        db.query(CollectiveMembership)
+        .filter(
+            CollectiveMembership.user_id == user_id,
+            CollectiveMembership.space_id == space_id,
+            CollectiveMembership.status.in_(sorted(MANAGEABLE_STATUSES)),
+        )
+        .first()
+    )
+    if row is None:
+        return {}
+    return {
+        "membership_amount_cents": row.amount_cents,
+        "membership_currency": row.currency,
+        "membership_interval": row.interval,
+        "membership_interval_count": row.interval_count or 1,
+    }
 
 
 def _membership_gated_paid_pathways(
@@ -555,6 +596,28 @@ def end_membership(
     )
     if _sweep.failed:
         payment_action_required = True
+
+    # Only the member's own departure, and only where there was a paid
+    # membership to end. A creator removal or a ban reaches this same
+    # function and must not produce "you've left" — and a free
+    # Collective has no billing outcome to report, so there is nothing
+    # for this message to say that the screen did not already.
+    if decision.kind == REMOVAL_VOLUNTARY and (_sweep.cancelled or _sweep.failed):
+        from app.services import collective_membership_emit as _cmem_emit
+
+        _departed = _cmem_lifecycle.most_recent_agreement_for_member(
+            db, user_id=membership.user_id, space_id=space.id,
+        )
+        if _departed is not None:
+            _cmem_emit.emit_voluntary_departure(
+                db, sub=_departed,
+                billing_cancelled=not _sweep.failed,
+                departed_at=now,
+                offerings_retained=summarise_departure(
+                    db, user_id=membership.user_id, space_id=space.id,
+                    now=now,
+                ).offerings_retained,
+            )
 
     membership.status = SpaceMembershipStatus.removed
     membership.removal_kind = decision.kind

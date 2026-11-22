@@ -1627,6 +1627,10 @@ def preview_leaving_collective(
             consequences.membership_gated_paid_pathways
         ),
         offerings_retained=consequences.offerings_retained,
+        membership_amount_cents=consequences.membership_amount_cents,
+        membership_currency=consequences.membership_currency,
+        membership_interval=consequences.membership_interval,
+        membership_interval_count=consequences.membership_interval_count,
     )
 
 

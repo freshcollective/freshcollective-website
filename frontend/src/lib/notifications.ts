@@ -62,6 +62,8 @@ const TYPE_MAP: Record<string, TypeMeta> = {
   collective_membership_reactivated:            { category: 'membership', label: 'Membership' },
   collective_membership_renewal_resumed:        { category: 'membership', label: 'Membership' },
   collective_membership_payment_method_updated: { category: 'membership', label: 'Membership' },
+  collective_membership_voluntary_departure:    { category: 'membership', label: 'Membership' },
+  collective_membership_departure_billing_stopped: { category: 'membership', label: 'Membership' },
   comment_reply:   { category: 'conversation', label: 'Reply' },
   new_post:        { category: 'conversation', label: 'Conversation' },
   mention:         { category: 'conversation', label: 'Mention' },
