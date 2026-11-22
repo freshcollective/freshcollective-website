@@ -40,7 +40,14 @@ export default function MembershipReturnFlow({
   const [phase, setPhase] = useState<Phase>(
     outcome === 'cancelled' ? 'cancelled' : 'checking',
   )
-  const [pmResult, setPmResult] = useState<'idle' | 'ok' | 'pending' | 'failed'>('idle')
+  // 'refused'  — we declined before touching Stripe, so nothing changed.
+  // 'unknown'   — the request failed after Stripe may already have acted.
+  //               On 22 November a 500 here was reported as "nothing was
+  //               changed" while the card had in fact been accepted, so the
+  //               two are no longer the same state.
+  const [pmResult, setPmResult] = useState<
+    'idle' | 'ok' | 'pending' | 'refused' | 'unknown'
+  >('idle')
   const cancelled = useRef(false)
 
   const read = useCallback(async (): Promise<MembershipState | null> => {
@@ -68,11 +75,19 @@ export default function MembershipReturnFlow({
           },
         )
         if (gone) return
-        if (!res.ok) { setPmResult('failed'); return }
+        if (!res.ok) {
+          // A 409 is our own refusal — the Session did not belong to
+          // this agreement, or there was nothing to update — and it is
+          // raised before Stripe is asked to change anything. Anything
+          // else leaves the outcome genuinely unknown.
+          setPmResult(res.status === 409 ? 'refused' : 'unknown')
+          return
+        }
         const body = await res.json().catch(() => ({}))
         setPmResult(body?.updated ? 'ok' : 'pending')
       } catch {
-        if (!gone) setPmResult('failed')
+        // The request never completed. Stripe may have acted anyway.
+        if (!gone) setPmResult('unknown')
       }
     })()
     return () => { gone = true }
@@ -124,7 +139,8 @@ export default function MembershipReturnFlow({
         <div className={`${card} mb-4`}>
           <h1 className="text-[20px] font-semibold text-navy-900">
             {pmResult === 'ok' ? 'Payment method updated'
-              : pmResult === 'failed' ? 'We couldn’t update your payment method'
+              : pmResult === 'refused' ? 'We couldn’t update your payment method'
+              : pmResult === 'unknown' ? 'We couldn’t confirm your payment method'
               : 'Updating your payment method…'}
           </h1>
           <p className="mt-2 text-[14px] leading-relaxed text-black">
@@ -132,8 +148,10 @@ export default function MembershipReturnFlow({
               ? `Future payments for ${name} will use your new card. Nothing else you pay for has changed.`
               : pmResult === 'pending'
               ? 'Stripe hasn’t finished confirming the card yet. Give it a moment and check your membership settings.'
-              : pmResult === 'failed'
+              : pmResult === 'refused'
               ? 'Nothing was changed. You can try again from your membership settings.'
+              : pmResult === 'unknown'
+              ? `Your card may already have been updated. Please check your membership settings before trying again — if ${name} still shows the old card, you can start again from there.`
               : 'One moment.'}
           </p>
           <Link

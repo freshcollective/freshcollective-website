@@ -143,6 +143,20 @@ class MembershipRenewalResumedResolver:
         )
 
 
+@resolver_for("collective.membership.payment_method_updated")
+class MembershipPaymentMethodUpdatedResolver:
+    event_type = "collective.membership.payment_method_updated"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        return _member(
+            event,
+            "The card on your collective membership was changed.",
+            _COMMON + ("next_renewal_at",),
+        )
+
+
 @resolver_for("collective.membership.reactivated")
 class MembershipReactivatedResolver:
     event_type = "collective.membership.reactivated"

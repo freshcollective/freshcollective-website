@@ -137,6 +137,44 @@ def _session_field(session: object, name: str) -> object:
     return getattr(session, name, None)
 
 
+def _mapping_field(session: object, name: str) -> dict:
+    """A nested Stripe field as a plain dict, whichever shape arrived.
+
+    ``dict()`` on a ``StripeObject`` raises ``KeyError: 0``. In
+    stripe-python 15.x a ``StripeObject`` is **not** a dict subclass
+    and exposes neither ``keys()`` nor ``get()``, so ``dict()`` cannot
+    use the mapping protocol and falls back to the legacy sequence
+    protocol instead — asking for ``obj[0]``, which is a missing key.
+
+    That only ever bit one of the two completion paths. The webhook
+    unpacks its event with ``json.loads``, so its Session and the
+    metadata inside it are plain dicts all the way down and converted
+    cleanly. The return page retrieves a live ``StripeObject``, and
+    converting its metadata is what raised a 500 in production on
+    2026-11-22 — after Stripe had already accepted the card.
+
+    An unreadable shape yields ``{}`` rather than a guess. The caller
+    checks ownership against this mapping, so empty means the
+    ownership checks fail and the update is refused: the safe
+    direction, and the reason this cannot weaken them.
+    """
+    value = _session_field(session, name)
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return dict(to_dict())
+        except Exception:                        # pragma: no cover
+            logger.warning(
+                "collective membership: could not read %s from a %s",
+                name, type(value).__name__,
+            )
+    return {}
+
+
 def apply_session(
     db: Session, *, subscription: CollectiveMembership, session: object,
     now: datetime,
@@ -165,7 +203,7 @@ def apply_session(
     applied — see migration 190 for why last-completed-wins is the
     rule, and why it is a product decision rather than an oversight.
     """
-    meta = dict(_session_field(session, "metadata") or {})
+    meta = _mapping_field(session, "metadata")
     if meta.get("purchase_type") != METADATA_PURCHASE_TYPE:
         raise PaymentMethodUnavailable("not a payment-method session")
     if meta.get("collective_membership_id") != subscription.id:
@@ -219,6 +257,17 @@ def apply_session(
         "collective membership: payment method updated sub=%s user=%s "
         "space=%s session=%s", subscription.id, subscription.user_id,
         subscription.space_id, session_id,
+    )
+
+    # Confirmed only here: past the Stripe call, past the recording,
+    # and only on the path that actually changed something. The
+    # already-applied branch above returns before this, so the two
+    # completion paths for one change confirm once between them.
+    from app.services import collective_membership_emit as _emit
+
+    _emit.emit_membership_payment_method_updated(
+        db, sub=subscription,
+        setup_session_id=session_id if isinstance(session_id, str) else "",
     )
 
     retried = _retry_open_invoice(subscription)

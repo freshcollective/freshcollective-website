@@ -285,6 +285,10 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # out. Telling them their access had been restored would invent
     # an interruption that never happened.
     EventDefinition("collective.membership.renewal_resumed",        TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    # A card change is a security-sensitive account event, not a
+    # purchase: no money moves, but somebody who did not make the
+    # change needs to find out that it happened.
+    EventDefinition("collective.membership.payment_method_updated", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
 
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),
@@ -411,6 +415,7 @@ TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
     "collective.membership.ended",
     "collective.membership.reactivated",
     "collective.membership.renewal_resumed",
+    "collective.membership.payment_method_updated",
 })
 
 

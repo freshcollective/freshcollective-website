@@ -960,6 +960,13 @@ _system(
     "States a billing and access state.",
 )
 _system(
+    "collective.membership.payment_method_updated.email_transactional",
+    "collective.membership.payment_method_updated",
+    "Collective membership payment method updated",
+    "A member who changed the card on one collective membership",
+    "Confirms the change and names the collective. No card details.",
+)
+_system(
     "collective.membership.renewal_resumed.email_transactional",
     "collective.membership.renewal_resumed",
     "Collective membership renewal resumed",

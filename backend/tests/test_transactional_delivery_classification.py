@@ -160,6 +160,7 @@ AUDITED: dict[str, str] = {
     "collective.membership.ended":                   LOCKED,
     "collective.membership.reactivated":             LOCKED,
     "collective.membership.renewal_resumed":         LOCKED,
+    "collective.membership.payment_method_updated":  LOCKED,
 
     # ── Creator plan billing ─────────────────────────────────────────
     "creator.plan_activated":                        LOCKED,
@@ -577,6 +578,7 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     "collective.membership.ended":                 "system",
     "collective.membership.reactivated":           "system",
     "collective.membership.renewal_resumed":       "system",
+    "collective.membership.payment_method_updated": "system",
     "creator.subscription.cancellation_scheduled": "system",
     "creator.subscription.cancelled":              "system",
     "creator.subscription.payment_failed":         "system",
@@ -661,6 +663,7 @@ ACCOUNT_LOCKED_EMAILS = [
     "collective.membership.ended",
     "collective.membership.reactivated",
     "collective.membership.renewal_resumed",
+    "collective.membership.payment_method_updated",
 ]
 
 WELCOME = "account.welcome_after_signup"
@@ -742,13 +745,14 @@ class TestAccountCategoryIsUnlocked:
         }
 
     def test_every_lock_survives(self):
-        """Twenty-six since the paid Collective membership family
+        """Twenty-seven since the paid Collective membership family
         joined: two receipts on ``purchases`` and five billing-state
-        notices on ``account`` — the fifth being
+        notices on ``account`` — plus ``payment_method_updated``, a
+        security-sensitive account change. The fifth state notice is
         ``renewal_resumed``, added in 5A.4b so a member who turns
         renewal back on is told it worked. The count is written out so
         a lock cannot be added or lost without this test being read."""
-        assert len(TRANSACTIONAL_EVENT_TYPES) == 26
+        assert len(TRANSACTIONAL_EVENT_TYPES) == 27
         assert set(TRANSACTIONAL_EVENT_TYPES) == set(LOCKED_EVENTS)
 
     @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)

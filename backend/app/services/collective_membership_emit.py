@@ -320,6 +320,44 @@ def emit_membership_ended(
 
 
 @_safe_emit
+def emit_membership_payment_method_updated(
+    db: Session, *, sub: CollectiveMembership, setup_session_id: str,
+) -> "CommunicationEvent | None":
+    """The card on this one membership was changed.
+
+    A security-sensitive account change: no money moves, but somebody
+    who did not make it needs to hear that it happened, which is why
+    it is transactional and not subject to a preference.
+
+    Keyed on the **setup Session**, not the agreement. A member may
+    legitimately change their card more than once on one membership,
+    and each genuine change deserves its own confirmation — while the
+    two completion paths for a single change (the return page and the
+    webhook) must produce exactly one. The Session id is the identity
+    of the change itself, so it separates those two cases where an
+    agreement id would collapse them.
+    """
+    from app.comms import Source, emit as comms_emit
+
+    payload = _base_payload(db, sub)
+    payload["next_renewal_at"] = _iso(sub.current_period_end)
+    return comms_emit(
+        db,
+        event_type="collective.membership.payment_method_updated",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=sub.user_id,
+        subject_type="collective_membership",
+        subject_id=sub.id,
+        context={
+            "collective_membership_id": sub.id,
+            "setup_session_id": setup_session_id,
+        },
+        payload=payload,
+        dedupe_key=f"cmem_pm_updated:{sub.id}:{setup_session_id}",
+    )
+
+
+@_safe_emit
 def emit_membership_renewal_resumed(
     db: Session, *, sub: CollectiveMembership,
 ) -> "CommunicationEvent | None":

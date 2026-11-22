@@ -42,6 +42,7 @@ from app.comms.templates.registry import template_for
 
 _PURCHASED   = "collective.membership.purchased"
 _RENEWAL_RESUMED = "collective.membership.renewal_resumed"
+_PM_UPDATED = "collective.membership.payment_method_updated"
 _RENEWED     = "collective.membership.renewed"
 _FAILED      = "collective.membership.payment_failed"
 _SCHEDULED   = "collective.membership.cancellation_scheduled"
@@ -615,6 +616,80 @@ class MembershipRenewalResumedInApp:
             ),
             metadata={
                 "notification_type": "collective_membership_renewal_resumed",
+                "url": ctx.get("membership_url") or "",
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Payment method updated — a security notice, not a receipt
+# ---------------------------------------------------------------------------
+
+
+@template_for(_PM_UPDATED, CHANNEL_EMAIL_TRANSACTIONAL)
+class MembershipPaymentMethodUpdatedEmail:
+    key = f"{_PM_UPDATED}.email_transactional"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        name = _collective(ctx)
+        subject = "Your payment method has been updated"
+        heading = "Payment method updated"
+        opening = (
+            f"The payment method for your membership with {name} has been "
+            "successfully updated."
+        )
+        future = (
+            "Your future membership payments will use your new payment "
+            "method."
+        )
+        # Named explicitly because a card change is the moment somebody
+        # wonders what *else* moved. Nothing did.
+        unchanged = (
+            "Your membership, payment amount and next renewal date remain "
+            "unchanged."
+        )
+        review = (
+            "You can review your membership details any time in your Fresh "
+            "Collective account settings."
+        )
+        # No card number, brand or last four. The confirmation's job is
+        # to tell somebody a change happened, and a card they do not
+        # recognise is answered by the line below, not by more digits.
+        query = (
+            "Didn't make this change? Please contact Fresh Collective "
+            "support at support@freshcollective.au."
+        )
+        return _payload(
+            db, subject=subject, heading=heading,
+            greeting=_greeting(ctx.get("first_name")),
+            opening=opening,
+            paragraphs=[opening, future, unchanged, review, query],
+            action=("Manage your membership", _manage(ctx)),
+            signoff="",
+            notification_type="collective_membership_payment_method_updated",
+        )
+
+
+@template_for(_PM_UPDATED, CHANNEL_IN_APP)
+class MembershipPaymentMethodUpdatedInApp:
+    key = f"{_PM_UPDATED}.in_app"
+    version = "v1"
+
+    def render(self, db, event, recipient) -> RenderedPayload:
+        ctx = recipient.template_context
+        return RenderedPayload(
+            to="",
+            subject=f"Payment method updated for {_collective(ctx)}",
+            body_html="",
+            body_text=(
+                "Your future membership payments will use your new payment "
+                "method."
+            ),
+            metadata={
+                "notification_type":
+                    "collective_membership_payment_method_updated",
                 "url": ctx.get("membership_url") or "",
             },
         )

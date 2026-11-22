@@ -1983,6 +1983,9 @@ def confirm_membership_payment_method_update(
     except _cmem_pm.PaymentMethodUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
+    # Only after the commit: routing opens its own session
+    # and looks the event up by id.
+    _cmem_emit.route_pending(db)
     return outcome
 
 
